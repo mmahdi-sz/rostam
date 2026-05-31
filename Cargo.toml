@@ -1,0 +1,12 @@
+[package]
+name = "ros-telegram-bot"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+frankenstein = { version = "0.50", features = ["client-reqwest", "trait-async"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio-postgres = "0.7"
+
+[profile.dev]
+opt-level = 0
