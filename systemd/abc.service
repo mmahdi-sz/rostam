@@ -1,0 +1,15 @@
+[Unit]
+Description=ABC Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/data/mahdidev/ros/dev
+EnvironmentFile=-/mnt/data/mahdidev/ros/dev/.env
+ExecStart=/mnt/data/mahdidev/ros/dev/target/debug/ros-telegram-bot
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
