@@ -25,6 +25,8 @@ pub const CB_PICK_PACK_PREFIX: &str = "emoji:pickpack:";
 pub const CB_IMPORT_REPLACE: &str = "emoji:import:replace";
 pub const CB_IMPORT_MERGE: &str = "emoji:import:merge";
 pub const CB_IMPORT_SMART: &str = "emoji:import:smart";
+pub const CB_SHOW_PACK_LINKS: &str = "emoji:packlinks";
+pub const CB_BACK_TO_PACK_CHOICE: &str = "emoji:backpick";
 pub const LIST_PAGE_SIZE: usize = 15;
 
 pub fn main_panel_keyboard() -> InlineKeyboardMarkup {
@@ -276,6 +278,24 @@ pub fn btn(text: &str, callback_data: &str) -> InlineKeyboardButton {
     btn_icon(text, callback_data, "")
 }
 
+pub fn btn_success(text: &str, callback_data: &str) -> InlineKeyboardButton {
+    InlineKeyboardButton {
+        text: text.to_string(),
+        icon_custom_emoji_id: None,
+        callback_data: Some(callback_data.to_string()),
+        style: Some(ButtonStyle::Success),
+        url: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
+    }
+}
+
 fn btn_icon(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardButton {
     let icon_id = if icon_key.is_empty() {
         None
@@ -303,12 +323,23 @@ fn btn_icon(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardBu
 
 pub fn pack_choice_keyboard(packs: &[EmojiPack]) -> InlineKeyboardMarkup {
     let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
+    rows.push(vec![btn_success(&t("emoji.panel.show_pack_links"), CB_SHOW_PACK_LINKS)]);
     for pack in packs.iter().rev() {
         let marker = if pack.is_default { " ⭐" } else { "" };
         let label = format!("📂 {}{}", pack.name, marker);
         rows.push(vec![btn(&label, &format!("{CB_PICK_PACK_PREFIX}{}", pack.id))]);
     }
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
+}
+
+pub fn pack_links_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn_icon(
+            &t("emoji.panel.back_to_pack_choice"),
+            CB_BACK_TO_PACK_CHOICE,
+            "back",
+        )]])
+        .build()
 }
 
 pub fn cancel_reply_keyboard() -> ReplyKeyboardMarkup {

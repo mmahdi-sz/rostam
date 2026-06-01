@@ -7,7 +7,8 @@ use frankenstein::{
     client_reqwest::Bot,
     input_file::{FileUpload, InputFile},
     methods::{
-        AnswerCallbackQueryParams, EditMessageTextParams, SendDocumentParams, SendMessageParams,
+        AnswerCallbackQueryParams, EditMessageTextParams, GetCustomEmojiStickersParams,
+        SendDocumentParams, SendMessageParams,
     },
     types::{
         InlineKeyboardMarkup, MaybeInaccessibleMessage, Message, MessageEntity,
@@ -21,10 +22,12 @@ use crate::i18n::{entities_for_text, t, tf};
 use super::{
     FlowManager, FlowState, PendingEmoji,
     import as emoji_import,
-    panel::{self as emoji_panel, CB_ADD, CB_BACK, CB_CANCEL, CB_DELETE_PACK_MENU, CB_EXPORT,
+    panel::{self as emoji_panel, CB_ADD, CB_BACK, CB_BACK_TO_PACK_CHOICE, CB_CANCEL,
+            CB_DELETE_PACK_MENU, CB_EXPORT,
             CB_IMPORT, CB_IMPORT_MERGE, CB_IMPORT_REPLACE, CB_IMPORT_SMART,
             CB_LIST, CB_PACKS, CB_PACK_DELETE_PREFIX, CB_PACK_OPEN_PREFIX,
-            CB_PICK_PACK_PREFIX, CB_PACK_SET_ALIAS_PREFIX, CB_PACK_SET_DEFAULT_PREFIX, CB_TEST},
+            CB_PICK_PACK_PREFIX, CB_PACK_SET_ALIAS_PREFIX, CB_PACK_SET_DEFAULT_PREFIX,
+            CB_SHOW_PACK_LINKS, CB_TEST},
     store as emoji_store,
 };
 
@@ -178,6 +181,39 @@ pub async fn handle_emoji_callback(
                 let _ = send_text(api, chat_id, &tf("emoji.pack_deleted", &[("name", &name)])).await;
                 send_with_ents(api, chat_id, emoji_panel::main_panel_text(),
                     Some(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))).await;
+            }
+        }
+        d if d == CB_SHOW_PACK_LINKS => {
+            if let FlowState::AwaitingPackChoice { collected } = flow_manager.get(user_id) {
+                let ids: Vec<String> = collected.iter()
+                    .map(|e| e.custom_emoji_id.clone())
+                    .collect();
+                let text = build_pack_links_text(api, &collected, &ids).await;
+                let params = EditMessageTextParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(message_id)
+                    .text(&text)
+                    .reply_markup(emoji_panel::pack_links_keyboard())
+                    .build();
+                if let Err(e) = api.edit_message_text(&params).await {
+                    eprintln!("edit pack links failed: {e}");
+                }
+            }
+        }
+        d if d == CB_BACK_TO_PACK_CHOICE => {
+            if let FlowState::AwaitingPackChoice { collected } = flow_manager.get(user_id) {
+                let summary = emoji_panel::format_pending_emojis(&collected, &[]);
+                let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
+                let params = EditMessageTextParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(message_id)
+                    .text(&summary)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .reply_markup(emoji_panel::pack_choice_keyboard(&packs))
+                    .build();
+                if let Err(e) = api.edit_message_text(&params).await {
+                    eprintln!("edit back to pack choice failed: {e}");
+                }
             }
         }
         d if d.starts_with(CB_PICK_PACK_PREFIX) => {
@@ -833,4 +869,74 @@ fn gregorian_to_jalali(gy: i32, gm: u32, gd: u32) -> (i32, u32, u32) {
         i += 1;
     }
     (jy, (i as i32 + 1) as u32, (j_day_no + 1) as u32)
+}
+
+/// Calls getCustomEmojiStickers, groups by set_name, and formats the links text.
+async fn build_pack_links_text(
+    api: &Bot,
+    collected: &[PendingEmoji],
+    ids: &[String],
+) -> String {
+    use std::collections::HashMap;
+
+    if ids.is_empty() {
+        return t("emoji.pack_links_none");
+    }
+
+    let stickers = match api
+        .get_custom_emoji_stickers(
+            &GetCustomEmojiStickersParams::builder()
+                .custom_emoji_ids(ids.to_vec())
+                .build(),
+        )
+        .await
+    {
+        Ok(r) => r.result,
+        Err(e) => {
+            eprintln!("get_custom_emoji_stickers failed: {e}");
+            return t("emoji.pack_links_none");
+        }
+    };
+
+    // Map custom_emoji_id → set_name
+    let mut id_to_set: HashMap<String, String> = HashMap::new();
+    for sticker in &stickers {
+        if let (Some(eid), Some(sn)) = (&sticker.custom_emoji_id, &sticker.set_name) {
+            id_to_set.insert(eid.clone(), sn.clone());
+        }
+    }
+
+    // Group PendingEmoji by set_name, preserving order of first appearance
+    let mut set_order: Vec<String> = Vec::new();
+    let mut set_to_fallbacks: HashMap<String, Vec<&str>> = HashMap::new();
+    for emoji in collected {
+        let key = id_to_set
+            .get(&emoji.custom_emoji_id)
+            .cloned()
+            .unwrap_or_else(|| "unknown".to_string());
+        if !set_to_fallbacks.contains_key(&key) {
+            set_order.push(key.clone());
+        }
+        set_to_fallbacks.entry(key).or_default().push(&emoji.fallback);
+    }
+
+    let mut lines = Vec::new();
+    for set_name in &set_order {
+        let fallbacks = &set_to_fallbacks[set_name];
+        let emoji_line: String = fallbacks.join("");
+        if set_name == "unknown" {
+            lines.push(format!("{}:\n(پک ناشناخته)", emoji_line));
+        } else {
+            lines.push(format!(
+                "{}:\nhttps://t.me/addemoji/{}",
+                emoji_line, set_name
+            ));
+        }
+    }
+
+    if lines.is_empty() {
+        t("emoji.pack_links_none")
+    } else {
+        lines.join("\n\n")
+    }
 }
