@@ -5,7 +5,7 @@ use frankenstein::{
     types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, ReplyMarkup},
 };
 
-use crate::i18n::t;
+use crate::i18n::{entities_for_text, t};
 
 pub const START_BUTTON_CALLBACK: &str = "say_hello";
 
@@ -14,13 +14,13 @@ pub async fn send_text(
     chat_id: i64,
     text: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    api.send_message(
-        &SendMessageParams::builder()
-            .chat_id(chat_id)
-            .text(text)
-            .build(),
-    )
-    .await?;
+    let entities = entities_for_text(text);
+    let params = if entities.is_empty() {
+        SendMessageParams::builder().chat_id(chat_id).text(text).build()
+    } else {
+        SendMessageParams::builder().chat_id(chat_id).text(text).entities(entities).build()
+    };
+    api.send_message(&params).await?;
     Ok(())
 }
 

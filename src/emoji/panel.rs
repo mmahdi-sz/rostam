@@ -312,9 +312,19 @@ pub fn pack_choice_keyboard(packs: &[EmojiPack]) -> InlineKeyboardMarkup {
 }
 
 pub fn cancel_reply_keyboard() -> ReplyKeyboardMarkup {
-    let cancel_btn = KeyboardButton::builder()
-        .text(t("emoji.cancel_button"))
-        .build();
+    let icon_id = t("emoji.panel.icons.cancel");
+    let cancel_btn = KeyboardButton {
+        text: t("emoji.cancel_button"),
+        icon_custom_emoji_id: if icon_id.is_empty() { None } else { Some(icon_id) },
+        request_users: None,
+        request_chat: None,
+        request_managed_bot: None,
+        request_contact: None,
+        request_location: None,
+        request_poll: None,
+        web_app: None,
+        style: Some(ButtonStyle::Danger),
+    };
     ReplyKeyboardMarkup::builder()
         .keyboard(vec![vec![cancel_btn]])
         .resize_keyboard(true)

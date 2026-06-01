@@ -17,7 +17,7 @@ use frankenstein::{
 
 use crate::bot::{send_text, send_text_md};
 use crate::database::postgresql::PostgresDatabase;
-use crate::i18n::{t, tf};
+use crate::i18n::{entities_for_text, t, tf};
 use super::{
     FlowManager, FlowState, PendingEmoji,
     import as emoji_import,
@@ -44,13 +44,16 @@ pub async fn handle_emoji_command(
         let _ = send_text(api, chat_id, &t("emoji.db_required")).await;
         return;
     }
-    let _ = api.send_message(
-        &SendMessageParams::builder()
-            .chat_id(chat_id)
-            .text(emoji_panel::main_panel_text())
-            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))
-            .build(),
-    ).await;
+    let panel_text = emoji_panel::main_panel_text();
+    let ents = entities_for_text(&panel_text);
+    let params = if ents.is_empty() {
+        SendMessageParams::builder().chat_id(chat_id).text(panel_text)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard())).build()
+    } else {
+        SendMessageParams::builder().chat_id(chat_id).text(panel_text).entities(ents)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard())).build()
+    };
+    let _ = api.send_message(&params).await;
 }
 
 pub async fn handle_emoji_callback(
@@ -81,23 +84,13 @@ pub async fn handle_emoji_callback(
     match data {
         d if d == CB_ADD => {
             flow_manager.set(user_id, FlowState::AwaitingEmojis { collected: Vec::new() });
-            let _ = api.send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(t("emoji.add_prompt"))
-                    .reply_markup(ReplyMarkup::ReplyKeyboardMarkup(emoji_panel::cancel_reply_keyboard()))
-                    .build(),
-            ).await;
+            send_with_ents(api, chat_id, t("emoji.add_prompt"),
+                Some(ReplyMarkup::ReplyKeyboardMarkup(emoji_panel::cancel_reply_keyboard()))).await;
         }
         d if d == CB_TEST => {
             flow_manager.set(user_id, FlowState::AwaitingTestText);
-            let _ = api.send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(t("emoji.test_prompt"))
-                    .reply_markup(ReplyMarkup::ReplyKeyboardMarkup(emoji_panel::cancel_reply_keyboard()))
-                    .build(),
-            ).await;
+            send_with_ents(api, chat_id, t("emoji.test_prompt"),
+                Some(ReplyMarkup::ReplyKeyboardMarkup(emoji_panel::cancel_reply_keyboard()))).await;
         }
         d if d == CB_LIST => {
             send_emoji_list(api, chat_id, user_id, client).await;
@@ -107,13 +100,8 @@ pub async fn handle_emoji_callback(
         }
         d if d == CB_IMPORT => {
             flow_manager.set(user_id, FlowState::AwaitingImportFile);
-            let _ = api.send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(t("emoji.import_prompt"))
-                    .reply_markup(ReplyMarkup::ReplyKeyboardMarkup(emoji_panel::cancel_reply_keyboard()))
-                    .build(),
-            ).await;
+            send_with_ents(api, chat_id, t("emoji.import_prompt"),
+                Some(ReplyMarkup::ReplyKeyboardMarkup(emoji_panel::cancel_reply_keyboard()))).await;
         }
         d if d == CB_EXPORT => {
             match emoji_store::export_user_sql(client, user_id).await {
@@ -188,13 +176,8 @@ pub async fn handle_emoji_callback(
                     eprintln!("delete_pack failed: {e}");
                 }
                 let _ = send_text(api, chat_id, &tf("emoji.pack_deleted", &[("name", &name)])).await;
-                let _ = api.send_message(
-                    &SendMessageParams::builder()
-                        .chat_id(chat_id)
-                        .text(emoji_panel::main_panel_text())
-                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))
-                        .build(),
-                ).await;
+                send_with_ents(api, chat_id, emoji_panel::main_panel_text(),
+                    Some(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))).await;
             }
         }
         d if d.starts_with(CB_PICK_PACK_PREFIX) => {
@@ -231,13 +214,8 @@ pub async fn handle_emoji_callback(
                     let _ = send_text(api, chat_id, &t("emoji.import_failed")).await;
                 }
             }
-            let _ = api.send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(emoji_panel::main_panel_text())
-                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))
-                    .build(),
-            ).await;
+            send_with_ents(api, chat_id, emoji_panel::main_panel_text(),
+                Some(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))).await;
         }
         _ => {}
     }
@@ -361,20 +339,11 @@ pub async fn handle_emoji_flow_message(
                 }
                 added += 1;
             }
-            let _ = api.send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(tf("emoji.added_summary", &[("count", &added.to_string()), ("pack", &pack.name)]))
-                    .reply_markup(ReplyMarkup::ReplyKeyboardRemove(ReplyKeyboardRemove::builder().remove_keyboard(true).build()))
-                    .build(),
-            ).await;
-            let _ = api.send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(emoji_panel::main_panel_text())
-                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))
-                    .build(),
-            ).await;
+            send_with_ents(api, chat_id,
+                tf("emoji.added_summary", &[("count", &added.to_string()), ("pack", &pack.name)]),
+                Some(ReplyMarkup::ReplyKeyboardRemove(ReplyKeyboardRemove::builder().remove_keyboard(true).build()))).await;
+            send_with_ents(api, chat_id, emoji_panel::main_panel_text(),
+                Some(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))).await;
             flow_manager.clear(user_id);
             true
         }
@@ -435,13 +404,8 @@ pub async fn handle_emoji_flow_message(
             let analysis = emoji_import::analyze(&parsed, client, user_id).await;
             let report = build_import_report(&analysis);
             let keyboard = emoji_panel::import_choice_keyboard(analysis.db_empty);
-            let _ = api.send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(report)
-                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard))
-                    .build(),
-            ).await;
+            send_with_ents(api, chat_id, report,
+                Some(ReplyMarkup::InlineKeyboardMarkup(keyboard))).await;
             flow_manager.set(user_id, FlowState::AwaitingImportMode { sql });
             true
         }
@@ -665,14 +629,28 @@ async fn show_pack_detail(api: &Bot, chat_id: i64, message_id: i32, user_id: i64
     edit_panel(api, chat_id, message_id, &emoji_panel::pack_detail_text(&pack), Some(emoji_panel::pack_detail_keyboard(&pack))).await;
 }
 
+async fn send_with_ents(api: &Bot, chat_id: i64, text: String, reply_markup: Option<ReplyMarkup>) {
+    let ents = entities_for_text(&text);
+    let params = match (ents.is_empty(), reply_markup) {
+        (true, None) => SendMessageParams::builder().chat_id(chat_id).text(text).build(),
+        (true, Some(rm)) => SendMessageParams::builder().chat_id(chat_id).text(text).reply_markup(rm).build(),
+        (false, None) => SendMessageParams::builder().chat_id(chat_id).text(text).entities(ents).build(),
+        (false, Some(rm)) => SendMessageParams::builder().chat_id(chat_id).text(text).entities(ents).reply_markup(rm).build(),
+    };
+    let _ = api.send_message(&params).await;
+}
+
 async fn edit_panel(api: &Bot, chat_id: i64, message_id: i32, text: &str, keyboard: Option<InlineKeyboardMarkup>) {
-    let builder = EditMessageTextParams::builder()
-        .chat_id(chat_id)
-        .message_id(message_id)
-        .text(text);
-    let params = match keyboard {
-        Some(kb) => builder.reply_markup(kb).build(),
-        None => builder.build(),
+    let ents = entities_for_text(text);
+    let params = match (ents.is_empty(), keyboard) {
+        (true, None) => EditMessageTextParams::builder()
+            .chat_id(chat_id).message_id(message_id).text(text).build(),
+        (true, Some(kb)) => EditMessageTextParams::builder()
+            .chat_id(chat_id).message_id(message_id).text(text).reply_markup(kb).build(),
+        (false, None) => EditMessageTextParams::builder()
+            .chat_id(chat_id).message_id(message_id).text(text).entities(ents).build(),
+        (false, Some(kb)) => EditMessageTextParams::builder()
+            .chat_id(chat_id).message_id(message_id).text(text).entities(ents).reply_markup(kb).build(),
     };
     if let Err(e) = api.edit_message_text(&params).await {
         eprintln!("edit_message_text failed: {e}");
