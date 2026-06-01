@@ -28,14 +28,14 @@ pub const CB_IMPORT_SMART: &str = "emoji:import:smart";
 pub const LIST_PAGE_SIZE: usize = 15;
 
 pub fn main_panel_keyboard() -> InlineKeyboardMarkup {
-    let add = btn(&t("emoji.panel.add"), CB_ADD);
-    let test = btn(&t("emoji.panel.test"), CB_TEST);
-    let list = btn(&t("emoji.panel.list"), CB_LIST);
-    let del = btn(&t("emoji.panel.delete_pack"), CB_DELETE_PACK_MENU);
-    let packs = btn(&t("emoji.panel.packs"), CB_PACKS);
-    let import = btn(&t("emoji.panel.import"), CB_IMPORT);
-    let export = btn(&t("emoji.panel.export"), CB_EXPORT);
-    let back = btn(&t("emoji.panel.back"), CB_BACK);
+    let add = btn_icon(&t("emoji.panel.add"), CB_ADD, "add");
+    let test = btn_icon(&t("emoji.panel.test"), CB_TEST, "test");
+    let list = btn_icon(&t("emoji.panel.list"), CB_LIST, "list");
+    let del = btn_icon(&t("emoji.panel.delete_pack"), CB_DELETE_PACK_MENU, "delete_pack");
+    let packs = btn_icon(&t("emoji.panel.packs"), CB_PACKS, "packs");
+    let import = btn_icon(&t("emoji.panel.import"), CB_IMPORT, "import");
+    let export = btn_icon(&t("emoji.panel.export"), CB_EXPORT, "export");
+    let back = btn_icon(&t("emoji.panel.back"), CB_BACK, "back");
 
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
@@ -59,28 +59,31 @@ pub fn packs_keyboard(packs: &[EmojiPack]) -> InlineKeyboardMarkup {
         let label = format!("{}{}  ({})", pack.name, marker, pack.item_count);
         rows.push(vec![btn(&label, &format!("{CB_PACK_OPEN_PREFIX}{}", pack.id))]);
     }
-    rows.push(vec![btn(&t("emoji.panel.back"), CB_BACK)]);
+    rows.push(vec![btn_icon(&t("emoji.panel.back"), CB_BACK, "back")]);
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }
 
 pub fn pack_detail_keyboard(pack: &EmojiPack) -> InlineKeyboardMarkup {
-    let set_alias = btn(
+    let set_alias = btn_icon(
         &t("emoji.panel.set_alias"),
         &format!("{CB_PACK_SET_ALIAS_PREFIX}{}", pack.id),
+        "set_alias",
     );
-    let delete = btn(
+    let delete = btn_icon(
         &t("emoji.panel.delete_pack"),
         &format!("{CB_PACK_DELETE_PREFIX}{}", pack.id),
+        "delete_pack",
     );
     let mut rows = vec![vec![set_alias]];
     if !pack.is_default {
-        rows.push(vec![btn(
+        rows.push(vec![btn_icon(
             &t("emoji.panel.set_default"),
             &format!("{CB_PACK_SET_DEFAULT_PREFIX}{}", pack.id),
+            "set_default",
         )]);
     }
     rows.push(vec![delete]);
-    rows.push(vec![btn(&t("emoji.panel.back_to_list"), CB_PACKS)]);
+    rows.push(vec![btn_icon(&t("emoji.panel.back_to_list"), CB_PACKS, "back_to_list")]);
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }
 
@@ -212,7 +215,7 @@ pub fn list_page_keyboard(page: usize, total_pages: usize) -> InlineKeyboardMark
     if !nav.is_empty() {
         rows.push(nav);
     }
-    rows.push(vec![btn(&t("emoji.panel.back"), CB_BACK)]);
+    rows.push(vec![btn_icon(&t("emoji.panel.back"), CB_BACK, "back")]);
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }
 
@@ -270,11 +273,32 @@ fn escape_code(text: &str) -> String {
 }
 
 fn btn(text: &str, callback_data: &str) -> InlineKeyboardButton {
-    InlineKeyboardButton::builder()
-        .text(text)
-        .callback_data(callback_data)
-        .style(ButtonStyle::Primary)
-        .build()
+    btn_icon(text, callback_data, "")
+}
+
+fn btn_icon(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardButton {
+    let icon_id = if icon_key.is_empty() {
+        None
+    } else {
+        let id = t(&format!("emoji.panel.icons.{icon_key}"));
+        if id.is_empty() { None } else { Some(id) }
+    };
+
+    InlineKeyboardButton {
+        text: text.to_string(),
+        icon_custom_emoji_id: icon_id,
+        callback_data: Some(callback_data.to_string()),
+        style: Some(ButtonStyle::Primary),
+        url: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
+    }
 }
 
 pub fn pack_choice_keyboard(packs: &[EmojiPack]) -> InlineKeyboardMarkup {
@@ -299,7 +323,7 @@ pub fn cancel_reply_keyboard() -> ReplyKeyboardMarkup {
 }
 
 pub fn import_choice_keyboard(db_empty: bool) -> InlineKeyboardMarkup {
-    let cancel = btn(&t("emoji.cancel_button"), CB_CANCEL);
+    let cancel = btn_icon(&t("emoji.cancel_button"), CB_CANCEL, "cancel");
     if db_empty {
         InlineKeyboardMarkup::builder()
             .inline_keyboard(vec![
