@@ -1,5 +1,6 @@
 use std::{collections::HashSet, fs};
 use chrono::{Datelike, Timelike, TimeZone};
+use frankenstein::methods::GetFileParams;
 use chrono_tz::Asia::Tehran;
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
@@ -103,7 +104,14 @@ pub async fn handle_emoji_callback(
             show_packs_menu(api, chat_id, message_id, user_id, client).await;
         }
         d if d == CB_IMPORT => {
-            let _ = send_text(api, chat_id, "🚧 به‌زودی").await;
+            flow_manager.set(user_id, FlowState::AwaitingImportFile);
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(t("emoji.import_prompt"))
+                    .reply_markup(ReplyMarkup::ReplyKeyboardMarkup(emoji_panel::cancel_reply_keyboard()))
+                    .build(),
+            ).await;
         }
         d if d == CB_EXPORT => {
             match emoji_store::export_user_sql(client, user_id).await {
@@ -343,6 +351,72 @@ pub async fn handle_emoji_flow_message(
             }
             let _ = send_text(api, chat_id, &t("emoji.pack_alias_set")).await;
             flow_manager.clear(user_id);
+            true
+        }
+        FlowState::AwaitingImportFile => {
+            let text = message.text.as_deref().unwrap_or("").trim();
+            if text == t("emoji.cancel_button") {
+                flow_manager.clear(user_id);
+                send_cancel_and_panel(api, chat_id).await;
+                return true;
+            }
+            let Some(doc) = message.document.as_ref() else {
+                let _ = send_text(api, chat_id, &t("emoji.import_send_file")).await;
+                return true;
+            };
+            let file_id = doc.file_id.clone();
+            let token = match crate::config::config_value("BOT_TOKEN") {
+                Some(t) => t,
+                None => { flow_manager.clear(user_id); return true; }
+            };
+            let file_path = match api.get_file(&GetFileParams::builder().file_id(file_id).build()).await {
+                Ok(r) => match r.result.file_path {
+                    Some(p) => p,
+                    None => {
+                        let _ = send_text(api, chat_id, &t("emoji.import_failed")).await;
+                        return true;
+                    }
+                },
+                Err(e) => {
+                    eprintln!("get_file failed: {e}");
+                    let _ = send_text(api, chat_id, &t("emoji.import_failed")).await;
+                    return true;
+                }
+            };
+            let url = format!("https://api.telegram.org/file/bot{token}/{file_path}");
+            let sql = match reqwest::get(&url).await {
+                Ok(resp) => match resp.text().await {
+                    Ok(t) => t,
+                    Err(e) => { eprintln!("read import body failed: {e}"); let _ = send_text(api, chat_id, &t("emoji.import_failed")).await; return true; }
+                },
+                Err(e) => { eprintln!("download import file failed: {e}"); let _ = send_text(api, chat_id, &t("emoji.import_failed")).await; return true; }
+            };
+            let mut ok = 0usize;
+            let mut fail = 0usize;
+            for stmt in sql.split(';') {
+                let stmt = stmt.trim();
+                if stmt.is_empty() || stmt.starts_with("--") { continue; }
+                match client.execute(stmt, &[]).await {
+                    Ok(_) => ok += 1,
+                    Err(e) => { eprintln!("import stmt failed: {e}"); fail += 1; }
+                }
+            }
+            flow_manager.clear(user_id);
+            let _ = send_text(api, chat_id, &tf("emoji.import_done", &[("ok", &ok.to_string()), ("fail", &fail.to_string())])).await;
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(emoji_panel::main_panel_text())
+                    .reply_markup(ReplyMarkup::ReplyKeyboardRemove(ReplyKeyboardRemove::builder().remove_keyboard(true).build()))
+                    .build(),
+            ).await;
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(emoji_panel::main_panel_text())
+                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))
+                    .build(),
+            ).await;
             true
         }
         FlowState::AwaitingTestText => {

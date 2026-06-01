@@ -20,6 +20,7 @@ pub enum FlowState {
         pack_id: i32,
     },
     AwaitingTestText,
+    AwaitingImportFile,
 }
 
 #[derive(Debug, Default)]
