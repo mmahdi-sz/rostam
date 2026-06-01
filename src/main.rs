@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 mod bot;
@@ -21,6 +22,7 @@ use frankenstein::{
     updates::UpdateContent,
 };
 use i18n::t;
+use tokio::sync::RwLock;
 use youtube::{extract_youtube_urls, handle_youtube_url};
 
 #[tokio::main]
@@ -42,6 +44,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("failed to save cookie pool snapshot: {error}");
                 }
                 println!("PostgreSQL cookie pool storage is enabled.");
+
+                // Initialize emoji cache from admin DB
+                if let Some(admin_id) = config::admin_user_id() {
+                    let initial = emoji::cache::load_from_db(database.client(), admin_id).await;
+                    let cache_arc = Arc::new(RwLock::new(initial));
+                    let _ = emoji::cache::CACHE.set(cache_arc.clone());
+                    println!("Emoji cache loaded for admin user {admin_id}.");
+
+                    // Refresh every 5 minutes
+                    tokio::spawn(async move {
+                        let refresh_client = match tokio_postgres::connect(&database_url, tokio_postgres::NoTls).await {
+                            Ok((c, conn)) => {
+                                tokio::spawn(conn);
+                                c
+                            }
+                            Err(e) => {
+                                eprintln!("emoji cache refresh: failed to connect: {e}");
+                                return;
+                            }
+                        };
+                        loop {
+                            tokio::time::sleep(Duration::from_secs(300)).await;
+                            let fresh = emoji::cache::load_from_db(&refresh_client, admin_id).await;
+                            *cache_arc.write().await = fresh;
+                            println!("Emoji cache refreshed.");
+                        }
+                    });
+                } else {
+                    println!("ADMIN_USER_ID not set; emoji cache disabled.");
+                }
+
                 Some(database)
             }
             Err(error) => {

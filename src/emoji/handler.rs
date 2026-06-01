@@ -424,9 +424,11 @@ pub async fn handle_emoji_flow_message(
                 send_cancel_and_panel(api, chat_id).await;
                 return true;
             }
-            let rendered = match emoji_store::render_template(client, user_id, text).await {
-                Ok(r) => r,
-                Err(e) => { eprintln!("render_template failed: {e}"); text.to_string() }
+            let rendered = if let Some(cache_arc) = super::cache::global() {
+                let cache = cache_arc.read().await;
+                cache.render_markdown(text)
+            } else {
+                text.to_string()
             };
             let _ = api.send_message(
                 &SendMessageParams::builder()

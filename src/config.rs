@@ -5,6 +5,10 @@ pub fn bot_token() -> Result<String, Box<dyn std::error::Error>> {
         .ok_or_else(|| "BOT_TOKEN is not set in .env, /etc/default/abc, or process env".into())
 }
 
+pub fn admin_user_id() -> Option<i64> {
+    config_value("ADMIN_USER_ID")?.parse().ok()
+}
+
 pub fn config_value(key: &str) -> Option<String> {
     value_from_env_file(".env", key)
         .or_else(|| value_from_env_file("/etc/default/abc", key))

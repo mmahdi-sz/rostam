@@ -2,7 +2,7 @@ use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     methods::SendMessageParams,
-    types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, ReplyMarkup},
+    types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity, ReplyMarkup},
 };
 
 use crate::i18n::{entities_for_text, t};
@@ -14,14 +14,33 @@ pub async fn send_text(
     chat_id: i64,
     text: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let entities = entities_for_text(text);
+    let (rendered, entities) = expand_and_entify(text).await;
     let params = if entities.is_empty() {
-        SendMessageParams::builder().chat_id(chat_id).text(text).build()
+        SendMessageParams::builder().chat_id(chat_id).text(rendered).build()
     } else {
-        SendMessageParams::builder().chat_id(chat_id).text(text).entities(entities).build()
+        SendMessageParams::builder().chat_id(chat_id).text(rendered).entities(entities).build()
     };
     api.send_message(&params).await?;
     Ok(())
+}
+
+/// Expands `{key}` templates via the emoji cache (if loaded), then collects
+/// entities for both the cache expansions and the UI emoji in the remaining text.
+async fn expand_and_entify(text: &str) -> (String, Vec<MessageEntity>) {
+    if text.contains('{') {
+        if let Some(cache_arc) = crate::emoji::cache::global() {
+            let cache = cache_arc.read().await;
+            if !cache.is_empty() {
+                let (rendered, mut cache_ents) = cache.render_plain(text);
+                let ui_ents = entities_for_text(&rendered);
+                cache_ents.extend(ui_ents);
+                cache_ents.sort_by_key(|e| e.offset);
+                return (rendered, cache_ents);
+            }
+        }
+    }
+    let entities = entities_for_text(text);
+    (text.to_string(), entities)
 }
 
 pub async fn send_text_md(
