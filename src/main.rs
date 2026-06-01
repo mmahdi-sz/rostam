@@ -671,7 +671,15 @@ async fn handle_emoji_callback(
                     &tf("emoji.pack_deleted", &[("name", &name)]),
                 )
                 .await;
-                show_packs_menu(api, chat_id, message_id, user_id, client).await;
+                let _ = api.send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(emoji_panel::main_panel_text())
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(
+                            emoji_panel::main_panel_keyboard(),
+                        ))
+                        .build(),
+                ).await;
             }
         }
         d if d.starts_with(CB_PICK_PACK_PREFIX) => {
