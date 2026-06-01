@@ -219,10 +219,10 @@ fn render_item_line(item: &EmojiItem) -> String {
         _ => String::new(),
     };
     format!(
-        "• {} ![{}](tg://emoji?id={}) \\= `{}` \\| `{}`{}\n",
-        item.fallback,
+        "• ![{}](tg://emoji?id={}) {} \\= `{}` \\| `{}`{}\n",
         item.fallback,
         item.custom_emoji_id,
+        item.fallback,
         item.id,
         escape_code(&item.smart_name),
         alias_part
@@ -243,10 +243,10 @@ pub fn render_pack_list_entry(pack: &EmojiPack, items: &[EmojiItem]) -> String {
             _ => String::new(),
         };
         out.push_str(&format!(
-            "• {} ![{}](tg://emoji?id={}) \\= `{}` \\| `{}`{}\n",
-            item.fallback,
+            "• ![{}](tg://emoji?id={}) {} \\= `{}` \\| `{}`{}\n",
             item.fallback,
             item.custom_emoji_id,
+            item.fallback,
             item.id,
             escape_code(&item.smart_name),
             alias_part
