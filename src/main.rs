@@ -970,8 +970,17 @@ async fn handle_emoji_flow_message(
                 send_cancel_and_panel(api, chat_id).await;
                 return true;
             }
-            let rendered = format!("(تست template هنوز پیاده نشده)\n\n{text}");
-            let _ = send_text(api, chat_id, &rendered).await;
+            let rendered = match emoji_store::render_template(client, user_id, text).await {
+                Ok(r) => r,
+                Err(e) => { eprintln!("render_template failed: {e}"); text.to_string() }
+            };
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(rendered)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .build(),
+            ).await;
             true
         }
     }

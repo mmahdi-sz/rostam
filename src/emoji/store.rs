@@ -307,6 +307,36 @@ pub async fn set_item_alias(
     Ok(true)
 }
 
+pub async fn render_template(
+    client: &Client,
+    owner: i64,
+    template: &str,
+) -> Result<String, tokio_postgres::Error> {
+    let rows = client
+        .query(
+            "SELECT custom_emoji_id, fallback, smart_name, alias
+             FROM emoji_items
+             WHERE owner_user_id = $1",
+            &[&owner],
+        )
+        .await?;
+
+    let mut result = template.to_string();
+    for row in rows {
+        let custom_emoji_id: String = row.get(0);
+        let fallback: String = row.get(1);
+        let smart_name: String = row.get(2);
+        let alias: Option<String> = row.get(3);
+
+        let replacement = format!("![{}](tg://emoji?id={})", fallback, custom_emoji_id);
+        result = result.replace(&format!("{{{}}}", smart_name), &replacement);
+        if let Some(a) = alias.filter(|a| !a.is_empty()) {
+            result = result.replace(&format!("{{{}}}", a), &replacement);
+        }
+    }
+    Ok(result)
+}
+
 fn row_to_pack(row: tokio_postgres::Row) -> EmojiPack {
     EmojiPack {
         id: row.get(0),
