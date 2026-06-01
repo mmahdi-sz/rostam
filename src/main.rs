@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     if let Some(text) = message.text.as_deref() {
                         if text == "/emoji" {
-                            handle_emoji_command(&api, &message, &database).await;
+                            handle_emoji_command(&api, &message, &mut flow_manager, &database).await;
                             continue;
                         }
                         if let Some(rest) = text.strip_prefix("/se") {
@@ -527,22 +527,28 @@ async fn handle_youtube_url(
 async fn handle_emoji_command(
     api: &Bot,
     message: &Message,
+    flow_manager: &mut FlowManager,
     database: &Option<PostgresDatabase>,
 ) {
+    let chat_id = message.chat.id;
+    let user_id = match message.from.as_ref() {
+        Some(u) => u.id as i64,
+        None => return,
+    };
+    flow_manager.clear(user_id);
     if database.is_none() {
-        let _ = send_text(api, message.chat.id, &t("emoji.db_required")).await;
+        let _ = send_text(api, chat_id, &t("emoji.db_required")).await;
         return;
     }
-    let params = SendMessageParams::builder()
-        .chat_id(message.chat.id)
-        .text(emoji_panel::main_panel_text())
-        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(
-            emoji_panel::main_panel_keyboard(),
-        ))
-        .build();
-    if let Err(error) = api.send_message(&params).await {
-        eprintln!("send emoji panel failed: {error}");
-    }
+    let _ = api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(emoji_panel::main_panel_text())
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(
+                emoji_panel::main_panel_keyboard(),
+            ))
+            .build(),
+    ).await;
 }
 
 async fn handle_emoji_callback(
@@ -965,16 +971,7 @@ async fn handle_emoji_flow_message(
                 return true;
             }
             let rendered = format!("(تست template هنوز پیاده نشده)\n\n{text}");
-            let _ = api.send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(rendered)
-                    .reply_markup(ReplyMarkup::ReplyKeyboardRemove(
-                        ReplyKeyboardRemove::builder().remove_keyboard(true).build(),
-                    ))
-                    .build(),
-            ).await;
-            flow_manager.clear(user_id);
+            let _ = send_text(api, chat_id, &rendered).await;
             true
         }
     }
