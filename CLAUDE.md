@@ -35,6 +35,24 @@ Rules:
   logs) stay hardcoded — i18n is for end-user text only.
 - The file is currently single-language (Farsi). Structure is nested JSON.
 
+## Premium Emoji System
+
+All UI emoji are premium custom emoji managed via `i18n.json`.
+
+### How it works
+
+- **IDs**: stored in `emoji.panel.icons.*` in `i18n.json` (24 emoji, e.g. `"cancel": "5215204871422093648"`)
+- **Inline keyboard buttons**: use `icon_custom_emoji_id` field on `InlineKeyboardButton` — handled automatically by `btn_icon()` in `src/emoji/panel.rs`
+- **Reply keyboard buttons**: use `icon_custom_emoji_id` field on `KeyboardButton` struct literal (bon typestate issue prevents builder use)
+- **Plain text messages**: `entities_for_text(text)` in `src/i18n.rs` scans the text for known emoji chars, looks up their premium IDs, and returns `Vec<MessageEntity>` — called automatically by `send_text()` in `src/bot.rs`
+- **MarkdownV2 messages** (list page, pending emojis): entities are NOT added — they contain `tg://emoji` inline images that would conflict
+
+### Adding a new premium emoji
+
+1. Add `"key": "ID"` to `emoji.panel.icons` in `i18n.json`
+2. Add `("🔥", "key")` to `EMOJI_MAP` in `src/i18n.rs` (longer/variation-selector forms first)
+3. Use `btn_icon(text, CB_FOO, "key")` for inline buttons, or just put the emoji char in any text message — `send_text()` handles the rest automatically
+
 ## Project Summary
 
 This project is a Rust Telegram bot named `ros-telegram-bot`.
@@ -218,7 +236,7 @@ src/config.rs                        — BOT_TOKEN / DATABASE_URL reading
 src/bot.rs                           — send_text, send_text_md, send_start_button
 src/cookie_pool.rs                   — CookiePool + format helpers + save_snapshot
 src/youtube.rs                       — yt-dlp fetch + handle_youtube_url
-src/i18n.rs                          — t() / tf() helpers, reads i18n.json
+src/i18n.rs                          — t() / tf() / entities_for_text() helpers, reads i18n.json
 src/database/mod.rs
 src/database/posfreSQL/postgresql.rs — PostgreSQL connection + cookie pool tables
 src/database/posfreSQL/schema.sql    — CREATE TABLE statements
