@@ -35,6 +35,37 @@ Rules:
   logs) stay hardcoded — i18n is for end-user text only.
 - The file is currently single-language (Farsi). Structure is nested JSON.
 
+## Emoji Template System
+
+`{key}` placeholders in any text are expanded at send time using the global
+emoji cache (loaded from `ADMIN_USER_ID`'s DB). Each `{key}` is replaced with
+a randomly chosen emoji from the matching group.
+
+### Key matching rules (checked in order)
+
+1. **Exact smart_name** — `{fire1}` matches only the item named `fire1`
+2. **Prefix group** — `{fire}` matches all items whose smart_name starts with
+   `fire` followed by digits (e.g. `fire1`, `fire2`, `fire3`)
+3. **Alias group** — `{boss}` matches all items with alias `boss`
+
+One entry is picked at random from the group on every render.
+
+### Where expansion happens
+
+- **Test flow (MarkdownV2 — `/emoji` → Test)**: `{key}` → `![fb](tg://emoji?id=ID)`
+- **All plain-text `send_text()` calls** (including i18n strings): `{key}` →
+  fallback char + `CustomEmoji` `MessageEntity` at the correct UTF-16 offset,
+  merged with the existing UI-emoji entities
+- **i18n.json strings** can contain `{key}` — expansion is automatic when
+  the string is sent via `send_text()`
+
+### Cache lifecycle
+
+- Loaded at startup from `ADMIN_USER_ID`'s `emoji_items` rows
+- Refreshed in background every 5 minutes (opens its own DB connection)
+- If `ADMIN_USER_ID` is not set, cache stays empty and `{key}` is left as-is
+- Implementation: `src/emoji/cache.rs`, global `CACHE: OnceLock<Arc<RwLock<EmojiCache>>>`
+
 ## Premium Emoji System
 
 All UI emoji are premium custom emoji managed via `i18n.json`.
@@ -132,6 +163,15 @@ Optional PostgreSQL:
 ```text
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/ros_telegram_bot
 ```
+
+Optional emoji cache (requires `DATABASE_URL`):
+
+```text
+ADMIN_USER_ID=123456789
+```
+
+If set, the emoji cache loads from this user's DB at startup and refreshes
+every 5 minutes. Required for `{key}` template expansion (see below).
 
 If `DATABASE_URL` is missing, Cookie Pool state stays in memory only.
 
@@ -232,7 +272,7 @@ When a user deletes their last pack, both `emoji_packs_id_seq` and
 
 ```text
 src/main.rs                          — event loop + routing (~160 lines)
-src/config.rs                        — BOT_TOKEN / DATABASE_URL reading
+src/config.rs                        — BOT_TOKEN / DATABASE_URL / ADMIN_USER_ID reading
 src/bot.rs                           — send_text, send_text_md, send_start_button
 src/cookie_pool.rs                   — CookiePool + format helpers + save_snapshot
 src/youtube.rs                       — yt-dlp fetch + handle_youtube_url
@@ -241,6 +281,7 @@ src/database/mod.rs
 src/database/posfreSQL/postgresql.rs — PostgreSQL connection + cookie pool tables
 src/database/posfreSQL/schema.sql    — CREATE TABLE statements
 src/emoji/mod.rs
+src/emoji/cache.rs                   — EmojiCache, {key} expansion, 5-min refresh task
 src/emoji/flow.rs
 src/emoji/handler.rs
 src/emoji/panel.rs
