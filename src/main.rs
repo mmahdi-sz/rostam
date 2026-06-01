@@ -14,7 +14,7 @@ use emoji::{
     FlowManager, FlowState, PendingEmoji,
     panel::{
         self as emoji_panel, CB_ADD, CB_BACK, CB_CANCEL, CB_DELETE_PACK_MENU, CB_EXPORT, CB_IMPORT,
-        CB_LIST, CB_PACKS, CB_PACK_DELETE_PREFIX, CB_PACK_OPEN_PREFIX,
+        CB_LIST, CB_PACKS, CB_PACK_DELETE_PREFIX, CB_PACK_OPEN_PREFIX, CB_PICK_PACK_PREFIX,
         CB_PACK_SET_ALIAS_PREFIX, CB_PACK_SET_DEFAULT_PREFIX, CB_TEST,
     },
     store as emoji_store,
@@ -674,8 +674,67 @@ async fn handle_emoji_callback(
                 show_packs_menu(api, chat_id, message_id, user_id, client).await;
             }
         }
+        d if d.starts_with(CB_PICK_PACK_PREFIX) => {
+            if let Some(pack_id) = d
+                .strip_prefix(CB_PICK_PACK_PREFIX)
+                .and_then(|s| s.parse::<i32>().ok())
+            {
+                if let FlowState::AwaitingPackChoice { collected } =
+                    flow_manager.get(user_id)
+                {
+                    let collected = collected.clone();
+                    flow_manager.clear(user_id);
+                    add_emojis_to_pack(api, chat_id, &collected, pack_id, user_id, client).await;
+                }
+            }
+        }
         _ => {}
     }
+}
+
+async fn add_emojis_to_pack(
+    api: &Bot,
+    chat_id: i64,
+    collected: &[PendingEmoji],
+    pack_id: i32,
+    user_id: i64,
+    client: &tokio_postgres::Client,
+) {
+    let pack_name = emoji_store::list_packs(client, user_id)
+        .await
+        .ok()
+        .and_then(|packs| packs.into_iter().find(|p| p.id == pack_id).map(|p| p.name))
+        .unwrap_or_else(|| pack_id.to_string());
+    let mut added = 0;
+    for emoji in collected {
+        let smart = match emoji_store::allocate_smart_name(client, user_id, &emoji.fallback).await {
+            Ok(s) => s,
+            Err(e) => { eprintln!("allocate_smart_name failed: {e}"); continue; }
+        };
+        if let Err(e) = emoji_store::add_item(client, user_id, pack_id, &emoji.custom_emoji_id, &emoji.fallback, &smart).await {
+            eprintln!("add_item failed: {e}");
+            continue;
+        }
+        added += 1;
+    }
+    let _ = api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(tf("emoji.added_summary", &[("count", &added.to_string()), ("pack", &pack_name)]))
+            .reply_markup(ReplyMarkup::ReplyKeyboardRemove(
+                ReplyKeyboardRemove::builder().remove_keyboard(true).build(),
+            ))
+            .build(),
+    ).await;
+    let _ = api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(emoji_panel::main_panel_text())
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(
+                emoji_panel::main_panel_keyboard(),
+            ))
+            .build(),
+    ).await;
 }
 
 async fn handle_emoji_flow_message(
@@ -715,7 +774,17 @@ async fn handle_emoji_flow_message(
             }
             collected.append(&mut new_emojis);
             let text = emoji_panel::format_pending_emojis(&collected, &duplicates);
-            let _ = send_text_md(api, chat_id, &text).await;
+            let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(text)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(
+                        emoji_panel::pack_choice_keyboard(&packs),
+                    ))
+                    .build(),
+            ).await;
             flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
             true
         }
@@ -740,7 +809,17 @@ async fn handle_emoji_flow_message(
                 }
                 collected.extend(extras);
                 let summary = emoji_panel::format_pending_emojis(&collected, &duplicates);
-                let _ = send_text_md(api, chat_id, &summary).await;
+                let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
+                let _ = api.send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(summary)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(
+                            emoji_panel::pack_choice_keyboard(&packs),
+                        ))
+                        .build(),
+                ).await;
                 flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
                 return true;
             }
@@ -752,7 +831,17 @@ async fn handle_emoji_flow_message(
                     return true;
                 }
                 let summary = emoji_panel::format_pending_emojis(&collected, &[]);
-                let _ = send_text_md(api, chat_id, &summary).await;
+                let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
+                let _ = api.send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(summary)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(
+                            emoji_panel::pack_choice_keyboard(&packs),
+                        ))
+                        .build(),
+                ).await;
                 flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
                 return true;
             }
