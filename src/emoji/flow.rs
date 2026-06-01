@@ -20,6 +20,8 @@ pub enum FlowState {
         pack_id: i32,
     },
     AwaitingTestText,
+    AwaitingImportFile,
+    AwaitingImportMode { sql: String },
 }
 
 #[derive(Debug, Default)]

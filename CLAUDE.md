@@ -35,6 +35,55 @@ Rules:
   logs) stay hardcoded — i18n is for end-user text only.
 - The file is currently single-language (Farsi). Structure is nested JSON.
 
+## Emoji Template System
+
+`{key}` placeholders in any text are expanded at send time using the global
+emoji cache (loaded from `ADMIN_USER_ID`'s DB). Each `{key}` is replaced with
+a randomly chosen emoji from the matching group.
+
+### Key matching rules (checked in order)
+
+1. **Exact smart_name** — `{fire1}` matches only the item named `fire1`
+2. **Prefix group** — `{fire}` matches all items whose smart_name starts with
+   `fire` followed by digits (e.g. `fire1`, `fire2`, `fire3`)
+3. **Alias group** — `{boss}` matches all items with alias `boss`
+
+One entry is picked at random from the group on every render.
+
+### Where expansion happens
+
+- **Test flow (MarkdownV2 — `/emoji` → Test)**: `{key}` → `![fb](tg://emoji?id=ID)`
+- **All plain-text `send_text()` calls** (including i18n strings): `{key}` →
+  fallback char + `CustomEmoji` `MessageEntity` at the correct UTF-16 offset,
+  merged with the existing UI-emoji entities
+- **i18n.json strings** can contain `{key}` — expansion is automatic when
+  the string is sent via `send_text()`
+
+### Cache lifecycle
+
+- Loaded at startup from `ADMIN_USER_ID`'s `emoji_items` rows
+- Refreshed in background every 5 minutes (opens its own DB connection)
+- If `ADMIN_USER_ID` is not set, cache stays empty and `{key}` is left as-is
+- Implementation: `src/emoji/cache.rs`, global `CACHE: OnceLock<Arc<RwLock<EmojiCache>>>`
+
+## Premium Emoji System
+
+All UI emoji are premium custom emoji managed via `i18n.json`.
+
+### How it works
+
+- **IDs**: stored in `emoji.panel.icons.*` in `i18n.json` (24 emoji, e.g. `"cancel": "5215204871422093648"`)
+- **Inline keyboard buttons**: use `icon_custom_emoji_id` field on `InlineKeyboardButton` — handled automatically by `btn_icon()` in `src/emoji/panel.rs`
+- **Reply keyboard buttons**: use `icon_custom_emoji_id` field on `KeyboardButton` struct literal (bon typestate issue prevents builder use)
+- **Plain text messages**: `entities_for_text(text)` in `src/i18n.rs` scans the text for known emoji chars, looks up their premium IDs, and returns `Vec<MessageEntity>` — called automatically by `send_text()` in `src/bot.rs`
+- **MarkdownV2 messages** (list page, pending emojis): entities are NOT added — they contain `tg://emoji` inline images that would conflict
+
+### Adding a new premium emoji
+
+1. Add `"key": "ID"` to `emoji.panel.icons` in `i18n.json`
+2. Add `("🔥", "key")` to `EMOJI_MAP` in `src/i18n.rs` (longer/variation-selector forms first)
+3. Use `btn_icon(text, CB_FOO, "key")` for inline buttons, or just put the emoji char in any text message — `send_text()` handles the rest automatically
+
 ## Project Summary
 
 This project is a Rust Telegram bot named `ros-telegram-bot`.
@@ -50,6 +99,7 @@ The bot currently supports:
 - Optional PostgreSQL persistence for Cookie Pool state
 - systemd deployment through `abc.service`
 - Local bare Git server under `git-server/ros-telegram-bot.git`
+- Full emoji management panel (`/emoji`)
 
 Secrets are not tracked. `.env`, `target/`, and `git-server/` are ignored.
 
@@ -114,6 +164,15 @@ Optional PostgreSQL:
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/ros_telegram_bot
 ```
 
+Optional emoji cache (requires `DATABASE_URL`):
+
+```text
+ADMIN_USER_ID=123456789
+```
+
+If set, the emoji cache loads from this user's DB at startup and refreshes
+every 5 minutes. Required for `{key}` template expansion (see below).
+
 If `DATABASE_URL` is missing, Cookie Pool state stays in memory only.
 
 ## Telegram Commands
@@ -126,26 +185,29 @@ Sends a message with an inline green button. Pressing the button replies with
 `سلام`.
 
 ```text
+/emoji
+```
+
+Opens the emoji management panel. Clears any active flow for the user.
+
+```text
+/se [id_or_name] [alias]
+```
+
+Sets an alias on an emoji item. Example: `/se 5 boss` or `/se sparkle1 star`.
+Use `-` as alias to remove it.
+
+```text
 /cookie_status
 ```
 
-Shows Cookie Pool state:
-
-- `available_cookies`
-- `selectable_cookies`
-- `cooldown_list`
-- `last_used_cookie`
-- `next_available_in`
+Shows Cookie Pool state.
 
 ```text
 /cookie_next
 ```
 
-Selects the next Firefox cookie profile and returns the `yt-dlp` browser spec:
-
-```bash
-yt-dlp --cookies-from-browser 'firefox:/path/to/profile'
-```
+Selects the next Firefox cookie profile and returns the `yt-dlp` browser spec.
 
 ```text
 /cookie_429
@@ -154,121 +216,106 @@ yt-dlp --cookies-from-browser 'firefox:/path/to/profile'
 Marks the last selected cookie as rate-limited and moves it to a 20-hour
 cooldown.
 
-## Cookie Pool Rules
+## Emoji Panel
 
-Implemented in:
+Implemented across:
 
 ```text
-src/cookie_pool.rs
+src/emoji/mod.rs
+src/emoji/flow.rs       — FlowManager, FlowState, PendingEmoji
+src/emoji/handler.rs    — all callback + message handlers
+src/emoji/panel.rs      — keyboard builders, text formatters, CB_* constants
+src/emoji/store.rs      — all DB queries
+src/emoji/smart_name.rs — unicode → ASCII smart name
+src/emoji/import.rs     — SQL parse, analyze, execute import modes
 ```
 
-Rules:
+### Flow States
 
-- Initial pool is discovered from Firefox profiles under:
+| State | Trigger | Exit |
+|-------|---------|------|
+| `AwaitingEmojis` | CB_ADD | cancel button or pack chosen |
+| `AwaitingPackChoice` | emojis collected | pack name typed or inline button |
+| `AwaitingPackAlias` | set alias button | any text |
+| `AwaitingTestText` | CB_TEST | cancel button or `/emoji` |
+| `AwaitingImportFile` | CB_IMPORT | cancel button or document sent |
+| `AwaitingImportMode` | file analyzed | import mode button pressed |
 
-```text
-/home/mahdi/.mozilla/firefox
+### Callback Prefixes
+
+All emoji callbacks start with `emoji:`. Defined as `CB_*` constants in
+`src/emoji/panel.rs`.
+
+### Emoji List Format
+
+```
+• ![fallback](tg://emoji?id=ID) fallback = numeric_id | smart_name | alias
 ```
 
-- Maximum pool size is 20.
-- Selection excludes cookies currently in cooldown.
-- Selection excludes `last_used_cookie`.
-- Selection is random from the remaining pool.
-- If no cookie is selectable, the bot reports that the pool is empty and shows
-  the next cooldown expiration time.
-- A cookie enters cooldown only after `/cookie_429`.
-- Cooldown duration is 20 hours.
+Premium emoji comes first, then static fallback.
 
-Important state:
+### Export / Import
 
-```text
-available_cookies
-last_used_cookie
-cooldown_list
-```
+- **Export**: generates `emoji_{jalali-date}_{HH-MM}.sql` with `CREATE TABLE IF NOT EXISTS` + `INSERT` for the current user only. Sent as a Telegram document.
+- **Import**: user sends the SQL file. Bot parses and analyzes it, shows a report with counts and duplicates, then offers:
+  - **جایگزین** — delete all current data, insert from file
+  - **ادغام** — append to existing data, IDs continue
+  - **ادغام هوشمند** — append, skip duplicate `custom_emoji_id`s
+  - If DB is empty, only a single confirm button is shown.
 
-## PostgreSQL Storage
+### ID Sequence Reset
 
-Database code lives under the requested path:
+When a user deletes their last pack, both `emoji_packs_id_seq` and
+`emoji_items_id_seq` are reset to 1 so the next pack starts from id=1.
+
+## Source Layout
 
 ```text
-src/database/posfreSQL/postgresql.rs
-src/database/posfreSQL/schema.sql
-```
-
-Rust module bridge:
-
-```text
+src/main.rs                          — event loop + routing (~160 lines)
+src/config.rs                        — BOT_TOKEN / DATABASE_URL / ADMIN_USER_ID reading
+src/bot.rs                           — send_text, send_text_md, send_start_button
+src/cookie_pool.rs                   — CookiePool + format helpers + save_snapshot
+src/youtube.rs                       — yt-dlp fetch + handle_youtube_url
+src/i18n.rs                          — t() / tf() / entities_for_text() helpers, reads i18n.json
 src/database/mod.rs
+src/database/posfreSQL/postgresql.rs — PostgreSQL connection + cookie pool tables
+src/database/posfreSQL/schema.sql    — CREATE TABLE statements
+src/emoji/mod.rs
+src/emoji/cache.rs                   — EmojiCache, {key} expansion, 5-min refresh task
+src/emoji/flow.rs
+src/emoji/handler.rs
+src/emoji/panel.rs
+src/emoji/store.rs
+src/emoji/smart_name.rs
+src/emoji/import.rs
 ```
 
-Stored tables:
+## PostgreSQL Tables
 
+Cookie pool:
 - `cookie_pool_cookies`
 - `cookie_pool_state`
 - `cookie_pool_cooldowns`
 
-The database layer stores:
+Emoji:
+- `emoji_packs` (id SERIAL, owner_user_id, name, alias, is_default, item_count)
+- `emoji_items` (id SERIAL, pack_id, owner_user_id, custom_emoji_id, fallback, smart_name, alias, position)
 
-- discovered Firefox cookie profiles
-- last used cookie id
-- cooldown entries and expiration epochs
+Schema is created automatically at startup when `DATABASE_URL` is set.
 
-The schema is created automatically at startup when `DATABASE_URL` is set.
+## Cookie Pool Rules
+
+Implemented in `src/cookie_pool.rs`.
+
+- Pool discovered from Firefox profiles under `/home/mahdi/.mozilla/firefox`
+- Maximum pool size: 20
+- Selection excludes cookies in cooldown and `last_used_cookie`
+- Selection is random from remaining pool
+- Cooldown duration: 20 hours, triggered only by `/cookie_429`
 
 ## Git Server
 
-A local bare Git repository was created as a simple Git server:
-
-```text
-git-server/ros-telegram-bot.git
-```
-
-Remote:
-
 ```text
 origin -> git-server/ros-telegram-bot.git
+branch: master
 ```
-
-Current branch:
-
-```text
-master
-```
-
-Commits were made chunk by chunk with explanatory commit bodies:
-
-```text
-dccc92c chore: add project config and deployment docs
-a9dd547 feat: add firefox cookie pool manager
-fb0f75f feat: add postgresql cookie pool storage
-490ace4 feat: wire cookie pool into telegram bot
-```
-
-## What Is Still Needed For A Full YouTube Downloader Bot
-
-The project does not yet execute `yt-dlp` downloads. The Cookie Pool and
-database support are ready, but the downloader workflow still needs:
-
-- `/dl <youtube-url>` command
-- YouTube URL validation
-- `yt-dlp` process execution
-- output directory management
-- file size checks for Telegram sending
-- automatic 429 detection from `yt-dlp` output
-- retry with the next cookie when 429 happens
-- queueing so multiple downloads do not corrupt Cookie Pool state
-- cleanup of old downloaded files
-
-## Verification Done
-
-Verified:
-
-```bash
-cargo build
-systemctl restart abc
-systemctl status abc --no-pager
-```
-
-The service was active after restart and loaded 15 Firefox profiles into the
-Cookie Pool.
