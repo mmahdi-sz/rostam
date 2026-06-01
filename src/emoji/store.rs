@@ -176,6 +176,18 @@ pub async fn delete_pack(
             set_default_pack(client, owner, next_id).await?;
         }
     }
+
+    let no_packs = client
+        .query_one("SELECT COUNT(*) FROM emoji_packs WHERE owner_user_id = $1", &[&owner])
+        .await
+        .map(|r| r.get::<_, i64>(0) == 0)
+        .unwrap_or(false);
+
+    if no_packs {
+        let _ = client.execute("ALTER SEQUENCE emoji_packs_id_seq RESTART WITH 1", &[]).await;
+        let _ = client.execute("ALTER SEQUENCE emoji_items_id_seq RESTART WITH 1", &[]).await;
+    }
+
     Ok(())
 }
 
