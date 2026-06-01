@@ -1,0 +1,81 @@
+{
+  "start": {
+    "prompt": "روی دکمه بزن:",
+    "button": "نمایش سلام",
+    "hello": "سلام"
+  },
+  "cookie": {
+    "status_header": "Cookie Pool",
+    "status_line_available": "available_cookies: {available}",
+    "status_line_selectable": "selectable_cookies: {selectable}",
+    "status_line_cooldown": "cooldown_list: {cooldown}",
+    "status_line_last_used": "last_used_cookie: {last_used}",
+    "status_line_next_available": "next_available_in: {wait}",
+    "selected": "selected_cookie: {id}\nprofile: {profile}\ncookies_file: {file}\nyt-dlp:\nyt-dlp --cookies-from-browser '{spec}'",
+    "none_available": "کوکی قابل استفاده موجود نیست. باید حدود {wait} صبر کرد.",
+    "marked_429": "آخرین کوکی انتخاب‌شده وارد cooldown بیست ساعته شد.",
+    "already_cooldown": "آخرین کوکی از قبل داخل cooldown است یا cooldown پر شده.",
+    "no_selection_yet": "هنوز هیچ کوکی‌ای انتخاب نشده است."
+  },
+  "emoji": {
+    "panel": {
+      "title": "🎨 پنل مدیریت ایموجی\nبخش مورد نظر رو انتخاب کن:",
+      "add": "افزودن ایموجی +",
+      "test": "تست ✏️",
+      "list": "لیست 📋",
+      "delete_pack": "حذف دسته 🗑️",
+      "packs": "مجموعه‌ها 📁",
+      "import": "ورودی 📥",
+      "export": "خروجی 📦",
+      "back": "برگشت 🔙",
+      "set_alias": "تنظیم لقب ✏️",
+      "set_default": "تنظیم پیش‌فرض ⭐",
+      "back_to_list": "بازگشت به لیست 🔙",
+      "prev": "⬅️ قبلی",
+      "next": "بعدی ➡️"
+    },
+    "pack_detail": "مدیریت مجموعه 📁\n\nشناسه: {id}\nنام: {name}\nلقب: {alias}\nتعداد: {count}\nپیش‌فرض: {default}",
+    "pending": {
+      "title": "📋 ایموجی‌های انتخاب شده:",
+      "ready": "✅ {count} ایموجی آماده افزودن",
+      "choose_pack": "📂 به کدوم دسته اضافه بشه؟\n💡 می‌تونی اسم دسته جدید بنویسی\n✂️ ویرایش لیست:\n  ➕ با + فقط همون شماره‌ها نگه داشته می‌شن (وایت‌لیست). مثلاً «+2 +8» یعنی فقط ۲ و ۸ بمونن.\n  ➖ با - همون شماره‌ها حذف می‌شن (بلک‌لیست). مثلاً «-2 -8» یعنی ۲ و ۸ پاک بشن.\n  ⚠️ نمی‌تونی + و - رو با هم توی یک پیام بفرستی.",
+      "mixed_ops": "⚠️ نمی‌تونی + و - رو همزمان توی یک پیام بفرستی. یا فقط + (وایت‌لیست) یا فقط - (بلک‌لیست).",
+      "some_duplicate": "ℹ️ ایموجی‌های {emojis} تکراری بودند و در لیست نیومدند.",
+      "all_duplicate": "⚠️ همه‌ی ایموجی‌های {emojis} از قبل توی دیتابیس ذخیره‌اند. چیزی به لیست اضافه نشد."
+    },
+    "add_prompt": "🎨 افزودن ایموجی\n\nلطفاً Custom Emoji‌هایی که می‌خوای اضافه کنی رو بفرست:\n\n💡 می‌تونی چند ایموجی با هم بفرستی\n💡 می‌تونی پیام با مدیا (عکس/ویدیو) هم بفرستی",
+    "no_emoji_found": "هیچ Custom Emoji ای توی پیامت پیدا نشد. دوباره امتحان کن.",
+    "added_summary": "✅ {count} ایموجی به دسته «{pack}» اضافه شد.",
+    "no_packs": "هنوز هیچ مجموعه‌ای ساخته نشده.",
+    "list_header": "🎨 لیست ایموجی‌های پریمیوم\n\n💡 حالت: نام هوشمند و مدیریت\nفرمت: ایموجی پایه = شناسه عددی | نام هوشمند | لقب\n",
+    "list": {
+      "pack_header": "📂 {name}:"
+    },
+    "list_footer": "\n📊 مجموع: {total}\n\n💡 طریقه استفاده:\n/se [شناسه] [لقب]\n\n💡 مثال:\n/se 5 boss\nیا\n/se fire1 boss",
+    "list_page_footer": "\n📄 صفحه {page} از {pages}  •  📊 مجموع: {total}\n\n💡 /se [شناسه] [لقب]   مثال: /se 5 boss",
+    "test_prompt": "✏️ تست\n\nمتن مورد نظرت رو با سینتکس {key} بفرست تا با ایموجی‌ها رندر بشه.",
+    "pack_alias_prompt": "✏️ لقب جدید برای این مجموعه رو بفرست (یا - برای حذف لقب).",
+    "pack_alias_set": "✅ لقب مجموعه ذخیره شد.",
+    "pack_deleted": "🗑️ مجموعه «{name}» حذف شد.",
+    "default_set": "⭐ مجموعه «{name}» به عنوان پیش‌فرض تنظیم شد.",
+    "se_usage": "استفاده:\n/se [شناسه‌یا‌نام] [لقب]\nمثال: /se 5 boss",
+    "se_done": "✅ لقب «{alias}» برای ایموجی ذخیره شد.",
+    "se_not_found": "ایموجی با این شناسه/نام پیدا نشد.",
+    "db_required": "این بخش به دیتابیس نیاز داره — DATABASE_URL باید ست شده باشه.",
+    "canceled": "❌ لغو شد.",
+    "cancel_button": "❌ لغو عملیات"
+  },
+  "youtube": {
+    "fetch_failed": "دریافت اطلاعات ویدیو ناموفق بود: {error}",
+    "send_photo_failed": "ارسال تامبنیل ناموفق بود: {error}",
+    "caption": {
+      "channel_label": "کانال:",
+      "duration_label": "مدت:",
+      "views_label": "بازدید:",
+      "likes_label": "لایک:",
+      "date_label": "تاریخ:",
+      "link_text": "لینک",
+      "missing": "-"
+    }
+  }
+}

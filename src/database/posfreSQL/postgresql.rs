@@ -26,6 +26,10 @@ impl PostgresDatabase {
         Ok(database)
     }
 
+    pub fn client(&self) -> &Client {
+        &self.client
+    }
+
     pub async fn save_snapshot(
         &self,
         snapshot: &CookiePoolSnapshot,
