@@ -1,0 +1,699 @@
+use std::{collections::HashSet, fs};
+use chrono::{Datelike, Timelike, TimeZone};
+use chrono_tz::Asia::Tehran;
+use frankenstein::{
+    AsyncTelegramApi, ParseMode,
+    client_reqwest::Bot,
+    input_file::{FileUpload, InputFile},
+    methods::{
+        AnswerCallbackQueryParams, EditMessageTextParams, SendDocumentParams, SendMessageParams,
+    },
+    types::{
+        InlineKeyboardMarkup, MaybeInaccessibleMessage, Message, MessageEntity,
+        MessageEntityType, ReplyMarkup, ReplyKeyboardRemove,
+    },
+};
+
+use crate::bot::{send_text, send_text_md};
+use crate::database::postgresql::PostgresDatabase;
+use crate::i18n::{t, tf};
+use super::{
+    FlowManager, FlowState, PendingEmoji,
+    panel::{self as emoji_panel, CB_ADD, CB_BACK, CB_CANCEL, CB_DELETE_PACK_MENU, CB_EXPORT,
+            CB_IMPORT, CB_LIST, CB_PACKS, CB_PACK_DELETE_PREFIX, CB_PACK_OPEN_PREFIX,
+            CB_PICK_PACK_PREFIX, CB_PACK_SET_ALIAS_PREFIX, CB_PACK_SET_DEFAULT_PREFIX, CB_TEST},
+    store as emoji_store,
+};
+
+pub async fn handle_emoji_command(
+    api: &Bot,
+    message: &Message,
+    flow_manager: &mut FlowManager,
+    database: &Option<PostgresDatabase>,
+) {
+    let chat_id = message.chat.id;
+    let user_id = match message.from.as_ref() {
+        Some(u) => u.id as i64,
+        None => return,
+    };
+    flow_manager.clear(user_id);
+    if database.is_none() {
+        let _ = send_text(api, chat_id, &t("emoji.db_required")).await;
+        return;
+    }
+    let _ = api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(emoji_panel::main_panel_text())
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))
+            .build(),
+    ).await;
+}
+
+pub async fn handle_emoji_callback(
+    api: &Bot,
+    cbq: &frankenstein::types::CallbackQuery,
+    flow_manager: &mut FlowManager,
+    database: &Option<PostgresDatabase>,
+) {
+    let _ = api
+        .answer_callback_query(
+            &AnswerCallbackQueryParams::builder()
+                .callback_query_id(&cbq.id)
+                .build(),
+        )
+        .await;
+
+    let Some(data) = cbq.data.as_deref() else { return };
+    let Some(MaybeInaccessibleMessage::Message(panel_msg)) = cbq.message.clone() else { return };
+    let chat_id = panel_msg.chat.id;
+    let message_id = panel_msg.message_id;
+    let user_id = cbq.from.id as i64;
+    let Some(db) = database else {
+        let _ = send_text(api, chat_id, &t("emoji.db_required")).await;
+        return;
+    };
+    let client = db.client();
+
+    match data {
+        d if d == CB_ADD => {
+            flow_manager.set(user_id, FlowState::AwaitingEmojis { collected: Vec::new() });
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(t("emoji.add_prompt"))
+                    .reply_markup(ReplyMarkup::ReplyKeyboardMarkup(emoji_panel::cancel_reply_keyboard()))
+                    .build(),
+            ).await;
+        }
+        d if d == CB_TEST => {
+            flow_manager.set(user_id, FlowState::AwaitingTestText);
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(t("emoji.test_prompt"))
+                    .reply_markup(ReplyMarkup::ReplyKeyboardMarkup(emoji_panel::cancel_reply_keyboard()))
+                    .build(),
+            ).await;
+        }
+        d if d == CB_LIST => {
+            send_emoji_list(api, chat_id, user_id, client).await;
+        }
+        d if d == CB_PACKS || d == CB_DELETE_PACK_MENU => {
+            show_packs_menu(api, chat_id, message_id, user_id, client).await;
+        }
+        d if d == CB_IMPORT => {
+            let _ = send_text(api, chat_id, "🚧 به‌زودی").await;
+        }
+        d if d == CB_EXPORT => {
+            match emoji_store::export_user_sql(client, user_id).await {
+                Err(e) => {
+                    eprintln!("export_user_sql failed: {e}");
+                    let _ = send_text(api, chat_id, &t("emoji.export_failed")).await;
+                }
+                Ok(sql) => {
+                    let now = chrono::Utc::now().with_timezone(&Tehran);
+                    let (jy, jm, jd) = gregorian_to_jalali(now.year(), now.month() as u32, now.day());
+                    let filename = format!(
+                        "emoji_{:04}-{:02}-{:02}_{:02}-{:02}.sql",
+                        jy, jm, jd, now.hour(), now.minute(),
+                    );
+                    let path = std::env::temp_dir().join(&filename);
+                    if let Err(e) = fs::write(&path, &sql) {
+                        eprintln!("write export file failed: {e}");
+                        let _ = send_text(api, chat_id, &t("emoji.export_failed")).await;
+                    } else {
+                        let _ = api.send_document(
+                            &SendDocumentParams::builder()
+                                .chat_id(chat_id)
+                                .document(FileUpload::InputFile(InputFile { path: path.clone() }))
+                                .caption(t("emoji.export_caption"))
+                                .build(),
+                        ).await;
+                        let _ = fs::remove_file(&path);
+                    }
+                }
+            }
+        }
+        d if d == CB_BACK || d == CB_CANCEL => {
+            flow_manager.clear(user_id);
+            edit_panel(api, chat_id, message_id, &emoji_panel::main_panel_text(), Some(emoji_panel::main_panel_keyboard())).await;
+        }
+        d if d.starts_with(emoji_panel::CB_LIST_PAGE_PREFIX) => {
+            if let Some(page) = d
+                .strip_prefix(emoji_panel::CB_LIST_PAGE_PREFIX)
+                .and_then(|s| s.parse::<usize>().ok())
+            {
+                edit_emoji_list_page(api, chat_id, message_id, user_id, client, page).await;
+            }
+        }
+        d if d.starts_with(CB_PACK_OPEN_PREFIX) => {
+            if let Some(pack_id) = d.strip_prefix(CB_PACK_OPEN_PREFIX).and_then(|s| s.parse::<i32>().ok()) {
+                show_pack_detail(api, chat_id, message_id, user_id, pack_id, client).await;
+            }
+        }
+        d if d.starts_with(CB_PACK_SET_DEFAULT_PREFIX) => {
+            if let Some(pack_id) = d.strip_prefix(CB_PACK_SET_DEFAULT_PREFIX).and_then(|s| s.parse::<i32>().ok()) {
+                if let Err(e) = emoji_store::set_default_pack(client, user_id, pack_id).await {
+                    eprintln!("set_default_pack failed: {e}");
+                }
+                show_pack_detail(api, chat_id, message_id, user_id, pack_id, client).await;
+            }
+        }
+        d if d.starts_with(CB_PACK_SET_ALIAS_PREFIX) => {
+            if let Some(pack_id) = d.strip_prefix(CB_PACK_SET_ALIAS_PREFIX).and_then(|s| s.parse::<i32>().ok()) {
+                flow_manager.set(user_id, FlowState::AwaitingPackAlias { pack_id });
+                let _ = send_text(api, chat_id, &t("emoji.pack_alias_prompt")).await;
+            }
+        }
+        d if d.starts_with(CB_PACK_DELETE_PREFIX) => {
+            if let Some(pack_id) = d.strip_prefix(CB_PACK_DELETE_PREFIX).and_then(|s| s.parse::<i32>().ok()) {
+                let name = emoji_store::list_packs(client, user_id)
+                    .await
+                    .ok()
+                    .and_then(|packs| packs.into_iter().find(|p| p.id == pack_id))
+                    .map(|p| p.name)
+                    .unwrap_or_default();
+                if let Err(e) = emoji_store::delete_pack(client, user_id, pack_id).await {
+                    eprintln!("delete_pack failed: {e}");
+                }
+                let _ = send_text(api, chat_id, &tf("emoji.pack_deleted", &[("name", &name)])).await;
+                let _ = api.send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(emoji_panel::main_panel_text())
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))
+                        .build(),
+                ).await;
+            }
+        }
+        d if d.starts_with(CB_PICK_PACK_PREFIX) => {
+            if let Some(pack_id) = d.strip_prefix(CB_PICK_PACK_PREFIX).and_then(|s| s.parse::<i32>().ok()) {
+                if let FlowState::AwaitingPackChoice { collected } = flow_manager.get(user_id) {
+                    let collected = collected.clone();
+                    flow_manager.clear(user_id);
+                    add_emojis_to_pack(api, chat_id, &collected, pack_id, user_id, client).await;
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+pub async fn handle_emoji_flow_message(
+    api: &Bot,
+    message: &Message,
+    user_id: i64,
+    flow_manager: &mut FlowManager,
+    database: &Option<PostgresDatabase>,
+) -> bool {
+    let chat_id = message.chat.id;
+    let Some(db) = database else { return false };
+    let client = db.client();
+    let state = flow_manager.get(user_id);
+
+    match state {
+        FlowState::Idle => false,
+        FlowState::AwaitingEmojis { mut collected } => {
+            let msg_text = message.text.as_deref().unwrap_or("").trim();
+            if msg_text == t("emoji.cancel_button") {
+                flow_manager.clear(user_id);
+                send_cancel_and_panel(api, chat_id).await;
+                return true;
+            }
+            let mut new_emojis = extract_custom_emojis(message);
+            if new_emojis.is_empty() && collected.is_empty() {
+                let _ = send_text(api, chat_id, &t("emoji.no_emoji_found")).await;
+                return true;
+            }
+            let incoming_count = new_emojis.len();
+            let duplicates = filter_duplicates(client, user_id, &mut new_emojis, &collected).await;
+            if incoming_count > 0 && new_emojis.is_empty() && collected.is_empty() {
+                let _ = send_all_duplicate_message(api, chat_id, &duplicates).await;
+                flow_manager.set(user_id, FlowState::AwaitingEmojis { collected });
+                return true;
+            }
+            collected.append(&mut new_emojis);
+            let text = emoji_panel::format_pending_emojis(&collected, &duplicates);
+            let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(text)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs)))
+                    .build(),
+            ).await;
+            flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
+            true
+        }
+        FlowState::AwaitingPackChoice { mut collected } => {
+            let text = message.text.as_deref().unwrap_or("").trim();
+            if text == t("emoji.cancel_button") {
+                flow_manager.clear(user_id);
+                send_cancel_and_panel(api, chat_id).await;
+                return true;
+            }
+            let mut extras = extract_custom_emojis(message);
+            if !extras.is_empty() {
+                let incoming = extras.len();
+                let duplicates = filter_duplicates(client, user_id, &mut extras, &collected).await;
+                if incoming > 0 && extras.is_empty() {
+                    let _ = send_all_duplicate_message(api, chat_id, &duplicates).await;
+                    flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
+                    return true;
+                }
+                collected.extend(extras);
+                let summary = emoji_panel::format_pending_emojis(&collected, &duplicates);
+                let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
+                let _ = api.send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(summary)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs)))
+                        .build(),
+                ).await;
+                flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
+                return true;
+            }
+            if text.starts_with('-') || text.starts_with('+') {
+                if apply_edit_ops(&mut collected, text).is_err() {
+                    let _ = send_text(api, chat_id, &t("emoji.pending.mixed_ops")).await;
+                    flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
+                    return true;
+                }
+                let summary = emoji_panel::format_pending_emojis(&collected, &[]);
+                let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
+                let _ = api.send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(summary)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs)))
+                        .build(),
+                ).await;
+                flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
+                return true;
+            }
+            if text.is_empty() {
+                return true;
+            }
+            let pack = match emoji_store::find_pack_by_name(client, user_id, text).await {
+                Ok(Some(p)) => p,
+                Ok(None) => match emoji_store::create_pack(client, user_id, text).await {
+                    Ok(p) => p,
+                    Err(e) => { eprintln!("create_pack failed: {e}"); flow_manager.clear(user_id); return true; }
+                },
+                Err(e) => { eprintln!("find_pack_by_name failed: {e}"); flow_manager.clear(user_id); return true; }
+            };
+            let mut added = 0;
+            for emoji in &collected {
+                let smart = match emoji_store::allocate_smart_name(client, user_id, &emoji.fallback).await {
+                    Ok(s) => s,
+                    Err(e) => { eprintln!("allocate_smart_name failed: {e}"); continue; }
+                };
+                if let Err(e) = emoji_store::add_item(client, user_id, pack.id, &emoji.custom_emoji_id, &emoji.fallback, &smart).await {
+                    eprintln!("add_item failed: {e}"); continue;
+                }
+                added += 1;
+            }
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(tf("emoji.added_summary", &[("count", &added.to_string()), ("pack", &pack.name)]))
+                    .reply_markup(ReplyMarkup::ReplyKeyboardRemove(ReplyKeyboardRemove::builder().remove_keyboard(true).build()))
+                    .build(),
+            ).await;
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(emoji_panel::main_panel_text())
+                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))
+                    .build(),
+            ).await;
+            flow_manager.clear(user_id);
+            true
+        }
+        FlowState::AwaitingPackAlias { pack_id } => {
+            let text = message.text.as_deref().unwrap_or("").trim();
+            let alias = if text == "-" || text.is_empty() { None } else { Some(text) };
+            if let Err(e) = emoji_store::set_pack_alias(client, user_id, pack_id, alias).await {
+                eprintln!("set_pack_alias failed: {e}");
+            }
+            let _ = send_text(api, chat_id, &t("emoji.pack_alias_set")).await;
+            flow_manager.clear(user_id);
+            true
+        }
+        FlowState::AwaitingTestText => {
+            let text = message.text.as_deref().unwrap_or("").trim();
+            if text == t("emoji.cancel_button") {
+                flow_manager.clear(user_id);
+                send_cancel_and_panel(api, chat_id).await;
+                return true;
+            }
+            let rendered = match emoji_store::render_template(client, user_id, text).await {
+                Ok(r) => r,
+                Err(e) => { eprintln!("render_template failed: {e}"); text.to_string() }
+            };
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(rendered)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .build(),
+            ).await;
+            true
+        }
+    }
+}
+
+pub async fn handle_se_command(
+    api: &Bot,
+    message: &Message,
+    rest: &str,
+    database: &Option<PostgresDatabase>,
+) {
+    let chat_id = message.chat.id;
+    let Some(user) = message.from.as_ref() else { return };
+    let user_id = user.id as i64;
+    let mut parts = rest.split_whitespace();
+    let selector = parts.next();
+    let alias = parts.next();
+    let (Some(selector), Some(alias)) = (selector, alias) else {
+        let _ = send_text(api, chat_id, &t("emoji.se_usage")).await;
+        return;
+    };
+    let Some(db) = database else {
+        let _ = send_text(api, chat_id, &t("emoji.db_required")).await;
+        return;
+    };
+    let client = db.client();
+    let alias_value = if alias == "-" { None } else { Some(alias) };
+    match emoji_store::set_item_alias(client, user_id, selector, alias_value).await {
+        Ok(true) => { let _ = send_text(api, chat_id, &tf("emoji.se_done", &[("alias", alias)])).await; }
+        Ok(false) => { let _ = send_text(api, chat_id, &t("emoji.se_not_found")).await; }
+        Err(e) => { eprintln!("set_item_alias failed: {e}"); }
+    }
+}
+
+async fn send_cancel_and_panel(api: &Bot, chat_id: i64) {
+    let _ = api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(t("emoji.canceled"))
+            .reply_markup(ReplyMarkup::ReplyKeyboardRemove(ReplyKeyboardRemove::builder().remove_keyboard(true).build()))
+            .build(),
+    ).await;
+    let _ = api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(emoji_panel::main_panel_text())
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))
+            .build(),
+    ).await;
+}
+
+async fn add_emojis_to_pack(
+    api: &Bot,
+    chat_id: i64,
+    collected: &[PendingEmoji],
+    pack_id: i32,
+    user_id: i64,
+    client: &tokio_postgres::Client,
+) {
+    let pack_name = emoji_store::list_packs(client, user_id)
+        .await
+        .ok()
+        .and_then(|packs| packs.into_iter().find(|p| p.id == pack_id).map(|p| p.name))
+        .unwrap_or_else(|| pack_id.to_string());
+    let mut added = 0;
+    for emoji in collected {
+        let smart = match emoji_store::allocate_smart_name(client, user_id, &emoji.fallback).await {
+            Ok(s) => s,
+            Err(e) => { eprintln!("allocate_smart_name failed: {e}"); continue; }
+        };
+        if let Err(e) = emoji_store::add_item(client, user_id, pack_id, &emoji.custom_emoji_id, &emoji.fallback, &smart).await {
+            eprintln!("add_item failed: {e}"); continue;
+        }
+        added += 1;
+    }
+    let _ = api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(tf("emoji.added_summary", &[("count", &added.to_string()), ("pack", &pack_name)]))
+            .reply_markup(ReplyMarkup::ReplyKeyboardRemove(ReplyKeyboardRemove::builder().remove_keyboard(true).build()))
+            .build(),
+    ).await;
+    let _ = api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(emoji_panel::main_panel_text())
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))
+            .build(),
+    ).await;
+}
+
+async fn send_emoji_list(api: &Bot, chat_id: i64, user_id: i64, client: &tokio_postgres::Client) {
+    let packs = match emoji_store::list_packs(client, user_id).await {
+        Ok(p) => p,
+        Err(e) => { eprintln!("list_packs failed: {e}"); return; }
+    };
+    if packs.is_empty() {
+        let _ = send_text(api, chat_id, &t("emoji.no_packs")).await;
+        return;
+    }
+    let mut packs_with_items = Vec::new();
+    for pack in packs {
+        let items = emoji_store::list_items(client, pack.id).await.unwrap_or_default();
+        packs_with_items.push((pack, items));
+    }
+    let (text, page, total_pages) = emoji_panel::build_list_page(&packs_with_items, 0);
+    let keyboard = emoji_panel::list_page_keyboard(page, total_pages);
+    let _ = api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(text)
+            .parse_mode(ParseMode::MarkdownV2)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard))
+            .build(),
+    ).await;
+}
+
+async fn edit_emoji_list_page(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    user_id: i64,
+    client: &tokio_postgres::Client,
+    page: usize,
+) {
+    let packs = match emoji_store::list_packs(client, user_id).await {
+        Ok(p) => p,
+        Err(e) => { eprintln!("list_packs failed: {e}"); return; }
+    };
+    let mut packs_with_items = Vec::new();
+    for pack in packs {
+        let items = emoji_store::list_items(client, pack.id).await.unwrap_or_default();
+        packs_with_items.push((pack, items));
+    }
+    let (text, page, total_pages) = emoji_panel::build_list_page(&packs_with_items, page);
+    let keyboard = emoji_panel::list_page_keyboard(page, total_pages);
+    let params = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(keyboard)
+        .build();
+    if let Err(e) = api.edit_message_text(&params).await {
+        eprintln!("edit_message_text failed: {e}");
+    }
+}
+
+async fn show_packs_menu(api: &Bot, chat_id: i64, message_id: i32, user_id: i64, client: &tokio_postgres::Client) {
+    let packs = match emoji_store::list_packs(client, user_id).await {
+        Ok(p) => p,
+        Err(e) => { eprintln!("list_packs failed: {e}"); return; }
+    };
+    if packs.is_empty() {
+        let _ = send_text(api, chat_id, &t("emoji.no_packs")).await;
+        return;
+    }
+    edit_panel(api, chat_id, message_id, "📁 مجموعه‌ها:", Some(emoji_panel::packs_keyboard(&packs))).await;
+}
+
+async fn show_pack_detail(api: &Bot, chat_id: i64, message_id: i32, user_id: i64, pack_id: i32, client: &tokio_postgres::Client) {
+    let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
+    let Some(pack) = packs.into_iter().find(|p| p.id == pack_id) else { return };
+    edit_panel(api, chat_id, message_id, &emoji_panel::pack_detail_text(&pack), Some(emoji_panel::pack_detail_keyboard(&pack))).await;
+}
+
+async fn edit_panel(api: &Bot, chat_id: i64, message_id: i32, text: &str, keyboard: Option<InlineKeyboardMarkup>) {
+    let builder = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(text);
+    let params = match keyboard {
+        Some(kb) => builder.reply_markup(kb).build(),
+        None => builder.build(),
+    };
+    if let Err(e) = api.edit_message_text(&params).await {
+        eprintln!("edit_message_text failed: {e}");
+    }
+}
+
+fn extract_custom_emojis(message: &Message) -> Vec<PendingEmoji> {
+    let mut out = Vec::new();
+    let text = message.text.as_deref().unwrap_or("");
+    if let Some(entities) = &message.entities {
+        for entity in entities {
+            push_custom_emoji(&mut out, text, entity);
+        }
+    }
+    let caption = message.caption.as_deref().unwrap_or("");
+    if let Some(entities) = &message.caption_entities {
+        for entity in entities {
+            push_custom_emoji(&mut out, caption, entity);
+        }
+    }
+    out
+}
+
+fn push_custom_emoji(out: &mut Vec<PendingEmoji>, text: &str, entity: &MessageEntity) {
+    if entity.type_field != MessageEntityType::CustomEmoji { return }
+    let Some(id) = entity.custom_emoji_id.as_deref() else { return };
+    let fallback = slice_utf16(text, entity.offset, entity.length);
+    if fallback.is_empty() { return }
+    out.push(PendingEmoji { custom_emoji_id: id.to_string(), fallback });
+}
+
+fn slice_utf16(text: &str, offset: u16, length: u16) -> String {
+    let utf16: Vec<u16> = text.encode_utf16().collect();
+    let start = offset as usize;
+    let end = (offset as usize + length as usize).min(utf16.len());
+    if start >= utf16.len() { return String::new() }
+    String::from_utf16_lossy(&utf16[start..end])
+}
+
+async fn send_all_duplicate_message(
+    api: &Bot,
+    chat_id: i64,
+    duplicates: &[PendingEmoji],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut rendered = String::new();
+    for d in duplicates {
+        rendered.push_str(&format!("![{}](tg://emoji?id={})", d.fallback, d.custom_emoji_id));
+    }
+    let prefix = crate::youtube::escape_markdown_v2("⚠️ همه‌ی ایموجی‌های ");
+    let suffix = crate::youtube::escape_markdown_v2(" از قبل توی دیتابیس ذخیره‌اند. چیزی به لیست اضافه نشد.");
+    send_text_md(api, chat_id, &format!("{prefix}{rendered}{suffix}")).await
+}
+
+async fn filter_duplicates(
+    client: &tokio_postgres::Client,
+    owner: i64,
+    incoming: &mut Vec<PendingEmoji>,
+    pending: &[PendingEmoji],
+) -> Vec<PendingEmoji> {
+    let ids: Vec<String> = incoming.iter().map(|e| e.custom_emoji_id.clone()).collect();
+    let db_dupes: HashSet<String> = emoji_store::existing_custom_emoji_ids(client, owner, &ids)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    let pending_ids: HashSet<&str> = pending.iter().map(|e| e.custom_emoji_id.as_str()).collect();
+    let mut duplicates = Vec::new();
+    let mut kept = Vec::with_capacity(incoming.len());
+    let mut seen_in_batch: HashSet<String> = HashSet::new();
+    let mut reported_dups: HashSet<String> = HashSet::new();
+    for emoji in incoming.drain(..) {
+        let is_dup = db_dupes.contains(&emoji.custom_emoji_id)
+            || pending_ids.contains(emoji.custom_emoji_id.as_str())
+            || seen_in_batch.contains(&emoji.custom_emoji_id);
+        if is_dup {
+            if reported_dups.insert(emoji.custom_emoji_id.clone()) {
+                duplicates.push(emoji);
+            }
+        } else {
+            seen_in_batch.insert(emoji.custom_emoji_id.clone());
+            kept.push(emoji);
+        }
+    }
+    *incoming = kept;
+    duplicates
+}
+
+fn apply_edit_ops(collected: &mut Vec<PendingEmoji>, text: &str) -> Result<(), &'static str> {
+    let mut plus: Vec<usize> = Vec::new();
+    let mut minus: Vec<usize> = Vec::new();
+    for token in text.split_whitespace() {
+        if let Some(rest) = token.strip_prefix('+') {
+            if let Ok(idx) = rest.parse::<usize>() { plus.push(idx); continue; }
+        }
+        if let Some(rest) = token.strip_prefix('-') {
+            if let Ok(idx) = rest.parse::<usize>() { minus.push(idx); continue; }
+        }
+    }
+    if !plus.is_empty() && !minus.is_empty() {
+        return Err("mixed");
+    }
+    if !plus.is_empty() {
+        let snapshot = collected.clone();
+        collected.clear();
+        for idx in plus {
+            if idx >= 1 && idx <= snapshot.len() {
+                let candidate = snapshot[idx - 1].clone();
+                if !collected.iter().any(|e| e.custom_emoji_id == candidate.custom_emoji_id) {
+                    collected.push(candidate);
+                }
+            }
+        }
+    } else if !minus.is_empty() {
+        let mut to_remove: Vec<usize> = minus
+            .into_iter()
+            .filter(|i| *i >= 1 && *i <= collected.len())
+            .map(|i| i - 1)
+            .collect();
+        to_remove.sort_unstable();
+        to_remove.dedup();
+        for idx in to_remove.into_iter().rev() {
+            collected.remove(idx);
+        }
+    }
+    Ok(())
+}
+
+fn gregorian_to_jalali(gy: i32, gm: u32, gd: u32) -> (i32, u32, u32) {
+    let g_days_in_month = [31i32, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let j_days_in_month = [31i32, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29];
+    let gy = gy;
+    let gm = gm as i32;
+    let gd = gd as i32;
+    let mut g_day_no = 365 * (gy - 1600)
+        + (gy - 1600 + 3) / 4
+        - (gy - 1600 + 99) / 100
+        + (gy - 1600 + 399) / 400;
+    for i in 0..(gm - 1) as usize {
+        g_day_no += g_days_in_month[i];
+    }
+    if gm > 2 && ((gy % 4 == 0 && gy % 100 != 0) || gy % 400 == 0) {
+        g_day_no += 1;
+    }
+    g_day_no += gd - 1;
+    let mut j_day_no = g_day_no - 79;
+    let j_np = j_day_no / 12053;
+    j_day_no %= 12053;
+    let mut jy = 979 + 33 * j_np + 4 * (j_day_no / 1461);
+    j_day_no %= 1461;
+    if j_day_no >= 366 {
+        jy += (j_day_no - 1) / 365;
+        j_day_no = (j_day_no - 1) % 365;
+    }
+    let mut i = 0usize;
+    while i < 11 && j_day_no >= j_days_in_month[i] {
+        j_day_no -= j_days_in_month[i];
+        i += 1;
+    }
+    (jy, (i as i32 + 1) as u32, (j_day_no + 1) as u32)
+}
