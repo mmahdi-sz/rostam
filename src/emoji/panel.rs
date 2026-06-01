@@ -272,7 +272,7 @@ fn escape_code(text: &str) -> String {
     out
 }
 
-fn btn(text: &str, callback_data: &str) -> InlineKeyboardButton {
+pub fn btn(text: &str, callback_data: &str) -> InlineKeyboardButton {
     btn_icon(text, callback_data, "")
 }
 

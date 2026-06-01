@@ -568,7 +568,21 @@ async fn send_emoji_list(api: &Bot, chat_id: i64, user_id: i64, client: &tokio_p
         Err(e) => { eprintln!("list_packs failed: {e}"); return; }
     };
     if packs.is_empty() {
-        let _ = send_text(api, chat_id, &t("emoji.no_packs")).await;
+        let keyboard = InlineKeyboardMarkup::builder()
+            .inline_keyboard(vec![vec![emoji_panel::btn(
+                &t("emoji.panel.back"),
+                emoji_panel::CB_BACK,
+            )]])
+            .build();
+        let _ = api
+            .send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(t("emoji.no_packs"))
+                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard))
+                    .build(),
+            )
+            .await;
         return;
     }
     let mut packs_with_items = Vec::new();
@@ -625,7 +639,21 @@ async fn show_packs_menu(api: &Bot, chat_id: i64, message_id: i32, user_id: i64,
         Err(e) => { eprintln!("list_packs failed: {e}"); return; }
     };
     if packs.is_empty() {
-        let _ = send_text(api, chat_id, &t("emoji.no_packs")).await;
+        let keyboard = InlineKeyboardMarkup::builder()
+            .inline_keyboard(vec![vec![emoji_panel::btn(
+                &t("emoji.panel.back"),
+                emoji_panel::CB_BACK,
+            )]])
+            .build();
+        let _ = api
+            .send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(t("emoji.no_packs"))
+                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard))
+                    .build(),
+            )
+            .await;
         return;
     }
     edit_panel(api, chat_id, message_id, "📁 مجموعه‌ها:", Some(emoji_panel::packs_keyboard(&packs))).await;
