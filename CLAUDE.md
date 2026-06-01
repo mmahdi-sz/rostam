@@ -1,5 +1,40 @@
 # CLAUDE.md
 
+## After Every Change (MUST FOLLOW)
+
+After every code or config change:
+
+1. Stage and commit to the local git repository:
+
+```bash
+git add <changed files>
+git commit -m "..."
+```
+
+2. Restart the service:
+
+```bash
+systemctl restart abc
+```
+
+Always do both steps — commit first, then restart.
+
+## Strings & i18n (MUST FOLLOW)
+
+All user-facing strings — Telegram messages, captions, button labels,
+error messages shown to users — MUST live in `i18n.json` at the repo root,
+NOT hardcoded in Rust source.
+
+Rules:
+
+- Add the string to `i18n.json` under a nested key (e.g.
+  `youtube.caption.channel_label`).
+- In code, read it via `i18n::t("key")` or `i18n::tf("key", &[("name", value)])`
+  for templates with `{placeholders}`.
+- Operator/dev-facing strings (`println!`, `eprintln!`, panics, journalctl
+  logs) stay hardcoded — i18n is for end-user text only.
+- The file is currently single-language (Farsi). Structure is nested JSON.
+
 ## Project Summary
 
 This project is a Rust Telegram bot named `ros-telegram-bot`.

@@ -8,6 +8,7 @@ use std::{
 const DEFAULT_FIREFOX_ROOT: &str = "/home/mahdi/.mozilla/firefox";
 const DEFAULT_MAX_COOKIES: usize = 20;
 const DEFAULT_COOLDOWN: Duration = Duration::from_secs(20 * 60 * 60);
+const DEFAULT_CACHE_ROOT: &str = "cookie_profiles_cache";
 
 #[derive(Clone, Debug)]
 pub struct CookieSource {
@@ -71,6 +72,10 @@ impl CookiePool {
         let mut available_cookies = discover_firefox_cookies(root.as_ref());
         available_cookies.sort_by(|left, right| left.id.cmp(&right.id));
         available_cookies.truncate(DEFAULT_MAX_COOKIES);
+        available_cookies = materialize_profiles_cache(
+            Path::new(DEFAULT_CACHE_ROOT),
+            available_cookies,
+        );
 
         Self {
             available_cookies,
@@ -211,6 +216,85 @@ impl CookiePool {
 
         (nanos ^ self.random_counter.rotate_left(13)) as usize % len
     }
+}
+
+fn materialize_profiles_cache(
+    cache_root: &Path,
+    sources: Vec<CookieSource>,
+) -> Vec<CookieSource> {
+    if cache_root.exists() {
+        if let Err(error) = fs::remove_dir_all(cache_root) {
+            eprintln!(
+                "failed to clear cookie cache at {}: {error}",
+                cache_root.display()
+            );
+        }
+    }
+    if let Err(error) = fs::create_dir_all(cache_root) {
+        eprintln!(
+            "failed to create cookie cache at {}: {error}",
+            cache_root.display()
+        );
+        return sources;
+    }
+
+    let mut copied = Vec::with_capacity(sources.len());
+
+    for source in sources {
+        let dest_profile = cache_root.join(&source.id);
+        if let Err(error) = fs::create_dir_all(&dest_profile) {
+            eprintln!(
+                "failed to create cache dir {}: {error}",
+                dest_profile.display()
+            );
+            continue;
+        }
+
+        let entries = match fs::read_dir(&source.profile_dir) {
+            Ok(entries) => entries,
+            Err(error) => {
+                eprintln!(
+                    "failed to read profile dir {}: {error}",
+                    source.profile_dir.display()
+                );
+                continue;
+            }
+        };
+
+        let mut copied_any = false;
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name_str) = name.to_str() else {
+                continue;
+            };
+            if !name_str.starts_with("cookies.sqlite") {
+                continue;
+            }
+            let src = entry.path();
+            let dst = dest_profile.join(name_str);
+            match fs::copy(&src, &dst) {
+                Ok(_) => copied_any = true,
+                Err(error) => eprintln!(
+                    "failed to copy {} to {}: {error}",
+                    src.display(),
+                    dst.display()
+                ),
+            }
+        }
+
+        if !copied_any {
+            continue;
+        }
+
+        copied.push(CookieSource {
+            id: source.id,
+            profile_name: source.profile_name,
+            cookies_sqlite: dest_profile.join("cookies.sqlite"),
+            profile_dir: dest_profile,
+        });
+    }
+
+    copied
 }
 
 fn discover_firefox_cookies(root: &Path) -> Vec<CookieSource> {
