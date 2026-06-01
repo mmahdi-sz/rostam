@@ -809,15 +809,31 @@ async fn handle_emoji_flow_message(
                 added += 1;
             }
 
-            let _ = send_text(
-                api,
-                chat_id,
-                &tf(
-                    "emoji.added_summary",
-                    &[("count", &added.to_string()), ("pack", &pack.name)],
-                ),
-            )
-            .await;
+            let _ = api
+                .send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(tf(
+                            "emoji.added_summary",
+                            &[("count", &added.to_string()), ("pack", &pack.name)],
+                        ))
+                        .reply_markup(ReplyMarkup::ReplyKeyboardRemove(
+                            ReplyKeyboardRemove::builder().remove_keyboard(true).build(),
+                        ))
+                        .build(),
+                )
+                .await;
+            let _ = api
+                .send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(emoji_panel::main_panel_text())
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(
+                            emoji_panel::main_panel_keyboard(),
+                        ))
+                        .build(),
+                )
+                .await;
             flow_manager.clear(user_id);
             true
         }
