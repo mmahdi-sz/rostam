@@ -105,8 +105,9 @@ pub fn format_pending_emojis(
     lines.push(escape_markdown_v2(&t("emoji.pending.title")));
     for (idx, item) in items.iter().enumerate() {
         lines.push(format!(
-            "`{}.` ![{}](tg://emoji?id={}) \\= `{}`",
+            "`{}.` {} ![{}](tg://emoji?id={}) \\= `{}`",
             idx + 1,
+            item.fallback,
             item.fallback,
             item.custom_emoji_id,
             item.custom_emoji_id
