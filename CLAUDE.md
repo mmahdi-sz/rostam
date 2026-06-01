@@ -50,6 +50,7 @@ The bot currently supports:
 - Optional PostgreSQL persistence for Cookie Pool state
 - systemd deployment through `abc.service`
 - Local bare Git server under `git-server/ros-telegram-bot.git`
+- Full emoji management panel (`/emoji`)
 
 Secrets are not tracked. `.env`, `target/`, and `git-server/` are ignored.
 
@@ -126,26 +127,29 @@ Sends a message with an inline green button. Pressing the button replies with
 `سلام`.
 
 ```text
+/emoji
+```
+
+Opens the emoji management panel. Clears any active flow for the user.
+
+```text
+/se [id_or_name] [alias]
+```
+
+Sets an alias on an emoji item. Example: `/se 5 boss` or `/se sparkle1 star`.
+Use `-` as alias to remove it.
+
+```text
 /cookie_status
 ```
 
-Shows Cookie Pool state:
-
-- `available_cookies`
-- `selectable_cookies`
-- `cooldown_list`
-- `last_used_cookie`
-- `next_available_in`
+Shows Cookie Pool state.
 
 ```text
 /cookie_next
 ```
 
-Selects the next Firefox cookie profile and returns the `yt-dlp` browser spec:
-
-```bash
-yt-dlp --cookies-from-browser 'firefox:/path/to/profile'
-```
+Selects the next Firefox cookie profile and returns the `yt-dlp` browser spec.
 
 ```text
 /cookie_429
@@ -154,121 +158,105 @@ yt-dlp --cookies-from-browser 'firefox:/path/to/profile'
 Marks the last selected cookie as rate-limited and moves it to a 20-hour
 cooldown.
 
-## Cookie Pool Rules
+## Emoji Panel
 
-Implemented in:
+Implemented across:
 
 ```text
-src/cookie_pool.rs
+src/emoji/mod.rs
+src/emoji/flow.rs       — FlowManager, FlowState, PendingEmoji
+src/emoji/handler.rs    — all callback + message handlers
+src/emoji/panel.rs      — keyboard builders, text formatters, CB_* constants
+src/emoji/store.rs      — all DB queries
+src/emoji/smart_name.rs — unicode → ASCII smart name
+src/emoji/import.rs     — SQL parse, analyze, execute import modes
 ```
 
-Rules:
+### Flow States
 
-- Initial pool is discovered from Firefox profiles under:
+| State | Trigger | Exit |
+|-------|---------|------|
+| `AwaitingEmojis` | CB_ADD | cancel button or pack chosen |
+| `AwaitingPackChoice` | emojis collected | pack name typed or inline button |
+| `AwaitingPackAlias` | set alias button | any text |
+| `AwaitingTestText` | CB_TEST | cancel button or `/emoji` |
+| `AwaitingImportFile` | CB_IMPORT | cancel button or document sent |
+| `AwaitingImportMode` | file analyzed | import mode button pressed |
 
-```text
-/home/mahdi/.mozilla/firefox
+### Callback Prefixes
+
+All emoji callbacks start with `emoji:`. Defined as `CB_*` constants in
+`src/emoji/panel.rs`.
+
+### Emoji List Format
+
+```
+• ![fallback](tg://emoji?id=ID) fallback = numeric_id | smart_name | alias
 ```
 
-- Maximum pool size is 20.
-- Selection excludes cookies currently in cooldown.
-- Selection excludes `last_used_cookie`.
-- Selection is random from the remaining pool.
-- If no cookie is selectable, the bot reports that the pool is empty and shows
-  the next cooldown expiration time.
-- A cookie enters cooldown only after `/cookie_429`.
-- Cooldown duration is 20 hours.
+Premium emoji comes first, then static fallback.
 
-Important state:
+### Export / Import
 
-```text
-available_cookies
-last_used_cookie
-cooldown_list
-```
+- **Export**: generates `emoji_{jalali-date}_{HH-MM}.sql` with `CREATE TABLE IF NOT EXISTS` + `INSERT` for the current user only. Sent as a Telegram document.
+- **Import**: user sends the SQL file. Bot parses and analyzes it, shows a report with counts and duplicates, then offers:
+  - **جایگزین** — delete all current data, insert from file
+  - **ادغام** — append to existing data, IDs continue
+  - **ادغام هوشمند** — append, skip duplicate `custom_emoji_id`s
+  - If DB is empty, only a single confirm button is shown.
 
-## PostgreSQL Storage
+### ID Sequence Reset
 
-Database code lives under the requested path:
+When a user deletes their last pack, both `emoji_packs_id_seq` and
+`emoji_items_id_seq` are reset to 1 so the next pack starts from id=1.
+
+## Source Layout
 
 ```text
-src/database/posfreSQL/postgresql.rs
-src/database/posfreSQL/schema.sql
-```
-
-Rust module bridge:
-
-```text
+src/main.rs                          — event loop + routing (~160 lines)
+src/config.rs                        — BOT_TOKEN / DATABASE_URL reading
+src/bot.rs                           — send_text, send_text_md, send_start_button
+src/cookie_pool.rs                   — CookiePool + format helpers + save_snapshot
+src/youtube.rs                       — yt-dlp fetch + handle_youtube_url
+src/i18n.rs                          — t() / tf() helpers, reads i18n.json
 src/database/mod.rs
+src/database/posfreSQL/postgresql.rs — PostgreSQL connection + cookie pool tables
+src/database/posfreSQL/schema.sql    — CREATE TABLE statements
+src/emoji/mod.rs
+src/emoji/flow.rs
+src/emoji/handler.rs
+src/emoji/panel.rs
+src/emoji/store.rs
+src/emoji/smart_name.rs
+src/emoji/import.rs
 ```
 
-Stored tables:
+## PostgreSQL Tables
 
+Cookie pool:
 - `cookie_pool_cookies`
 - `cookie_pool_state`
 - `cookie_pool_cooldowns`
 
-The database layer stores:
+Emoji:
+- `emoji_packs` (id SERIAL, owner_user_id, name, alias, is_default, item_count)
+- `emoji_items` (id SERIAL, pack_id, owner_user_id, custom_emoji_id, fallback, smart_name, alias, position)
 
-- discovered Firefox cookie profiles
-- last used cookie id
-- cooldown entries and expiration epochs
+Schema is created automatically at startup when `DATABASE_URL` is set.
 
-The schema is created automatically at startup when `DATABASE_URL` is set.
+## Cookie Pool Rules
+
+Implemented in `src/cookie_pool.rs`.
+
+- Pool discovered from Firefox profiles under `/home/mahdi/.mozilla/firefox`
+- Maximum pool size: 20
+- Selection excludes cookies in cooldown and `last_used_cookie`
+- Selection is random from remaining pool
+- Cooldown duration: 20 hours, triggered only by `/cookie_429`
 
 ## Git Server
 
-A local bare Git repository was created as a simple Git server:
-
-```text
-git-server/ros-telegram-bot.git
-```
-
-Remote:
-
 ```text
 origin -> git-server/ros-telegram-bot.git
+branch: master
 ```
-
-Current branch:
-
-```text
-master
-```
-
-Commits were made chunk by chunk with explanatory commit bodies:
-
-```text
-dccc92c chore: add project config and deployment docs
-a9dd547 feat: add firefox cookie pool manager
-fb0f75f feat: add postgresql cookie pool storage
-490ace4 feat: wire cookie pool into telegram bot
-```
-
-## What Is Still Needed For A Full YouTube Downloader Bot
-
-The project does not yet execute `yt-dlp` downloads. The Cookie Pool and
-database support are ready, but the downloader workflow still needs:
-
-- `/dl <youtube-url>` command
-- YouTube URL validation
-- `yt-dlp` process execution
-- output directory management
-- file size checks for Telegram sending
-- automatic 429 detection from `yt-dlp` output
-- retry with the next cookie when 429 happens
-- queueing so multiple downloads do not corrupt Cookie Pool state
-- cleanup of old downloaded files
-
-## Verification Done
-
-Verified:
-
-```bash
-cargo build
-systemctl restart abc
-systemctl status abc --no-pager
-```
-
-The service was active after restart and loaded 15 Firefox profiles into the
-Cookie Pool.
