@@ -21,6 +21,7 @@ pub const CB_PACK_SET_DEFAULT_PREFIX: &str = "emoji:setdef:";
 pub const CB_PACK_SET_ALIAS_PREFIX: &str = "emoji:setalias:";
 pub const CB_PACK_DELETE_PREFIX: &str = "emoji:packdel:";
 pub const CB_LIST_PAGE_PREFIX: &str = "emoji:listpg:";
+pub const CB_PICK_PACK_PREFIX: &str = "emoji:pickpack:";
 pub const LIST_PAGE_SIZE: usize = 15;
 
 pub fn main_panel_keyboard() -> InlineKeyboardMarkup {
@@ -218,7 +219,8 @@ fn render_item_line(item: &EmojiItem) -> String {
         _ => String::new(),
     };
     format!(
-        "• ![{}](tg://emoji?id={}) \\= `{}` \\| `{}`{}\n",
+        "• {} ![{}](tg://emoji?id={}) \\= `{}` \\| `{}`{}\n",
+        item.fallback,
         item.fallback,
         item.custom_emoji_id,
         item.id,
@@ -241,7 +243,8 @@ pub fn render_pack_list_entry(pack: &EmojiPack, items: &[EmojiItem]) -> String {
             _ => String::new(),
         };
         out.push_str(&format!(
-            "• ![{}](tg://emoji?id={}) \\= `{}` \\| `{}`{}\n",
+            "• {} ![{}](tg://emoji?id={}) \\= `{}` \\| `{}`{}\n",
+            item.fallback,
             item.fallback,
             item.custom_emoji_id,
             item.id,
@@ -269,6 +272,16 @@ fn btn(text: &str, callback_data: &str) -> InlineKeyboardButton {
         .callback_data(callback_data)
         .style(ButtonStyle::Primary)
         .build()
+}
+
+pub fn pack_choice_keyboard(packs: &[EmojiPack]) -> InlineKeyboardMarkup {
+    let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
+    for pack in packs.iter().rev() {
+        let marker = if pack.is_default { " ⭐" } else { "" };
+        let label = format!("📂 {}{}", pack.name, marker);
+        rows.push(vec![btn(&label, &format!("{CB_PICK_PACK_PREFIX}{}", pack.id))]);
+    }
+    InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }
 
 pub fn cancel_reply_keyboard() -> ReplyKeyboardMarkup {
