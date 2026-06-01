@@ -307,6 +307,91 @@ pub async fn set_item_alias(
     Ok(true)
 }
 
+pub async fn export_user_sql(
+    client: &Client,
+    owner: i64,
+) -> Result<String, tokio_postgres::Error> {
+    let mut out = String::new();
+
+    out.push_str("-- emoji export\n\n");
+    out.push_str("CREATE TABLE IF NOT EXISTS emoji_packs (\n");
+    out.push_str("    id SERIAL PRIMARY KEY,\n");
+    out.push_str("    owner_user_id BIGINT NOT NULL,\n");
+    out.push_str("    name TEXT NOT NULL,\n");
+    out.push_str("    alias TEXT,\n");
+    out.push_str("    is_default BOOLEAN NOT NULL DEFAULT FALSE,\n");
+    out.push_str("    item_count INT NOT NULL DEFAULT 0\n");
+    out.push_str(");\n\n");
+
+    out.push_str("CREATE TABLE IF NOT EXISTS emoji_items (\n");
+    out.push_str("    id SERIAL PRIMARY KEY,\n");
+    out.push_str("    pack_id INT NOT NULL REFERENCES emoji_packs(id) ON DELETE CASCADE,\n");
+    out.push_str("    owner_user_id BIGINT NOT NULL,\n");
+    out.push_str("    custom_emoji_id TEXT NOT NULL,\n");
+    out.push_str("    fallback TEXT NOT NULL,\n");
+    out.push_str("    smart_name TEXT NOT NULL,\n");
+    out.push_str("    alias TEXT,\n");
+    out.push_str("    position INT NOT NULL DEFAULT 0\n");
+    out.push_str(");\n\n");
+
+    let packs = client
+        .query(
+            "SELECT id, owner_user_id, name, alias, is_default FROM emoji_packs WHERE owner_user_id = $1 ORDER BY id",
+            &[&owner],
+        )
+        .await?;
+
+    for row in &packs {
+        let id: i32 = row.get(0);
+        let owner_uid: i64 = row.get(1);
+        let name: String = row.get(2);
+        let alias: Option<String> = row.get(3);
+        let is_default: bool = row.get(4);
+        let alias_sql = match &alias {
+            Some(a) => format!("'{}'", a.replace('\'', "''")),
+            None => "NULL".to_string(),
+        };
+        out.push_str(&format!(
+            "INSERT INTO emoji_packs (id, owner_user_id, name, alias, is_default) VALUES ({id}, {owner_uid}, '{}', {alias_sql}, {is_default});\n",
+            name.replace('\'', "''")
+        ));
+    }
+
+    if !packs.is_empty() {
+        out.push('\n');
+    }
+
+    let items = client
+        .query(
+            "SELECT id, pack_id, owner_user_id, custom_emoji_id, fallback, smart_name, alias, position FROM emoji_items WHERE owner_user_id = $1 ORDER BY id",
+            &[&owner],
+        )
+        .await?;
+
+    for row in &items {
+        let id: i32 = row.get(0);
+        let pack_id: i32 = row.get(1);
+        let owner_uid: i64 = row.get(2);
+        let custom_emoji_id: String = row.get(3);
+        let fallback: String = row.get(4);
+        let smart_name: String = row.get(5);
+        let alias: Option<String> = row.get(6);
+        let position: i32 = row.get(7);
+        let alias_sql = match &alias {
+            Some(a) => format!("'{}'", a.replace('\'', "''")),
+            None => "NULL".to_string(),
+        };
+        out.push_str(&format!(
+            "INSERT INTO emoji_items (id, pack_id, owner_user_id, custom_emoji_id, fallback, smart_name, alias, position) VALUES ({id}, {pack_id}, {owner_uid}, '{}', '{}', '{}', {alias_sql}, {position});\n",
+            custom_emoji_id.replace('\'', "''"),
+            fallback.replace('\'', "''"),
+            smart_name.replace('\'', "''"),
+        ));
+    }
+
+    Ok(out)
+}
+
 pub async fn render_template(
     client: &Client,
     owner: i64,

@@ -1,4 +1,6 @@
 use std::{collections::HashSet, env, fs, time::Duration};
+use chrono::{TimeZone, Datelike, Timelike};
+use chrono_tz::Asia::Tehran;
 
 mod cookie_pool;
 mod database;
@@ -22,10 +24,10 @@ use emoji::{
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
-    input_file::FileUpload,
+    input_file::{FileUpload, InputFile},
     methods::{
-        AnswerCallbackQueryParams, EditMessageTextParams, GetUpdatesParams, SendMessageParams,
-        SendPhotoParams,
+        AnswerCallbackQueryParams, EditMessageTextParams, GetUpdatesParams, SendDocumentParams,
+        SendMessageParams, SendPhotoParams,
     },
     types::{
         ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions,
@@ -615,8 +617,41 @@ async fn handle_emoji_callback(
         d if d == CB_PACKS || d == CB_DELETE_PACK_MENU => {
             show_packs_menu(api, chat_id, message_id, user_id, client).await;
         }
-        d if d == CB_IMPORT || d == CB_EXPORT => {
+        d if d == CB_IMPORT => {
             let _ = send_text(api, chat_id, "🚧 به‌زودی").await;
+        }
+        d if d == CB_EXPORT => {
+            match emoji_store::export_user_sql(client, user_id).await {
+                Err(e) => {
+                    eprintln!("export_user_sql failed: {e}");
+                    let _ = send_text(api, chat_id, &t("emoji.export_failed")).await;
+                }
+                Ok(sql) => {
+                    let now = chrono::Utc::now().with_timezone(&Tehran);
+                    let (jy, jm, jd) = gregorian_to_jalali(
+                        now.year(), now.month() as u32, now.day(),
+                    );
+                    let filename = format!(
+                        "emoji_{:04}-{:02}-{:02}_{:02}-{:02}.sql",
+                        jy, jm, jd,
+                        now.hour(), now.minute(),
+                    );
+                    let path = std::env::temp_dir().join(&filename);
+                    if let Err(e) = fs::write(&path, &sql) {
+                        eprintln!("write export file failed: {e}");
+                        let _ = send_text(api, chat_id, &t("emoji.export_failed")).await;
+                    } else {
+                        let _ = api.send_document(
+                            &SendDocumentParams::builder()
+                                .chat_id(chat_id)
+                                .document(FileUpload::InputFile(InputFile { path: path.clone() }))
+                                .caption(t("emoji.export_caption"))
+                                .build(),
+                        ).await;
+                        let _ = fs::remove_file(&path);
+                    }
+                }
+            }
         }
         d if d == CB_BACK || d == CB_CANCEL => {
             flow_manager.clear(user_id);
@@ -1316,4 +1351,54 @@ fn apply_edit_ops(collected: &mut Vec<PendingEmoji>, text: &str) -> Result<(), &
         }
     }
     Ok(())
+}
+
+fn gregorian_to_jalali(gy: i32, gm: u32, gd: u32) -> (i32, u32, u32) {
+    let g_days_in_month = [31i32, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let j_days_in_month = [31i32, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 29];
+
+    let mut jy;
+    let mut jm;
+    let mut jd;
+
+    let gy = gy as i32;
+    let gm = gm as i32;
+    let gd = gd as i32;
+
+    let mut g_day_no = 365 * (gy - 1600)
+        + (gy - 1600 + 3) / 4
+        - (gy - 1600 + 99) / 100
+        + (gy - 1600 + 399) / 400;
+
+    for i in 0..(gm - 1) as usize {
+        g_day_no += g_days_in_month[i];
+    }
+    if gm > 2
+        && ((gy % 4 == 0 && gy % 100 != 0) || gy % 400 == 0)
+    {
+        g_day_no += 1;
+    }
+    g_day_no += gd - 1;
+
+    let mut j_day_no = g_day_no - 79;
+    let j_np = j_day_no / 12053;
+    j_day_no %= 12053;
+
+    jy = 979 + 33 * j_np + 4 * (j_day_no / 1461);
+    j_day_no %= 1461;
+
+    if j_day_no >= 366 {
+        jy += (j_day_no - 1) / 365;
+        j_day_no = (j_day_no - 1) % 365;
+    }
+
+    let mut i = 0usize;
+    while i < 11 && j_day_no >= j_days_in_month[i] {
+        j_day_no -= j_days_in_month[i];
+        i += 1;
+    }
+    jm = i as i32 + 1;
+    jd = j_day_no + 1;
+
+    (jy, jm as u32, jd as u32)
 }
