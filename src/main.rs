@@ -593,7 +593,15 @@ async fn handle_emoji_callback(
         }
         d if d == CB_TEST => {
             flow_manager.set(user_id, FlowState::AwaitingTestText);
-            let _ = send_text(api, chat_id, &t("emoji.test_prompt")).await;
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(t("emoji.test_prompt"))
+                    .reply_markup(ReplyMarkup::ReplyKeyboardMarkup(
+                        emoji_panel::cancel_reply_keyboard(),
+                    ))
+                    .build(),
+            ).await;
         }
         d if d == CB_LIST => {
             send_emoji_list(api, chat_id, user_id, client).await;
@@ -950,9 +958,22 @@ async fn handle_emoji_flow_message(
             true
         }
         FlowState::AwaitingTestText => {
-            let raw = message.text.as_deref().unwrap_or("");
-            let rendered = format!("(تست template هنوز پیاده نشده)\n\n{raw}");
-            let _ = send_text(api, chat_id, &rendered).await;
+            let text = message.text.as_deref().unwrap_or("").trim();
+            if text == t("emoji.cancel_button") {
+                flow_manager.clear(user_id);
+                send_cancel_and_panel(api, chat_id).await;
+                return true;
+            }
+            let rendered = format!("(تست template هنوز پیاده نشده)\n\n{text}");
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(rendered)
+                    .reply_markup(ReplyMarkup::ReplyKeyboardRemove(
+                        ReplyKeyboardRemove::builder().remove_keyboard(true).build(),
+                    ))
+                    .build(),
+            ).await;
             flow_manager.clear(user_id);
             true
         }
