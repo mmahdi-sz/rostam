@@ -20,8 +20,10 @@ use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::{t, tf};
 use super::{
     FlowManager, FlowState, PendingEmoji,
+    import as emoji_import,
     panel::{self as emoji_panel, CB_ADD, CB_BACK, CB_CANCEL, CB_DELETE_PACK_MENU, CB_EXPORT,
-            CB_IMPORT, CB_LIST, CB_PACKS, CB_PACK_DELETE_PREFIX, CB_PACK_OPEN_PREFIX,
+            CB_IMPORT, CB_IMPORT_MERGE, CB_IMPORT_REPLACE, CB_IMPORT_SMART,
+            CB_LIST, CB_PACKS, CB_PACK_DELETE_PREFIX, CB_PACK_OPEN_PREFIX,
             CB_PICK_PACK_PREFIX, CB_PACK_SET_ALIAS_PREFIX, CB_PACK_SET_DEFAULT_PREFIX, CB_TEST},
     store as emoji_store,
 };
@@ -203,6 +205,39 @@ pub async fn handle_emoji_callback(
                     add_emojis_to_pack(api, chat_id, &collected, pack_id, user_id, client).await;
                 }
             }
+        }
+        d if d == CB_IMPORT_REPLACE || d == CB_IMPORT_MERGE || d == CB_IMPORT_SMART => {
+            let sql = match flow_manager.get(user_id) {
+                FlowState::AwaitingImportMode { sql } => sql,
+                _ => return,
+            };
+            flow_manager.clear(user_id);
+            let parsed = emoji_import::parse_sql(&sql);
+            let result = if d == CB_IMPORT_REPLACE {
+                emoji_import::execute_replace(&parsed, client, user_id).await
+            } else {
+                emoji_import::execute_merge(&parsed, client, user_id, d == CB_IMPORT_SMART).await
+            };
+            match result {
+                Ok(r) => {
+                    let _ = send_text(api, chat_id, &tf("emoji.import_result", &[
+                        ("packs", &r.packs_added.to_string()),
+                        ("items", &r.items_added.to_string()),
+                        ("skipped", &r.items_skipped.to_string()),
+                    ])).await;
+                }
+                Err(e) => {
+                    eprintln!("import execute failed: {e}");
+                    let _ = send_text(api, chat_id, &t("emoji.import_failed")).await;
+                }
+            }
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(emoji_panel::main_panel_text())
+                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))
+                    .build(),
+            ).await;
         }
         _ => {}
     }
@@ -391,32 +426,31 @@ pub async fn handle_emoji_flow_message(
                 },
                 Err(e) => { eprintln!("download import file failed: {e}"); let _ = send_text(api, chat_id, &t("emoji.import_failed")).await; return true; }
             };
-            let mut ok = 0usize;
-            let mut fail = 0usize;
-            for stmt in sql.split(';') {
-                let stmt = stmt.trim();
-                if stmt.is_empty() || stmt.starts_with("--") { continue; }
-                match client.execute(stmt, &[]).await {
-                    Ok(_) => ok += 1,
-                    Err(e) => { eprintln!("import stmt failed: {e}"); fail += 1; }
-                }
+            let parsed = emoji_import::parse_sql(&sql);
+            if parsed.packs.is_empty() && parsed.items.is_empty() {
+                let _ = send_text(api, chat_id, &t("emoji.import_empty_file")).await;
+                flow_manager.clear(user_id);
+                return true;
             }
-            flow_manager.clear(user_id);
-            let _ = send_text(api, chat_id, &tf("emoji.import_done", &[("ok", &ok.to_string()), ("fail", &fail.to_string())])).await;
+            let analysis = emoji_import::analyze(&parsed, client, user_id).await;
+            let report = build_import_report(&analysis);
+            let keyboard = emoji_panel::import_choice_keyboard(analysis.db_empty);
             let _ = api.send_message(
                 &SendMessageParams::builder()
                     .chat_id(chat_id)
-                    .text(emoji_panel::main_panel_text())
-                    .reply_markup(ReplyMarkup::ReplyKeyboardRemove(ReplyKeyboardRemove::builder().remove_keyboard(true).build()))
+                    .text(report)
+                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard))
                     .build(),
             ).await;
-            let _ = api.send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(emoji_panel::main_panel_text())
-                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))
-                    .build(),
-            ).await;
+            flow_manager.set(user_id, FlowState::AwaitingImportMode { sql });
+            true
+        }
+        FlowState::AwaitingImportMode { .. } => {
+            let text = message.text.as_deref().unwrap_or("").trim();
+            if text == t("emoji.cancel_button") {
+                flow_manager.clear(user_id);
+                send_cancel_and_panel(api, chat_id).await;
+            }
             true
         }
         FlowState::AwaitingTestText => {
@@ -736,6 +770,27 @@ fn apply_edit_ops(collected: &mut Vec<PendingEmoji>, text: &str) -> Result<(), &
         }
     }
     Ok(())
+}
+
+fn build_import_report(a: &emoji_import::ImportAnalysis) -> String {
+    use crate::i18n::{t, tf};
+    if a.db_empty {
+        format!(
+            "{}\n\n{}\n\n{}",
+            tf("emoji.import.file_stats", &[("packs", &a.file_packs.to_string()), ("items", &a.file_items.to_string())]),
+            t("emoji.import.db_empty"),
+            t("emoji.import.hint_empty"),
+        )
+    } else {
+        format!(
+            "{}\n\n{}\n\n{}\n{}\n{}",
+            tf("emoji.import.file_stats", &[("packs", &a.file_packs.to_string()), ("items", &a.file_items.to_string())]),
+            tf("emoji.import.db_stats", &[("packs", &a.db_packs.to_string()), ("items", &a.db_items.to_string()), ("dupes", &a.duplicate_items.to_string())]),
+            t("emoji.import.hint_replace"),
+            t("emoji.import.hint_merge"),
+            t("emoji.import.hint_smart"),
+        )
+    }
 }
 
 fn gregorian_to_jalali(gy: i32, gm: u32, gd: u32) -> (i32, u32, u32) {

@@ -22,6 +22,9 @@ pub const CB_PACK_SET_ALIAS_PREFIX: &str = "emoji:setalias:";
 pub const CB_PACK_DELETE_PREFIX: &str = "emoji:packdel:";
 pub const CB_LIST_PAGE_PREFIX: &str = "emoji:listpg:";
 pub const CB_PICK_PACK_PREFIX: &str = "emoji:pickpack:";
+pub const CB_IMPORT_REPLACE: &str = "emoji:import:replace";
+pub const CB_IMPORT_MERGE: &str = "emoji:import:merge";
+pub const CB_IMPORT_SMART: &str = "emoji:import:smart";
 pub const LIST_PAGE_SIZE: usize = 15;
 
 pub fn main_panel_keyboard() -> InlineKeyboardMarkup {
@@ -293,6 +296,27 @@ pub fn cancel_reply_keyboard() -> ReplyKeyboardMarkup {
         .resize_keyboard(true)
         .one_time_keyboard(false)
         .build()
+}
+
+pub fn import_choice_keyboard(db_empty: bool) -> InlineKeyboardMarkup {
+    let cancel = btn(&t("emoji.cancel_button"), CB_CANCEL);
+    if db_empty {
+        InlineKeyboardMarkup::builder()
+            .inline_keyboard(vec![
+                vec![btn(&t("emoji.import.btn_confirm"), CB_IMPORT_MERGE)],
+                vec![cancel],
+            ])
+            .build()
+    } else {
+        InlineKeyboardMarkup::builder()
+            .inline_keyboard(vec![
+                vec![btn(&t("emoji.import.btn_replace"), CB_IMPORT_REPLACE)],
+                vec![btn(&t("emoji.import.btn_merge"), CB_IMPORT_MERGE)],
+                vec![btn(&t("emoji.import.btn_smart"), CB_IMPORT_SMART)],
+                vec![cancel],
+            ])
+            .build()
+    }
 }
 
 pub fn remove_reply_keyboard() -> ReplyKeyboardRemove {

@@ -21,6 +21,7 @@ pub enum FlowState {
     },
     AwaitingTestText,
     AwaitingImportFile,
+    AwaitingImportMode { sql: String },
 }
 
 #[derive(Debug, Default)]
