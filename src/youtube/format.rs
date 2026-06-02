@@ -1,4 +1,4 @@
-use crate::i18n::t;
+use crate::i18n::{apply_premium_to_md, t};
 
 use super::jalali::gregorian_to_jalali;
 use super::types::VideoInfo;
@@ -63,7 +63,7 @@ pub fn build_caption(info: &VideoInfo) -> String {
     let date_label = escape_markdown_v2(&t("youtube.caption.date_label"));
     let link_text = escape_markdown_v2(&t("youtube.caption.link_text"));
 
-    format!(
+    let raw = format!(
         "🎬 *{title}*\n\n\
          👤 *{channel_label}* {channel}\n\
          ⏱ *{duration_label}* {duration}\n\
@@ -71,7 +71,8 @@ pub fn build_caption(info: &VideoInfo) -> String {
          👍 *{likes_label}* {likes}\n\
          📅 *{date_label}* {date}\n\n\
          🔗 [{link_text}]({url})"
-    )
+    );
+    apply_premium_to_md(&raw)
 }
 
 pub fn build_description_blockquotes(description: &str) -> Vec<String> {
