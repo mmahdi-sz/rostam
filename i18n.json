@@ -137,6 +137,15 @@
         "144": "QVGA | 144p"
       }
     },
+    "codec": {
+      "prompt": "کدک {quality} را انتخاب کن:",
+      "buttons": {
+        "h264": "H.264 / AVC",
+        "h265": "H.265 / HEVC",
+        "vp9": "VP9",
+        "av1": "AV1"
+      }
+    },
     "caption": {
       "channel_label": "کانال:",
       "duration_label": "مدت:",
