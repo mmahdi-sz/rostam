@@ -73,16 +73,66 @@ All UI emoji are premium custom emoji managed via `i18n.json`.
 ### How it works
 
 - **IDs**: stored in `emoji.panel.icons.*` in `i18n.json` (24 emoji, e.g. `"cancel": "5215204871422093648"`)
-- **Inline keyboard buttons**: use `icon_custom_emoji_id` field on `InlineKeyboardButton` — handled automatically by `btn_icon()` in `src/emoji/panel.rs`
-- **Reply keyboard buttons**: use `icon_custom_emoji_id` field on `KeyboardButton` struct literal (bon typestate issue prevents builder use)
-- **Plain text messages**: `entities_for_text(text)` in `src/i18n.rs` scans the text for known emoji chars, looks up their premium IDs, and returns `Vec<MessageEntity>` — called automatically by `send_text()` in `src/bot.rs`
-- **MarkdownV2 messages** (list page, pending emojis): entities are NOT added — they contain `tg://emoji` inline images that would conflict
+- **Static UI emoji map**: `src/i18n/emoji_map.rs` maps visible emoji
+  chars (e.g. `✅`, `❌`, `📁`) to icon keys in `emoji.panel.icons.*`.
+  Keep variation-selector forms first when needed (e.g. `⭐️` before `⭐`).
+- **Plain text messages**: `send_text()` in `src/bot.rs` calls
+  `expand_and_entify()`, which expands dynamic `{key}` templates from the
+  emoji cache and then calls `entities_for_text()` in `src/i18n/entities.rs`.
+  Any known UI emoji char inside an `i18n.json` string becomes a premium
+  `MessageEntity::CustomEmoji` automatically, with UTF-16 offsets computed
+  by code.
+- **Inline keyboard buttons**: use `icon_custom_emoji_id` on
+  `InlineKeyboardButton`. In emoji panel code, use `btn_icon(text,
+  callback_data, "icon_key")` from `src/emoji/panel/buttons.rs`; it looks up
+  `emoji.panel.icons.icon_key` in `i18n.json` and applies
+  `ButtonStyle::Primary`. Use/extend the local helpers for other colors
+  (`ButtonStyle::Success`, `Danger`, `Primary`) instead of hardcoding button
+  structs everywhere.
+- **Reply keyboard buttons**: use `icon_custom_emoji_id` on `KeyboardButton`.
+  Current code builds these as struct literals in
+  `src/emoji/panel/keyboards.rs` because the builder has typestate friction.
+- **MarkdownV2 messages**: `send_text_md()` does NOT add premium emoji
+  entities. For MarkdownV2 text that needs premium UI emoji, use
+  `apply_premium_to_md()` from `src/i18n/premium_md.rs`, which converts known
+  UI emoji into `![emoji](tg://emoji?id=ID)`. Do not mix Telegram entities
+  with MarkdownV2 unless the code is deliberately handling both.
+
+### i18n.json rules for premium emoji
+
+- All user-facing Telegram strings still belong in `i18n.json`, including
+  captions, button labels, status messages, and user-visible errors.
+- To show a fixed premium UI emoji in a plain `send_text()` message, put the
+  visible emoji char directly in the `i18n.json` value, and make sure that char
+  exists in `EMOJI_MAP` with a matching ID in `emoji.panel.icons.*`.
+- To use a dynamic emoji from the user's/admin's emoji DB, put a `{key}`
+  placeholder in the `i18n.json` value. It is expanded only when sent through
+  `send_text()` and only if the global emoji cache is loaded.
+- For inline/reply keyboard icons, do NOT put the emoji char in the button
+  label just to get premium rendering. Pass the icon key and let
+  `icon_custom_emoji_id` render the icon. Telegram renders inline button icons
+  to the left of the text even in RTL.
+- If an icon key lookup returns an empty string or `!missing.key!`, helpers
+  should omit the icon rather than sending an invalid custom emoji ID.
 
 ### Adding a new premium emoji
 
 1. Add `"key": "ID"` to `emoji.panel.icons` in `i18n.json`
-2. Add `("🔥", "key")` to `EMOJI_MAP` in `src/i18n.rs` (longer/variation-selector forms first)
-3. Use `btn_icon(text, CB_FOO, "key")` for inline buttons, or just put the emoji char in any text message — `send_text()` handles the rest automatically
+2. Add `("🔥", "key")` to `EMOJI_MAP` in `src/i18n/emoji_map.rs`
+   (longer/variation-selector forms first)
+3. Use `btn_icon(text, CB_FOO, "key")` for inline buttons, a
+   `KeyboardButton { icon_custom_emoji_id: Some(t("emoji.panel.icons.key")),
+   ... }` for reply keyboards, or just put the emoji char in any plain text
+   message sent through `send_text()`
+
+### YouTube downloader UI reminder
+
+When adding the YouTube downloader flow, keep all user-visible downloader
+strings under `youtube.*` in `i18n.json`. Use colored inline buttons with
+`icon_custom_emoji_id` for actions such as download, audio/video choice,
+quality choice, cancel, retry, and back. Plain status/error messages should go
+through `send_text()` so `{key}` templates and UI premium emoji render
+automatically; MarkdownV2 captions need explicit Markdown premium handling.
 
 ## Project Summary
 
