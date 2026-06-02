@@ -228,23 +228,103 @@ src/emoji/panel.rs      — keyboard builders, text formatters, CB_* constants
 src/emoji/store.rs      — all DB queries
 src/emoji/smart_name.rs — unicode → ASCII smart name
 src/emoji/import.rs     — SQL parse, analyze, execute import modes
+src/emoji/cache.rs      — EmojiCache, {key} expansion, 5-min refresh task
 ```
+
+### Message Routing Order (main.rs)
+
+For every incoming `Message`, routing happens in this exact order:
+
+1. **addemoji link detection** — if text contains `t.me/addemoji/PackName` AND
+   does NOT start with `/`, call `handle_addemoji_link` and skip everything else
+2. **active flow handling** — if user has a non-Idle flow state, call
+   `handle_emoji_flow_message`; if it returns `true`, skip everything else
+3. **command dispatch** — `/emoji`, `/se`, `/start`, `/cookie_*`, YouTube URLs
+
+Messages starting with `/` are never matched as addemoji links (step 1 is
+skipped), so commands always reach step 3.
 
 ### Flow States
 
 | State | Trigger | Exit |
 |-------|---------|------|
-| `AwaitingEmojis` | CB_ADD | cancel button or pack chosen |
-| `AwaitingPackChoice` | emojis collected | pack name typed or inline button |
-| `AwaitingPackAlias` | set alias button | any text |
+| `AwaitingEmojis` | CB_ADD | cancel button, pack chosen, or any input transitions to `AwaitingPackChoice` |
+| `AwaitingPackChoice` | emojis collected | pack name typed, inline pack button, or cancel |
+| `AwaitingPackAlias` | set-alias button on pack detail | any text (sets or clears alias) |
 | `AwaitingTestText` | CB_TEST | cancel button or `/emoji` |
-| `AwaitingImportFile` | CB_IMPORT | cancel button or document sent |
+| `AwaitingImportFile` | CB_IMPORT | cancel button or document sent → `AwaitingImportMode` |
 | `AwaitingImportMode` | file analyzed | import mode button pressed |
+
+### Adding Emojis — Accepted Input Types
+
+From `AwaitingEmojis` state, the bot accepts **three** input forms:
+
+| Input | How detected | API call |
+|-------|-------------|----------|
+| Custom emoji entities in message | `MessageEntityType::CustomEmoji` in entities | none needed |
+| 19-digit number in text | `extract_19digit_ids()` — word of exactly 19 ASCII digits | `getCustomEmojiStickers` |
+| `t.me/addemoji/PackName` link | `extract_addemoji_pack_name()` — matched BEFORE flow (works from any state) | `getStickerSet` |
+
+For the addemoji link path, `fetch_pack_emojis()` calls `getStickerSet`, filters
+stickers where `custom_emoji_id.is_some()`, and returns `Vec<PendingEmoji>`.
+The flow is then set to `AwaitingPackChoice` regardless of previous state.
+
+All three paths call `filter_duplicates()` which checks both the DB
+(`existing_custom_emoji_ids`) and the current in-memory pending list.
+
+### Pending Emoji Display
+
+- Paginated: **30 items per page** (`PENDING_PAGE_SIZE` in `panel.rs`)
+- Item numbers are **global** (page 2 starts at `31.`) so filter ops
+  like `-31 -32` work correctly across pages
+- Page info line `📄 صفحه N از M` shown in message text when `total_pages > 1`
+- Prev/next nav buttons (`CB_PENDING_PAGE_PREFIX = "emoji:pendpg:"`) appear
+  below the pack list in the keyboard; pressing them edits the message in-place
+- `pending_total_pages(count)` helper in `panel.rs` computes page count
+
+### Pack Choice Keyboard
+
+Shown after emojis are collected, in `AwaitingPackChoice` state:
+
+```
+[این ایموجی‌ها از کجان؟ 🔗]    ← green btn, calls getCustomEmojiStickers
+                                   groups by set_name, shows t.me/addemoji/ links
+[PackName]                        ← btn_icon, icon = set_default(⭐) if default,
+[PackName]                           pack_folder(📁) otherwise — all premium
+[قبلی ⬅]  [➡ بعدی]               ← only if total_pages > 1
+```
+
+Typing a pack name creates a new pack if it doesn't exist.
+`+N` / `-N` tokens edit the pending list (whitelist / blacklist by index).
 
 ### Callback Prefixes
 
-All emoji callbacks start with `emoji:`. Defined as `CB_*` constants in
-`src/emoji/panel.rs`.
+All emoji callbacks start with `emoji:`. Full list of `CB_*` constants in
+`src/emoji/panel.rs`:
+
+| Constant | Value | Action |
+|----------|-------|--------|
+| `CB_ADD` | `emoji:add` | enter AwaitingEmojis |
+| `CB_TEST` | `emoji:test` | enter AwaitingTestText |
+| `CB_LIST` | `emoji:list` | show paginated emoji list |
+| `CB_DELETE_PACK_MENU` | `emoji:delpack` | show packs for deletion |
+| `CB_PACKS` | `emoji:packs` | show pack management list |
+| `CB_IMPORT` | `emoji:import` | enter AwaitingImportFile |
+| `CB_EXPORT` | `emoji:export` | generate and send SQL file |
+| `CB_BACK` | `emoji:back` | return to main panel |
+| `CB_CANCEL` | `emoji:cancel` | same as back |
+| `CB_SHOW_PACK_LINKS` | `emoji:packlinks` | show source pack links |
+| `CB_BACK_TO_PACK_CHOICE` | `emoji:backpick` | return from pack links to pending |
+| `CB_PACK_OPEN_PREFIX` | `emoji:pack:` | open pack detail (+ pack id) |
+| `CB_PACK_SET_DEFAULT_PREFIX` | `emoji:setdef:` | set pack as default |
+| `CB_PACK_SET_ALIAS_PREFIX` | `emoji:setalias:` | enter AwaitingPackAlias |
+| `CB_PACK_DELETE_PREFIX` | `emoji:packdel:` | delete pack |
+| `CB_PICK_PACK_PREFIX` | `emoji:pickpack:` | pick pack to add emojis into |
+| `CB_LIST_PAGE_PREFIX` | `emoji:listpg:` | navigate emoji list page |
+| `CB_PENDING_PAGE_PREFIX` | `emoji:pendpg:` | navigate pending emojis page |
+| `CB_IMPORT_REPLACE` | `emoji:import:replace` | execute replace import |
+| `CB_IMPORT_MERGE` | `emoji:import:merge` | execute merge import |
+| `CB_IMPORT_SMART` | `emoji:import:smart` | execute smart-merge import |
 
 ### Emoji List Format
 
@@ -252,34 +332,38 @@ All emoji callbacks start with `emoji:`. Defined as `CB_*` constants in
 • ![fallback](tg://emoji?id=ID) fallback = numeric_id | smart_name | alias
 ```
 
-Premium emoji comes first, then static fallback.
-
-### UX Notes
-
-- The "pack source links" button in the pack-choice screen is labeled
-  **"این ایموجی‌ها از کجان؟ 🔗"** — this was chosen deliberately over the
-  generic "نشون بده لینک پک ایموجی‌ها" because it directly answers what the
-  user is thinking ("where did these emojis come from?") rather than describing
-  the action.
-- `icon_custom_emoji_id` on `InlineKeyboardButton` always renders the premium
-  emoji to the **LEFT** of the button text in Telegram — there is no API to
-  change its position. Keep this in mind when designing RTL button labels.
-- Pending emoji display is paginated at **30 per page** (`PENDING_PAGE_SIZE`).
-  Prev/next nav buttons appear below the pack list when needed.
+Rendered as MarkdownV2 with `tg://emoji` inline images (not entities).
+Link preview disabled on all list messages.
 
 ### Export / Import
 
-- **Export**: generates `emoji_{jalali-date}_{HH-MM}.sql` with `CREATE TABLE IF NOT EXISTS` + `INSERT` for the current user only. Sent as a Telegram document.
-- **Import**: user sends the SQL file. Bot parses and analyzes it, shows a report with counts and duplicates, then offers:
-  - **جایگزین** — delete all current data, insert from file
-  - **ادغام** — append to existing data, IDs continue
-  - **ادغام هوشمند** — append, skip duplicate `custom_emoji_id`s
-  - If DB is empty, only a single confirm button is shown.
+- **Export**: generates `emoji_{jalali-date}_{HH-MM}.sql` with
+  `CREATE TABLE IF NOT EXISTS` + `INSERT` for the current user only.
+  Sent as a Telegram document.
+- **Import**: user sends the SQL file. Bot parses and analyzes it, shows a
+  report with file stats + DB stats + duplicate count, then offers:
+  - **جایگزین** — delete all current data, insert from file (replace mode)
+  - **ادغام** — append to existing data, IDs continue (merge mode)
+  - **ادغام هوشمند** — append, skip duplicate `custom_emoji_id`s (smart-merge)
+  - If DB is empty, only a single confirm button is shown (always merge mode)
+- Implemented in `src/emoji/import.rs`: `parse_sql` → `analyze` → `execute_replace` / `execute_merge`
 
 ### ID Sequence Reset
 
 When a user deletes their last pack, both `emoji_packs_id_seq` and
 `emoji_items_id_seq` are reset to 1 so the next pack starts from id=1.
+
+### UX Notes
+
+- The "pack source links" button is labeled **"این ایموجی‌ها از کجان؟ 🔗"** —
+  answers what the user is thinking rather than describing the action.
+- `icon_custom_emoji_id` on `InlineKeyboardButton` always renders to the
+  **LEFT** of button text regardless of RTL — no API exists to change this.
+- Pack buttons (`packs_keyboard`, `pack_choice_keyboard`) use `btn_icon` with
+  `set_default` icon (⭐ premium) for default packs and `pack_folder` (📁
+  premium) for others — plain unicode was replaced to get premium rendering.
+- After adding emojis, the bot returns to the main panel. A future improvement
+  would be to navigate directly to the target pack's detail view instead.
 
 ## Source Layout
 
