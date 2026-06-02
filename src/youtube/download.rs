@@ -312,25 +312,28 @@ async fn run_download(
     let stdout = child.stdout.take().expect("piped stdout");
     let stderr = child.stderr.take().expect("piped stderr");
 
-    let trace_id_err = trace_id;
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<(&'static str, String)>(64);
+    let tx_out = tx.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut reader = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            let _ = tx_out.send(("stdout", line)).await;
+        }
+    });
+    let tx_err = tx;
     let stderr_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
-        let mut last = String::new();
         while let Ok(Some(line)) = reader.next_line().await {
-            last = line;
+            let _ = tx_err.send(("stderr", line)).await;
         }
-        if !last.is_empty() {
-            log_trace(trace_id_err, "yt_dlp_stderr_tail", &last);
-        }
-        last
     });
 
-    let mut reader = BufReader::new(stdout).lines();
     let mut filepath: Option<String> = None;
     let mut last_edit = Instant::now() - EDIT_THROTTLE;
     let mut last_percent_int = -1;
+    let mut stderr_tail = String::new();
 
-    while let Ok(Some(line)) = reader.next_line().await {
+    while let Some((source, line)) = rx.recv().await {
         if let Some(snap) = parse_progress_line(&line) {
             let now = Instant::now();
             if snap.percent_int != last_percent_int && now.duration_since(last_edit) >= EDIT_THROTTLE
@@ -341,7 +344,7 @@ async fn run_download(
                     trace_id,
                     "download_progress",
                     &format!(
-                        "percent={} downloaded={} total={} speed={} eta={}",
+                        "src={source} percent={} downloaded={} total={} speed={} eta={}",
                         snap.percent, snap.downloaded, snap.total, snap.speed, snap.eta
                     ),
                 );
@@ -353,16 +356,27 @@ async fn run_download(
                 )
                 .await;
             }
-        } else if !line.trim().is_empty() {
-            let candidate = line.trim();
-            if candidate.starts_with('/') && tokio::fs::metadata(candidate).await.is_ok() {
-                filepath = Some(candidate.to_string());
-                log_trace(trace_id, "download_filepath", candidate);
-            } else {
-                log_trace(trace_id, "yt_dlp_stdout", candidate);
-            }
+            continue;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if source == "stdout"
+            && trimmed.starts_with('/')
+            && tokio::fs::metadata(trimmed).await.is_ok()
+        {
+            filepath = Some(trimmed.to_string());
+            log_trace(trace_id, "download_filepath", trimmed);
+        } else if source == "stderr" {
+            stderr_tail = trimmed.to_string();
+            log_trace(trace_id, "yt_dlp_stderr", trimmed);
+        } else {
+            log_trace(trace_id, "yt_dlp_stdout", trimmed);
         }
     }
+    let _ = stdout_task.await;
+    let _ = stderr_task.await;
 
     let status = match child.wait().await {
         Ok(s) => s,
@@ -378,7 +392,6 @@ async fn run_download(
             return;
         }
     };
-    let stderr_tail = stderr_task.await.unwrap_or_default();
 
     if !status.success() {
         log_trace(
