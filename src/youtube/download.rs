@@ -155,6 +155,21 @@ fn format_progress_body(snap: &ProgressSnapshot, quality_label: &str) -> String 
     )
 }
 
+fn format_elapsed(d: Duration) -> String {
+    let s = d.as_secs();
+    format!("{:02}:{:02}", s / 60, s % 60)
+}
+
+fn format_upload_body(quality_label: &str, elapsed: Duration) -> String {
+    tf(
+        "youtube.download.progress.upload_body",
+        &[
+            ("quality", quality_label),
+            ("elapsed", &format_elapsed(elapsed)),
+        ],
+    )
+}
+
 async fn edit_status(api: &Bot, chat_id: i64, message_id: i32, text: String) {
     let entities = entities_for_text(&text);
     let mut params = EditMessageTextParams::builder()
@@ -457,11 +472,6 @@ async fn run_download(
         &[("title", &req.title), ("quality", &quality_label)],
     );
     let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
-    log_trace(
-        trace_id,
-        "upload_start",
-        &format!("path={path} thumb={}", thumb_path.as_deref().unwrap_or("none")),
-    );
     let mut params = SendVideoParams::builder()
         .chat_id(req.chat_id)
         .video(FileUpload::InputFile(InputFile {
@@ -482,9 +492,39 @@ async fn run_download(
     }
     params.height = Some(height);
 
-    match api.send_video(&params).await {
-        Ok(_) => {
-            log_trace(trace_id, "upload_ok", &format!("path={path}"));
+    log_trace(
+        trace_id,
+        "upload_start",
+        &format!("path={path} thumb={}", thumb_path.as_deref().unwrap_or("none")),
+    );
+
+    let api_for_send = api.clone();
+    let mut send_task = tokio::spawn(async move { api_for_send.send_video(&params).await });
+
+    let upload_start = Instant::now();
+    let mut interval = tokio::time::interval(EDIT_THROTTLE);
+    interval.tick().await; // skip immediate first tick
+
+    let send_result = loop {
+        tokio::select! {
+            result = &mut send_task => { break result; }
+            _ = interval.tick() => {
+                let elapsed = upload_start.elapsed();
+                log_trace(trace_id, "upload_progress", &format!("elapsed={}s", elapsed.as_secs()));
+                edit_status(
+                    &api,
+                    status_chat_id,
+                    status_message_id,
+                    format_upload_body(&quality_label, elapsed),
+                )
+                .await;
+            }
+        }
+    };
+
+    match send_result {
+        Ok(Ok(_)) => {
+            log_trace(trace_id, "upload_ok", &format!("path={path} elapsed={}s", upload_start.elapsed().as_secs()));
             let _ = api
                 .delete_message(
                     &frankenstein::methods::DeleteMessageParams::builder()
@@ -494,7 +534,7 @@ async fn run_download(
                 )
                 .await;
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             log_trace(trace_id, "upload_failed", &e.to_string());
             let _ = api
                 .send_message(
@@ -507,6 +547,9 @@ async fn run_download(
                         .build(),
                 )
                 .await;
+        }
+        Err(e) => {
+            log_trace(trace_id, "upload_join_failed", &e.to_string());
         }
     }
 
