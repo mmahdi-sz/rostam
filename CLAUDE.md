@@ -175,6 +175,130 @@ quality choice, cancel, retry, and back. Plain status/error messages should go
 through `send_text()` so `{key}` templates and UI premium emoji render
 automatically; MarkdownV2 captions need explicit Markdown premium handling.
 
+## YouTube Downloader Current State
+
+Implemented across:
+
+```text
+src/youtube/extract.rs          — YouTube URL detection
+src/youtube/fetch.rs            — yt-dlp metadata fetch + format/codec parsing
+src/youtube/format.rs           — preview caption/description formatting
+src/youtube/handle.rs           — URL handler, cookie retry flow, preview sending
+src/youtube/quality_keyboard.rs — quality + codec inline keyboards/callbacks
+src/youtube/trace.rs            — trace id generation + structured logs
+src/youtube/types.rs            — VideoInfo, VideoCodec, VideoFormatOption
+```
+
+Current flow:
+
+1. `main.rs` detects YouTube URLs in ordinary text and creates a `trace_id`.
+2. `handle_youtube_url()` selects a Firefox cookie from the Cookie Pool.
+3. `fetch_video_info()` runs `yt-dlp --dump-single-json --no-download`.
+4. The bot sends the preview thumbnail/caption and long description chunks.
+5. `send_quality_prompt()` sends the quality-selection inline keyboard.
+
+### yt-dlp metadata rules
+
+- `fetch_video_info()` must keep passing
+  `--js-runtimes deno:/root/.deno/bin/deno`; systemd's PATH does not include
+  `/root/.deno/bin`, and without the explicit Deno runtime YouTube may return
+  only storyboard formats.
+- Format parsing reads both `formats` and `requested_formats`, then also checks
+  the top-level JSON object.
+- A YouTube resolution is considered selectable only if there is a video format
+  for that height with a recognized video codec.
+- Recognized codecs:
+  - `avc1...` -> `VideoCodec::H264`
+  - `hvc1...` or `dvh1...` -> `VideoCodec::H265`
+  - `vp9` or `vp09...` -> `VideoCodec::Vp9`
+  - `av01...` -> `VideoCodec::Av1`
+- Unknown/missing codecs are ignored. If a resolution only has unknown codecs,
+  do not show that resolution.
+- Do not infer lower qualities from a max height. The keyboard should show only
+  exact heights present in `VideoInfo.video_formats` with recognized codecs.
+
+### Quality and codec UI
+
+Quality labels live in `i18n.json` under `youtube.quality.buttons.*`.
+Codec labels live under `youtube.codec.buttons.*`.
+
+Quality button colors:
+
+- `>= 1080p`: `ButtonStyle::Success` (green)
+- `720p` and `480p`: `ButtonStyle::Primary`
+- `<= 360p`: `ButtonStyle::Danger` (red)
+
+Current callback prefixes:
+
+```text
+yt:quality:{height}:{codec_keys}
+yt:codec:{height}:{codec_key}
+```
+
+Examples:
+
+```text
+yt:quality:1080:h264,vp9,av1
+yt:codec:1080:vp9
+```
+
+Current callback behavior:
+
+- Clicking a quality with multiple codecs edits the quality message into a
+  codec-selection message.
+- Clicking a quality with one codec currently answers with
+  `youtube.quality.not_ready`.
+- Clicking a codec currently answers with `youtube.quality.not_ready`.
+- Actual download is not implemented yet.
+
+### Downloader implementation notes for the next agent
+
+Telegram callback data is limited and cannot safely carry a YouTube URL,
+cookie spec, title, or format id. Before implementing real downloads, replace
+the current callback payload shape with a short request id, for example:
+
+```text
+yt:quality:{request_id}:{height}
+yt:codec:{request_id}:{height}:{codec_key}
+```
+
+Store the request in memory when `send_quality_prompt()` is called. The stored
+request should include at least:
+
+- original `trace_id`
+- `chat_id` and requesting `user_id`
+- `webpage_url`
+- selected cookie `yt_dlp_browser_spec`
+- title
+- `Vec<VideoFormatOption>` including `format_id`, `height`, and `codec`
+
+When the user chooses the final codec/quality:
+
+- find the matching `VideoFormatOption` by `height + codec`
+- run download in a spawned task so long polling is not blocked
+- select the format as `{format_id}+bestaudio/best`
+- use the same explicit Deno runtime and same cookie spec
+- log command start, sanitized args, progress updates, output path, send start,
+  send success/failure, cleanup, and all Telegram edit failures
+- upload via the local Bot API using a local file path (`FileUpload::InputFile`)
+  so large files use the local `telegram-bot-api` server
+
+The requested progress text should be an i18n template, not hardcoded:
+
+```text
+دانلود از یوتیوب (مرحله دریافت ویدیو)
+⏳ در حال دانلود از یوتیوب...
+🎬 کیفیت انتخابی: {quality}
+📊 پیشرفت: {percent}
+🔘 نوار پیشرفت: {bar}
+📥 حجم: {downloaded} از {total}
+🚀 سرعت: {speed}
+⏱️ سپری‌شده: {elapsed}
+⌛ باقی‌مانده: {eta}
+```
+
+Progress bars use 10 cells: filled `●`, empty `○`.
+
 ## Project Summary
 
 This project is a Rust Telegram bot named `ros-telegram-bot`.
@@ -479,7 +603,10 @@ src/main.rs                          — event loop + routing (~160 lines)
 src/config.rs                        — BOT_TOKEN / DATABASE_URL / ADMIN_USER_ID reading
 src/bot.rs                           — send_text, send_text_md, send_start_button
 src/cookie_pool.rs                   — CookiePool + format helpers + save_snapshot
-src/youtube.rs                       — yt-dlp fetch + handle_youtube_url
+src/youtube/mod.rs                   — YouTube module exports
+src/youtube/fetch.rs                 — yt-dlp metadata fetch + codec parsing
+src/youtube/handle.rs                — URL flow, cookie retry, preview send
+src/youtube/quality_keyboard.rs      — quality/codec inline UI callbacks
 src/i18n.rs                          — t() / tf() / entities_for_text() helpers, reads i18n.json
 src/database/mod.rs
 src/database/posfreSQL/postgresql.rs — PostgreSQL connection + cookie pool tables
