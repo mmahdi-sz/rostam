@@ -3,6 +3,7 @@ mod extract;
 mod fetch;
 mod format;
 pub mod jalali;
+mod download;
 mod quality_keyboard;
 mod trace;
 mod handle;
