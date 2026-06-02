@@ -71,9 +71,19 @@ pub(super) async fn handle(
         Ok(Some(p)) => p,
         Ok(None) => match emoji_store::create_pack(client, user_id, text).await {
             Ok(p) => p,
-            Err(e) => { eprintln!("create_pack failed: {e}"); flow_manager.clear(user_id); return true; }
+            Err(e) => {
+                eprintln!("create_pack failed: {e:?}");
+                let _ = crate::bot::send_text(api, chat_id, &t("emoji.pack_create_failed")).await;
+                flow_manager.clear(user_id);
+                return true;
+            }
         },
-        Err(e) => { eprintln!("find_pack_by_name failed: {e}"); flow_manager.clear(user_id); return true; }
+        Err(e) => {
+            eprintln!("find_pack_by_name failed: {e:?}");
+            let _ = crate::bot::send_text(api, chat_id, &t("emoji.pack_create_failed")).await;
+            flow_manager.clear(user_id);
+            return true;
+        }
     };
     let mut added = 0;
     for emoji in &collected {
