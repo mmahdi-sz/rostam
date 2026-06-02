@@ -7,7 +7,7 @@ use frankenstein::{
 
 use crate::i18n::t;
 use crate::emoji::{FlowManager, store as emoji_store};
-use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
+use crate::emoji::cache::{self, EmojiCache, LookupOutcome, RenderLookup};
 
 use super::pack_ops::send_cancel_and_panel;
 
@@ -49,27 +49,30 @@ pub(super) async fn handle_test_text(
         return true;
     }
 
-    let rendered = if let Some(cache_arc) = cache::global() {
+    let (rendered, lookups) = if let Some(cache_arc) = cache::global() {
         let cache_guard = cache_arc.read().await;
         eprintln!(
-            "[emoji_test trace={trace_id} event=cache_state] empty={empty} key_count={keys} entry_count={entries}",
+            "[emoji_test trace={trace_id} event=cache_state] source=global empty={empty} key_count={keys} entry_count={entries}",
             empty = cache_guard.is_empty(),
             keys = cache_guard.key_count(),
             entries = cache_guard.entry_count(),
         );
-        let (rendered, lookups) = cache_guard.render_markdown_with_trace(text);
-        log_lookups(trace_id, &lookups);
-        eprintln!(
-            "[emoji_test trace={trace_id} event=render_summary] {summary} rendered_len={rl} rendered_preview={rp:?}",
-            summary = cache::summarise_lookups(&lookups),
-            rl = rendered.chars().count(),
-            rp = cache::preview(&rendered, 200),
-        );
-        rendered
+        cache_guard.render_markdown_with_trace(text)
     } else {
-        eprintln!("[emoji_test trace={trace_id} event=cache_state] status=not_loaded passthrough=true");
-        text.to_string()
+        // Cache disabled (e.g. ADMIN_USER_ID unset). Use an empty cache so the
+        // template engine still escapes braces / handles raw-id {NNN} entries —
+        // anything else just renders as escaped literal text, which is correct
+        // for MarkdownV2 instead of being silently rejected by Telegram.
+        eprintln!("[emoji_test trace={trace_id} event=cache_state] source=empty_fallback reason=cache_disabled");
+        EmojiCache::default().render_markdown_with_trace(text)
     };
+    log_lookups(trace_id, &lookups);
+    eprintln!(
+        "[emoji_test trace={trace_id} event=render_summary] {summary} rendered_len={rl} rendered_preview={rp:?}",
+        summary = cache::summarise_lookups(&lookups),
+        rl = rendered.chars().count(),
+        rp = cache::preview(&rendered, 200),
+    );
 
     eprintln!(
         "[emoji_test trace={trace_id} event=send_attempt] parse_mode=MarkdownV2 text_len={tl}",
