@@ -21,7 +21,7 @@ use frankenstein::{
     types::MaybeInaccessibleMessage,
     updates::UpdateContent,
 };
-use i18n::t;
+use i18n::{t, reload_i18n};
 use tokio::sync::RwLock;
 use youtube::{extract_youtube_urls, handle_quality_callback, handle_youtube_url, log_trace, next_trace_id};
 
@@ -148,6 +148,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         }
                         match text {
+                            "/i18n_reload" => {
+                                let is_admin = config::admin_user_id()
+                                    .map(|id| Some(id) == user_id)
+                                    .unwrap_or(false);
+                                if is_admin {
+                                    reload_i18n();
+                                    send_text(&api, message.chat.id, "✅ i18n.json reloaded.").await?;
+                                }
+                            }
                             "/start" => send_start_button(&api, message.chat.id).await?,
                             "/cookie_status" => {
                                 let status = cookie_pool.status();
