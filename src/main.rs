@@ -115,6 +115,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 UpdateContent::Message(message) => {
                     let user_id = message.from.as_ref().map(|u| u.id as i64);
 
+                    if let Some(uid) = user_id {
+                        if let Some(text) = message.text.as_deref() {
+                            if let Some(pack_name) = emoji_handler::extract_addemoji_pack_name(text) {
+                                emoji_handler::handle_addemoji_link(
+                                    &api, &message, uid, &pack_name, &mut flow_manager, &database,
+                                ).await;
+                                continue;
+                            }
+                        }
+                    }
+
                     if user_id.is_some()
                         && !matches!(flow_manager.get(user_id.unwrap()), FlowState::Idle)
                     {
