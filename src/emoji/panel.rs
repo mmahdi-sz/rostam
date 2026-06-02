@@ -63,9 +63,9 @@ pub fn main_panel_text() -> String {
 pub fn packs_keyboard(packs: &[EmojiPack]) -> InlineKeyboardMarkup {
     let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
     for pack in packs {
-        let marker = if pack.is_default { " ⭐" } else { "" };
-        let label = format!("{}{}  ({})", pack.name, marker, pack.item_count);
-        rows.push(vec![btn(&label, &format!("{CB_PACK_OPEN_PREFIX}{}", pack.id))]);
+        let label = format!("{}  ({})", pack.name, pack.item_count);
+        let icon = if pack.is_default { "set_default" } else { "pack_folder" };
+        rows.push(vec![btn_icon(&label, &format!("{CB_PACK_OPEN_PREFIX}{}", pack.id), icon)]);
     }
     rows.push(vec![btn_icon(&t("emoji.panel.back"), CB_BACK, "back")]);
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
@@ -349,17 +349,16 @@ pub fn pack_choice_keyboard(packs: &[EmojiPack], page: usize, total_pages: usize
     let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
     rows.push(vec![btn_success(&t("emoji.panel.show_pack_links"), CB_SHOW_PACK_LINKS)]);
     for pack in packs.iter().rev() {
-        let marker = if pack.is_default { " ⭐" } else { "" };
-        let label = format!("📂 {}{}", pack.name, marker);
-        rows.push(vec![btn(&label, &format!("{CB_PICK_PACK_PREFIX}{}", pack.id))]);
+        let icon = if pack.is_default { "set_default" } else { "pack_folder" };
+        rows.push(vec![btn_icon(&pack.name, &format!("{CB_PICK_PACK_PREFIX}{}", pack.id), icon)]);
     }
     if total_pages > 1 {
         let mut nav: Vec<InlineKeyboardButton> = Vec::new();
         if page > 0 {
-            nav.push(btn_icon(
-                &t("emoji.panel.prev"),
+            // icon after text for RTL: "قبلی ⬅"
+            nav.push(btn(
+                &format!("{} ⬅", t("emoji.panel.prev")),
                 &format!("{CB_PENDING_PAGE_PREFIX}{}", page - 1),
-                "prev",
             ));
         }
         if page + 1 < total_pages {
