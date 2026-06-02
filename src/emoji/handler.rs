@@ -26,7 +26,8 @@ use super::{
             CB_DELETE_PACK_MENU, CB_EXPORT,
             CB_IMPORT, CB_IMPORT_MERGE, CB_IMPORT_REPLACE, CB_IMPORT_SMART,
             CB_LIST, CB_PACKS, CB_PACK_DELETE_PREFIX, CB_PACK_OPEN_PREFIX,
-            CB_PICK_PACK_PREFIX, CB_PACK_SET_ALIAS_PREFIX, CB_PACK_SET_DEFAULT_PREFIX,
+            CB_PENDING_PAGE_PREFIX, CB_PICK_PACK_PREFIX,
+            CB_PACK_SET_ALIAS_PREFIX, CB_PACK_SET_DEFAULT_PREFIX,
             CB_SHOW_PACK_LINKS, CB_TEST},
     store as emoji_store,
 };
@@ -217,17 +218,40 @@ pub async fn handle_emoji_callback(
         }
         d if d == CB_BACK_TO_PACK_CHOICE => {
             if let FlowState::AwaitingPackChoice { collected } = flow_manager.get(user_id) {
-                let summary = emoji_panel::format_pending_emojis(&collected, &[]);
+                let total_pages = emoji_panel::pending_total_pages(collected.len());
+                let summary = emoji_panel::format_pending_emojis(&collected, &[], 0);
                 let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
                 let params = EditMessageTextParams::builder()
                     .chat_id(chat_id)
                     .message_id(message_id)
                     .text(&summary)
                     .parse_mode(ParseMode::MarkdownV2)
-                    .reply_markup(emoji_panel::pack_choice_keyboard(&packs))
+                    .reply_markup(emoji_panel::pack_choice_keyboard(&packs, 0, total_pages))
                     .build();
                 if let Err(e) = api.edit_message_text(&params).await {
                     eprintln!("edit back to pack choice failed: {e}");
+                }
+            }
+        }
+        d if d.starts_with(CB_PENDING_PAGE_PREFIX) => {
+            if let Some(page) = d
+                .strip_prefix(CB_PENDING_PAGE_PREFIX)
+                .and_then(|s| s.parse::<usize>().ok())
+            {
+                if let FlowState::AwaitingPackChoice { collected } = flow_manager.get(user_id) {
+                    let total_pages = emoji_panel::pending_total_pages(collected.len());
+                    let text = emoji_panel::format_pending_emojis(&collected, &[], page);
+                    let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
+                    let params = EditMessageTextParams::builder()
+                        .chat_id(chat_id)
+                        .message_id(message_id)
+                        .text(&text)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .reply_markup(emoji_panel::pack_choice_keyboard(&packs, page, total_pages))
+                        .build();
+                    if let Err(e) = api.edit_message_text(&params).await {
+                        eprintln!("edit pending page failed: {e}");
+                    }
                 }
             }
         }
@@ -315,14 +339,15 @@ pub async fn handle_emoji_flow_message(
                     return true;
                 }
                 collected.extend(from_ids);
-                let text = emoji_panel::format_pending_emojis(&collected, &duplicates);
+                let total_pages = emoji_panel::pending_total_pages(collected.len());
+                let text = emoji_panel::format_pending_emojis(&collected, &duplicates, 0);
                 let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
                 let _ = api.send_message(
                     &SendMessageParams::builder()
                         .chat_id(chat_id)
                         .text(text)
                         .parse_mode(ParseMode::MarkdownV2)
-                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs)))
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs, 0, total_pages)))
                         .build(),
                 ).await;
                 flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
@@ -341,14 +366,15 @@ pub async fn handle_emoji_flow_message(
                 return true;
             }
             collected.append(&mut new_emojis);
-            let text = emoji_panel::format_pending_emojis(&collected, &duplicates);
+            let total_pages = emoji_panel::pending_total_pages(collected.len());
+            let text = emoji_panel::format_pending_emojis(&collected, &duplicates, 0);
             let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
             let _ = api.send_message(
                 &SendMessageParams::builder()
                     .chat_id(chat_id)
                     .text(text)
                     .parse_mode(ParseMode::MarkdownV2)
-                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs)))
+                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs, 0, total_pages)))
                     .build(),
             ).await;
             flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
@@ -371,14 +397,15 @@ pub async fn handle_emoji_flow_message(
                     return true;
                 }
                 collected.extend(extras);
-                let summary = emoji_panel::format_pending_emojis(&collected, &duplicates);
+                let total_pages = emoji_panel::pending_total_pages(collected.len());
+                let summary = emoji_panel::format_pending_emojis(&collected, &duplicates, 0);
                 let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
                 let _ = api.send_message(
                     &SendMessageParams::builder()
                         .chat_id(chat_id)
                         .text(summary)
                         .parse_mode(ParseMode::MarkdownV2)
-                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs)))
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs, 0, total_pages)))
                         .build(),
                 ).await;
                 flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
@@ -390,14 +417,15 @@ pub async fn handle_emoji_flow_message(
                     flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
                     return true;
                 }
-                let summary = emoji_panel::format_pending_emojis(&collected, &[]);
+                let total_pages = emoji_panel::pending_total_pages(collected.len());
+                let summary = emoji_panel::format_pending_emojis(&collected, &[], 0);
                 let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
                 let _ = api.send_message(
                     &SendMessageParams::builder()
                         .chat_id(chat_id)
                         .text(summary)
                         .parse_mode(ParseMode::MarkdownV2)
-                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs)))
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs, 0, total_pages)))
                         .build(),
                 ).await;
                 flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
@@ -1019,14 +1047,15 @@ pub async fn handle_addemoji_link(
     let mut collected = existing;
     collected.extend(new_emojis);
 
-    let text = emoji_panel::format_pending_emojis(&collected, &duplicates);
+    let total_pages = emoji_panel::pending_total_pages(collected.len());
+    let text = emoji_panel::format_pending_emojis(&collected, &duplicates, 0);
     let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
     let _ = api.send_message(
         &SendMessageParams::builder()
             .chat_id(chat_id)
             .text(text)
             .parse_mode(ParseMode::MarkdownV2)
-            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs)))
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs, 0, total_pages)))
             .build(),
     ).await;
     flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });

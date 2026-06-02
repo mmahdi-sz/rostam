@@ -117,11 +117,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     if let Some(uid) = user_id {
                         if let Some(text) = message.text.as_deref() {
-                            if let Some(pack_name) = emoji_handler::extract_addemoji_pack_name(text) {
-                                emoji_handler::handle_addemoji_link(
-                                    &api, &message, uid, &pack_name, &mut flow_manager, &database,
-                                ).await;
-                                continue;
+                            if !text.trim_start().starts_with('/') {
+                                if let Some(pack_name) = emoji_handler::extract_addemoji_pack_name(text) {
+                                    emoji_handler::handle_addemoji_link(
+                                        &api, &message, uid, &pack_name, &mut flow_manager, &database,
+                                    ).await;
+                                    continue;
+                                }
                             }
                         }
                     }

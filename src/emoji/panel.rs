@@ -27,7 +27,13 @@ pub const CB_IMPORT_MERGE: &str = "emoji:import:merge";
 pub const CB_IMPORT_SMART: &str = "emoji:import:smart";
 pub const CB_SHOW_PACK_LINKS: &str = "emoji:packlinks";
 pub const CB_BACK_TO_PACK_CHOICE: &str = "emoji:backpick";
+pub const CB_PENDING_PAGE_PREFIX: &str = "emoji:pendpg:";
 pub const LIST_PAGE_SIZE: usize = 15;
+pub const PENDING_PAGE_SIZE: usize = 30;
+
+pub fn pending_total_pages(count: usize) -> usize {
+    if count == 0 { 1 } else { (count + PENDING_PAGE_SIZE - 1) / PENDING_PAGE_SIZE }
+}
 
 pub fn main_panel_keyboard() -> InlineKeyboardMarkup {
     let add = btn_icon(&t("emoji.panel.add"), CB_ADD, "add");
@@ -108,16 +114,23 @@ pub fn pack_detail_text(pack: &EmojiPack) -> String {
 pub fn format_pending_emojis(
     items: &[super::flow::PendingEmoji],
     duplicates: &[super::flow::PendingEmoji],
+    page: usize,
 ) -> String {
     use crate::i18n::apply_premium_to_md;
     use crate::youtube::escape_markdown_v2;
     let emd = |s: &str| apply_premium_to_md(&escape_markdown_v2(s));
+    let total_pages = pending_total_pages(items.len());
+    let page = page.min(total_pages.saturating_sub(1));
+    let start = page * PENDING_PAGE_SIZE;
+    let end = (start + PENDING_PAGE_SIZE).min(items.len());
+
     let mut lines: Vec<String> = Vec::new();
     lines.push(emd(&t("emoji.pending.title")));
-    for (idx, item) in items.iter().enumerate() {
+    for (local_idx, item) in items[start..end].iter().enumerate() {
+        let global_num = start + local_idx + 1;
         lines.push(format!(
             "`{}.` {} ![{}](tg://emoji?id={}) \\= `{}`",
-            idx + 1,
+            global_num,
             item.fallback,
             item.fallback,
             item.custom_emoji_id,
@@ -129,6 +142,12 @@ pub fn format_pending_emojis(
         "emoji.pending.ready",
         &[("count", &items.len().to_string())],
     )));
+    if total_pages > 1 {
+        lines.push(emd(&tf(
+            "emoji.pending.page_info",
+            &[("page", &(page + 1).to_string()), ("pages", &total_pages.to_string())],
+        )));
+    }
     lines.push(emd(&t("emoji.pending.choose_pack")));
     if !duplicates.is_empty() {
         let mut rendered = String::new();
@@ -326,13 +345,33 @@ fn btn_icon(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardBu
     }
 }
 
-pub fn pack_choice_keyboard(packs: &[EmojiPack]) -> InlineKeyboardMarkup {
+pub fn pack_choice_keyboard(packs: &[EmojiPack], page: usize, total_pages: usize) -> InlineKeyboardMarkup {
     let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
     rows.push(vec![btn_success(&t("emoji.panel.show_pack_links"), CB_SHOW_PACK_LINKS)]);
     for pack in packs.iter().rev() {
         let marker = if pack.is_default { " ⭐" } else { "" };
         let label = format!("📂 {}{}", pack.name, marker);
         rows.push(vec![btn(&label, &format!("{CB_PICK_PACK_PREFIX}{}", pack.id))]);
+    }
+    if total_pages > 1 {
+        let mut nav: Vec<InlineKeyboardButton> = Vec::new();
+        if page > 0 {
+            nav.push(btn_icon(
+                &t("emoji.panel.prev"),
+                &format!("{CB_PENDING_PAGE_PREFIX}{}", page - 1),
+                "prev",
+            ));
+        }
+        if page + 1 < total_pages {
+            nav.push(btn_icon(
+                &t("emoji.panel.next"),
+                &format!("{CB_PENDING_PAGE_PREFIX}{}", page + 1),
+                "next",
+            ));
+        }
+        if !nav.is_empty() {
+            rows.push(nav);
+        }
     }
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }
