@@ -35,6 +35,47 @@ Rules:
   logs) stay hardcoded — i18n is for end-user text only.
 - The file is currently single-language (Farsi). Structure is nested JSON.
 
+## Debug & Trace Logging (MUST FOLLOW)
+
+Every non-trivial bot flow must have enough operator-facing logs to trace one
+user action from routing to final Telegram/API response. Logs are hardcoded
+dev/operator text and do NOT belong in `i18n.json`.
+
+Rules:
+
+- Add a stable per-action trace id for multi-step flows. Keep the same trace id
+  across routing, handler calls, external commands/API calls, parsing,
+  Telegram sends/edits, callbacks, retries, and failure branches.
+- Use structured, grep-friendly log lines with a domain prefix and event name,
+  e.g. `[youtube trace=12 event=fetch_parsed] heights=[144, 240, 720]`.
+- Log routing inputs: `user_id`, `chat_id`, command/callback prefix, URL or
+  identifier, and the selected branch/handler. This is how we verify whether a
+  message reached the intended flow.
+- Log important function boundaries: handler start, inputs passed to helper
+  functions, outputs returned by helpers, and which next function receives that
+  output.
+- Log external work: command/API name, sanitized args, exit status, parse
+  summary, retry decisions, selected cookie/profile id, and rate-limit/bad-cookie
+  branches.
+- Log Telegram operations: send/edit/callback-answer attempts, success events,
+  and Telegram error descriptions when they fail.
+- Log dynamic UI decisions: which buttons were built, callback data prefixes,
+  detected formats/qualities, page numbers, item ids, and why a panel was
+  skipped.
+- Do not log secrets: bot tokens, raw cookie values, full database URLs, or
+  private file contents. Local profile ids/paths and Telegram user/chat ids are
+  acceptable for operator debugging in this private deployment.
+- Keep logs concise but complete enough that `journalctl -u abc --no-pager -n
+  300 | rg "domain|trace|event"` can show where the flow broke.
+
+Current YouTube example:
+
+```text
+[youtube trace=1 event=route_youtube_url] user_id=... chat_id=... url=...
+[youtube trace=1 event=fetch_parsed] format_count=28 requested_format_count=2 heights=[144, 240, 360, 480, 720]
+[youtube trace=1 event=quality_prompt_buttons] available_heights=[144, 240, 360, 480, 720] button_heights=[720, 480, 360, 240, 144]
+```
+
 ## Emoji Template System
 
 `{key}` placeholders in any text are expanded at send time using the global
