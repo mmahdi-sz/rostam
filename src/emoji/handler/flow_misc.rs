@@ -17,6 +17,12 @@ pub(super) async fn handle_pack_alias(
     trace_id: u64, pack_id: i32,
 ) -> bool {
     let text = message.text.as_deref().unwrap_or("").trim();
+    if text == t("emoji.cancel_button") {
+        eprintln!("[emoji_msg trace={trace_id} event=pack_alias_cancel]");
+        flow_manager.clear(user_id);
+        send_cancel_and_panel(api, chat_id, trace_id).await;
+        return true;
+    }
     let alias = if text == "-" || text.is_empty() { None } else { Some(text) };
     eprintln!(
         "[emoji_msg trace={trace_id} event=pack_alias_input] user_id={user_id} \

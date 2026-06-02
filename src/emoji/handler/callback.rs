@@ -150,7 +150,8 @@ pub async fn handle_emoji_callback(
             if let Some(pack_id) = d.strip_prefix(CB_PACK_SET_ALIAS_PREFIX).and_then(|s| s.parse::<i32>().ok()) {
                 eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_SET_ALIAS pack_id={pack_id}");
                 flow_manager.set(user_id, FlowState::AwaitingPackAlias { pack_id });
-                let _ = send_text(api, chat_id, &t("emoji.pack_alias_prompt")).await;
+                send_with_ents(api, chat_id, t("emoji.pack_alias_prompt"),
+                    Some(ReplyMarkup::ReplyKeyboardMarkup(emoji_panel::cancel_reply_keyboard()))).await;
                 eprintln!("[emoji_cb trace={trace_id} event=state_transition] new_state=AwaitingPackAlias pack_id={pack_id}");
             }
         }
