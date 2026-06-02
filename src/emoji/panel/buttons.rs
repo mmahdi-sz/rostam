@@ -7,9 +7,18 @@ pub fn btn(text: &str, callback_data: &str) -> InlineKeyboardButton {
 }
 
 pub fn btn_success(text: &str, callback_data: &str) -> InlineKeyboardButton {
+    btn_icon_success(text, callback_data, "")
+}
+
+pub fn btn_danger(text: &str, callback_data: &str) -> InlineKeyboardButton {
+    btn_icon_danger(text, callback_data, "")
+}
+
+pub fn btn_icon_success(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardButton {
+    let icon_id = resolve_icon(icon_key);
     InlineKeyboardButton {
         text: text.to_string(),
-        icon_custom_emoji_id: None,
+        icon_custom_emoji_id: icon_id,
         callback_data: Some(callback_data.to_string()),
         style: Some(ButtonStyle::Success),
         url: None, login_url: None, web_app: None,
@@ -19,10 +28,11 @@ pub fn btn_success(text: &str, callback_data: &str) -> InlineKeyboardButton {
     }
 }
 
-pub fn btn_danger(text: &str, callback_data: &str) -> InlineKeyboardButton {
+pub fn btn_icon_danger(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardButton {
+    let icon_id = resolve_icon(icon_key);
     InlineKeyboardButton {
         text: text.to_string(),
-        icon_custom_emoji_id: None,
+        icon_custom_emoji_id: icon_id,
         callback_data: Some(callback_data.to_string()),
         style: Some(ButtonStyle::Danger),
         url: None, login_url: None, web_app: None,
@@ -30,6 +40,12 @@ pub fn btn_danger(text: &str, callback_data: &str) -> InlineKeyboardButton {
         switch_inline_query_chosen_chat: None, copy_text: None,
         callback_game: None, pay: None,
     }
+}
+
+fn resolve_icon(icon_key: &str) -> Option<String> {
+    if icon_key.is_empty() { return None; }
+    let id = t(&format!("emoji.panel.icons.{icon_key}"));
+    if id.is_empty() || id.starts_with('!') { None } else { Some(id) }
 }
 
 pub fn btn_icon(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardButton {

@@ -142,10 +142,11 @@ pub fn remove_reply_keyboard() -> ReplyKeyboardRemove {
 }
 
 pub fn pack_delete_confirm_keyboard(pack_id: i32) -> InlineKeyboardMarkup {
+    use super::buttons::{btn_icon_success, btn_icon_danger};
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![vec![
-            btn_success(&t("emoji.panel.delete_confirm_yes"), &format!("{CB_PACK_DELETE_CONFIRM_PREFIX}{pack_id}")),
-            btn_danger(&t("emoji.panel.delete_confirm_no"), &format!("{CB_PACK_OPEN_PREFIX}{pack_id}")),
+            btn_icon_success(&t("emoji.panel.delete_confirm_yes"), &format!("{CB_PACK_DELETE_CONFIRM_PREFIX}{pack_id}"), "check"),
+            btn_icon_danger(&t("emoji.panel.delete_confirm_no"), &format!("{CB_PACK_OPEN_PREFIX}{pack_id}"), "cross"),
         ]])
         .build()
 }
