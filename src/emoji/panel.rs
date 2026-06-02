@@ -85,7 +85,7 @@ pub fn pack_detail_keyboard(pack: &EmojiPack) -> InlineKeyboardMarkup {
         )]);
     }
     rows.push(vec![delete]);
-    rows.push(vec![btn_icon(&t("emoji.panel.back_to_list"), CB_PACKS, "back_to_list")]);
+    rows.push(vec![btn_icon(&t("emoji.panel.back_to_list"), CB_PACKS, "back")]);
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }
 
@@ -305,7 +305,8 @@ fn btn_icon(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardBu
         None
     } else {
         let id = t(&format!("emoji.panel.icons.{icon_key}"));
-        if id.is_empty() { None } else { Some(id) }
+        // t() returns "!key!" when the key is missing — reject those
+        if id.is_empty() || id.starts_with('!') { None } else { Some(id) }
     };
 
     InlineKeyboardButton {
