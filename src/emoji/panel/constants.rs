@@ -11,6 +11,7 @@ pub const CB_PACK_OPEN_PREFIX: &str = "emoji:pack:";
 pub const CB_PACK_SET_DEFAULT_PREFIX: &str = "emoji:setdef:";
 pub const CB_PACK_SET_ALIAS_PREFIX: &str = "emoji:setalias:";
 pub const CB_PACK_DELETE_PREFIX: &str = "emoji:packdel:";
+pub const CB_PACK_DELETE_CONFIRM_PREFIX: &str = "emoji:packdelok:";
 pub const CB_LIST_PAGE_PREFIX: &str = "emoji:listpg:";
 pub const CB_PICK_PACK_PREFIX: &str = "emoji:pickpack:";
 pub const CB_IMPORT_REPLACE: &str = "emoji:import:replace";

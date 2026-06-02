@@ -156,7 +156,24 @@ pub async fn handle_emoji_callback(
         }
         d if d.starts_with(CB_PACK_DELETE_PREFIX) => {
             if let Some(pack_id) = d.strip_prefix(CB_PACK_DELETE_PREFIX).and_then(|s| s.parse::<i32>().ok()) {
-                eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_DELETE_PACK pack_id={pack_id}");
+                eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_DELETE_PACK_CONFIRM pack_id={pack_id}");
+                let name = emoji_store::list_packs(client, user_id)
+                    .await.ok()
+                    .and_then(|packs| packs.into_iter().find(|p| p.id == pack_id))
+                    .map(|p| p.name).unwrap_or_default();
+                let msg = tf("emoji.pack_delete_confirm", &[("name", &name)]);
+                let params = EditMessageTextParams::builder()
+                    .chat_id(chat_id).message_id(message_id).text(&msg)
+                    .reply_markup(emoji_panel::pack_delete_confirm_keyboard(pack_id)).build();
+                match api.edit_message_text(&params).await {
+                    Ok(_) => eprintln!("[emoji_cb trace={trace_id} event=delete_confirm_shown] pack_id={pack_id}"),
+                    Err(e) => eprintln!("[emoji_cb trace={trace_id} event=delete_confirm_failed] err={e}"),
+                }
+            }
+        }
+        d if d.starts_with(CB_PACK_DELETE_CONFIRM_PREFIX) => {
+            if let Some(pack_id) = d.strip_prefix(CB_PACK_DELETE_CONFIRM_PREFIX).and_then(|s| s.parse::<i32>().ok()) {
+                eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_DELETE_PACK_EXECUTE pack_id={pack_id}");
                 let name = emoji_store::list_packs(client, user_id)
                     .await.ok()
                     .and_then(|packs| packs.into_iter().find(|p| p.id == pack_id))
@@ -166,17 +183,12 @@ pub async fn handle_emoji_callback(
                     Err(e) => eprintln!("[emoji_cb trace={trace_id} event=delete_pack_failed] pack_id={pack_id} err={e}"),
                 }
                 let msg = tf("emoji.pack_deleted", &[("name", &name)]);
-                let ents = entities_for_text(&msg);
-                let no_preview = LinkPreviewOptions::builder().is_disabled(true).build();
-                let params = if ents.is_empty() {
-                    SendMessageParams::builder().chat_id(chat_id).text(&msg).link_preview_options(no_preview).build()
-                } else {
-                    SendMessageParams::builder().chat_id(chat_id).text(&msg).entities(ents).link_preview_options(no_preview).build()
-                };
-                let r = api.send_message(&params).await;
-                eprintln!("[emoji_cb trace={trace_id} event=delete_confirm_sent] ok={}", r.is_ok());
-                send_with_ents(api, chat_id, emoji_panel::main_panel_text(),
-                    Some(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))).await;
+                let params = EditMessageTextParams::builder()
+                    .chat_id(chat_id).message_id(message_id).text(&msg)
+                    .reply_markup(emoji_panel::main_panel_keyboard()).build();
+                let r = api.edit_message_text(&params).await;
+                eprintln!("[emoji_cb trace={trace_id} event=deleted_panel_shown] ok={}", r.is_ok());
+                if let Err(e) = r { eprintln!("[emoji_cb trace={trace_id} event=deleted_panel_failed] err={e}"); }
             }
         }
         d if d == CB_SHOW_PACK_LINKS => {

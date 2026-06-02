@@ -19,6 +19,19 @@ pub fn btn_success(text: &str, callback_data: &str) -> InlineKeyboardButton {
     }
 }
 
+pub fn btn_danger(text: &str, callback_data: &str) -> InlineKeyboardButton {
+    InlineKeyboardButton {
+        text: text.to_string(),
+        icon_custom_emoji_id: None,
+        callback_data: Some(callback_data.to_string()),
+        style: Some(ButtonStyle::Danger),
+        url: None, login_url: None, web_app: None,
+        switch_inline_query: None, switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None, copy_text: None,
+        callback_game: None, pay: None,
+    }
+}
+
 pub fn btn_icon(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardButton {
     let icon_id = if icon_key.is_empty() {
         None
