@@ -9,8 +9,8 @@ use frankenstein::{
 
 use crate::bot::send_text;
 use crate::database::postgresql::PostgresDatabase;
+use crate::emoji::{FlowManager, FlowState, PendingEmoji, panel as emoji_panel, store as emoji_store, cache};
 use crate::i18n::tf;
-use crate::emoji::{FlowManager, FlowState, PendingEmoji, panel as emoji_panel, store as emoji_store};
 
 use super::helpers::{filter_duplicates, send_all_duplicate_message};
 
@@ -41,31 +41,44 @@ pub(super) fn extract_19digit_ids(text: &str) -> Vec<String> {
     out
 }
 
-pub(super) async fn fetch_pack_emojis(api: &Bot, pack_name: &str) -> Vec<PendingEmoji> {
+pub(super) async fn fetch_pack_emojis(api: &Bot, pack_name: &str, trace_id: u64) -> Vec<PendingEmoji> {
+    eprintln!("[emoji_add trace={trace_id} event=fetch_pack] pack_name={pack_name:?}");
     let set = match api.get_sticker_set(&GetStickerSetParams::builder().name(pack_name).build()).await {
         Ok(r) => r.result,
-        Err(e) => { eprintln!("get_sticker_set failed for {pack_name}: {e}"); return Vec::new(); }
+        Err(e) => {
+            eprintln!("[emoji_add trace={trace_id} event=fetch_pack_failed] pack_name={pack_name:?} err={e}");
+            return Vec::new();
+        }
     };
-    set.stickers.into_iter().filter_map(|s| {
+    let emojis: Vec<PendingEmoji> = set.stickers.into_iter().filter_map(|s| {
         let id = s.custom_emoji_id?;
         let fallback = s.emoji.unwrap_or_else(|| "?".to_string());
         Some(PendingEmoji { custom_emoji_id: id, fallback })
-    }).collect()
+    }).collect();
+    eprintln!("[emoji_add trace={trace_id} event=fetch_pack_ok] pack_name={pack_name:?} count={}", emojis.len());
+    emojis
 }
 
 pub async fn handle_addemoji_link(
     api: &Bot, message: &Message, user_id: i64, pack_name: &str,
     flow_manager: &mut FlowManager, database: &Option<PostgresDatabase>,
 ) {
+    let trace_id = cache::next_trace_id();
     let chat_id = message.chat.id;
+    eprintln!(
+        "[emoji_add trace={trace_id} event=addemoji_link] user_id={user_id} \
+         chat_id={chat_id} pack_name={pack_name:?}"
+    );
     let Some(db) = database else {
+        eprintln!("[emoji_add trace={trace_id} event=no_db]");
         let _ = send_text(api, chat_id, &crate::i18n::t("emoji.db_required")).await;
         return;
     };
     let client = db.client();
 
-    let mut new_emojis = fetch_pack_emojis(api, pack_name).await;
+    let mut new_emojis = fetch_pack_emojis(api, pack_name, trace_id).await;
     if new_emojis.is_empty() {
+        eprintln!("[emoji_add trace={trace_id} event=pack_empty]");
         let _ = send_text(api, chat_id, &tf("emoji.pack_link_empty", &[("name", pack_name)])).await;
         return;
     }
@@ -75,11 +88,21 @@ pub async fn handle_addemoji_link(
         FlowState::AwaitingPackChoice { collected } => collected,
         _ => Vec::new(),
     };
+    eprintln!(
+        "[emoji_add trace={trace_id} event=existing_collected] count={}",
+        existing.len()
+    );
 
     let incoming = new_emojis.len();
     let duplicates = filter_duplicates(client, user_id, &mut new_emojis, &existing).await;
+    eprintln!(
+        "[emoji_add trace={trace_id} event=dedup] incoming={incoming} \
+         after_dedup={} dups={}",
+        new_emojis.len(), duplicates.len()
+    );
 
     if incoming > 0 && new_emojis.is_empty() && existing.is_empty() {
+        eprintln!("[emoji_add trace={trace_id} event=all_dup]");
         let _ = send_all_duplicate_message(api, chat_id, &duplicates).await;
         return;
     }
@@ -90,11 +113,18 @@ pub async fn handle_addemoji_link(
     let total_pages = emoji_panel::pending_total_pages(collected.len());
     let text = emoji_panel::format_pending_emojis(&collected, &duplicates, 0);
     let packs = emoji_store::list_packs(client, user_id).await.unwrap_or_default();
-    let _ = api.send_message(
+    eprintln!(
+        "[emoji_add trace={trace_id} event=pending_ready] total_collected={} packs={} pages={total_pages}",
+        collected.len(), packs.len()
+    );
+    let r = api.send_message(
         &SendMessageParams::builder()
             .chat_id(chat_id).text(text).parse_mode(ParseMode::MarkdownV2)
             .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::pack_choice_keyboard(&packs, 0, total_pages)))
             .build(),
     ).await;
+    eprintln!("[emoji_add trace={trace_id} event=pending_sent] ok={}", r.is_ok());
+    if let Err(e) = r { eprintln!("[emoji_add trace={trace_id} event=pending_send_failed] err={e}"); }
     flow_manager.set(user_id, FlowState::AwaitingPackChoice { collected });
+    eprintln!("[emoji_add trace={trace_id} event=state_transition] new_state=AwaitingPackChoice");
 }

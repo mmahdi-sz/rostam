@@ -14,14 +14,20 @@ use super::pack_ops::send_cancel_and_panel;
 pub(super) async fn handle_pack_alias(
     api: &Bot, message: &Message, chat_id: i64, user_id: i64,
     flow_manager: &mut FlowManager, client: &tokio_postgres::Client,
-    pack_id: i32,
+    trace_id: u64, pack_id: i32,
 ) -> bool {
     let text = message.text.as_deref().unwrap_or("").trim();
     let alias = if text == "-" || text.is_empty() { None } else { Some(text) };
-    if let Err(e) = emoji_store::set_pack_alias(client, user_id, pack_id, alias).await {
-        eprintln!("set_pack_alias failed: {e}");
+    eprintln!(
+        "[emoji_msg trace={trace_id} event=pack_alias_input] user_id={user_id} \
+         pack_id={pack_id} alias={alias:?}",
+    );
+    match emoji_store::set_pack_alias(client, user_id, pack_id, alias).await {
+        Ok(_) => eprintln!("[emoji_msg trace={trace_id} event=pack_alias_set] pack_id={pack_id} alias={alias:?}"),
+        Err(e) => eprintln!("[emoji_msg trace={trace_id} event=pack_alias_failed] pack_id={pack_id} err={e}"),
     }
-    let _ = crate::bot::send_text(api, chat_id, &t("emoji.pack_alias_set")).await;
+    let r = crate::bot::send_text(api, chat_id, &t("emoji.pack_alias_set")).await;
+    eprintln!("[emoji_msg trace={trace_id} event=alias_confirm_sent] ok={}", r.is_ok());
     flow_manager.clear(user_id);
     true
 }
@@ -45,7 +51,7 @@ pub(super) async fn handle_test_text(
     if text == t("emoji.cancel_button") {
         eprintln!("[emoji_test trace={trace_id} event=cancel]");
         flow_manager.clear(user_id);
-        send_cancel_and_panel(api, chat_id).await;
+        send_cancel_and_panel(api, chat_id, trace_id).await;
         return true;
     }
 
@@ -59,10 +65,6 @@ pub(super) async fn handle_test_text(
         );
         cache_guard.render_markdown_with_trace(text)
     } else {
-        // Cache disabled (e.g. ADMIN_USER_ID unset). Use an empty cache so the
-        // template engine still escapes braces / handles raw-id {NNN} entries —
-        // anything else just renders as escaped literal text, which is correct
-        // for MarkdownV2 instead of being silently rejected by Telegram.
         eprintln!("[emoji_test trace={trace_id} event=cache_state] source=empty_fallback reason=cache_disabled");
         EmojiCache::default().render_markdown_with_trace(text)
     };
@@ -97,8 +99,6 @@ pub(super) async fn handle_test_text(
             eprintln!(
                 "[emoji_test trace={trace_id} event=send_failed] error={e} rendered_full={rendered:?}",
             );
-            // Fall back to a plain-text message so the user sees *something*
-            // and knows the render produced a Telegram-rejected MarkdownV2 string.
             let fallback_text = format!("{}\n\n{}", t("emoji.test_send_failed"), rendered);
             match crate::bot::send_text(api, chat_id, &fallback_text).await {
                 Ok(_) => eprintln!("[emoji_test trace={trace_id} event=fallback_sent]"),

@@ -23,7 +23,10 @@ pub(super) async fn send_with_ents(api: &Bot, chat_id: i64, text: String, reply_
     let _ = api.send_message(&params).await;
 }
 
-pub(super) async fn edit_panel(api: &Bot, chat_id: i64, message_id: i32, text: &str, keyboard: Option<InlineKeyboardMarkup>) {
+pub(super) async fn edit_panel(
+    api: &Bot, chat_id: i64, message_id: i32, text: &str,
+    keyboard: Option<InlineKeyboardMarkup>, trace_id: u64,
+) {
     let ents = entities_for_text(text);
     let np = || LinkPreviewOptions::builder().is_disabled(true).build();
     let params = match (ents.is_empty(), keyboard) {
@@ -32,8 +35,9 @@ pub(super) async fn edit_panel(api: &Bot, chat_id: i64, message_id: i32, text: &
         (false, None) => EditMessageTextParams::builder().chat_id(chat_id).message_id(message_id).text(text).entities(ents).link_preview_options(np()).build(),
         (false, Some(kb)) => EditMessageTextParams::builder().chat_id(chat_id).message_id(message_id).text(text).entities(ents).link_preview_options(np()).reply_markup(kb).build(),
     };
-    if let Err(e) = api.edit_message_text(&params).await {
-        eprintln!("edit_message_text failed: {e}");
+    match api.edit_message_text(&params).await {
+        Ok(_) => eprintln!("[emoji trace={trace_id} event=edit_panel_ok] chat_id={chat_id} msg_id={message_id}"),
+        Err(e) => eprintln!("[emoji trace={trace_id} event=edit_panel_failed] chat_id={chat_id} msg_id={message_id} err={e}"),
     }
 }
 
