@@ -15,6 +15,7 @@ use crate::i18n::tf;
 
 use super::format::{build_caption, build_description_blockquotes};
 use super::fetch::fetch_video_info;
+use super::quality_keyboard::send_quality_prompt;
 use super::types::FetchError;
 
 pub async fn handle_youtube_url(
@@ -73,6 +74,10 @@ pub async fn handle_youtube_url(
                             }
                         }
                     }
+                }
+                if let Err(error) = send_quality_prompt(api, chat_id).await {
+                    eprintln!("send quality prompt failed: {error}");
+                    let _ = send_text(api, chat_id, &tf("youtube.quality.send_failed", &[("error", &error.to_string())])).await;
                 }
                 return;
             }

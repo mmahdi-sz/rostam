@@ -23,7 +23,7 @@ use frankenstein::{
 };
 use i18n::t;
 use tokio::sync::RwLock;
-use youtube::{extract_youtube_urls, handle_youtube_url};
+use youtube::{extract_youtube_urls, handle_quality_callback, handle_youtube_url};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -183,6 +183,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 UpdateContent::CallbackQuery(callback_query) => {
                     if callback_query.data.as_deref().map(|d| d.starts_with("emoji:")).unwrap_or(false) {
                         emoji_handler::handle_emoji_callback(&api, &callback_query, &mut flow_manager, &database).await;
+                        continue;
+                    }
+                    if handle_quality_callback(&api, &callback_query).await {
                         continue;
                     }
                     if callback_query.data.as_deref() == Some(START_BUTTON_CALLBACK) {
