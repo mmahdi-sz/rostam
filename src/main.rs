@@ -92,6 +92,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut flow_manager = FlowManager::new();
     let mut params = GetUpdatesParams::builder().timeout(30u32).build();
 
+    // Watch i18n.json and auto-reload on change
+    tokio::task::spawn_blocking(|| {
+        use notify::{Watcher, RecursiveMode, recommended_watcher, Event, EventKind};
+        use std::sync::mpsc;
+        let (tx, rx) = mpsc::channel::<notify::Result<Event>>();
+        let mut watcher = recommended_watcher(tx).expect("failed to create file watcher");
+        watcher.watch(std::path::Path::new("i18n.json"), RecursiveMode::NonRecursive)
+            .expect("failed to watch i18n.json");
+        eprintln!("[i18n] watching i18n.json for changes");
+        for res in rx {
+            if let Ok(event) = res {
+                match event.kind {
+                    EventKind::Modify(_) | EventKind::Create(_) => {
+                        reload_i18n();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    });
+
     println!("Bot is running. Send /start to open the green button.");
     println!(
         "Cookie pool loaded: {} Firefox profile(s), {} selectable.",
