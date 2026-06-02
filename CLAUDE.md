@@ -254,6 +254,19 @@ All emoji callbacks start with `emoji:`. Defined as `CB_*` constants in
 
 Premium emoji comes first, then static fallback.
 
+### UX Notes
+
+- The "pack source links" button in the pack-choice screen is labeled
+  **"این ایموجی‌ها از کجان؟ 🔗"** — this was chosen deliberately over the
+  generic "نشون بده لینک پک ایموجی‌ها" because it directly answers what the
+  user is thinking ("where did these emojis come from?") rather than describing
+  the action.
+- `icon_custom_emoji_id` on `InlineKeyboardButton` always renders the premium
+  emoji to the **LEFT** of the button text in Telegram — there is no API to
+  change its position. Keep this in mind when designing RTL button labels.
+- Pending emoji display is paginated at **30 per page** (`PENDING_PAGE_SIZE`).
+  Prev/next nav buttons appear below the pack list when needed.
+
 ### Export / Import
 
 - **Export**: generates `emoji_{jalali-date}_{HH-MM}.sql` with `CREATE TABLE IF NOT EXISTS` + `INSERT` for the current user only. Sent as a Telegram document.
