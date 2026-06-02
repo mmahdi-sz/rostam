@@ -12,6 +12,8 @@ pub async fn fetch_video_info(
 ) -> Result<VideoInfo, FetchError> {
     log_trace(trace_id, "fetch_start", &format!("url={url} cookie_spec={yt_dlp_browser_spec}"));
     let output = Command::new("yt-dlp")
+        .arg("--js-runtimes")
+        .arg("deno:/root/.deno/bin/deno")
         .arg("--cookies-from-browser")
         .arg(yt_dlp_browser_spec)
         .arg("--dump-single-json")
