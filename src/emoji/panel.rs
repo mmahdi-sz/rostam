@@ -355,10 +355,10 @@ pub fn pack_choice_keyboard(packs: &[EmojiPack], page: usize, total_pages: usize
     if total_pages > 1 {
         let mut nav: Vec<InlineKeyboardButton> = Vec::new();
         if page > 0 {
-            // icon after text for RTL: "قبلی ⬅"
-            nav.push(btn(
-                &format!("{} ⬅", t("emoji.panel.prev")),
+            nav.push(btn_icon(
+                &t("emoji.panel.prev"),
                 &format!("{CB_PENDING_PAGE_PREFIX}{}", page - 1),
+                "prev",
             ));
         }
         if page + 1 < total_pages {
