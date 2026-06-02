@@ -222,8 +222,19 @@ async fn build_bot_api(token: &str) -> Result<Bot, Box<dyn std::error::Error>> {
     if is_local_bot_api_url(&base_url) {
         println!("Local Bot API base detected ({base_url}); logging out from official Telegram Bot API.");
         let official_api = Bot::new(token);
-        let response = official_api.log_out().await?;
-        println!("Official Telegram Bot API logOut result: {}", response.result);
+        match official_api.log_out().await {
+            Ok(response) => {
+                println!("Official Telegram Bot API logOut result: {}", response.result);
+            }
+            Err(error) => {
+                let desc = error.to_string();
+                if desc.contains("Logged out") || desc.contains("Unauthorized") {
+                    println!("Already logged out from official Telegram Bot API; continuing.");
+                } else {
+                    return Err(error.into());
+                }
+            }
+        }
     } else {
         println!("Custom Bot API base detected ({base_url}); skipping automatic official logOut.");
     }
