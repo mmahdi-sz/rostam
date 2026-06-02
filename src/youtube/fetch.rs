@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use tokio::process::Command;
 
 use super::types::{FetchError, VideoInfo};
@@ -67,6 +69,38 @@ pub async fn fetch_video_info(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .filter(|s| !s.trim().is_empty());
+    let available_heights = extract_available_heights(&json);
 
-    Ok(VideoInfo { title, channel, duration, view_count, like_count, upload_date, thumbnail, webpage_url, description })
+    Ok(VideoInfo {
+        title,
+        channel,
+        duration,
+        view_count,
+        like_count,
+        upload_date,
+        thumbnail,
+        webpage_url,
+        description,
+        available_heights,
+    })
+}
+
+fn extract_available_heights(json: &serde_json::Value) -> Vec<u32> {
+    let mut heights = HashSet::new();
+    if let Some(formats) = json.get("formats").and_then(|v| v.as_array()) {
+        for format in formats {
+            let Some(height) = format.get("height").and_then(|v| v.as_u64()) else {
+                continue;
+            };
+            if format.get("vcodec").and_then(|v| v.as_str()) == Some("none") {
+                continue;
+            }
+            if height <= u32::MAX as u64 {
+                heights.insert(height as u32);
+            }
+        }
+    }
+    let mut heights: Vec<u32> = heights.into_iter().collect();
+    heights.sort_unstable();
+    heights
 }

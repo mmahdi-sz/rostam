@@ -9,6 +9,7 @@ pub struct VideoInfo {
     pub thumbnail: Option<String>,
     pub webpage_url: String,
     pub description: Option<String>,
+    pub available_heights: Vec<u32>,
 }
 
 #[derive(Debug)]

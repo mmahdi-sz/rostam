@@ -75,7 +75,7 @@ pub async fn handle_youtube_url(
                         }
                     }
                 }
-                if let Err(error) = send_quality_prompt(api, chat_id).await {
+                if let Err(error) = send_quality_prompt(api, chat_id, &info).await {
                     eprintln!("send quality prompt failed: {error}");
                     let _ = send_text(api, chat_id, &tf("youtube.quality.send_failed", &[("error", &error.to_string())])).await;
                 }

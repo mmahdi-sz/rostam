@@ -7,31 +7,38 @@ use frankenstein::{
 
 use crate::i18n::{entities_for_text, t};
 
+use super::types::VideoInfo;
+
 const CB_QUALITY_PREFIX: &str = "yt:quality:";
 const QUALITY_ICON_KEY: &str = "export";
 
-const QUALITY_OPTIONS: &[(&str, &str)] = &[
-    ("4320", "youtube.quality.buttons.4320"),
-    ("2160", "youtube.quality.buttons.2160"),
-    ("1440", "youtube.quality.buttons.1440"),
-    ("1080", "youtube.quality.buttons.1080"),
-    ("720", "youtube.quality.buttons.720"),
-    ("480", "youtube.quality.buttons.480"),
-    ("360", "youtube.quality.buttons.360"),
-    ("240", "youtube.quality.buttons.240"),
-    ("144", "youtube.quality.buttons.144"),
+const QUALITY_OPTIONS: &[(u32, &str)] = &[
+    (4320, "youtube.quality.buttons.4320"),
+    (2160, "youtube.quality.buttons.2160"),
+    (1440, "youtube.quality.buttons.1440"),
+    (1080, "youtube.quality.buttons.1080"),
+    (720, "youtube.quality.buttons.720"),
+    (480, "youtube.quality.buttons.480"),
+    (360, "youtube.quality.buttons.360"),
+    (240, "youtube.quality.buttons.240"),
+    (144, "youtube.quality.buttons.144"),
 ];
 
 pub async fn send_quality_prompt(
     api: &Bot,
     chat_id: i64,
+    info: &VideoInfo,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if !has_quality_options(info) {
+        return Ok(());
+    }
+
     let text = t("youtube.quality.prompt");
     let entities = entities_for_text(&text);
     let mut params = SendMessageParams::builder()
         .chat_id(chat_id)
         .text(text)
-        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(quality_keyboard()))
+        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(quality_keyboard(info)))
         .build();
 
     if !entities.is_empty() {
@@ -58,13 +65,15 @@ pub async fn handle_quality_callback(api: &Bot, callback_query: &CallbackQuery) 
     true
 }
 
-fn quality_keyboard() -> InlineKeyboardMarkup {
+fn quality_keyboard(info: &VideoInfo) -> InlineKeyboardMarkup {
     let rows = QUALITY_OPTIONS
         .iter()
+        .filter(|(height, _)| info.available_heights.contains(height))
         .map(|(height, label_key)| {
             vec![quality_button(
                 &t(label_key),
                 &format!("{CB_QUALITY_PREFIX}{height}"),
+                button_style(*height),
             )]
         })
         .collect();
@@ -74,7 +83,21 @@ fn quality_keyboard() -> InlineKeyboardMarkup {
         .build()
 }
 
-fn quality_button(text: &str, callback_data: &str) -> InlineKeyboardButton {
+fn has_quality_options(info: &VideoInfo) -> bool {
+    QUALITY_OPTIONS.iter().any(|(height, _)| info.available_heights.contains(height))
+}
+
+fn button_style(height: u32) -> ButtonStyle {
+    if height >= 1080 {
+        ButtonStyle::Success
+    } else if height <= 360 {
+        ButtonStyle::Danger
+    } else {
+        ButtonStyle::Primary
+    }
+}
+
+fn quality_button(text: &str, callback_data: &str, style: ButtonStyle) -> InlineKeyboardButton {
     let icon_id = t(&format!("emoji.panel.icons.{QUALITY_ICON_KEY}"));
     InlineKeyboardButton {
         text: text.to_string(),
@@ -84,7 +107,7 @@ fn quality_button(text: &str, callback_data: &str) -> InlineKeyboardButton {
             Some(icon_id)
         },
         callback_data: Some(callback_data.to_string()),
-        style: Some(ButtonStyle::Primary),
+        style: Some(style),
         url: None,
         login_url: None,
         web_app: None,
