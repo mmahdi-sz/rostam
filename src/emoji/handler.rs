@@ -178,7 +178,19 @@ pub async fn handle_emoji_callback(
                 if let Err(e) = emoji_store::delete_pack(client, user_id, pack_id).await {
                     eprintln!("delete_pack failed: {e}");
                 }
-                let _ = send_text(api, chat_id, &tf("emoji.pack_deleted", &[("name", &name)])).await;
+                {
+                    let msg = tf("emoji.pack_deleted", &[("name", &name)]);
+                    let ents = entities_for_text(&msg);
+                    let no_preview = LinkPreviewOptions::builder().is_disabled(true).build();
+                    let params = if ents.is_empty() {
+                        SendMessageParams::builder().chat_id(chat_id).text(&msg)
+                            .link_preview_options(no_preview).build()
+                    } else {
+                        SendMessageParams::builder().chat_id(chat_id).text(&msg)
+                            .entities(ents).link_preview_options(no_preview).build()
+                    };
+                    let _ = api.send_message(&params).await;
+                }
                 send_with_ents(api, chat_id, emoji_panel::main_panel_text(),
                     Some(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard()))).await;
             }
@@ -687,15 +699,20 @@ async fn send_with_ents(api: &Bot, chat_id: i64, text: String, reply_markup: Opt
 
 async fn edit_panel(api: &Bot, chat_id: i64, message_id: i32, text: &str, keyboard: Option<InlineKeyboardMarkup>) {
     let ents = entities_for_text(text);
+    let np = || LinkPreviewOptions::builder().is_disabled(true).build();
     let params = match (ents.is_empty(), keyboard) {
         (true, None) => EditMessageTextParams::builder()
-            .chat_id(chat_id).message_id(message_id).text(text).build(),
+            .chat_id(chat_id).message_id(message_id).text(text)
+            .link_preview_options(np()).build(),
         (true, Some(kb)) => EditMessageTextParams::builder()
-            .chat_id(chat_id).message_id(message_id).text(text).reply_markup(kb).build(),
+            .chat_id(chat_id).message_id(message_id).text(text)
+            .link_preview_options(np()).reply_markup(kb).build(),
         (false, None) => EditMessageTextParams::builder()
-            .chat_id(chat_id).message_id(message_id).text(text).entities(ents).build(),
+            .chat_id(chat_id).message_id(message_id).text(text)
+            .entities(ents).link_preview_options(np()).build(),
         (false, Some(kb)) => EditMessageTextParams::builder()
-            .chat_id(chat_id).message_id(message_id).text(text).entities(ents).reply_markup(kb).build(),
+            .chat_id(chat_id).message_id(message_id).text(text)
+            .entities(ents).link_preview_options(np()).reply_markup(kb).build(),
     };
     if let Err(e) = api.edit_message_text(&params).await {
         eprintln!("edit_message_text failed: {e}");
