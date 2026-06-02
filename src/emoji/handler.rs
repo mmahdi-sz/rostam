@@ -11,8 +11,8 @@ use frankenstein::{
         SendDocumentParams, SendMessageParams,
     },
     types::{
-        InlineKeyboardMarkup, MaybeInaccessibleMessage, Message, MessageEntity,
-        MessageEntityType, ReplyMarkup, ReplyKeyboardRemove,
+        InlineKeyboardMarkup, LinkPreviewOptions, MaybeInaccessibleMessage, Message,
+        MessageEntity, MessageEntityType, ReplyMarkup, ReplyKeyboardRemove,
     },
 };
 
@@ -189,10 +189,13 @@ pub async fn handle_emoji_callback(
                     .map(|e| e.custom_emoji_id.clone())
                     .collect();
                 let text = build_pack_links_text(api, &collected, &ids).await;
+                let no_preview = LinkPreviewOptions::builder().is_disabled(true).build();
                 let params = EditMessageTextParams::builder()
                     .chat_id(chat_id)
                     .message_id(message_id)
                     .text(&text)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .link_preview_options(no_preview)
                     .reply_markup(emoji_panel::pack_links_keyboard())
                     .build();
                 if let Err(e) = api.edit_message_text(&params).await {
@@ -871,16 +874,18 @@ fn gregorian_to_jalali(gy: i32, gm: u32, gd: u32) -> (i32, u32, u32) {
     (jy, (i as i32 + 1) as u32, (j_day_no + 1) as u32)
 }
 
-/// Calls getCustomEmojiStickers, groups by set_name, and formats the links text.
+/// Calls getCustomEmojiStickers, groups by set_name, and formats a MarkdownV2 message
+/// with premium inline emoji + disabled-preview links.
 async fn build_pack_links_text(
     api: &Bot,
     collected: &[PendingEmoji],
     ids: &[String],
 ) -> String {
     use std::collections::HashMap;
+    use crate::youtube::escape_markdown_v2;
 
     if ids.is_empty() {
-        return t("emoji.pack_links_none");
+        return escape_markdown_v2(&t("emoji.pack_links_none"));
     }
 
     let stickers = match api
@@ -894,7 +899,7 @@ async fn build_pack_links_text(
         Ok(r) => r.result,
         Err(e) => {
             eprintln!("get_custom_emoji_stickers failed: {e}");
-            return t("emoji.pack_links_none");
+            return escape_markdown_v2(&t("emoji.pack_links_none"));
         }
     };
 
@@ -908,34 +913,41 @@ async fn build_pack_links_text(
 
     // Group PendingEmoji by set_name, preserving order of first appearance
     let mut set_order: Vec<String> = Vec::new();
-    let mut set_to_fallbacks: HashMap<String, Vec<&str>> = HashMap::new();
+    let mut set_to_entries: HashMap<String, Vec<&PendingEmoji>> = HashMap::new();
     for emoji in collected {
         let key = id_to_set
             .get(&emoji.custom_emoji_id)
             .cloned()
             .unwrap_or_else(|| "unknown".to_string());
-        if !set_to_fallbacks.contains_key(&key) {
+        if !set_to_entries.contains_key(&key) {
             set_order.push(key.clone());
         }
-        set_to_fallbacks.entry(key).or_default().push(&emoji.fallback);
+        set_to_entries.entry(key).or_default().push(emoji);
     }
 
     let mut lines = Vec::new();
     for set_name in &set_order {
-        let fallbacks = &set_to_fallbacks[set_name];
-        let emoji_line: String = fallbacks.join("");
+        let entries = &set_to_entries[set_name];
+        // Render each as premium inline emoji (MarkdownV2 inline image syntax)
+        let emoji_line: String = entries
+            .iter()
+            .map(|e| format!("![{}](tg://emoji?id={})", e.fallback, e.custom_emoji_id))
+            .collect::<Vec<_>>()
+            .join("");
         if set_name == "unknown" {
-            lines.push(format!("{}:\n(پک ناشناخته)", emoji_line));
+            lines.push(format!("{}{}", emoji_line, escape_markdown_v2(":\n(پک ناشناخته)")));
         } else {
             lines.push(format!(
-                "{}:\nhttps://t.me/addemoji/{}",
-                emoji_line, set_name
+                "{}{}\n{}",
+                emoji_line,
+                escape_markdown_v2(":"),
+                escape_markdown_v2(&format!("https://t.me/addemoji/{}", set_name))
             ));
         }
     }
 
     if lines.is_empty() {
-        t("emoji.pack_links_none")
+        escape_markdown_v2(&t("emoji.pack_links_none"))
     } else {
         lines.join("\n\n")
     }
