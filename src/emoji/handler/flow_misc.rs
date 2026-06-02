@@ -29,6 +29,19 @@ pub(super) async fn handle_pack_alias(
     let r = crate::bot::send_text(api, chat_id, &t("emoji.pack_alias_set")).await;
     eprintln!("[emoji_msg trace={trace_id} event=alias_confirm_sent] ok={}", r.is_ok());
     flow_manager.clear(user_id);
+    use crate::i18n::entities_for_text;
+    use frankenstein::types::ReplyMarkup;
+    use crate::emoji::panel as emoji_panel;
+    let panel_text = emoji_panel::main_panel_text();
+    let ents = entities_for_text(&panel_text);
+    let params = if ents.is_empty() {
+        frankenstein::methods::SendMessageParams::builder().chat_id(chat_id).text(panel_text)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard())).build()
+    } else {
+        frankenstein::methods::SendMessageParams::builder().chat_id(chat_id).text(panel_text).entities(ents)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard())).build()
+    };
+    let _ = api.send_message(&params).await;
     true
 }
 

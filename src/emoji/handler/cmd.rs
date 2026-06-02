@@ -53,34 +53,61 @@ pub async fn handle_se_command(
     let Some(user) = message.from.as_ref() else { return };
     let user_id = user.id as i64;
     let trace_id = cache::next_trace_id();
-    let mut parts = rest.split_whitespace();
-    let (Some(selector), Some(alias)) = (parts.next(), parts.next()) else {
-        eprintln!("[emoji_cmd trace={trace_id} event=se_usage_error] user_id={user_id}");
-        let _ = send_text(api, chat_id, &t("emoji.se_usage")).await;
-        return;
-    };
-    eprintln!(
-        "[emoji_cmd trace={trace_id} event=se_cmd] user_id={user_id} \
-         selector={selector:?} alias={alias:?}"
-    );
+
     let Some(db) = database else {
         eprintln!("[emoji_cmd trace={trace_id} event=no_db]");
         let _ = send_text(api, chat_id, &t("emoji.db_required")).await;
         return;
     };
     let client = db.client();
-    let alias_value = if alias == "-" { None } else { Some(alias) };
-    match emoji_store::set_item_alias(client, user_id, selector, alias_value).await {
-        Ok(true) => {
-            eprintln!("[emoji_cmd trace={trace_id} event=se_done] selector={selector:?} alias={alias_value:?}");
-            let _ = send_text(api, chat_id, &tf("emoji.se_done", &[("alias", alias)])).await;
-        }
-        Ok(false) => {
-            eprintln!("[emoji_cmd trace={trace_id} event=se_not_found] selector={selector:?}");
-            let _ = send_text(api, chat_id, &t("emoji.se_not_found")).await;
-        }
-        Err(e) => {
-            eprintln!("[emoji_cmd trace={trace_id} event=se_db_failed] selector={selector:?} err={e:?}");
+
+    // Collect pairs: (selector, alias)
+    let tokens: Vec<&str> = rest.split_whitespace().collect();
+    if tokens.len() < 2 || tokens.len() % 2 != 0 {
+        eprintln!("[emoji_cmd trace={trace_id} event=se_usage_error] user_id={user_id} tokens={}", tokens.len());
+        let _ = send_text(api, chat_id, &t("emoji.se_usage")).await;
+        return;
+    }
+
+    let pairs: Vec<(&str, &str)> = tokens.chunks(2).map(|c| (c[0], c[1])).collect();
+    eprintln!("[emoji_cmd trace={trace_id} event=se_cmd] user_id={user_id} pairs={}", pairs.len());
+
+    let mut done = Vec::new();
+    let mut not_found = Vec::new();
+
+    for (selector, alias) in &pairs {
+        let alias_value = if *alias == "-" { None } else { Some(*alias) };
+        match emoji_store::set_item_alias(client, user_id, selector, alias_value).await {
+            Ok(true) => {
+                eprintln!("[emoji_cmd trace={trace_id} event=se_done] selector={selector:?} alias={alias_value:?}");
+                done.push(tf("emoji.se_done", &[("alias", alias)]));
+            }
+            Ok(false) => {
+                eprintln!("[emoji_cmd trace={trace_id} event=se_not_found] selector={selector:?}");
+                not_found.push(*selector);
+            }
+            Err(e) => {
+                eprintln!("[emoji_cmd trace={trace_id} event=se_db_failed] selector={selector:?} err={e:?}");
+            }
         }
     }
+
+    if !done.is_empty() {
+        let _ = send_text(api, chat_id, &done.join("\n")).await;
+    }
+    if !not_found.is_empty() {
+        let _ = send_text(api, chat_id, &format!("{}: {}", t("emoji.se_not_found"), not_found.join(", "))).await;
+    }
+
+    // Show main panel after /se
+    let panel_text = emoji_panel::main_panel_text();
+    let ents = entities_for_text(&panel_text);
+    let params = if ents.is_empty() {
+        SendMessageParams::builder().chat_id(chat_id).text(panel_text)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard())).build()
+    } else {
+        SendMessageParams::builder().chat_id(chat_id).text(panel_text).entities(ents)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard())).build()
+    };
+    let _ = api.send_message(&params).await;
 }
