@@ -272,6 +272,9 @@ async fn run_download(
     )
     .await;
 
+    let postprocess_template = format!(
+        "{PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
+    );
     let mut child = match Command::new("yt-dlp")
         .arg("--js-runtimes")
         .arg("deno:/root/.deno/bin/deno")
@@ -279,13 +282,17 @@ async fn run_download(
         .arg(&req.cookie_spec)
         .arg("--no-warnings")
         .arg("--no-playlist")
+        .arg("--progress")
+        .arg("--no-color")
         .arg("-f")
         .arg(&format_spec)
         .arg("--merge-output-format")
         .arg("mp4")
         .arg("--newline")
         .arg("--progress-template")
-        .arg(&progress_template)
+        .arg(format!("download:{progress_template}"))
+        .arg("--progress-template")
+        .arg(format!("postprocess:{postprocess_template}"))
         .arg("--print")
         .arg("after_move:filepath")
         .arg("-o")
