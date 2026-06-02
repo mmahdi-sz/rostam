@@ -7,6 +7,7 @@ use frankenstein::{
 
 use crate::i18n::{entities_for_text, t};
 
+use super::trace::log_trace;
 use super::types::VideoInfo;
 
 const CB_QUALITY_PREFIX: &str = "yt:quality:";
@@ -25,20 +26,25 @@ const QUALITY_OPTIONS: &[(u32, &str)] = &[
 ];
 
 pub async fn send_quality_prompt(
+    trace_id: u64,
     api: &Bot,
     chat_id: i64,
     info: &VideoInfo,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if !has_quality_options(info) {
+    let options = quality_options(info);
+    if options.is_empty() {
+        log_trace(trace_id, "quality_prompt_skipped", &format!("available_heights={:?}", info.available_heights));
         return Ok(());
     }
 
+    let button_heights: Vec<u32> = options.iter().map(|(height, _)| *height).collect();
+    log_trace(trace_id, "quality_prompt_buttons", &format!("available_heights={:?} button_heights={button_heights:?}", info.available_heights));
     let text = t("youtube.quality.prompt");
     let entities = entities_for_text(&text);
     let mut params = SendMessageParams::builder()
         .chat_id(chat_id)
         .text(text)
-        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(quality_keyboard(info)))
+        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(quality_keyboard(&options)))
         .build();
 
     if !entities.is_empty() {
@@ -46,6 +52,7 @@ pub async fn send_quality_prompt(
     }
 
     api.send_message(&params).await?;
+    log_trace(trace_id, "quality_prompt_sent", &format!("chat_id={chat_id}"));
     Ok(())
 }
 
@@ -56,6 +63,7 @@ pub async fn handle_quality_callback(api: &Bot, callback_query: &CallbackQuery) 
     if !data.starts_with(CB_QUALITY_PREFIX) {
         return false;
     }
+    eprintln!("[youtube callback event=quality_clicked] user_id={} data={data}", callback_query.from.id);
 
     let params = AnswerCallbackQueryParams::builder()
         .callback_query_id(&callback_query.id)
@@ -65,10 +73,9 @@ pub async fn handle_quality_callback(api: &Bot, callback_query: &CallbackQuery) 
     true
 }
 
-fn quality_keyboard(info: &VideoInfo) -> InlineKeyboardMarkup {
-    let rows = QUALITY_OPTIONS
+fn quality_keyboard(options: &[(u32, &str)]) -> InlineKeyboardMarkup {
+    let rows = options
         .iter()
-        .filter(|(height, _)| info.available_heights.contains(height))
         .map(|(height, label_key)| {
             vec![quality_button(
                 &t(label_key),
@@ -83,8 +90,23 @@ fn quality_keyboard(info: &VideoInfo) -> InlineKeyboardMarkup {
         .build()
 }
 
-fn has_quality_options(info: &VideoInfo) -> bool {
-    QUALITY_OPTIONS.iter().any(|(height, _)| info.available_heights.contains(height))
+fn quality_options(info: &VideoInfo) -> Vec<(u32, &'static str)> {
+    let exact: Vec<(u32, &str)> = QUALITY_OPTIONS
+        .iter()
+        .copied()
+        .filter(|(height, _)| info.available_heights.contains(height))
+        .collect();
+    if !exact.is_empty() {
+        return exact;
+    }
+    let Some(max_height) = info.available_heights.iter().copied().max() else {
+        return Vec::new();
+    };
+    QUALITY_OPTIONS
+        .iter()
+        .copied()
+        .filter(|(height, _)| *height <= max_height)
+        .collect()
 }
 
 fn button_style(height: u32) -> ButtonStyle {

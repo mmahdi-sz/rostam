@@ -23,7 +23,7 @@ use frankenstein::{
 };
 use i18n::t;
 use tokio::sync::RwLock;
-use youtube::{extract_youtube_urls, handle_quality_callback, handle_youtube_url};
+use youtube::{extract_youtube_urls, handle_quality_callback, handle_youtube_url, log_trace, next_trace_id};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -174,7 +174,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             _ => {
                                 let urls = extract_youtube_urls(text);
                                 for url in urls {
-                                    handle_youtube_url(&api, message.chat.id, &url, &mut cookie_pool, &database).await;
+                                    let trace_id = next_trace_id();
+                                    log_trace(trace_id, "route_youtube_url", &format!("user_id={user_id:?} chat_id={} url={url}", message.chat.id));
+                                    handle_youtube_url(&api, message.chat.id, user_id, trace_id, &url, &mut cookie_pool, &database).await;
                                 }
                             }
                         }

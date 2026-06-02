@@ -4,6 +4,7 @@ mod fetch;
 mod format;
 pub mod jalali;
 mod quality_keyboard;
+mod trace;
 mod handle;
 
 pub use types::{VideoInfo, FetchError};
@@ -15,4 +16,5 @@ pub use format::{
 };
 pub use handle::handle_youtube_url;
 pub use quality_keyboard::handle_quality_callback;
+pub use trace::{log_trace, next_trace_id};
 pub use jalali::gregorian_to_jalali;

@@ -2,12 +2,15 @@ use std::collections::HashSet;
 
 use tokio::process::Command;
 
+use super::trace::log_trace;
 use super::types::{FetchError, VideoInfo};
 
 pub async fn fetch_video_info(
+    trace_id: u64,
     url: &str,
     yt_dlp_browser_spec: &str,
 ) -> Result<VideoInfo, FetchError> {
+    log_trace(trace_id, "fetch_start", &format!("url={url} cookie_spec={yt_dlp_browser_spec}"));
     let output = Command::new("yt-dlp")
         .arg("--cookies-from-browser")
         .arg(yt_dlp_browser_spec)
@@ -20,11 +23,13 @@ pub async fn fetch_video_info(
         .output()
         .await
         .map_err(|e| FetchError::Other(format!("failed to spawn yt-dlp: {e}")))?;
+    log_trace(trace_id, "yt_dlp_exit", &format!("status={}", output.status));
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let lower = stderr.to_ascii_lowercase();
         if lower.contains("http error 429") || lower.contains("too many requests") {
+            log_trace(trace_id, "yt_dlp_rate_limited", stderr.lines().last().unwrap_or(""));
             return Err(FetchError::RateLimited);
         }
         if lower.contains("no such table: moz_cookies")
@@ -33,10 +38,12 @@ pub async fn fetch_video_info(
             || lower.contains("unable to open database file")
             || lower.contains("no cookies found")
         {
+            log_trace(trace_id, "yt_dlp_bad_cookie", stderr.lines().last().unwrap_or(""));
             return Err(FetchError::BadCookie(
                 stderr.lines().last().unwrap_or("").to_string(),
             ));
         }
+        log_trace(trace_id, "yt_dlp_other_error", stderr.lines().last().unwrap_or(""));
         return Err(FetchError::Other(format!(
             "yt-dlp exited with status {}: {}",
             output.status,
@@ -70,6 +77,9 @@ pub async fn fetch_video_info(
         .map(|s| s.to_string())
         .filter(|s| !s.trim().is_empty());
     let available_heights = extract_available_heights(&json);
+    let format_count = json.get("formats").and_then(|v| v.as_array()).map(|v| v.len()).unwrap_or(0);
+    let requested_format_count = json.get("requested_formats").and_then(|v| v.as_array()).map(|v| v.len()).unwrap_or(0);
+    log_trace(trace_id, "fetch_parsed", &format!("format_count={format_count} requested_format_count={requested_format_count} heights={available_heights:?}"));
 
     Ok(VideoInfo {
         title,
@@ -89,18 +99,28 @@ fn extract_available_heights(json: &serde_json::Value) -> Vec<u32> {
     let mut heights = HashSet::new();
     if let Some(formats) = json.get("formats").and_then(|v| v.as_array()) {
         for format in formats {
-            let Some(height) = format.get("height").and_then(|v| v.as_u64()) else {
-                continue;
-            };
-            if format.get("vcodec").and_then(|v| v.as_str()) == Some("none") {
-                continue;
-            }
-            if height <= u32::MAX as u64 {
-                heights.insert(height as u32);
-            }
+            collect_format_height(format, &mut heights);
         }
     }
+    if let Some(requested_formats) = json.get("requested_formats").and_then(|v| v.as_array()) {
+        for format in requested_formats {
+            collect_format_height(format, &mut heights);
+        }
+    }
+    collect_format_height(json, &mut heights);
     let mut heights: Vec<u32> = heights.into_iter().collect();
     heights.sort_unstable();
     heights
+}
+
+fn collect_format_height(format: &serde_json::Value, heights: &mut HashSet<u32>) {
+    let Some(height) = format.get("height").and_then(|v| v.as_u64()) else {
+        return;
+    };
+    if format.get("vcodec").and_then(|v| v.as_str()) == Some("none") {
+        return;
+    }
+    if height <= u32::MAX as u64 {
+        heights.insert(height as u32);
+    }
 }
