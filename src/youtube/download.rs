@@ -491,6 +491,7 @@ async fn run_download(
         }
     }
     params.height = Some(height);
+    params.width = Some(height * 16 / 9);
 
     log_trace(
         trace_id,
