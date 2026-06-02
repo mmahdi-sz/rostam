@@ -264,6 +264,22 @@ ADMIN_USER_ID=123456789
 If set, the emoji cache loads from this user's DB at startup and refreshes
 every 5 minutes. Required for `{key}` template expansion (see below).
 
+Optional local Telegram Bot API server:
+
+```text
+BOT_API_BASE_URL=http://127.0.0.1:8081
+```
+
+When `BOT_API_BASE_URL` is set, the bot builds the Frankenstein API URL as
+`{BOT_API_BASE_URL}/bot{BOT_TOKEN}` via `Bot::new_url(...)`. In
+`frankenstein` v0.50 this is the correct constructor; there is no
+`with_base_url` helper in the current crate.
+
+If `BOT_API_BASE_URL` contains `127.0.0.1` or `localhost`, startup first calls
+`logOut` against the official Telegram Bot API using `Bot::new(token)`, then
+switches to the local Bot API URL. This is required before using a local
+`telegram-bot-api` server.
+
 If `DATABASE_URL` is missing, Cookie Pool state stays in memory only.
 
 ## Telegram Commands

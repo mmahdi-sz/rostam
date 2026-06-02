@@ -28,7 +28,7 @@ use youtube::{extract_youtube_urls, handle_quality_callback, handle_youtube_url,
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token = bot_token()?;
-    let api = Bot::new(&token);
+    let api = build_bot_api(&token).await?;
     let mut cookie_pool = CookiePool::from_default_firefox();
 
     let database = match config::config_value("DATABASE_URL") {
@@ -210,4 +210,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+}
+
+async fn build_bot_api(token: &str) -> Result<Bot, Box<dyn std::error::Error>> {
+    let Some(base_url) = config::bot_api_base_url() else {
+        println!("BOT_API_BASE_URL is not set; using official Telegram Bot API.");
+        return Ok(Bot::new(token));
+    };
+
+    let base_url = base_url.trim_end_matches('/').to_string();
+    if is_local_bot_api_url(&base_url) {
+        println!("Local Bot API base detected ({base_url}); logging out from official Telegram Bot API.");
+        let official_api = Bot::new(token);
+        let response = official_api.log_out().await?;
+        println!("Official Telegram Bot API logOut result: {}", response.result);
+    } else {
+        println!("Custom Bot API base detected ({base_url}); skipping automatic official logOut.");
+    }
+
+    println!("Bot API client initialized with base: {base_url}/bot<token>");
+    Ok(Bot::new_url(format!("{base_url}/bot{token}")))
+}
+
+fn is_local_bot_api_url(base_url: &str) -> bool {
+    base_url.contains("127.0.0.1") || base_url.contains("localhost")
 }
