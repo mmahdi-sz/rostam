@@ -84,10 +84,31 @@ a randomly chosen emoji from the matching group.
 
 ### Key matching rules (checked in order)
 
+All keys resolve via a flat `HashMap` pre-built at cache load time.
+
+**Global keys (default pack context):**
+
 1. **Exact smart_name** — `{fire1}` matches only the item named `fire1`
 2. **Prefix group** — `{fire}` matches all items whose smart_name starts with
    `fire` followed by digits (e.g. `fire1`, `fire2`, `fire3`)
 3. **Alias group** — `{boss}` matches all items with alias `boss`
+4. **Item DB id** — `{43}` matches the item whose `id = 43` (shown in the list
+   as the number before the `|`, e.g. `🔥 = 43 | fire4 | blue_fire`)
+5. **Raw Telegram emoji id** — `{5188481279963715781}` (19-digit number,
+   passes through as a raw `tg://emoji?id=...` link without a cache lookup)
+
+**Pack-scoped keys (`{pack_ident:item_key}`):**
+
+Use a colon to scope the lookup to a specific pack. The pack identifier can be:
+- Pack **name** — `{terraria:stone}`
+- Pack **alias** — `{terra:stone}` (if pack alias is `terra`)
+- Pack **numeric id** — `{2:stone}`
+
+The item key after the colon follows the same rules as global keys:
+- `{terraria:stone1}` — exact smart_name in pack
+- `{terraria:stone}` — prefix group in pack (random from stone1, stone2 …)
+- `{terraria:boss}` — alias group in pack
+- `{terraria:43}` or `{2:43}` — item by DB id in pack
 
 One entry is picked at random from the group on every render.
 
@@ -105,7 +126,8 @@ One entry is picked at random from the group on every render.
 - Loaded at startup from `ADMIN_USER_ID`'s `emoji_items` rows
 - Refreshed in background every 5 minutes (opens its own DB connection)
 - If `ADMIN_USER_ID` is not set, cache stays empty and `{key}` is left as-is
-- Implementation: `src/emoji/cache.rs`, global `CACHE: OnceLock<Arc<RwLock<EmojiCache>>>`
+- Implementation: `src/emoji/cache/` (mod, loader, render, types), global `CACHE: OnceLock<Arc<RwLock<EmojiCache>>>`
+- `loader.rs` JOINs `emoji_packs` to build pack-scoped keys at load time
 
 ## Premium Emoji System
 
