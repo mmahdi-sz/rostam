@@ -5,6 +5,7 @@ use frankenstein::{
     types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity, ReplyMarkup},
 };
 
+use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
 use crate::i18n::{entities_for_text, t};
 
 pub const START_BUTTON_CALLBACK: &str = "say_hello";
@@ -14,33 +15,110 @@ pub async fn send_text(
     chat_id: i64,
     text: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (rendered, entities) = expand_and_entify(text).await;
+    let (rendered, entities, trace_id) = expand_and_entify(text, chat_id).await;
     let params = if entities.is_empty() {
-        SendMessageParams::builder().chat_id(chat_id).text(rendered).build()
+        SendMessageParams::builder().chat_id(chat_id).text(&rendered).build()
     } else {
-        SendMessageParams::builder().chat_id(chat_id).text(rendered).entities(entities).build()
+        SendMessageParams::builder().chat_id(chat_id).text(&rendered).entities(entities.clone()).build()
     };
-    api.send_message(&params).await?;
-    Ok(())
+    match api.send_message(&params).await {
+        Ok(_) => {
+            if let Some(tid) = trace_id {
+                eprintln!(
+                    "[send_text trace={tid} event=send_ok] entity_count={ec}",
+                    ec = entities.len(),
+                );
+            }
+            Ok(())
+        }
+        Err(e) => {
+            if let Some(tid) = trace_id {
+                eprintln!(
+                    "[send_text trace={tid} event=send_failed] chat_id={chat_id} error={e} \
+                     entity_count={ec} rendered={rendered:?}",
+                    ec = entities.len(),
+                );
+            } else {
+                eprintln!("[send_text event=send_failed] chat_id={chat_id} error={e}");
+            }
+            Err(Box::new(e))
+        }
+    }
 }
 
 /// Expands `{key}` templates via the emoji cache (if loaded), then collects
 /// entities for both the cache expansions and the UI emoji in the remaining text.
-async fn expand_and_entify(text: &str) -> (String, Vec<MessageEntity>) {
+///
+/// Returns `(rendered_text, entities, optional_trace_id)`. The trace id is
+/// only set when cache expansion was actually attempted, so callers can
+/// correlate later `send_text` log lines with the expansion that produced them.
+async fn expand_and_entify(text: &str, chat_id: i64) -> (String, Vec<MessageEntity>, Option<u64>) {
     if text.contains('{') {
-        if let Some(cache_arc) = crate::emoji::cache::global() {
-            let cache = cache_arc.read().await;
-            if !cache.is_empty() {
-                let (rendered, mut cache_ents) = cache.render_plain(text);
+        if let Some(cache_arc) = cache::global() {
+            let cache_guard = cache_arc.read().await;
+            if !cache_guard.is_empty() {
+                let trace_id = cache::next_trace_id();
+                eprintln!(
+                    "[send_text trace={trace_id} event=expand_start] chat_id={chat_id} \
+                     key_count={kc} entry_count={ec} text_len={tl} text_preview={tp:?}",
+                    kc = cache_guard.key_count(),
+                    ec = cache_guard.entry_count(),
+                    tl = text.chars().count(),
+                    tp = cache::preview(text, 120),
+                );
+                let (rendered, mut cache_ents, lookups) =
+                    cache_guard.render_plain_with_trace(text);
+                log_lookups(trace_id, &lookups);
                 let ui_ents = entities_for_text(&rendered);
+                eprintln!(
+                    "[send_text trace={trace_id} event=expand_done] {summary} \
+                     cache_entities={ce} ui_entities={ue} rendered_len={rl} rendered_preview={rp:?}",
+                    summary = cache::summarise_lookups(&lookups),
+                    ce = cache_ents.len(),
+                    ue = ui_ents.len(),
+                    rl = rendered.chars().count(),
+                    rp = cache::preview(&rendered, 200),
+                );
                 cache_ents.extend(ui_ents);
                 cache_ents.sort_by_key(|e| e.offset);
-                return (rendered, cache_ents);
+                return (rendered, cache_ents, Some(trace_id));
             }
         }
     }
     let entities = entities_for_text(text);
-    (text.to_string(), entities)
+    (text.to_string(), entities, None)
+}
+
+fn log_lookups(trace_id: u64, lookups: &[RenderLookup]) {
+    for (idx, l) in lookups.iter().enumerate() {
+        match &l.outcome {
+            LookupOutcome::CacheHit { custom_emoji_id, fallback, group_size } => {
+                eprintln!(
+                    "[send_text trace={trace_id} event=lookup] idx={idx} key={key:?} \
+                     outcome=cache_hit group_size={group_size} fallback={fallback:?} id={id}",
+                    key = l.key,
+                    id = custom_emoji_id,
+                );
+            }
+            LookupOutcome::RawId => {
+                eprintln!(
+                    "[send_text trace={trace_id} event=lookup] idx={idx} key={key:?} outcome=raw_id",
+                    key = l.key,
+                );
+            }
+            LookupOutcome::NotFound => {
+                eprintln!(
+                    "[send_text trace={trace_id} event=lookup] idx={idx} key={key:?} outcome=not_found",
+                    key = l.key,
+                );
+            }
+            LookupOutcome::UnclosedBrace => {
+                eprintln!(
+                    "[send_text trace={trace_id} event=lookup] idx={idx} outcome=unclosed_brace",
+                );
+            }
+        }
+    }
 }
 
 pub async fn send_text_md(
