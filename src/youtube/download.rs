@@ -32,6 +32,7 @@ pub struct YoutubeRequest {
     pub cookie_spec: String,
     pub title: String,
     pub duration: Option<u64>,
+    pub thumbnail_url: Option<String>,
     pub formats: Vec<VideoFormatOption>,
 }
 
@@ -455,7 +456,12 @@ async fn run_download(
         "youtube.download.caption",
         &[("title", &req.title), ("quality", &quality_label)],
     );
-    log_trace(trace_id, "upload_start", &format!("path={path}"));
+    let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
+    log_trace(
+        trace_id,
+        "upload_start",
+        &format!("path={path} thumb={}", thumb_path.as_deref().unwrap_or("none")),
+    );
     let mut params = SendVideoParams::builder()
         .chat_id(req.chat_id)
         .video(FileUpload::InputFile(InputFile {
@@ -464,6 +470,11 @@ async fn run_download(
         .supports_streaming(true)
         .caption(caption)
         .build();
+    if let Some(ref tp) = thumb_path {
+        params.thumbnail = Some(FileUpload::InputFile(InputFile {
+            path: PathBuf::from(tp),
+        }));
+    }
     if let Some(d) = req.duration {
         if d > 0 && d <= u32::MAX as u64 {
             params.duration = Some(d as u32);
@@ -500,6 +511,50 @@ async fn run_download(
     }
 
     cleanup_dir(&dir, trace_id).await;
+}
+
+async fn fetch_thumbnail(
+    url: &Option<String>,
+    dir: &std::path::Path,
+    trace_id: u64,
+) -> Option<String> {
+    let url = url.as_deref()?;
+    let path = dir.join("thumb.jpg");
+    match reqwest::get(url).await {
+        Ok(resp) if resp.status().is_success() => {
+            match resp.bytes().await {
+                Ok(bytes) => {
+                    if tokio::fs::write(&path, &bytes).await.is_ok() {
+                        log_trace(
+                            trace_id,
+                            "thumb_fetched",
+                            &format!("bytes={} path={}", bytes.len(), path.display()),
+                        );
+                        Some(path.to_string_lossy().into_owned())
+                    } else {
+                        log_trace(trace_id, "thumb_write_failed", url);
+                        None
+                    }
+                }
+                Err(e) => {
+                    log_trace(trace_id, "thumb_bytes_failed", &e.to_string());
+                    None
+                }
+            }
+        }
+        Ok(resp) => {
+            log_trace(
+                trace_id,
+                "thumb_http_error",
+                &format!("status={}", resp.status()),
+            );
+            None
+        }
+        Err(e) => {
+            log_trace(trace_id, "thumb_fetch_failed", &e.to_string());
+            None
+        }
+    }
 }
 
 fn pick_largest_file(dir: &std::path::Path) -> Option<String> {

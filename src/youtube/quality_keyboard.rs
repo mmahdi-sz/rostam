@@ -70,6 +70,7 @@ pub async fn send_quality_prompt(
         cookie_spec: cookie_spec.to_string(),
         title: info.title.clone(),
         duration: info.duration,
+        thumbnail_url: info.thumbnail.clone(),
         formats: info.video_formats.clone(),
     };
     let request_id = store_request(request);
