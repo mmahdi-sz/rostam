@@ -259,7 +259,7 @@ async fn run_download(
     let output_template = format!("{}/%(id)s.%(ext)s", dir.display());
     let format_spec = format!("{format_id}+bestaudio/best");
     let progress_template = format!(
-        "{PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
+        "{PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
     );
 
     log_trace(
@@ -289,7 +289,7 @@ async fn run_download(
     .await;
 
     let postprocess_template = format!(
-        "{PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
+        "{PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
     );
     let mut child = match Command::new("yt-dlp")
         .arg("--js-runtimes")
