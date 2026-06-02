@@ -38,8 +38,11 @@ pub async fn load_from_db(client: &Client, admin_id: i64) -> EmojiCache {
         }
 
         if let Some(a) = alias.filter(|a| !a.is_empty()) {
-            by_key.entry(a).or_default().push(entry);
+            by_key.entry(a).or_default().push(entry.clone());
         }
+
+        // also index by raw custom_emoji_id so {5188481279963715781} works directly
+        by_key.entry(entry.custom_emoji_id.clone()).or_default().push(entry);
     }
 
     EmojiCache { by_key }

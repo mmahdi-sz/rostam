@@ -3,6 +3,10 @@ use rand::seq::SliceRandom;
 
 use super::types::{EmojiCache, EmojiEntry};
 
+fn is_raw_id(key: &str) -> bool {
+    key.len() >= 10 && key.chars().all(|c| c.is_ascii_digit())
+}
+
 impl EmojiCache {
     pub fn render_markdown(&self, template: &str) -> String {
         let mut result = String::new();
@@ -14,6 +18,8 @@ impl EmojiCache {
                 let key = &after[..close];
                 if let Some(entry) = self.pick(key) {
                     result.push_str(&format!("![{}](tg://emoji?id={})", entry.fallback, entry.custom_emoji_id));
+                } else if is_raw_id(key) {
+                    result.push_str(&format!("![⬛](tg://emoji?id={key})"));
                 } else {
                     result.push('{');
                     result.push_str(key);
@@ -53,6 +59,19 @@ impl EmojiCache {
                         unix_time: None, date_time_format: None,
                     });
                     text.push_str(&entry.fallback);
+                    utf16_offset += len_utf16;
+                } else if is_raw_id(key) {
+                    let fallback = "⬛";
+                    let len_utf16: u32 = fallback.chars().map(|c| c.len_utf16() as u32).sum();
+                    entities.push(MessageEntity {
+                        type_field: MessageEntityType::CustomEmoji,
+                        offset: utf16_offset as u16,
+                        length: len_utf16 as u16,
+                        url: None, user: None, language: None,
+                        custom_emoji_id: Some(key.to_string()),
+                        unix_time: None, date_time_format: None,
+                    });
+                    text.push_str(fallback);
                     utf16_offset += len_utf16;
                 } else {
                     let s = format!("{{{key}}}");
