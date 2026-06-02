@@ -109,9 +109,11 @@ pub fn format_pending_emojis(
     items: &[super::flow::PendingEmoji],
     duplicates: &[super::flow::PendingEmoji],
 ) -> String {
+    use crate::i18n::apply_premium_to_md;
     use crate::youtube::escape_markdown_v2;
+    let emd = |s: &str| apply_premium_to_md(&escape_markdown_v2(s));
     let mut lines: Vec<String> = Vec::new();
-    lines.push(escape_markdown_v2(&t("emoji.pending.title")));
+    lines.push(emd(&t("emoji.pending.title")));
     for (idx, item) in items.iter().enumerate() {
         lines.push(format!(
             "`{}.` {} ![{}](tg://emoji?id={}) \\= `{}`",
@@ -123,11 +125,11 @@ pub fn format_pending_emojis(
         ));
     }
     lines.push(String::new());
-    lines.push(escape_markdown_v2(&tf(
+    lines.push(emd(&tf(
         "emoji.pending.ready",
         &[("count", &items.len().to_string())],
     )));
-    lines.push(escape_markdown_v2(&t("emoji.pending.choose_pack")));
+    lines.push(emd(&t("emoji.pending.choose_pack")));
     if !duplicates.is_empty() {
         let mut rendered = String::new();
         for d in duplicates {
@@ -136,7 +138,7 @@ pub fn format_pending_emojis(
                 d.fallback, d.custom_emoji_id
             ));
         }
-        let prefix = escape_markdown_v2("ℹ️ ایموجی‌های ");
+        let prefix = emd("ℹ️ ایموجی‌های ");
         let suffix = escape_markdown_v2(" تکراری بودند و در لیست نیومدند.");
         lines.push(String::new());
         lines.push(format!("{prefix}{rendered}{suffix}"));
@@ -148,7 +150,9 @@ pub fn build_list_page(
     packs_with_items: &[(EmojiPack, Vec<EmojiItem>)],
     page: usize,
 ) -> (String, usize, usize) {
+    use crate::i18n::apply_premium_to_md;
     use crate::youtube::escape_markdown_v2;
+    let emd = |s: &str| apply_premium_to_md(&escape_markdown_v2(s));
     let total_items: usize = packs_with_items.iter().map(|(_, i)| i.len()).sum();
     let total_pages = if total_items == 0 {
         1
@@ -160,7 +164,7 @@ pub fn build_list_page(
     let end = (start + LIST_PAGE_SIZE).min(total_items);
 
     let mut out = String::new();
-    out.push_str(&escape_markdown_v2(&t("emoji.list_header")));
+    out.push_str(&emd(&t("emoji.list_header")));
     out.push('\n');
 
     let mut seen = 0_usize;
@@ -174,7 +178,7 @@ pub fn build_list_page(
             seen = pack_end;
             continue;
         }
-        out.push_str(&escape_markdown_v2(&tf(
+        out.push_str(&emd(&tf(
             "emoji.list.pack_header",
             &[("name", &pack.name)],
         )));
@@ -188,7 +192,7 @@ pub fn build_list_page(
         }
         seen = pack_end;
     }
-    out.push_str(&escape_markdown_v2(&tf(
+    out.push_str(&emd(&tf(
         "emoji.list_page_footer",
         &[
             ("page", &(page + 1).to_string()),

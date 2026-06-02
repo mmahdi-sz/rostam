@@ -32,12 +32,8 @@ pub fn tf(key: &str, vars: &[(&str, &str)]) -> String {
     template
 }
 
-/// Scans `text` for known UI emoji and returns MessageEntity items
-/// that map each one to its premium custom emoji ID from i18n icons.
-/// Longer/variation-selector forms are tried before shorter ones.
-pub fn entities_for_text(text: &str) -> Vec<MessageEntity> {
-    // (emoji_str, icon_key) — longer variants must come before shorter ones with same prefix
-    static EMOJI_MAP: &[(&str, &str)] = &[
+// (emoji_str, icon_key) — longer variants must come before shorter ones with same prefix
+static EMOJI_MAP: &[(&str, &str)] = &[
         ("ℹ️", "info"),
         ("ℹ", "info"),
         ("⚠️", "warning"),
@@ -70,8 +66,12 @@ pub fn entities_for_text(text: &str) -> Vec<MessageEntity> {
         ("🗑", "delete_pack"),
         ("🧹", "smart_merge"),
         ("🔙", "back"),
-    ];
+];
 
+/// Scans `text` for known UI emoji and returns MessageEntity items
+/// that map each one to its premium custom emoji ID from i18n icons.
+/// Longer/variation-selector forms are tried before shorter ones.
+pub fn entities_for_text(text: &str) -> Vec<MessageEntity> {
     let mut entities: Vec<MessageEntity> = Vec::new();
     let mut byte_pos: usize = 0;
     let mut utf16_offset: u32 = 0;
@@ -113,4 +113,28 @@ pub fn entities_for_text(text: &str) -> Vec<MessageEntity> {
     }
 
     entities
+}
+
+/// Replaces known UI emoji chars in an already-MarkdownV2-escaped string
+/// with `![fb](tg://emoji?id=ID)` inline image syntax.
+/// Use this for MarkdownV2 messages where entities cannot be added.
+pub fn apply_premium_to_md(text: &str) -> String {
+    let mut result = String::with_capacity(text.len() + 64);
+    let mut rest = text;
+    'outer: while !rest.is_empty() {
+        for (emoji_str, icon_key) in EMOJI_MAP {
+            if rest.starts_with(emoji_str) {
+                let icon_id = t(&format!("emoji.panel.icons.{icon_key}"));
+                if !icon_id.is_empty() {
+                    result.push_str(&format!("![{}](tg://emoji?id={})", emoji_str, icon_id));
+                    rest = &rest[emoji_str.len()..];
+                    continue 'outer;
+                }
+            }
+        }
+        let c = rest.chars().next().unwrap();
+        result.push(c);
+        rest = &rest[c.len_utf8()..];
+    }
+    result
 }
