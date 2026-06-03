@@ -11,6 +11,20 @@ pub struct VideoInfo {
     pub description: Option<String>,
     pub available_heights: Vec<u32>,
     pub video_formats: Vec<VideoFormatOption>,
+    pub audio_languages: Vec<AudioLanguage>,
+    pub subtitle_languages: Vec<SubtitleLanguage>,
+}
+
+#[derive(Clone, Debug)]
+pub struct AudioLanguage {
+    pub code: String,
+    pub is_original: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct SubtitleLanguage {
+    pub code: String,
+    pub is_auto: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

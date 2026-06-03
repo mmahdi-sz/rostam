@@ -1,9 +1,11 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use tokio::process::Command;
 
 use super::trace::log_trace;
-use super::types::{FetchError, VideoCodec, VideoFormatOption, VideoInfo};
+use super::types::{
+    AudioLanguage, FetchError, SubtitleLanguage, VideoCodec, VideoFormatOption, VideoInfo,
+};
 
 pub async fn fetch_video_info(
     trace_id: u64,
@@ -113,6 +115,8 @@ pub async fn fetch_video_info(
         .filter(|s| !s.trim().is_empty());
     let video_formats = extract_video_formats(&json);
     let available_heights = available_heights(&video_formats);
+    let audio_languages = extract_audio_languages(&json);
+    let subtitle_languages = extract_subtitle_languages(&json);
     let format_count = json
         .get("formats")
         .and_then(|v| v.as_array())
@@ -124,11 +128,21 @@ pub async fn fetch_video_info(
         .map(|v| v.len())
         .unwrap_or(0);
     let codec_summary = codec_summary(&video_formats);
+    let audio_summary = audio_languages
+        .iter()
+        .map(|a| format!("{}{}", a.code, if a.is_original { "*" } else { "" }))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sub_summary = subtitle_languages
+        .iter()
+        .map(|s| format!("{}{}", s.code, if s.is_auto { "(auto)" } else { "" }))
+        .collect::<Vec<_>>()
+        .join(",");
     log_trace(
         trace_id,
         "fetch_parsed",
         &format!(
-            "format_count={format_count} requested_format_count={requested_format_count} heights={available_heights:?} codecs={codec_summary}"
+            "format_count={format_count} requested_format_count={requested_format_count} heights={available_heights:?} codecs={codec_summary} audio_langs={audio_summary} sub_langs={sub_summary}"
         ),
     );
 
@@ -144,7 +158,85 @@ pub async fn fetch_video_info(
         description,
         available_heights,
         video_formats,
+        audio_languages,
+        subtitle_languages,
     })
+}
+
+fn extract_audio_languages(json: &serde_json::Value) -> Vec<AudioLanguage> {
+    let mut by_lang: HashMap<String, bool> = HashMap::new();
+    let mut collect = |format: &serde_json::Value| {
+        let Some(lang) = format.get("language").and_then(|v| v.as_str()) else {
+            return;
+        };
+        if lang.is_empty() {
+            return;
+        }
+        let note = format
+            .get("format_note")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let lang_pref = format
+            .get("language_preference")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(-1);
+        let is_original = note.contains("original") || lang_pref >= 10;
+        let entry = by_lang.entry(lang.to_string()).or_insert(false);
+        if is_original {
+            *entry = true;
+        }
+    };
+    if let Some(formats) = json.get("formats").and_then(|v| v.as_array()) {
+        for format in formats {
+            collect(format);
+        }
+    }
+    if let Some(formats) = json.get("requested_formats").and_then(|v| v.as_array()) {
+        for format in formats {
+            collect(format);
+        }
+    }
+    let mut out: Vec<AudioLanguage> = by_lang
+        .into_iter()
+        .map(|(code, is_original)| AudioLanguage { code, is_original })
+        .collect();
+    out.sort_by(|a, b| {
+        b.is_original
+            .cmp(&a.is_original)
+            .then_with(|| a.code.cmp(&b.code))
+    });
+    out
+}
+
+fn extract_subtitle_languages(json: &serde_json::Value) -> Vec<SubtitleLanguage> {
+    let mut subs: HashMap<String, bool> = HashMap::new();
+    if let Some(obj) = json.get("subtitles").and_then(|v| v.as_object()) {
+        for key in obj.keys() {
+            if key.is_empty() {
+                continue;
+            }
+            subs.insert(key.clone(), false);
+        }
+    }
+    if let Some(obj) = json.get("automatic_captions").and_then(|v| v.as_object()) {
+        for key in obj.keys() {
+            if key.is_empty() {
+                continue;
+            }
+            subs.entry(key.clone()).or_insert(true);
+        }
+    }
+    let mut out: Vec<SubtitleLanguage> = subs
+        .into_iter()
+        .map(|(code, is_auto)| SubtitleLanguage { code, is_auto })
+        .collect();
+    out.sort_by(|a, b| {
+        a.is_auto
+            .cmp(&b.is_auto)
+            .then_with(|| a.code.cmp(&b.code))
+    });
+    out
 }
 
 fn extract_video_formats(json: &serde_json::Value) -> Vec<VideoFormatOption> {

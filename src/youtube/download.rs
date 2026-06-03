@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use frankenstein::{
@@ -17,7 +17,22 @@ use tokio::process::Command;
 use crate::i18n::{entities_for_text, t, tf};
 
 use super::trace::log_trace;
-use super::types::{VideoCodec, VideoFormatOption};
+use super::types::{AudioLanguage, SubtitleLanguage, VideoCodec, VideoFormatOption};
+
+#[derive(Clone, Debug)]
+pub struct Selection {
+    pub height: u32,
+    pub codec: VideoCodec,
+    pub audio_lang: Option<String>,
+    pub subtitle_langs: Vec<String>,
+    pub view: SelectionView,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum SelectionView {
+    Main,
+    SubMenu(usize),
+}
 
 const DOWNLOAD_ROOT: &str = "/mnt/data/mahdidev/ros/dev/downloads/yt";
 const PROGRESS_PREFIX: &str = "YT_PROGRESS|";
@@ -34,6 +49,9 @@ pub struct YoutubeRequest {
     pub duration: Option<u64>,
     pub thumbnail_url: Option<String>,
     pub formats: Vec<VideoFormatOption>,
+    pub audio_languages: Vec<AudioLanguage>,
+    pub subtitle_languages: Vec<SubtitleLanguage>,
+    pub selection: Arc<Mutex<Option<Selection>>>,
 }
 
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
@@ -75,6 +93,50 @@ pub fn codecs_for_height(req: &YoutubeRequest, height: u32) -> Vec<VideoCodec> {
         }
     }
     out
+}
+
+const CODEC_PRIORITY: &[VideoCodec] = &[
+    VideoCodec::Av1,
+    VideoCodec::Vp9,
+    VideoCodec::H265,
+    VideoCodec::H264,
+];
+
+pub fn pick_default_codec(available: &[VideoCodec]) -> VideoCodec {
+    for c in CODEC_PRIORITY {
+        if available.contains(c) {
+            return *c;
+        }
+    }
+    available.first().copied().unwrap_or(VideoCodec::H264)
+}
+
+pub fn pick_default_audio(langs: &[AudioLanguage]) -> Option<String> {
+    if let Some(original) = langs.iter().find(|l| l.is_original) {
+        return Some(original.code.clone());
+    }
+    langs.first().map(|l| l.code.clone())
+}
+
+pub fn init_selection(req: &YoutubeRequest, height: u32) -> Selection {
+    let codecs = codecs_for_height(req, height);
+    let codec = pick_default_codec(&codecs);
+    let audio_lang = pick_default_audio(&req.audio_languages);
+    Selection {
+        height,
+        codec,
+        audio_lang,
+        subtitle_langs: Vec::new(),
+        view: SelectionView::Main,
+    }
+}
+
+pub fn with_selection<F, R>(req: &YoutubeRequest, f: F) -> R
+where
+    F: FnOnce(&mut Option<Selection>) -> R,
+{
+    let mut guard = req.selection.lock().unwrap();
+    f(&mut *guard)
 }
 
 fn find_format(req: &YoutubeRequest, height: u32, codec: VideoCodec) -> Option<&VideoFormatOption> {

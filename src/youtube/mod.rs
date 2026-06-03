@@ -4,7 +4,9 @@ mod fetch;
 mod format;
 pub mod jalali;
 mod download;
+mod lang_names;
 mod quality_keyboard;
+mod selection;
 mod trace;
 mod handle;
 

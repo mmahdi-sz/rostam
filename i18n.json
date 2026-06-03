@@ -147,6 +147,18 @@
   },
   "youtube": {
     "analyzing": "⏳",
+    "selection": {
+      "prompt": "📥 تنظیمات دانلود را انتخاب کن:",
+      "codec_header": "— انتخاب کدک —",
+      "audio_header": "— انتخاب صوت —",
+      "subtitle_header": "— زیرنویس —",
+      "subtitle_menu": "📁 باز کردن منو زیرنویس",
+      "subtitle_menu_header": "— منو زیرنویس (صفحه {page} از {total}) —",
+      "subtitle_back": "🔙 بازگشت",
+      "page_prev": "⬅",
+      "page_next": "➡",
+      "confirm": "✅ تایید و دانلود"
+    },
     "fetch_failed": "دریافت اطلاعات ویدیو ناموفق بود: {error}",
     "send_photo_failed": "ارسال تامبنیل ناموفق بود: {error}",
     "quality": {

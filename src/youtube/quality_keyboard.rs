@@ -1,19 +1,19 @@
+use std::sync::{Arc, Mutex};
+
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
-    methods::{AnswerCallbackQueryParams, EditMessageTextParams, SendMessageParams},
+    methods::{AnswerCallbackQueryParams, SendMessageParams},
     types::{
         ButtonStyle, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
         MaybeInaccessibleMessage, ReplyMarkup,
     },
 };
 
-use crate::i18n::{apply_premium_to_md, entities_for_text, t, tf};
+use crate::i18n::{apply_premium_to_md, t};
 
-use super::download::{
-    YoutubeRequest, codecs_for_height as request_codecs_for_height, get_request, spawn_download,
-    store_request,
-};
+use super::download::{YoutubeRequest, get_request, store_request};
+use super::selection::{enter_selection_menu, handle_selection_callback, CB_SELECTION_PREFIX};
 use super::trace::log_trace;
 use super::types::{VideoCodec, VideoFormatOption, VideoInfo};
 
@@ -71,6 +71,9 @@ pub async fn send_quality_prompt(
         duration: info.duration,
         thumbnail_url: info.thumbnail.clone(),
         formats: info.video_formats.clone(),
+        audio_languages: info.audio_languages.clone(),
+        subtitle_languages: info.subtitle_languages.clone(),
+        selection: Arc::new(Mutex::new(None)),
     };
     let request_id = store_request(request);
 
@@ -112,11 +115,16 @@ pub async fn handle_quality_callback(api: &Bot, callback_query: &CallbackQuery) 
     let Some(data) = callback_query.data.as_deref() else {
         return false;
     };
+    if data.starts_with(CB_SELECTION_PREFIX) {
+        return handle_selection_callback(api, callback_query).await;
+    }
     if data.starts_with(CB_QUALITY_PREFIX) {
         return handle_resolution_callback(api, callback_query, data).await;
     }
     if data.starts_with(CB_CODEC_PREFIX) {
-        return handle_codec_callback(api, callback_query, data).await;
+        // legacy stale callback (no longer issued); just ack
+        answer_callback(api, callback_query, "").await;
+        return true;
     }
     false
 }
@@ -141,16 +149,13 @@ async fn handle_resolution_callback(api: &Bot, callback_query: &CallbackQuery, d
         return true;
     };
     let trace_id = request.trace_id;
-    let codecs = request_codecs_for_height(&request, height);
 
     log_trace(
         trace_id,
         "quality_clicked",
         &format!(
-            "request_id={request_id} user_id={} height={} codecs={}",
-            callback_query.from.id,
-            height,
-            codecs.iter().map(|c| c.key()).collect::<Vec<_>>().join(",")
+            "request_id={request_id} user_id={} height={}",
+            callback_query.from.id, height
         ),
     );
 
@@ -159,149 +164,9 @@ async fn handle_resolution_callback(api: &Bot, callback_query: &CallbackQuery, d
         return true;
     };
 
-    if codecs.len() == 1 {
-        start_download_flow(
-            api,
-            callback_query,
-            request_id,
-            trace_id,
-            height,
-            codecs[0],
-            message.chat.id,
-            message.message_id,
-        )
-        .await;
-        return true;
-    }
-
-    let quality_label = quality_label(height);
-    let text = tf("youtube.codec.prompt", &[("quality", &quality_label)]);
-    let entities = entities_for_text(&text);
-    let mut params = EditMessageTextParams::builder()
-        .chat_id(message.chat.id)
-        .message_id(message.message_id)
-        .text(text)
-        .reply_markup(codec_keyboard(request_id, height, &codecs))
-        .build();
-
-    if !entities.is_empty() {
-        params.entities = Some(entities);
-    }
-
-    if let Err(error) = api.edit_message_text(&params).await {
-        log_trace(
-            trace_id,
-            "codec_prompt_edit_failed",
-            &format!("height={height} error={error}"),
-        );
-        answer_callback(api, callback_query, "youtube.download.request_expired").await;
-        return true;
-    }
-
-    log_trace(
-        trace_id,
-        "codec_prompt_sent",
-        &format!(
-            "request_id={request_id} height={height} codecs={}",
-            codecs.iter().map(|c| c.key()).collect::<Vec<_>>().join(",")
-        ),
-    );
+    enter_selection_menu(api, request_id, height, message.chat.id, message.message_id).await;
     answer_callback(api, callback_query, "").await;
     true
-}
-
-async fn handle_codec_callback(api: &Bot, callback_query: &CallbackQuery, data: &str) -> bool {
-    let Some((request_id, height, codec)) = parse_codec_callback(data) else {
-        eprintln!(
-            "[youtube callback event=codec_malformed user_id={} data={data}]",
-            callback_query.from.id
-        );
-        answer_callback(api, callback_query, "youtube.download.request_expired").await;
-        return true;
-    };
-
-    let Some(request) = get_request(request_id) else {
-        answer_callback(api, callback_query, "youtube.download.request_expired").await;
-        return true;
-    };
-    let trace_id = request.trace_id;
-
-    let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message.as_ref() else {
-        answer_callback(api, callback_query, "youtube.download.request_expired").await;
-        return true;
-    };
-
-    log_trace(
-        trace_id,
-        "codec_clicked",
-        &format!(
-            "request_id={request_id} user_id={} height={} codec={}",
-            callback_query.from.id,
-            height,
-            codec.key()
-        ),
-    );
-
-    start_download_flow(
-        api,
-        callback_query,
-        request_id,
-        trace_id,
-        height,
-        codec,
-        message.chat.id,
-        message.message_id,
-    )
-    .await;
-    true
-}
-
-async fn start_download_flow(
-    api: &Bot,
-    callback_query: &CallbackQuery,
-    request_id: u64,
-    trace_id: u64,
-    height: u32,
-    codec: VideoCodec,
-    status_chat_id: i64,
-    status_message_id: i32,
-) {
-    answer_callback(api, callback_query, "").await;
-    let quality_label = quality_label(height);
-    let text = tf("youtube.download.starting", &[("quality", &quality_label)]);
-    let entities = entities_for_text(&text);
-    let mut params = EditMessageTextParams::builder()
-        .chat_id(status_chat_id)
-        .message_id(status_message_id)
-        .text(text)
-        .build();
-    if !entities.is_empty() {
-        params.entities = Some(entities);
-    }
-    if let Err(error) = api.edit_message_text(&params).await {
-        log_trace(
-            trace_id,
-            "download_start_edit_failed",
-            &error.to_string(),
-        );
-    }
-
-    log_trace(
-        trace_id,
-        "download_dispatch",
-        &format!(
-            "request_id={request_id} height={height} codec={}",
-            codec.key()
-        ),
-    );
-    spawn_download(
-        api.clone(),
-        request_id,
-        height,
-        codec,
-        status_chat_id,
-        status_message_id,
-    );
 }
 
 async fn answer_callback(api: &Bot, callback_query: &CallbackQuery, text_key: &str) {
@@ -323,24 +188,6 @@ fn quality_keyboard(request_id: u64, options: &[QualityOption]) -> InlineKeyboar
                 &format!("{CB_QUALITY_PREFIX}{request_id}:{}", option.height),
                 button_style(option.height),
                 option.icon_key,
-            )]
-        })
-        .collect();
-
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(rows)
-        .build()
-}
-
-fn codec_keyboard(request_id: u64, height: u32, codecs: &[VideoCodec]) -> InlineKeyboardMarkup {
-    let rows = codecs
-        .iter()
-        .map(|codec| {
-            vec![quality_button(
-                &t(codec.label_key()),
-                &format!("{CB_CODEC_PREFIX}{request_id}:{height}:{}", codec.key()),
-                ButtonStyle::Primary,
-                "export",
             )]
         })
         .collect();
@@ -384,23 +231,6 @@ fn parse_quality_callback(data: &str) -> Option<(u64, u32)> {
     let rest = data.strip_prefix(CB_QUALITY_PREFIX)?;
     let (req, height) = rest.split_once(':')?;
     Some((req.parse().ok()?, height.parse().ok()?))
-}
-
-fn parse_codec_callback(data: &str) -> Option<(u64, u32, VideoCodec)> {
-    let rest = data.strip_prefix(CB_CODEC_PREFIX)?;
-    let mut parts = rest.splitn(3, ':');
-    let req = parts.next()?.parse().ok()?;
-    let height = parts.next()?.parse().ok()?;
-    let codec = VideoCodec::from_key(parts.next()?)?;
-    Some((req, height, codec))
-}
-
-fn quality_label(height: u32) -> String {
-    QUALITY_OPTIONS
-        .iter()
-        .find(|(option_height, _, _)| *option_height == height)
-        .map(|(_, label_key, _)| t(label_key))
-        .unwrap_or_else(|| format!("{height}p"))
 }
 
 fn button_style(height: u32) -> ButtonStyle {
