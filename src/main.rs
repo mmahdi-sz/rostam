@@ -19,7 +19,8 @@ use frankenstein::{
     AsyncTelegramApi,
     client_reqwest::Bot,
     methods::{AnswerCallbackQueryParams, GetUpdatesParams},
-    types::MaybeInaccessibleMessage,
+    methods::SendMessageParams,
+    types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, MaybeInaccessibleMessage, ReplyMarkup},
     updates::UpdateContent,
 };
 use i18n::{t, reload_i18n};
@@ -242,7 +243,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .build(),
                         ).await;
                         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-                            let _ = send_text(&api, message.chat.id, &t("start.youtube_info")).await;
+                            let icon_id = t("emoji.panel.icons.back");
+                            let back_btn = InlineKeyboardButton {
+                                text: t("start.back"),
+                                icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') { None } else { Some(icon_id) },
+                                callback_data: Some(CB_START_PANEL.to_string()),
+                                style: Some(ButtonStyle::Primary),
+                                url: None, login_url: None, web_app: None,
+                                switch_inline_query: None, switch_inline_query_current_chat: None,
+                                switch_inline_query_chosen_chat: None, copy_text: None,
+                                callback_game: None, pay: None,
+                            };
+                            let keyboard = InlineKeyboardMarkup::builder()
+                                .inline_keyboard(vec![vec![back_btn]])
+                                .build();
+                            let no_preview = LinkPreviewOptions::builder().is_disabled(true).build();
+                            let params = SendMessageParams::builder()
+                                .chat_id(message.chat.id)
+                                .text(t("start.youtube_info"))
+                                .link_preview_options(no_preview)
+                                .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard))
+                                .build();
+                            let _ = api.send_message(&params).await;
                         }
                         continue;
                     }
