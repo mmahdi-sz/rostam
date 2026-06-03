@@ -10,6 +10,7 @@ use frankenstein::{
 
 use frankenstein::types::MessageEntityType;
 
+use crate::bot::CB_START_PANEL;
 use crate::i18n::{entities_for_text, t, tf};
 
 use super::download::{
@@ -632,6 +633,7 @@ fn build_main_keyboard(
         &t("youtube.selection.back_to_quality"),
         format!("{CB_BACK_TO_QUALITY_PREFIX}{request_id}"),
     )]);
+    rows.push(vec![main_menu_button()]);
 
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }
@@ -698,6 +700,7 @@ fn build_sub_menu_keyboard(
         ));
     }
     rows.push(nav);
+    rows.push(vec![main_menu_button()]);
 
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }
@@ -721,6 +724,20 @@ fn confirm_button(text: &str, callback_data: String) -> InlineKeyboardButton {
 
 fn primary_button(text: &str, callback_data: String) -> InlineKeyboardButton {
     button(text, callback_data, Some(ButtonStyle::Primary))
+}
+
+fn main_menu_button() -> InlineKeyboardButton {
+    let icon_id = t("emoji.panel.icons.back");
+    InlineKeyboardButton {
+        text: t("start.back"),
+        icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') { None } else { Some(icon_id) },
+        callback_data: Some(CB_START_PANEL.to_string()),
+        style: Some(ButtonStyle::Primary),
+        url: None, login_url: None, web_app: None,
+        switch_inline_query: None, switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None, copy_text: None,
+        callback_game: None, pay: None,
+    }
 }
 
 fn button(text: &str, callback_data: String, style: Option<ButtonStyle>) -> InlineKeyboardButton {

@@ -1,8 +1,10 @@
 {
   "start": {
-    "prompt": "روی دکمه بزن:",
-    "button": "نمایش سلام",
-    "hello": "سلام"
+    "welcome": "به ربات خوش آمدید!\nیکی از گزینه‌های زیر را انتخاب کنید:",
+    "emoji_button": "پنل ایموجی",
+    "youtube_button": "دانلود یوتیوب",
+    "back": "منوی اصلی",
+    "youtube_info": "لینک یوتیوب خود را بفرستید تا دانلود شود.\n\nمثال:\nhttps://www.youtube.com/watch?v=..."
   },
   "cookie": {
     "status_header": "Cookie Pool",

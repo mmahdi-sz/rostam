@@ -9,7 +9,8 @@ mod emoji;
 mod i18n;
 mod youtube;
 
-use bot::{send_text, send_start_button, START_BUTTON_CALLBACK};
+use bot::{send_text, send_text_md, send_start_menu, edit_to_start_menu, CB_START_EMOJI, CB_START_YOUTUBE};
+use emoji::panel::CB_START_PANEL;
 use config::bot_token;
 use cookie_pool::{CookiePool, format_cookie_status, format_selected_cookie, format_no_cookie_available, save_snapshot};
 use database::postgresql::PostgresDatabase;
@@ -178,7 +179,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     send_text(&api, message.chat.id, "✅ i18n.json reloaded.").await?;
                                 }
                             }
-                            "/start" => send_start_button(&api, message.chat.id).await?,
+                            "/start" => send_start_menu(&api, message.chat.id).await?,
                             "/cookie_status" => {
                                 let status = cookie_pool.status();
                                 send_text(&api, message.chat.id, &format_cookie_status(&status)).await?;
@@ -220,20 +221,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if handle_quality_callback(&api, &callback_query).await {
                         continue;
                     }
-                    if callback_query.data.as_deref() == Some(START_BUTTON_CALLBACK) {
+                    if callback_query.data.as_deref() == Some(CB_START_EMOJI) {
                         let _ = api.answer_callback_query(
                             &AnswerCallbackQueryParams::builder()
                                 .callback_query_id(callback_query.id)
                                 .build(),
                         ).await;
                         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-                            api.send_message(
-                                &frankenstein::methods::SendMessageParams::builder()
-                                    .chat_id(message.chat.id)
-                                    .text(t("start.hello"))
-                                    .build(),
-                            ).await?;
+                            emoji_handler::open_emoji_panel(
+                                &api, message.chat.id, callback_query.from.id as i64,
+                                &mut flow_manager, &database,
+                            ).await;
                         }
+                        continue;
+                    }
+                    if callback_query.data.as_deref() == Some(CB_START_YOUTUBE) {
+                        let _ = api.answer_callback_query(
+                            &AnswerCallbackQueryParams::builder()
+                                .callback_query_id(callback_query.id)
+                                .build(),
+                        ).await;
+                        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+                            send_text_md(&api, message.chat.id, &t("start.youtube_info")).await?;
+                        }
+                        continue;
+                    }
+                    if callback_query.data.as_deref() == Some(CB_START_PANEL) {
+                        let _ = api.answer_callback_query(
+                            &AnswerCallbackQueryParams::builder()
+                                .callback_query_id(callback_query.id)
+                                .build(),
+                        ).await;
+                        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+                            edit_to_start_menu(&api, message.chat.id, message.message_id).await?;
+                        }
+                        continue;
                     }
                 }
                 _ => {}

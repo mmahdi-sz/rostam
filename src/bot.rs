@@ -1,14 +1,17 @@
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
-    methods::SendMessageParams,
-    types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity, ReplyMarkup},
+    methods::{EditMessageTextParams, SendMessageParams},
+    types::{InlineKeyboardMarkup, MessageEntity, ReplyMarkup},
 };
 
 use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
+use crate::emoji::panel::btn_icon;
 use crate::i18n::{entities_for_text, t};
 
-pub const START_BUTTON_CALLBACK: &str = "say_hello";
+pub const CB_START_EMOJI: &str = "start:emoji";
+pub const CB_START_YOUTUBE: &str = "start:youtube";
+pub const CB_START_PANEL: &str = "start:panel";
 
 pub async fn send_text(
     api: &Bot,
@@ -137,27 +140,51 @@ pub async fn send_text_md(
     Ok(())
 }
 
-pub async fn send_start_button(
+pub async fn send_start_menu(
     api: &Bot,
     chat_id: i64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let button = InlineKeyboardButton::builder()
-        .text(t("start.button"))
-        .callback_data(START_BUTTON_CALLBACK)
-        .style(ButtonStyle::Success)
+    let text = t("start.welcome");
+    let entities = entities_for_text(&text);
+    let mut params = SendMessageParams::builder()
+        .chat_id(chat_id)
+        .text(&text)
+        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(start_menu_keyboard()))
         .build();
+    if !entities.is_empty() {
+        params.entities = Some(entities);
+    }
+    api.send_message(&params).await?;
+    Ok(())
+}
 
-    let keyboard = InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![button]])
+pub fn start_menu_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![
+            vec![
+                btn_icon(&t("start.emoji_button"), CB_START_EMOJI, "panel"),
+                btn_icon(&t("start.youtube_button"), CB_START_YOUTUBE, "clapper"),
+            ],
+        ])
+        .build()
+}
+
+pub async fn edit_to_start_menu(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let text = t("start.welcome");
+    let entities = entities_for_text(&text);
+    let mut params = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(&text)
+        .reply_markup(start_menu_keyboard())
         .build();
-
-    api.send_message(
-        &SendMessageParams::builder()
-            .chat_id(chat_id)
-            .text(t("start.prompt"))
-            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard))
-            .build(),
-    )
-    .await?;
+    if !entities.is_empty() {
+        params.entities = Some(entities);
+    }
+    api.edit_message_text(&params).await?;
     Ok(())
 }

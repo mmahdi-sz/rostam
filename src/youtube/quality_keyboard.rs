@@ -16,6 +16,7 @@ use super::download::{YoutubeRequest, cancel_download, get_request, store_reques
 use super::selection::{enter_selection_menu, handle_selection_callback, CB_BACK_TO_QUALITY_PREFIX, CB_SELECTION_PREFIX};
 use super::trace::log_trace;
 use super::types::{VideoCodec, VideoFormatOption, VideoInfo};
+use crate::bot::CB_START_PANEL;
 
 const CB_QUALITY_PREFIX: &str = "yt:q:";
 const CB_CODEC_PREFIX: &str = "yt:c:";
@@ -187,7 +188,7 @@ async fn answer_callback(api: &Bot, callback_query: &CallbackQuery, text_key: &s
 }
 
 fn quality_keyboard(request_id: u64, options: &[QualityOption]) -> InlineKeyboardMarkup {
-    let rows = options
+    let mut rows: Vec<Vec<InlineKeyboardButton>> = options
         .iter()
         .map(|option| {
             vec![quality_button(
@@ -199,9 +200,25 @@ fn quality_keyboard(request_id: u64, options: &[QualityOption]) -> InlineKeyboar
         })
         .collect();
 
+    rows.push(vec![main_menu_button()]);
+
     InlineKeyboardMarkup::builder()
         .inline_keyboard(rows)
         .build()
+}
+
+fn main_menu_button() -> InlineKeyboardButton {
+    let icon_id = t("emoji.panel.icons.back");
+    InlineKeyboardButton {
+        text: t("start.back"),
+        icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') { None } else { Some(icon_id) },
+        callback_data: Some(CB_START_PANEL.to_string()),
+        style: Some(ButtonStyle::Primary),
+        url: None, login_url: None, web_app: None,
+        switch_inline_query: None, switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None, copy_text: None,
+        callback_game: None, pay: None,
+    }
 }
 
 fn quality_options(info: &VideoInfo) -> Vec<QualityOption> {

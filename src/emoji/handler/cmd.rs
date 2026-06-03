@@ -10,6 +10,36 @@ use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, panel as emoji_panel, store as emoji_store, cache};
 use crate::i18n::{entities_for_text, t, tf};
 
+/// Open the emoji panel for a given chat_id + user_id (from callback or other non-message sources).
+pub async fn open_emoji_panel(
+    api: &Bot,
+    chat_id: i64,
+    user_id: i64,
+    flow_manager: &mut FlowManager,
+    database: &Option<PostgresDatabase>,
+) {
+    let trace_id = cache::next_trace_id();
+    eprintln!("[emoji_open trace={trace_id} event=open] user_id={user_id} chat_id={chat_id}");
+    flow_manager.clear(user_id);
+    if database.is_none() {
+        eprintln!("[emoji_open trace={trace_id} event=no_db]");
+        let _ = send_text(api, chat_id, &t("emoji.db_required")).await;
+        return;
+    }
+    let panel_text = emoji_panel::main_panel_text();
+    let ents = entities_for_text(&panel_text);
+    let params = if ents.is_empty() {
+        SendMessageParams::builder().chat_id(chat_id).text(panel_text)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard())).build()
+    } else {
+        SendMessageParams::builder().chat_id(chat_id).text(panel_text).entities(ents)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(emoji_panel::main_panel_keyboard())).build()
+    };
+    let r = api.send_message(&params).await;
+    eprintln!("[emoji_open trace={trace_id} event=panel_sent] ok={}", r.is_ok());
+    if let Err(e) = r { eprintln!("[emoji_open trace={trace_id} event=panel_send_failed] err={e}"); }
+}
+
 pub async fn handle_emoji_command(
     api: &Bot,
     message: &Message,
