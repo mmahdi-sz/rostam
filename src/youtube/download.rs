@@ -206,7 +206,7 @@ struct ProgressSnapshot {
 fn parse_progress_line(line: &str) -> Option<ProgressSnapshot> {
     let rest = line.strip_prefix(PROGRESS_PREFIX)?;
     let parts: Vec<&str> = rest.split('|').collect();
-    if parts.len() < 6 {
+    if parts.len() < 7 {
         return None;
     }
     let percent_str = parts[0].trim().to_string();
@@ -217,13 +217,21 @@ fn parse_progress_line(line: &str) -> Option<ProgressSnapshot> {
         .ok()
         .map(|f| f.round() as i32)
         .unwrap_or(-1);
+    let total = {
+        let exact = parts[2].trim();
+        if exact.is_empty() || exact == "N/A" {
+            parts[3].trim().to_string()
+        } else {
+            exact.to_string()
+        }
+    };
     Some(ProgressSnapshot {
         percent: percent_str,
         downloaded: parts[1].trim().to_string(),
-        total: parts[2].trim().to_string(),
-        speed: parts[3].trim().to_string(),
-        eta: parts[4].trim().to_string(),
-        elapsed: parts[5].trim().to_string(),
+        total,
+        speed: parts[4].trim().to_string(),
+        eta: parts[5].trim().to_string(),
+        elapsed: parts[6].trim().to_string(),
         percent_int,
     })
 }
@@ -409,7 +417,7 @@ async fn run_download(
     let output_template = format!("{}/%(id)s.%(ext)s", dir.display());
     let format_spec = format!("{format_id}+bestaudio/best");
     let progress_template = format!(
-        "{PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
+        "{PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
     );
 
     log_trace(
@@ -440,7 +448,7 @@ async fn run_download(
     .await;
 
     let postprocess_template = format!(
-        "{PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
+        "{PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
     );
     let mut cmd = Command::new("yt-dlp");
     cmd.arg("--js-runtimes")
