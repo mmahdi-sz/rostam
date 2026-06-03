@@ -5,13 +5,13 @@ use frankenstein::{
     client_reqwest::Bot,
     input_file::FileUpload,
     methods::{SendMessageParams, SendPhotoParams},
-    types::LinkPreviewOptions,
+    types::{LinkPreviewOptions, ReplyParameters},
 };
 
 use crate::bot::send_text;
 use crate::cookie_pool::{CookiePool, format_no_cookie_available, save_snapshot};
 use crate::database::postgresql::PostgresDatabase;
-use crate::i18n::tf;
+use crate::i18n::{t, tf};
 
 use super::format::{build_caption, build_description_blockquotes};
 use super::fetch::fetch_video_info;
@@ -22,6 +22,7 @@ use super::types::FetchError;
 pub async fn handle_youtube_url(
     api: &Bot,
     chat_id: i64,
+    message_id: i32,
     user_id: Option<i64>,
     trace_id: u64,
     url: &str,
@@ -29,6 +30,20 @@ pub async fn handle_youtube_url(
     database: &Option<PostgresDatabase>,
 ) {
     log_trace(trace_id, "handle_start", &format!("user_id={user_id:?} chat_id={chat_id} url={url}"));
+
+    let analyzing_text = t("youtube.analyzing");
+    let entities = crate::i18n::entities_for_text(&analyzing_text);
+    let mut analyzing_params = SendMessageParams::builder()
+        .chat_id(chat_id)
+        .text(analyzing_text)
+        .reply_parameters(ReplyParameters::builder().message_id(message_id).build())
+        .build();
+    if !entities.is_empty() {
+        analyzing_params.entities = Some(entities);
+    }
+    if let Err(e) = api.send_message(&analyzing_params).await {
+        log_trace(trace_id, "analyzing_reply_failed", &e.to_string());
+    }
     let mut tried: HashSet<String> = HashSet::new();
     loop {
         let cookie = match cookie_pool.next_cookie() {
