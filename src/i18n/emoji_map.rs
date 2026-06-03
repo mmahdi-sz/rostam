@@ -32,7 +32,7 @@ pub static EMOJI_MAP: &[(&str, &str)] = &[
     ("🧹", "smart_merge"),
     ("🔙", "back"),
     ("🚀", "rocket"),
-    ("⏳", "hourglass"),
+    ("⏳", "spinning"),
     ("🛰️", "satellite"),
     ("🛰", "satellite"),
     ("🔘", "progress_dot"),

@@ -4,7 +4,7 @@ use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     input_file::FileUpload,
-    methods::{SendMessageParams, SendPhotoParams},
+    methods::{DeleteMessageParams, SendMessageParams, SendPhotoParams},
     types::{LinkPreviewOptions, ReplyParameters},
 };
 
@@ -41,9 +41,17 @@ pub async fn handle_youtube_url(
     if !entities.is_empty() {
         analyzing_params.entities = Some(entities);
     }
-    if let Err(e) = api.send_message(&analyzing_params).await {
-        log_trace(trace_id, "analyzing_reply_failed", &e.to_string());
-    }
+    let analyzing_msg_id = match api.send_message(&analyzing_params).await {
+        Ok(resp) => {
+            let mid = resp.result.message_id;
+            log_trace(trace_id, "analyzing_reply_sent", &format!("analyzing_msg_id={mid}"));
+            Some(mid)
+        }
+        Err(e) => {
+            log_trace(trace_id, "analyzing_reply_failed", &e.to_string());
+            None
+        }
+    };
     let mut tried: HashSet<String> = HashSet::new();
     loop {
         let cookie = match cookie_pool.next_cookie() {
@@ -68,6 +76,12 @@ pub async fn handle_youtube_url(
         match fetch_video_info(trace_id, url, &cookie.yt_dlp_browser_spec).await {
             Ok(info) => {
                 log_trace(trace_id, "fetch_ok", &format!("title={:?} heights={:?} thumbnail={}", info.title, info.available_heights, info.thumbnail.is_some()));
+                if let Some(amid) = analyzing_msg_id {
+                    let del = DeleteMessageParams::builder().chat_id(chat_id).message_id(amid).build();
+                    if let Err(e) = api.delete_message(&del).await {
+                        log_trace(trace_id, "analyzing_delete_failed", &e.to_string());
+                    }
+                }
                 let caption = build_caption(&info);
                 let photo = info.thumbnail.clone().unwrap_or_else(|| info.webpage_url.clone());
                 let params = SendPhotoParams::builder()
