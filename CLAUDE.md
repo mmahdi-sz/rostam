@@ -199,127 +199,130 @@ automatically; MarkdownV2 captions need explicit Markdown premium handling.
 
 ## YouTube Downloader Current State
 
-Implemented across:
+Fully implemented end-to-end. Source files:
 
 ```text
 src/youtube/extract.rs          — YouTube URL detection
-src/youtube/fetch.rs            — yt-dlp metadata fetch + format/codec parsing
+src/youtube/fetch.rs            — yt-dlp metadata fetch + format/codec/audio/subtitle parsing
 src/youtube/format.rs           — preview caption/description formatting
-src/youtube/handle.rs           — URL handler, cookie retry flow, preview sending
-src/youtube/quality_keyboard.rs — quality + codec inline keyboards/callbacks
+src/youtube/handle.rs           — URL handler, analyzing reply, cookie retry, preview sending
+src/youtube/quality_keyboard.rs — quality keyboard + cancel callback routing hub
+src/youtube/selection.rs        — unified selection menu (codec/audio/subtitle/confirm)
+src/youtube/download.rs         — request store, progress tracking, yt-dlp spawn, upload, cancel
+src/youtube/lang_names.rs       — lang_name_fa(code) → Farsi language name (~130 entries)
 src/youtube/trace.rs            — trace id generation + structured logs
-src/youtube/types.rs            — VideoInfo, VideoCodec, VideoFormatOption
+src/youtube/types.rs            — VideoInfo, VideoCodec, VideoFormatOption, AudioLanguage, SubtitleLanguage
 ```
 
-Current flow:
+### Full flow
 
-1. `main.rs` detects YouTube URLs in ordinary text and creates a `trace_id`.
-2. `handle_youtube_url()` selects a Firefox cookie from the Cookie Pool.
-3. `fetch_video_info()` runs `yt-dlp --dump-single-json --no-download`.
-4. The bot sends the preview thumbnail/caption and long description chunks.
-5. `send_quality_prompt()` sends the quality-selection inline keyboard.
+1. `main.rs` detects YouTube URL → creates `trace_id`.
+2. `handle_youtube_url()` immediately replies with a spinning `⏳` premium emoji (analyzing message).
+3. Firefox cookie selected from Cookie Pool. `fetch_video_info()` runs `yt-dlp --dump-single-json`.
+4. Analyzing message is deleted. Preview thumbnail/caption + description chunks sent.
+5. `send_quality_prompt()` stores a `YoutubeRequest` in `REQUESTS` (keyed by `request_id: u64`)
+   and sends the quality inline keyboard.
+6. User taps a quality → `enter_selection_menu()` edits the quality message to the unified
+   selection menu (codec radio + audio radio + subtitle toggles + confirm button).
+7. User tweaks selections (callbacks update `Arc<Mutex<Option<Selection>>>` on the request).
+8. User taps confirm → `spawn_download()` registers a cancel token, spawns `run_download`.
+9. `run_download` edits status message with live progress + red cancel button throughout.
+10. On completion: video sent via local Bot API, status message deleted.
+11. On cancel: yt-dlp child killed (or upload task aborted), status edited to cancelled, files cleaned up.
 
 ### yt-dlp metadata rules
 
-- `fetch_video_info()` must keep passing
-  `--js-runtimes deno:/root/.deno/bin/deno`; systemd's PATH does not include
-  `/root/.deno/bin`, and without the explicit Deno runtime YouTube may return
-  only storyboard formats.
-- Format parsing reads both `formats` and `requested_formats`, then also checks
-  the top-level JSON object.
-- A YouTube resolution is considered selectable only if there is a video format
-  for that height with a recognized video codec.
-- Recognized codecs:
-  - `avc1...` -> `VideoCodec::H264`
-  - `hvc1...` or `dvh1...` -> `VideoCodec::H265`
-  - `vp9` or `vp09...` -> `VideoCodec::Vp9`
-  - `av01...` -> `VideoCodec::Av1`
-- Unknown/missing codecs are ignored. If a resolution only has unknown codecs,
-  do not show that resolution.
-- Do not infer lower qualities from a max height. The keyboard should show only
-  exact heights present in `VideoInfo.video_formats` with recognized codecs.
+- Always pass `--js-runtimes deno:/root/.deno/bin/deno`; systemd PATH does not include
+  `/root/.deno/bin` and YouTube may return only storyboard formats without it.
+- Format parsing reads both `formats` and `requested_formats` + top-level JSON object.
+- A resolution is selectable only if it has a recognized video codec at that exact height.
+- Recognized codecs: `avc1…` → H264, `hvc1…`/`dvh1…` → H265, `vp9`/`vp09…` → Vp9, `av01…` → Av1.
+- Unknown/missing codecs are silently ignored. Never infer lower qualities from a max height.
+- Audio languages: parsed from `formats[].language` field; marked original via
+  `format_note.contains("original")` or `language_preference >= 10`.
+- Subtitle languages: `subtitles{}` keys (is_auto=false) + `automatic_captions{}` keys (is_auto=true).
 
-### Quality and codec UI
+### Request store (`download.rs`)
 
-Quality labels live in `i18n.json` under `youtube.quality.buttons.*`.
-Codec labels live under `youtube.codec.buttons.*`.
-
-Quality button colors:
-
-- `>= 1080p`: `ButtonStyle::Success` (green)
-- `720p` and `480p`: `ButtonStyle::Primary`
-- `<= 360p`: `ButtonStyle::Danger` (red)
-
-Current callback prefixes:
-
-```text
-yt:quality:{height}:{codec_keys}
-yt:codec:{height}:{codec_key}
+```rust
+static REQUESTS: OnceLock<Mutex<HashMap<u64, YoutubeRequest>>> = OnceLock::new();
 ```
 
-Examples:
+- `store_request(req)` → returns a new `request_id: u64`
+- `get_request(id)` → cloned copy (request stays in map until download starts)
+- `take_request(id)` → removes and returns (called at download start)
 
-```text
-yt:quality:1080:h264,vp9,av1
-yt:codec:1080:vp9
+`YoutubeRequest` carries: `trace_id`, `chat_id`, `user_id`, `webpage_url`, `cookie_spec`,
+`title`, `duration`, `thumbnail_url`, `formats: Vec<VideoFormatOption>`,
+`audio_languages`, `subtitle_languages`, `selection: Arc<Mutex<Option<Selection>>>`.
+
+All clones of a `YoutubeRequest` share the same `selection` mutex via `Arc`.
+
+### Selection state
+
+```rust
+pub struct Selection {
+    pub height: u32, pub codec: VideoCodec,
+    pub audio_lang: Option<String>, pub subtitle_langs: Vec<String>,
+    pub view: SelectionView,   // Main | SubMenu(page)
+}
 ```
 
-Current callback behavior:
+- `init_selection(req, height)` → defaults: best codec (Av1>Vp9>H265>H264), original audio.
+- `with_selection(req, |slot| …)` → locks mutex and runs closure.
+- Selection menu callbacks mutate it in-place; keyboard is rebuilt via `EditMessageReplyMarkupParams`.
 
-- Clicking a quality with multiple codecs edits the quality message into a
-  codec-selection message.
-- Clicking a quality with one codec currently answers with
-  `youtube.quality.not_ready`.
-- Clicking a codec currently answers with `youtube.quality.not_ready`.
-- Actual download is not implemented yet.
-
-### Downloader implementation notes for the next agent
-
-Telegram callback data is limited and cannot safely carry a YouTube URL,
-cookie spec, title, or format id. Before implementing real downloads, replace
-the current callback payload shape with a short request id, for example:
+### Selection menu callback prefixes (`selection.rs`)
 
 ```text
-yt:quality:{request_id}:{height}
-yt:codec:{request_id}:{height}:{codec_key}
+yt:s:nop          — header no-op button
+yt:s:c:{rid}:{codec_key}   — codec radio toggle
+yt:s:a:{rid}:{idx}         — audio language radio toggle
+yt:s:t:{rid}:{idx}         — subtitle toggle (multi-select)
+yt:s:sm:{rid}              — open subtitle submenu (page 0)
+yt:s:sb:{rid}              — back from subtitle submenu to main view
+yt:s:sp:{rid}:{page}       — subtitle submenu page navigation
+yt:s:go:{rid}              — confirm → spawn download
 ```
 
-Store the request in memory when `send_quality_prompt()` is called. The stored
-request should include at least:
+Subtitle submenu: 4 rows × 2 cols = 8 entries per page. Quick-access fa+en shown on main view.
 
-- original `trace_id`
-- `chat_id` and requesting `user_id`
-- `webpage_url`
-- selected cookie `yt_dlp_browser_spec`
-- title
-- `Vec<VideoFormatOption>` including `format_id`, `height`, and `codec`
-
-When the user chooses the final codec/quality:
-
-- find the matching `VideoFormatOption` by `height + codec`
-- run download in a spawned task so long polling is not blocked
-- select the format as `{format_id}+bestaudio/best`
-- use the same explicit Deno runtime and same cookie spec
-- log command start, sanitized args, progress updates, output path, send start,
-  send success/failure, cleanup, and all Telegram edit failures
-- upload via the local Bot API using a local file path (`FileUpload::InputFile`)
-  so large files use the local `telegram-bot-api` server
-
-The requested progress text should be an i18n template, not hardcoded:
+### Quality keyboard callback prefixes (`quality_keyboard.rs`)
 
 ```text
-دانلود از یوتیوب (مرحله دریافت ویدیو)
-⏳ در حال دانلود از یوتیوب...
-🎬 کیفیت انتخابی: {quality}
-📊 پیشرفت: {percent}
-🔘 نوار پیشرفت: {bar}
-📥 حجم: {downloaded} از {total}
-🚀 سرعت: {speed}
-⏱️ سپری‌شده: {elapsed}
-⌛ باقی‌مانده: {eta}
+yt:q:{rid}:{height}   — quality button → enter_selection_menu()
+yt:c:…                — legacy codec callback (stale; acked silently)
+yt:cancel:{rid}       — cancel active download
+yt:s:…                — forwarded to handle_selection_callback()
 ```
 
-Progress bars use 10 cells: filled `●`, empty `○`.
+Quality button colors: `>= 1080p` → Success (green), `720p`/`480p` → Primary, `<= 360p` → Danger (red).
+Quality icons in `i18n.json` under `emoji.panel.icons`: `diamond` (4K/2K), `fire_yt` (1440p),
+`sparkles` (1080p), `star_yt` (720p), `phone` (480p), `signal` (360p and below).
+
+### Cancel system (`download.rs`)
+
+```rust
+static ACTIVE_DOWNLOADS: OnceLock<Mutex<HashMap<u64, Arc<Notify>>>> = OnceLock::new();
+```
+
+- `spawn_download(…)` calls `register_cancel(request_id)` → `Arc<Notify>`, then spawns task.
+- `cancel_download(request_id)` → removes from map and calls `notify.notify_one()`.
+- Inside `run_download`: cancel future is pinned once and selected alongside `rx.recv()` and
+  upload tick. On fire: kills child / aborts send_task, edits status to cancelled, cleans up.
+- `UnregisterGuard(request_id)` struct ensures `unregister_cancel` is called on every return path.
+- Progress edits use `edit_progress_status()` which attaches cancel keyboard (`yt:cancel:{rid}`).
+- Error/cancelled edits use plain `edit_status()` which removes the keyboard (no reply_markup).
+
+### Download output
+
+- Files saved to `DOWNLOAD_ROOT/{trace_id}/` (`/mnt/data/mahdidev/ros/dev/downloads/yt`).
+- Format spec: `{format_id}+bestaudio/best`, merge to mp4.
+- Progress parsed from `YT_PROGRESS|percent|downloaded|total|speed|eta|elapsed` lines.
+- Progress bar: 10 cells, `●` filled / `○` empty.
+- Upload via `SendVideoParams` with `FileUpload::InputFile` (local Bot API path).
+- On upload success: status message deleted. On failure: new error message sent.
+- Directory cleaned up (`remove_dir_all`) after every outcome.
 
 ## Project Summary
 
@@ -337,6 +340,7 @@ The bot currently supports:
 - systemd deployment through `abc.service`
 - Local bare Git server under `git-server/ros-telegram-bot.git`
 - Full emoji management panel (`/emoji`)
+- Full YouTube downloader: URL detection → preview → quality/codec/audio/subtitle selection → yt-dlp download → upload via local Bot API → cancel button
 
 Secrets are not tracked. `.env`, `target/`, and `git-server/` are ignored.
 
@@ -621,26 +625,36 @@ When a user deletes their last pack, both `emoji_packs_id_seq` and
 ## Source Layout
 
 ```text
-src/main.rs                          — event loop + routing (~160 lines)
+src/main.rs                          — event loop + routing
 src/config.rs                        — BOT_TOKEN / DATABASE_URL / ADMIN_USER_ID reading
 src/bot.rs                           — send_text, send_text_md, send_start_button
 src/cookie_pool.rs                   — CookiePool + format helpers + save_snapshot
+src/i18n/mod.rs                      — t() / tf() / entities_for_text() / apply_premium_to_md()
+src/i18n/emoji_map.rs                — EMOJI_MAP: visible char → emoji.panel.icons key
+src/i18n/entities.rs                 — entities_for_text(): UTF-16 CustomEmoji entities
+src/i18n/premium_md.rs              — apply_premium_to_md(): emoji char → tg://emoji MarkdownV2
 src/youtube/mod.rs                   — YouTube module exports
-src/youtube/fetch.rs                 — yt-dlp metadata fetch + codec parsing
-src/youtube/handle.rs                — URL flow, cookie retry, preview send
-src/youtube/quality_keyboard.rs      — quality/codec inline UI callbacks
-src/i18n.rs                          — t() / tf() / entities_for_text() helpers, reads i18n.json
+src/youtube/extract.rs               — YouTube URL detection
+src/youtube/fetch.rs                 — yt-dlp metadata fetch + codec/audio/subtitle parsing
+src/youtube/format.rs                — preview caption/description formatting
+src/youtube/handle.rs                — URL flow, analyzing reply, cookie retry, preview send
+src/youtube/quality_keyboard.rs      — callback routing hub (quality/selection/cancel)
+src/youtube/selection.rs             — unified selection menu (codec/audio/subtitle/confirm)
+src/youtube/download.rs              — request store, cancel system, yt-dlp, progress, upload
+src/youtube/lang_names.rs            — lang_name_fa(code): language code → Farsi name
+src/youtube/trace.rs                 — trace id generation + structured logs
+src/youtube/types.rs                 — VideoInfo, VideoCodec, VideoFormatOption, AudioLanguage, SubtitleLanguage
 src/database/mod.rs
 src/database/posfreSQL/postgresql.rs — PostgreSQL connection + cookie pool tables
 src/database/posfreSQL/schema.sql    — CREATE TABLE statements
 src/emoji/mod.rs
-src/emoji/cache.rs                   — EmojiCache, {key} expansion, 5-min refresh task
+src/emoji/cache/                     — EmojiCache, {key} expansion, 5-min refresh task
 src/emoji/flow.rs
-src/emoji/handler.rs
-src/emoji/panel.rs
-src/emoji/store.rs
+src/emoji/handler/                   — all callback + message handlers
+src/emoji/panel/                     — keyboard builders, text formatters, CB_* constants, btn_* helpers
+src/emoji/store/                     — all DB queries
 src/emoji/smart_name.rs
-src/emoji/import.rs
+src/emoji/import/                    — SQL parse, analyze, execute import modes
 ```
 
 ## PostgreSQL Tables
