@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
-    methods::{AnswerCallbackQueryParams, SendMessageParams},
+    methods::{AnswerCallbackQueryParams, EditMessageTextParams, SendMessageParams},
     types::{
         ButtonStyle, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup,
         MaybeInaccessibleMessage, ReplyMarkup,
@@ -13,7 +13,7 @@ use frankenstein::{
 use crate::i18n::{apply_premium_to_md, t};
 
 use super::download::{YoutubeRequest, cancel_download, get_request, store_request};
-use super::selection::{enter_selection_menu, handle_selection_callback, CB_SELECTION_PREFIX};
+use super::selection::{enter_selection_menu, handle_selection_callback, CB_BACK_TO_QUALITY_PREFIX, CB_SELECTION_PREFIX};
 use super::trace::log_trace;
 use super::types::{VideoCodec, VideoFormatOption, VideoInfo};
 
@@ -129,6 +129,9 @@ pub async fn handle_quality_callback(api: &Bot, callback_query: &CallbackQuery) 
     }
     if data.starts_with(CB_CANCEL_PREFIX) {
         return handle_cancel_callback(api, callback_query, data).await;
+    }
+    if data.starts_with(CB_BACK_TO_QUALITY_PREFIX) {
+        return handle_back_to_quality_callback(api, callback_query, data).await;
     }
     false
 }
@@ -268,6 +271,55 @@ fn quality_button(text: &str, callback_data: &str, style: ButtonStyle, icon_key:
         callback_game: None,
         pay: None,
     }
+}
+
+async fn handle_back_to_quality_callback(api: &Bot, cq: &CallbackQuery, data: &str) -> bool {
+    let rest = data.strip_prefix(CB_BACK_TO_QUALITY_PREFIX).unwrap_or("");
+    let Some(request_id) = rest.parse::<u64>().ok() else {
+        answer_callback(api, cq, "").await;
+        return true;
+    };
+    let Some(req) = get_request(request_id) else {
+        answer_callback(api, cq, "youtube.download.request_expired").await;
+        return true;
+    };
+    let Some(MaybeInaccessibleMessage::Message(message)) = cq.message.as_ref() else {
+        answer_callback(api, cq, "").await;
+        return true;
+    };
+    let options: Vec<QualityOption> = QUALITY_OPTIONS
+        .iter()
+        .filter_map(|(height, label_key, icon_key)| {
+            let codecs: Vec<super::types::VideoCodec> = CODEC_ORDER
+                .iter()
+                .copied()
+                .filter(|codec| req.formats.iter().any(|f| f.height == *height && f.codec == *codec))
+                .collect();
+            if codecs.is_empty() {
+                return None;
+            }
+            Some(QualityOption { height: *height, label_key, icon_key, codecs })
+        })
+        .collect();
+    let raw = t("youtube.quality.prompt");
+    let text = apply_premium_to_md(&raw);
+    log_trace(
+        req.trace_id,
+        "back_to_quality",
+        &format!("request_id={request_id} user_id={}", cq.from.id),
+    );
+    let params = EditMessageTextParams::builder()
+        .chat_id(message.chat.id)
+        .message_id(message.message_id)
+        .text(text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(quality_keyboard(request_id, &options))
+        .build();
+    if let Err(e) = api.edit_message_text(&params).await {
+        log_trace(req.trace_id, "back_to_quality_edit_failed", &e.to_string());
+    }
+    answer_callback(api, cq, "").await;
+    true
 }
 
 async fn handle_cancel_callback(api: &Bot, callback_query: &CallbackQuery, data: &str) -> bool {

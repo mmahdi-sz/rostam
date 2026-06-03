@@ -19,6 +19,7 @@ use super::trace::log_trace;
 use super::types::VideoCodec;
 
 pub const CB_SELECTION_PREFIX: &str = "yt:s:";
+pub const CB_BACK_TO_QUALITY_PREFIX: &str = "yt:bk:";
 const CB_NOP: &str = "yt:s:nop";
 const CB_CODEC: &str = "yt:s:c:";
 const CB_AUDIO: &str = "yt:s:a:";
@@ -487,6 +488,10 @@ fn build_main_keyboard(
         &t("youtube.selection.confirm"),
         format!("{CB_GO}{request_id}"),
     )]);
+    rows.push(vec![primary_button(
+        &t("youtube.selection.back_to_quality"),
+        format!("{CB_BACK_TO_QUALITY_PREFIX}{request_id}"),
+    )]);
 
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }
@@ -572,6 +577,10 @@ fn choice_button(text: &str, callback_data: String, selected: bool) -> InlineKey
 
 fn confirm_button(text: &str, callback_data: String) -> InlineKeyboardButton {
     button(text, callback_data, Some(ButtonStyle::Success))
+}
+
+fn primary_button(text: &str, callback_data: String) -> InlineKeyboardButton {
+    button(text, callback_data, Some(ButtonStyle::Primary))
 }
 
 fn button(text: &str, callback_data: String, style: Option<ButtonStyle>) -> InlineKeyboardButton {

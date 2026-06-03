@@ -157,7 +157,8 @@
       "subtitle_back": "🔙 بازگشت",
       "page_prev": "⬅",
       "page_next": "➡",
-      "confirm": "✅ تایید و دانلود"
+      "confirm": "✅ تایید و دانلود",
+      "back_to_quality": "↩ برگشت به منوی رزولوشن"
     },
     "fetch_failed": "دریافت اطلاعات ویدیو ناموفق بود: {error}",
     "send_photo_failed": "ارسال تامبنیل ناموفق بود: {error}",
