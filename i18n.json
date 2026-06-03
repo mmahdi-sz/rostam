@@ -205,7 +205,9 @@
       "failed": "❌ دانلود ناموفق بود: {error}",
       "upload_failed": "❌ ارسال فایل ناموفق بود: {error}",
       "request_expired": "این درخواست منقضی شده. لطفاً لینک را دوباره بفرستید.",
-      "caption": "🎬 {title}\n📺 {quality}"
+      "caption": "🎬 {title}\n📺 {quality}",
+      "cancel_button": "❌ لغو دانلود",
+      "cancelled": "❌ دانلود لغو شد."
     }
   }
 }

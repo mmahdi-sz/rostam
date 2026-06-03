@@ -12,13 +12,14 @@ use frankenstein::{
 
 use crate::i18n::{apply_premium_to_md, t};
 
-use super::download::{YoutubeRequest, get_request, store_request};
+use super::download::{YoutubeRequest, cancel_download, get_request, store_request};
 use super::selection::{enter_selection_menu, handle_selection_callback, CB_SELECTION_PREFIX};
 use super::trace::log_trace;
 use super::types::{VideoCodec, VideoFormatOption, VideoInfo};
 
 const CB_QUALITY_PREFIX: &str = "yt:q:";
 const CB_CODEC_PREFIX: &str = "yt:c:";
+const CB_CANCEL_PREFIX: &str = "yt:cancel:";
 
 const QUALITY_OPTIONS: &[(u32, &str, &str)] = &[
     (4320, "youtube.quality.buttons.4320", "diamond"),
@@ -125,6 +126,9 @@ pub async fn handle_quality_callback(api: &Bot, callback_query: &CallbackQuery) 
         // legacy stale callback (no longer issued); just ack
         answer_callback(api, callback_query, "").await;
         return true;
+    }
+    if data.starts_with(CB_CANCEL_PREFIX) {
+        return handle_cancel_callback(api, callback_query, data).await;
     }
     false
 }
@@ -264,6 +268,25 @@ fn quality_button(text: &str, callback_data: &str, style: ButtonStyle, icon_key:
         callback_game: None,
         pay: None,
     }
+}
+
+async fn handle_cancel_callback(api: &Bot, callback_query: &CallbackQuery, data: &str) -> bool {
+    let rest = data.strip_prefix(CB_CANCEL_PREFIX).unwrap_or("");
+    let Some(request_id) = rest.parse::<u64>().ok() else {
+        answer_callback(api, callback_query, "").await;
+        return true;
+    };
+    let cancelled = cancel_download(request_id);
+    log_trace(
+        0,
+        "cancel_callback",
+        &format!(
+            "request_id={request_id} cancelled={cancelled} user_id={}",
+            callback_query.from.id
+        ),
+    );
+    answer_callback(api, callback_query, "").await;
+    true
 }
 
 fn format_summary(video_formats: &[VideoFormatOption]) -> String {

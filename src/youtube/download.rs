@@ -10,9 +10,11 @@ use frankenstein::{
     client_reqwest::Bot,
     input_file::{FileUpload, InputFile},
     methods::{EditMessageTextParams, SendMessageParams, SendVideoParams},
+    types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup},
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+use tokio::sync::Notify;
 
 use crate::i18n::{entities_for_text, t, tf};
 
@@ -56,9 +58,33 @@ pub struct YoutubeRequest {
 
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 static REQUESTS: OnceLock<Mutex<HashMap<u64, YoutubeRequest>>> = OnceLock::new();
+static ACTIVE_DOWNLOADS: OnceLock<Mutex<HashMap<u64, Arc<Notify>>>> = OnceLock::new();
 
 fn store() -> &'static Mutex<HashMap<u64, YoutubeRequest>> {
     REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn active_downloads() -> &'static Mutex<HashMap<u64, Arc<Notify>>> {
+    ACTIVE_DOWNLOADS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn register_cancel(request_id: u64) -> Arc<Notify> {
+    let notify = Arc::new(Notify::new());
+    active_downloads().lock().unwrap().insert(request_id, notify.clone());
+    notify
+}
+
+fn unregister_cancel(request_id: u64) {
+    active_downloads().lock().unwrap().remove(&request_id);
+}
+
+pub fn cancel_download(request_id: u64) -> bool {
+    if let Some(notify) = active_downloads().lock().unwrap().remove(&request_id) {
+        notify.notify_one();
+        true
+    } else {
+        false
+    }
 }
 
 pub fn store_request(req: YoutubeRequest) -> u64 {
@@ -232,6 +258,55 @@ fn format_upload_body(quality_label: &str, elapsed: Duration) -> String {
     )
 }
 
+const CB_CANCEL_PREFIX: &str = "yt:cancel:";
+
+fn cancel_keyboard(request_id: u64) -> InlineKeyboardMarkup {
+    let button = InlineKeyboardButton {
+        text: t("youtube.download.cancel_button"),
+        callback_data: Some(format!("{CB_CANCEL_PREFIX}{request_id}")),
+        style: Some(ButtonStyle::Danger),
+        icon_custom_emoji_id: None,
+        url: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
+    };
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![button]])
+        .build()
+}
+
+async fn edit_progress_status(api: &Bot, chat_id: i64, message_id: i32, text: String, request_id: u64) {
+    let entities = entities_for_text(&text);
+    let mut params = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(text)
+        .reply_markup(cancel_keyboard(request_id))
+        .build();
+    if !entities.is_empty() {
+        params.entities = Some(entities);
+    }
+    if let Err(error) = api.edit_message_text(&params).await {
+        let desc = error.to_string();
+        if !desc.contains("message is not modified") {
+            eprintln!("[youtube event=edit_progress_status_failed] {desc}");
+        }
+    }
+}
+
+struct UnregisterGuard(u64);
+impl Drop for UnregisterGuard {
+    fn drop(&mut self) {
+        unregister_cancel(self.0);
+    }
+}
+
 async fn edit_status(api: &Bot, chat_id: i64, message_id: i32, text: String) {
     let entities = entities_for_text(&text);
     let mut params = EditMessageTextParams::builder()
@@ -258,8 +333,9 @@ pub fn spawn_download(
     status_chat_id: i64,
     status_message_id: i32,
 ) {
+    let cancel = register_cancel(request_id);
     tokio::spawn(async move {
-        run_download(api, request_id, height, codec, status_chat_id, status_message_id).await
+        run_download(api, request_id, height, codec, status_chat_id, status_message_id, cancel).await
     });
 }
 
@@ -270,12 +346,16 @@ async fn run_download(
     codec: VideoCodec,
     status_chat_id: i64,
     status_message_id: i32,
+    cancel: Arc<Notify>,
 ) {
     let Some(req) = take_request(request_id) else {
         let text = t("youtube.download.request_expired");
         edit_status(&api, status_chat_id, status_message_id, text).await;
+        unregister_cancel(request_id);
         return;
     };
+    let _cancel_guard = UnregisterGuard(request_id);
+    let cancel_fut = std::pin::pin!(cancel.notified());
     let trace_id = req.trace_id;
     let quality_label = quality_label_for(height);
     log_trace(
@@ -342,11 +422,12 @@ async fn run_download(
         elapsed: "00:00".into(),
         percent_int: 0,
     };
-    edit_status(
+    edit_progress_status(
         &api,
         status_chat_id,
         status_message_id,
         format_progress_body(&initial, &quality_label),
+        request_id,
     )
     .await;
 
@@ -417,47 +498,67 @@ async fn run_download(
     let mut last_edit = Instant::now() - EDIT_THROTTLE;
     let mut last_percent_int = -1;
     let mut stderr_tail = String::new();
+    let mut cancel_fut = cancel_fut;
 
-    while let Some((source, line)) = rx.recv().await {
-        if let Some(snap) = parse_progress_line(&line) {
-            let now = Instant::now();
-            if snap.percent_int != last_percent_int && now.duration_since(last_edit) >= EDIT_THROTTLE
-            {
-                last_percent_int = snap.percent_int;
-                last_edit = now;
-                log_trace(
-                    trace_id,
-                    "download_progress",
-                    &format!(
-                        "src={source} percent={} downloaded={} total={} speed={} eta={}",
-                        snap.percent, snap.downloaded, snap.total, snap.speed, snap.eta
-                    ),
-                );
+    loop {
+        tokio::select! {
+            msg = rx.recv() => {
+                let Some((source, line)) = msg else { break; };
+                if let Some(snap) = parse_progress_line(&line) {
+                    let now = Instant::now();
+                    if snap.percent_int != last_percent_int && now.duration_since(last_edit) >= EDIT_THROTTLE
+                    {
+                        last_percent_int = snap.percent_int;
+                        last_edit = now;
+                        log_trace(
+                            trace_id,
+                            "download_progress",
+                            &format!(
+                                "src={source} percent={} downloaded={} total={} speed={} eta={}",
+                                snap.percent, snap.downloaded, snap.total, snap.speed, snap.eta
+                            ),
+                        );
+                        edit_progress_status(
+                            &api,
+                            status_chat_id,
+                            status_message_id,
+                            format_progress_body(&snap, &quality_label),
+                            request_id,
+                        )
+                        .await;
+                    }
+                    continue;
+                }
+                let trimmed = line.trim().to_string();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if source == "stdout"
+                    && trimmed.starts_with('/')
+                    && tokio::fs::metadata(&trimmed).await.is_ok()
+                {
+                    filepath = Some(trimmed.clone());
+                    log_trace(trace_id, "download_filepath", &trimmed);
+                } else if source == "stderr" {
+                    stderr_tail = trimmed.clone();
+                    log_trace(trace_id, "yt_dlp_stderr", &trimmed);
+                } else {
+                    log_trace(trace_id, "yt_dlp_stdout", &trimmed);
+                }
+            }
+            _ = &mut cancel_fut => {
+                log_trace(trace_id, "download_cancelled", "cancel signal during download");
+                let _ = child.kill().await;
                 edit_status(
                     &api,
                     status_chat_id,
                     status_message_id,
-                    format_progress_body(&snap, &quality_label),
+                    t("youtube.download.cancelled"),
                 )
                 .await;
+                cleanup_dir(&dir, trace_id).await;
+                return;
             }
-            continue;
-        }
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if source == "stdout"
-            && trimmed.starts_with('/')
-            && tokio::fs::metadata(trimmed).await.is_ok()
-        {
-            filepath = Some(trimmed.to_string());
-            log_trace(trace_id, "download_filepath", trimmed);
-        } else if source == "stderr" {
-            stderr_tail = trimmed.to_string();
-            log_trace(trace_id, "yt_dlp_stderr", trimmed);
-        } else {
-            log_trace(trace_id, "yt_dlp_stdout", trimmed);
         }
     }
     let _ = stdout_task.await;
@@ -574,13 +675,27 @@ async fn run_download(
             _ = interval.tick() => {
                 let elapsed = upload_start.elapsed();
                 log_trace(trace_id, "upload_progress", &format!("elapsed={}s", elapsed.as_secs()));
-                edit_status(
+                edit_progress_status(
                     &api,
                     status_chat_id,
                     status_message_id,
                     format_upload_body(&quality_label, elapsed),
+                    request_id,
                 )
                 .await;
+            }
+            _ = &mut cancel_fut => {
+                log_trace(trace_id, "upload_cancelled", "cancel signal during upload");
+                send_task.abort();
+                edit_status(
+                    &api,
+                    status_chat_id,
+                    status_message_id,
+                    t("youtube.download.cancelled"),
+                )
+                .await;
+                cleanup_dir(&dir, trace_id).await;
+                return;
             }
         }
     };
