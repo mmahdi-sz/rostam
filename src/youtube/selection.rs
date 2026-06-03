@@ -8,6 +8,8 @@ use frankenstein::{
     },
 };
 
+use frankenstein::types::MessageEntityType;
+
 use crate::i18n::{entities_for_text, t, tf};
 
 use super::download::{
@@ -67,8 +69,23 @@ pub async fn enter_selection_menu(
         *slot = Some(selection);
     });
 
-    let prompt_raw = t("youtube.selection.prompt");
-    let entities = entities_for_text(&prompt_raw);
+    let prompt_header = t("youtube.selection.prompt");
+    let codec_desc = t("youtube.selection.codec_description");
+    let prompt_raw = format!("{prompt_header}\n{codec_desc}");
+    let mut entities = entities_for_text(&prompt_raw);
+    let blockquote_offset = prompt_header.encode_utf16().count() + 1; // +1 for \n
+    let blockquote_length = codec_desc.encode_utf16().count();
+    entities.push(frankenstein::types::MessageEntity {
+        type_field: MessageEntityType::ExpandableBlockquote,
+        offset: blockquote_offset as u16,
+        length: blockquote_length as u16,
+        url: None,
+        user: None,
+        language: None,
+        custom_emoji_id: None,
+        unix_time: None,
+        date_time_format: None,
+    });
     let keyboard = build_keyboard(&req, request_id);
     let mut params = EditMessageTextParams::builder()
         .chat_id(chat_id)

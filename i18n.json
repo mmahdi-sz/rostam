@@ -149,6 +149,7 @@
     "analyzing": "⏳",
     "selection": {
       "prompt": "📥 تنظیمات دانلود را انتخاب کن:",
+      "codec_description": "AV1 — کمترین حجم، نیاز به پلیر مثل VLC\nVP9 — فشردگی خوب، حجم بیشتر از AV1\nH.264 / AVC — سازگار با همه دستگاه‌ها و پلیرها",
       "codec_header": "— انتخاب کدک —",
       "audio_header": "— انتخاب صوت —",
       "subtitle_header": "— زیرنویس —",
