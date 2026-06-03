@@ -9,6 +9,10 @@ pub fn admin_user_id() -> Option<i64> {
     config_value("ADMIN_USER_ID")?.parse().ok()
 }
 
+pub fn bot_api_base_url() -> Option<String> {
+    config_value("BOT_API_BASE_URL")
+}
+
 pub fn config_value(key: &str) -> Option<String> {
     value_from_env_file(".env", key)
         .or_else(|| value_from_env_file("/etc/default/abc", key))
