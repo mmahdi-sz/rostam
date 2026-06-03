@@ -12,7 +12,7 @@ mod youtube;
 use bot::{send_text, send_start_menu, edit_to_start_menu, CB_START_EMOJI, CB_START_YOUTUBE};
 use emoji::panel::CB_START_PANEL;
 use config::bot_token;
-use cookie_pool::{CookiePool, format_cookie_status, format_selected_cookie, format_no_cookie_available, save_snapshot};
+use cookie_pool::CookiePool;
 use database::postgresql::PostgresDatabase;
 use emoji::{FlowManager, FlowState, handler as emoji_handler};
 use frankenstein::{
@@ -190,28 +190,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             "/start" => send_start_menu(&api, message.chat.id).await?,
-                            "/cookie_status" => {
-                                let status = cookie_pool.status();
-                                send_text(&api, message.chat.id, &format_cookie_status(&status)).await?;
-                            }
-                            "/cookie_next" => match cookie_pool.next_cookie() {
-                                Some(cookie) => {
-                                    save_snapshot(&database, &mut cookie_pool).await;
-                                    send_text(&api, message.chat.id, &format_selected_cookie(&cookie)).await?;
-                                }
-                                None => {
-                                    let status = cookie_pool.status();
-                                    send_text(&api, message.chat.id, &format_no_cookie_available(&status)).await?;
-                                }
-                            },
-                            "/cookie_429" => {
-                                let text = match cookie_pool.mark_last_rate_limited() {
-                                    Some(true) => { save_snapshot(&database, &mut cookie_pool).await; t("cookie.marked_429") }
-                                    Some(false) => t("cookie.already_cooldown"),
-                                    None => t("cookie.no_selection_yet"),
-                                };
-                                send_text(&api, message.chat.id, &text).await?;
-                            }
                             _ => {
                                 let urls = extract_youtube_urls(text);
                                 for url in urls {
