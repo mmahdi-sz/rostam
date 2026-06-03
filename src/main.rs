@@ -20,7 +20,8 @@ use frankenstein::{
     client_reqwest::Bot,
     methods::{AnswerCallbackQueryParams, GetUpdatesParams},
     methods::SendMessageParams,
-    types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, MaybeInaccessibleMessage, ReplyMarkup},
+    methods::SetChatMenuButtonParams,
+    types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, MaybeInaccessibleMessage, MenuButton, ReplyMarkup},
     updates::UpdateContent,
 };
 use i18n::{t, reload_i18n};
@@ -120,6 +121,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Cookie pool loaded: {} Firefox profile(s), {} selectable.",
         cookie_status.available_cookies, cookie_status.selectable_cookies
     );
+
+    let menu_params = SetChatMenuButtonParams::builder()
+        .menu_button(MenuButton::Commands)
+        .build();
+    if let Err(e) = api.set_chat_menu_button(&menu_params).await {
+        eprintln!("Failed to set chat menu button: {e}");
+    }
 
     loop {
         let updates = match api.get_updates(&params).await {
