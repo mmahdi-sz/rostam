@@ -70,11 +70,58 @@ pub async fn enter_selection_menu(
         *slot = Some(selection);
     });
 
+    let sel = with_selection(&req, |slot| slot.clone()).unwrap();
+    let (text, entities) = build_selection_text(&req, &sel);
+    let keyboard = build_keyboard(&req, request_id);
+    let mut params = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(text)
+        .reply_markup(keyboard)
+        .build();
+    if !entities.is_empty() {
+        params.entities = Some(entities);
+    }
+    if let Err(e) = api.edit_message_text(&params).await {
+        log_trace(trace_id, "selection_open_edit_failed", &e.to_string());
+    }
+}
+
+fn build_selection_text(req: &YoutubeRequest, sel: &Selection) -> (String, Vec<frankenstein::types::MessageEntity>) {
     let prompt_header = t("youtube.selection.prompt");
     let codec_desc = t("youtube.selection.codec_description");
-    let prompt_raw = format!("{prompt_header}\n{codec_desc}");
-    let mut entities = entities_for_text(&prompt_raw);
-    let blockquote_offset = prompt_header.encode_utf16().count() + 1; // +1 for \n
+
+    let quality = quality_label(sel.height);
+    let codec_name = t(sel.codec.label_key());
+
+    let (bitrate_str, size_str) = req
+        .formats
+        .iter()
+        .find(|f| f.height == sel.height && f.codec == sel.codec)
+        .map(|f| {
+            let br = f.bitrate.map(|b| format!("{:.0}", b)).unwrap_or_else(|| "?".to_string());
+            let sz = f.bitrate.and_then(|b| {
+                req.duration.map(|dur| {
+                    format!("{:.0}", b * 1000.0 / 8.0 * dur as f64 / (1024.0 * 1024.0))
+                })
+            }).unwrap_or_else(|| "?".to_string());
+            (br, sz)
+        })
+        .unwrap_or_else(|| ("?".to_string(), "?".to_string()));
+
+    let video_info = tf(
+        "youtube.selection.video_info",
+        &[
+            ("quality", &quality),
+            ("codec", &codec_name),
+            ("size", &size_str),
+            ("bitrate", &bitrate_str),
+        ],
+    );
+
+    let full = format!("{prompt_header}\n{codec_desc}\n\n{video_info}");
+    let mut entities = entities_for_text(&full);
+    let blockquote_offset = prompt_header.encode_utf16().count() + 1;
     let blockquote_length = codec_desc.encode_utf16().count();
     entities.push(frankenstein::types::MessageEntity {
         type_field: MessageEntityType::ExpandableBlockquote,
@@ -87,19 +134,7 @@ pub async fn enter_selection_menu(
         unix_time: None,
         date_time_format: None,
     });
-    let keyboard = build_keyboard(&req, request_id);
-    let mut params = EditMessageTextParams::builder()
-        .chat_id(chat_id)
-        .message_id(message_id)
-        .text(prompt_raw.clone())
-        .reply_markup(keyboard)
-        .build();
-    if !entities.is_empty() {
-        params.entities = Some(entities);
-    }
-    if let Err(e) = api.edit_message_text(&params).await {
-        log_trace(trace_id, "selection_open_edit_failed", &e.to_string());
-    }
+    (full, entities)
 }
 
 pub async fn handle_selection_callback(api: &Bot, callback_query: &CallbackQuery) -> bool {
@@ -183,7 +218,7 @@ async fn handle_codec_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
         &format!("request_id={request_id} codec={} changed={changed}", codec.key()),
     );
     if changed {
-        refresh_keyboard(api, cq, &req, request_id).await;
+        refresh_full_panel(api, cq, &req, request_id).await;
     }
     answer(api, cq, "").await;
 }
@@ -457,6 +492,30 @@ async fn refresh_keyboard(api: &Bot, cq: &CallbackQuery, req: &YoutubeRequest, r
         .reply_markup(keyboard)
         .build();
     if let Err(e) = api.edit_message_reply_markup(&params).await {
+        let desc = e.to_string();
+        if !desc.contains("message is not modified") {
+            log_trace(req.trace_id, "selection_refresh_failed", &desc);
+        }
+    }
+}
+
+async fn refresh_full_panel(api: &Bot, cq: &CallbackQuery, req: &YoutubeRequest, request_id: u64) {
+    let Some(MaybeInaccessibleMessage::Message(message)) = cq.message.as_ref() else {
+        return;
+    };
+    let sel = with_selection(req, |slot| slot.clone()).unwrap();
+    let (text, entities) = build_selection_text(req, &sel);
+    let keyboard = build_keyboard(req, request_id);
+    let mut params = EditMessageTextParams::builder()
+        .chat_id(message.chat.id)
+        .message_id(message.message_id)
+        .text(text)
+        .reply_markup(keyboard)
+        .build();
+    if !entities.is_empty() {
+        params.entities = Some(entities);
+    }
+    if let Err(e) = api.edit_message_text(&params).await {
         let desc = e.to_string();
         if !desc.contains("message is not modified") {
             log_trace(req.trace_id, "selection_refresh_failed", &desc);

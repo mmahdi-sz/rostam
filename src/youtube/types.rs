@@ -70,6 +70,7 @@ pub struct VideoFormatOption {
     pub height: u32,
     pub codec: VideoCodec,
     pub format_id: String,
+    pub bitrate: Option<f64>,
 }
 
 #[derive(Debug)]

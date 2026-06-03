@@ -666,10 +666,21 @@ async fn run_download(
     )
     .await;
 
+    let codec_name = t(selection.codec.label_key());
+    let bitrate_str = find_format(&req, height, codec)
+        .and_then(|f| f.bitrate)
+        .map(|b| format!("{:.0}", b))
+        .unwrap_or_else(|| "?".to_string());
     let caption = tf(
         "youtube.download.caption",
-        &[("title", &req.title), ("quality", &quality_label)],
+        &[
+            ("title", &req.title),
+            ("quality", &quality_label),
+            ("codec", &codec_name),
+            ("bitrate", &bitrate_str),
+        ],
     );
+    let caption_entities = entities_for_text(&caption);
     let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
     let mut params = SendVideoParams::builder()
         .chat_id(req.chat_id)
@@ -679,6 +690,9 @@ async fn run_download(
         .supports_streaming(true)
         .caption(caption)
         .build();
+    if !caption_entities.is_empty() {
+        params.caption_entities = Some(caption_entities);
+    }
     if let Some(ref tp) = thumb_path {
         params.thumbnail = Some(FileUpload::InputFile(InputFile {
             path: PathBuf::from(tp),

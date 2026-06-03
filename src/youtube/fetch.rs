@@ -283,10 +283,15 @@ fn collect_video_format(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    let bitrate = format
+        .get("tbr")
+        .or_else(|| format.get("vbr"))
+        .and_then(|v| v.as_f64());
     out.push(VideoFormatOption {
         height,
         codec,
         format_id,
+        bitrate,
     });
 }
 
