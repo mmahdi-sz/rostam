@@ -158,6 +158,8 @@
       "subtitle_back": "🔙 بازگشت",
       "page_prev": "⬅",
       "page_next": "➡",
+      "subtitle_mode_file": "📄 فایل زیرنویس",
+      "subtitle_mode_embedded": "📺 زیرنویس در ویدیو",
       "confirm": "✅ تایید و دانلود",
       "back_to_quality": "↩ برگشت به منوی رزولوشن"
     },

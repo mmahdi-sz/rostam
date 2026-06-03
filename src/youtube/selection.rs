@@ -13,8 +13,8 @@ use frankenstein::types::MessageEntityType;
 use crate::i18n::{entities_for_text, t, tf};
 
 use super::download::{
-    Selection, SelectionView, YoutubeRequest, codecs_for_height, get_request, init_selection,
-    spawn_download, with_selection,
+    Selection, SelectionView, SubtitleMode, YoutubeRequest, codecs_for_height, get_request,
+    init_selection, spawn_download, with_selection,
 };
 use super::lang_names::lang_name_fa;
 use super::trace::log_trace;
@@ -29,6 +29,7 @@ const CB_SUB_TOGGLE: &str = "yt:s:t:";
 const CB_SUB_MENU: &str = "yt:s:sm:";
 const CB_SUB_BACK: &str = "yt:s:sb:";
 const CB_SUB_PAGE: &str = "yt:s:sp:";
+const CB_SUB_MODE: &str = "yt:s:mo:";
 const CB_GO: &str = "yt:s:go:";
 
 const CODEC_DISPLAY_ORDER: &[VideoCodec] = &[
@@ -135,6 +136,10 @@ pub async fn handle_selection_callback(api: &Bot, callback_query: &CallbackQuery
     }
     if let Some(rest) = data.strip_prefix(CB_SUB_PAGE) {
         handle_sub_page(api, callback_query, rest).await;
+        return true;
+    }
+    if let Some(rest) = data.strip_prefix(CB_SUB_MODE) {
+        handle_sub_mode_toggle(api, callback_query, rest).await;
         return true;
     }
     if let Some(rest) = data.strip_prefix(CB_GO) {
@@ -269,6 +274,48 @@ async fn handle_sub_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
     answer(api, cq, "").await;
 }
 
+async fn handle_sub_mode_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
+    let Some((request_id, mode_str)) = rest.split_once(':') else {
+        answer(api, cq, "").await;
+        return;
+    };
+    let Some(request_id) = request_id.parse::<u64>().ok() else {
+        answer(api, cq, "").await;
+        return;
+    };
+    let Some(req) = get_request(request_id) else {
+        answer(api, cq, "youtube.download.request_expired").await;
+        return;
+    };
+    let new_mode = match mode_str {
+        "file" => SubtitleMode::File,
+        "embedded" => SubtitleMode::Embedded,
+        _ => {
+            answer(api, cq, "").await;
+            return;
+        }
+    };
+    let trace_id = req.trace_id;
+    let changed = with_selection(&req, |slot| {
+        if let Some(sel) = slot.as_mut() {
+            if sel.subtitle_mode != new_mode {
+                sel.subtitle_mode = new_mode;
+                return true;
+            }
+        }
+        false
+    });
+    log_trace(
+        trace_id,
+        "selection_sub_mode",
+        &format!("request_id={request_id} mode={mode_str} changed={changed}"),
+    );
+    if changed {
+        refresh_keyboard(api, cq, &req, request_id).await;
+    }
+    answer(api, cq, "").await;
+}
+
 async fn handle_sub_view_change(
     api: &Bot,
     cq: &CallbackQuery,
@@ -360,6 +407,7 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str) {
             codec: req.formats.first().map(|f| f.codec).unwrap_or(VideoCodec::H264),
             audio_lang: None,
             subtitle_langs: Vec::new(),
+            subtitle_mode: super::download::SubtitleMode::Embedded,
             view: SelectionView::Main,
         }
     });
@@ -392,8 +440,7 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str) {
     spawn_download(
         api.clone(),
         request_id,
-        selection.height,
-        selection.codec,
+        selection,
         message.chat.id,
         message.message_id,
     );
@@ -423,6 +470,7 @@ fn build_keyboard(req: &YoutubeRequest, request_id: u64) -> InlineKeyboardMarkup
         codec: VideoCodec::H264,
         audio_lang: None,
         subtitle_langs: Vec::new(),
+        subtitle_mode: super::download::SubtitleMode::Embedded,
         view: SelectionView::Main,
     });
     match selection.view {
@@ -499,6 +547,20 @@ fn build_main_keyboard(
             &t("youtube.selection.subtitle_menu"),
             format!("{CB_SUB_MENU}{request_id}"),
         )]);
+
+        let mode_selected = sel.subtitle_mode;
+        rows.push(vec![
+            choice_button(
+                &t("youtube.selection.subtitle_mode_file"),
+                format!("{CB_SUB_MODE}{request_id}:file"),
+                mode_selected == SubtitleMode::File,
+            ),
+            choice_button(
+                &t("youtube.selection.subtitle_mode_embedded"),
+                format!("{CB_SUB_MODE}{request_id}:embedded"),
+                mode_selected == SubtitleMode::Embedded,
+            ),
+        ]);
     }
 
     rows.push(vec![confirm_button(

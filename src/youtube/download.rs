@@ -21,12 +21,19 @@ use crate::i18n::{entities_for_text, t, tf};
 use super::trace::log_trace;
 use super::types::{AudioLanguage, SubtitleLanguage, VideoCodec, VideoFormatOption};
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SubtitleMode {
+    File,
+    Embedded,
+}
+
 #[derive(Clone, Debug)]
 pub struct Selection {
     pub height: u32,
     pub codec: VideoCodec,
     pub audio_lang: Option<String>,
     pub subtitle_langs: Vec<String>,
+    pub subtitle_mode: SubtitleMode,
     pub view: SelectionView,
 }
 
@@ -153,6 +160,7 @@ pub fn init_selection(req: &YoutubeRequest, height: u32) -> Selection {
         codec,
         audio_lang,
         subtitle_langs: Vec::new(),
+        subtitle_mode: SubtitleMode::Embedded,
         view: SelectionView::Main,
     }
 }
@@ -328,26 +336,26 @@ async fn edit_status(api: &Bot, chat_id: i64, message_id: i32, text: String) {
 pub fn spawn_download(
     api: Bot,
     request_id: u64,
-    height: u32,
-    codec: VideoCodec,
+    selection: Selection,
     status_chat_id: i64,
     status_message_id: i32,
 ) {
     let cancel = register_cancel(request_id);
     tokio::spawn(async move {
-        run_download(api, request_id, height, codec, status_chat_id, status_message_id, cancel).await
+        run_download(api, request_id, selection, status_chat_id, status_message_id, cancel).await
     });
 }
 
 async fn run_download(
     api: Bot,
     request_id: u64,
-    height: u32,
-    codec: VideoCodec,
+    selection: Selection,
     status_chat_id: i64,
     status_message_id: i32,
     cancel: Arc<Notify>,
 ) {
+    let height = selection.height;
+    let codec = selection.codec;
     let Some(req) = take_request(request_id) else {
         let text = t("youtube.download.request_expired");
         edit_status(&api, status_chat_id, status_message_id, text).await;
@@ -434,8 +442,8 @@ async fn run_download(
     let postprocess_template = format!(
         "{PROGRESS_PREFIX}%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
     );
-    let mut child = match Command::new("yt-dlp")
-        .arg("--js-runtimes")
+    let mut cmd = Command::new("yt-dlp");
+    cmd.arg("--js-runtimes")
         .arg("deno:/root/.deno/bin/deno")
         .arg("--cookies-from-browser")
         .arg(&req.cookie_spec)
@@ -455,11 +463,31 @@ async fn run_download(
         .arg("--print")
         .arg("after_move:filepath")
         .arg("-o")
-        .arg(&output_template)
-        .arg(&req.webpage_url)
+        .arg(&output_template);
+
+    if !selection.subtitle_langs.is_empty() {
+        let sub_langs = selection.subtitle_langs.join(",");
+        cmd.arg("--write-subs")
+            .arg("--sub-langs")
+            .arg(&sub_langs);
+        if selection.subtitle_mode == SubtitleMode::Embedded {
+            cmd.arg("--embed-subs");
+        }
+        log_trace(
+            trace_id,
+            "download_subtitle_args",
+            &format!(
+                "sub_langs={sub_langs} mode={:?}",
+                selection.subtitle_mode
+            ),
+        );
+    }
+
+    cmd.arg(&req.webpage_url)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+
+    let mut child = match cmd.spawn()
     {
         Ok(c) => c,
         Err(e) => {
