@@ -19,18 +19,17 @@ use super::types::{VideoCodec, VideoFormatOption, VideoInfo};
 
 const CB_QUALITY_PREFIX: &str = "yt:q:";
 const CB_CODEC_PREFIX: &str = "yt:c:";
-const QUALITY_ICON_KEY: &str = "export";
 
-const QUALITY_OPTIONS: &[(u32, &str)] = &[
-    (4320, "youtube.quality.buttons.4320"),
-    (2160, "youtube.quality.buttons.2160"),
-    (1440, "youtube.quality.buttons.1440"),
-    (1080, "youtube.quality.buttons.1080"),
-    (720, "youtube.quality.buttons.720"),
-    (480, "youtube.quality.buttons.480"),
-    (360, "youtube.quality.buttons.360"),
-    (240, "youtube.quality.buttons.240"),
-    (144, "youtube.quality.buttons.144"),
+const QUALITY_OPTIONS: &[(u32, &str, &str)] = &[
+    (4320, "youtube.quality.buttons.4320", "monitor"),
+    (2160, "youtube.quality.buttons.2160", "monitor"),
+    (1440, "youtube.quality.buttons.1440", "monitor"),
+    (1080, "youtube.quality.buttons.1080", "laptop"),
+    (720,  "youtube.quality.buttons.720",  "phone"),
+    (480,  "youtube.quality.buttons.480",  "phone"),
+    (360,  "youtube.quality.buttons.360",  "signal"),
+    (240,  "youtube.quality.buttons.240",  "signal"),
+    (144,  "youtube.quality.buttons.144",  "signal"),
 ];
 
 const CODEC_ORDER: &[VideoCodec] = &[
@@ -325,6 +324,7 @@ fn quality_keyboard(request_id: u64, options: &[QualityOption]) -> InlineKeyboar
                 &t(option.label_key),
                 &format!("{CB_QUALITY_PREFIX}{request_id}:{}", option.height),
                 button_style(option.height),
+                option.icon_key,
             )]
         })
         .collect();
@@ -342,6 +342,7 @@ fn codec_keyboard(request_id: u64, height: u32, codecs: &[VideoCodec]) -> Inline
                 &t(codec.label_key()),
                 &format!("{CB_CODEC_PREFIX}{request_id}:{height}:{}", codec.key()),
                 ButtonStyle::Primary,
+                "export",
             )]
         })
         .collect();
@@ -354,7 +355,7 @@ fn codec_keyboard(request_id: u64, height: u32, codecs: &[VideoCodec]) -> Inline
 fn quality_options(info: &VideoInfo) -> Vec<QualityOption> {
     QUALITY_OPTIONS
         .iter()
-        .filter_map(|(height, label_key)| {
+        .filter_map(|(height, label_key, icon_key)| {
             let codecs = codecs_for_height(info, *height);
             if codecs.is_empty() {
                 return None;
@@ -362,6 +363,7 @@ fn quality_options(info: &VideoInfo) -> Vec<QualityOption> {
             Some(QualityOption {
                 height: *height,
                 label_key,
+                icon_key,
                 codecs,
             })
         })
@@ -398,8 +400,8 @@ fn parse_codec_callback(data: &str) -> Option<(u64, u32, VideoCodec)> {
 fn quality_label(height: u32) -> String {
     QUALITY_OPTIONS
         .iter()
-        .find(|(option_height, _)| *option_height == height)
-        .map(|(_, label_key)| t(label_key))
+        .find(|(option_height, _, _)| *option_height == height)
+        .map(|(_, label_key, _)| t(label_key))
         .unwrap_or_else(|| format!("{height}p"))
 }
 
@@ -413,8 +415,8 @@ fn button_style(height: u32) -> ButtonStyle {
     }
 }
 
-fn quality_button(text: &str, callback_data: &str, style: ButtonStyle) -> InlineKeyboardButton {
-    let icon_id = t(&format!("emoji.panel.icons.{QUALITY_ICON_KEY}"));
+fn quality_button(text: &str, callback_data: &str, style: ButtonStyle, icon_key: &str) -> InlineKeyboardButton {
+    let icon_id = t(&format!("emoji.panel.icons.{icon_key}"));
     InlineKeyboardButton {
         text: text.to_string(),
         icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') {
@@ -447,5 +449,6 @@ fn format_summary(video_formats: &[VideoFormatOption]) -> String {
 struct QualityOption {
     height: u32,
     label_key: &'static str,
+    icon_key: &'static str,
     codecs: Vec<VideoCodec>,
 }
