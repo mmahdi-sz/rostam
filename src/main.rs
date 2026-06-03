@@ -125,8 +125,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let menu_params = SetChatMenuButtonParams::builder()
         .menu_button(MenuButton::Commands)
         .build();
-    if let Err(e) = api.set_chat_menu_button(&menu_params).await {
-        eprintln!("Failed to set chat menu button: {e}");
+    match api.set_chat_menu_button(&menu_params).await {
+        Ok(_) => println!("Chat menu button set to Commands."),
+        Err(e) => eprintln!("Failed to set chat menu button: {e}"),
     }
 
     loop {
