@@ -18,10 +18,9 @@ use emoji::{FlowManager, FlowState, handler as emoji_handler};
 use frankenstein::{
     AsyncTelegramApi,
     client_reqwest::Bot,
-    methods::{AnswerCallbackQueryParams, GetUpdatesParams},
+    methods::{AnswerCallbackQueryParams, GetUpdatesParams, SetChatMenuButtonParams, SetMyCommandsParams},
     methods::SendMessageParams,
-    methods::SetChatMenuButtonParams,
-    types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, MaybeInaccessibleMessage, MenuButton, ReplyMarkup},
+    types::{BotCommand, ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, MaybeInaccessibleMessage, MenuButton, ReplyMarkup},
     updates::UpdateContent,
 };
 use i18n::{t, reload_i18n};
@@ -128,6 +127,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match api.set_chat_menu_button(&menu_params).await {
         Ok(_) => println!("Chat menu button set to Commands."),
         Err(e) => eprintln!("Failed to set chat menu button: {e}"),
+    }
+
+    let commands = vec![
+        BotCommand {
+            command: "start".to_string(),
+            description: "منوی اصلی".to_string(),
+        },
+        BotCommand {
+            command: "emoji".to_string(),
+            description: "پنل مدیریت ایموجی".to_string(),
+        },
+        BotCommand {
+            command: "se".to_string(),
+            description: "تنظیم لقب ایموجی".to_string(),
+        },
+    ];
+    match api.set_my_commands(&SetMyCommandsParams::builder().commands(commands).build()).await {
+        Ok(_) => println!("Bot commands set successfully."),
+        Err(e) => eprintln!("Failed to set bot commands: {e}"),
     }
 
     loop {
