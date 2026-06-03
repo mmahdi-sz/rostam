@@ -9,7 +9,7 @@ mod emoji;
 mod i18n;
 mod youtube;
 
-use bot::{send_text, send_text_md, send_start_menu, edit_to_start_menu, CB_START_EMOJI, CB_START_YOUTUBE};
+use bot::{send_text, send_start_menu, edit_to_start_menu, CB_START_EMOJI, CB_START_YOUTUBE};
 use emoji::panel::CB_START_PANEL;
 use config::bot_token;
 use cookie_pool::{CookiePool, format_cookie_status, format_selected_cookie, format_no_cookie_available, save_snapshot};
@@ -242,7 +242,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .build(),
                         ).await;
                         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-                            send_text_md(&api, message.chat.id, &t("start.youtube_info")).await?;
+                            let _ = send_text(&api, message.chat.id, &t("start.youtube_info")).await;
                         }
                         continue;
                     }
@@ -253,7 +253,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .build(),
                         ).await;
                         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-                            edit_to_start_menu(&api, message.chat.id, message.message_id).await?;
+                            let _ = edit_to_start_menu(&api, message.chat.id, message.message_id).await;
                         }
                         continue;
                     }
