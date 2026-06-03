@@ -21,11 +21,11 @@ const CB_QUALITY_PREFIX: &str = "yt:q:";
 const CB_CODEC_PREFIX: &str = "yt:c:";
 
 const QUALITY_OPTIONS: &[(u32, &str, &str)] = &[
-    (4320, "youtube.quality.buttons.4320", "monitor"),
-    (2160, "youtube.quality.buttons.2160", "monitor"),
-    (1440, "youtube.quality.buttons.1440", "monitor"),
-    (1080, "youtube.quality.buttons.1080", "laptop"),
-    (720,  "youtube.quality.buttons.720",  "phone"),
+    (4320, "youtube.quality.buttons.4320", "diamond"),
+    (2160, "youtube.quality.buttons.2160", "diamond"),
+    (1440, "youtube.quality.buttons.1440", "fire_yt"),
+    (1080, "youtube.quality.buttons.1080", "sparkles"),
+    (720,  "youtube.quality.buttons.720",  "star_yt"),
     (480,  "youtube.quality.buttons.480",  "phone"),
     (360,  "youtube.quality.buttons.360",  "signal"),
     (240,  "youtube.quality.buttons.240",  "signal"),
