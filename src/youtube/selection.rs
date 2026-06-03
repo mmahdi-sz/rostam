@@ -548,19 +548,21 @@ fn build_main_keyboard(
             format!("{CB_SUB_MENU}{request_id}"),
         )]);
 
-        let mode_selected = sel.subtitle_mode;
-        rows.push(vec![
-            choice_button(
-                &t("youtube.selection.subtitle_mode_file"),
-                format!("{CB_SUB_MODE}{request_id}:file"),
-                mode_selected == SubtitleMode::File,
-            ),
-            choice_button(
-                &t("youtube.selection.subtitle_mode_embedded"),
-                format!("{CB_SUB_MODE}{request_id}:embedded"),
-                mode_selected == SubtitleMode::Embedded,
-            ),
-        ]);
+        if !sel.subtitle_langs.is_empty() {
+            let mode_selected = sel.subtitle_mode;
+            rows.push(vec![
+                choice_button(
+                    &t("youtube.selection.subtitle_mode_file"),
+                    format!("{CB_SUB_MODE}{request_id}:file"),
+                    mode_selected == SubtitleMode::File,
+                ),
+                choice_button(
+                    &t("youtube.selection.subtitle_mode_embedded"),
+                    format!("{CB_SUB_MODE}{request_id}:embedded"),
+                    mode_selected == SubtitleMode::Embedded,
+                ),
+            ]);
+        }
     }
 
     rows.push(vec![confirm_button(
