@@ -45,4 +45,9 @@ pub static EMOJI_MAP: &[(&str, &str)] = &[
     ("👍", "thumbs_up"),
     ("📅", "calendar"),
     ("🔗", "link"),
+    ("🖥️", "monitor"),
+    ("🖥", "monitor"),
+    ("💻", "laptop"),
+    ("📱", "phone"),
+    ("📶", "signal"),
 ];

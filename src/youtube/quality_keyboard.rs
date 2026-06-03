@@ -1,5 +1,5 @@
 use frankenstein::{
-    AsyncTelegramApi,
+    AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     methods::{AnswerCallbackQueryParams, EditMessageTextParams, SendMessageParams},
     types::{
@@ -8,7 +8,7 @@ use frankenstein::{
     },
 };
 
-use crate::i18n::{entities_for_text, t, tf};
+use crate::i18n::{apply_premium_to_md, entities_for_text, t, tf};
 
 use super::download::{
     YoutubeRequest, codecs_for_height as request_codecs_for_height, get_request, spawn_download,
@@ -87,21 +87,19 @@ pub async fn send_quality_prompt(
             info.available_heights
         ),
     );
-    let text = t("youtube.quality.prompt");
-    let entities = entities_for_text(&text);
-    let mut params = SendMessageParams::builder()
-        .chat_id(chat_id)
-        .text(text)
-        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(quality_keyboard(
-            request_id, &options,
-        )))
-        .build();
-
-    if !entities.is_empty() {
-        params.entities = Some(entities);
-    }
-
-    api.send_message(&params).await?;
+    let raw = t("youtube.quality.prompt");
+    let text = apply_premium_to_md(&raw);
+    api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(text)
+            .parse_mode(ParseMode::MarkdownV2)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(quality_keyboard(
+                request_id, &options,
+            )))
+            .build(),
+    )
+    .await?;
     log_trace(
         trace_id,
         "quality_prompt_sent",
