@@ -12,15 +12,15 @@ mod youtube;
 use bot::{send_text, send_start_menu, edit_to_start_menu, CB_START_EMOJI, CB_START_YOUTUBE};
 use emoji::panel::CB_START_PANEL;
 use config::bot_token;
-use cookie_pool::{CookiePool, format_cookie_status, format_selected_cookie, format_no_cookie_available, save_snapshot};
+use cookie_pool::CookiePool;
 use database::postgresql::PostgresDatabase;
 use emoji::{FlowManager, FlowState, handler as emoji_handler};
 use frankenstein::{
     AsyncTelegramApi,
     client_reqwest::Bot,
-    methods::{AnswerCallbackQueryParams, GetUpdatesParams},
+    methods::{AnswerCallbackQueryParams, GetUpdatesParams, SetChatMenuButtonParams, SetMyCommandsParams},
     methods::SendMessageParams,
-    types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, MaybeInaccessibleMessage, ReplyMarkup},
+    types::{BotCommand, ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, MaybeInaccessibleMessage, MenuButton, ReplyMarkup},
     updates::UpdateContent,
 };
 use i18n::{t, reload_i18n};
@@ -121,6 +121,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cookie_status.available_cookies, cookie_status.selectable_cookies
     );
 
+    let menu_params = SetChatMenuButtonParams::builder()
+        .menu_button(MenuButton::Commands)
+        .build();
+    match api.set_chat_menu_button(&menu_params).await {
+        Ok(_) => println!("Chat menu button set to Commands."),
+        Err(e) => eprintln!("Failed to set chat menu button: {e}"),
+    }
+
+    let commands = vec![
+        BotCommand {
+            command: "start".to_string(),
+            description: "منوی اصلی".to_string(),
+        },
+        BotCommand {
+            command: "emoji".to_string(),
+            description: "پنل مدیریت ایموجی".to_string(),
+        },
+        BotCommand {
+            command: "se".to_string(),
+            description: "تنظیم لقب ایموجی".to_string(),
+        },
+    ];
+    match api.set_my_commands(&SetMyCommandsParams::builder().commands(commands).build()).await {
+        Ok(_) => println!("Bot commands set successfully."),
+        Err(e) => eprintln!("Failed to set bot commands: {e}"),
+    }
+
     loop {
         let updates = match api.get_updates(&params).await {
             Ok(response) => response.result,
@@ -181,28 +208,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             "/start" => send_start_menu(&api, message.chat.id).await?,
-                            "/cookie_status" => {
-                                let status = cookie_pool.status();
-                                send_text(&api, message.chat.id, &format_cookie_status(&status)).await?;
-                            }
-                            "/cookie_next" => match cookie_pool.next_cookie() {
-                                Some(cookie) => {
-                                    save_snapshot(&database, &mut cookie_pool).await;
-                                    send_text(&api, message.chat.id, &format_selected_cookie(&cookie)).await?;
-                                }
-                                None => {
-                                    let status = cookie_pool.status();
-                                    send_text(&api, message.chat.id, &format_no_cookie_available(&status)).await?;
-                                }
-                            },
-                            "/cookie_429" => {
-                                let text = match cookie_pool.mark_last_rate_limited() {
-                                    Some(true) => { save_snapshot(&database, &mut cookie_pool).await; t("cookie.marked_429") }
-                                    Some(false) => t("cookie.already_cooldown"),
-                                    None => t("cookie.no_selection_yet"),
-                                };
-                                send_text(&api, message.chat.id, &text).await?;
-                            }
                             _ => {
                                 let urls = extract_youtube_urls(text);
                                 for url in urls {
