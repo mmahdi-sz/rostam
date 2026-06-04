@@ -54,6 +54,7 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> Result<(), String>
 
     println!("[cookie_refresh profile={p} event=firefox_starting] link_count={}", links.len());
 
+    kill_existing_firefox(&config.profile_path, p).await;
     let pid = open_firefox(&config.profile_path, p, &links).await?;
 
     let crashed = wait_or_crash(pid, config.duration_secs, p).await;
@@ -109,6 +110,18 @@ fn check_login(config: &CookieRefresherConfig) -> Result<bool, String> {
         println!("[cookie_refresh profile={p} event=login_check] result=failed err=cookies.sqlite missing or empty path={}", sqlite.display());
     }
     Ok(exists)
+}
+
+async fn kill_existing_firefox(profile_path: &str, profile_name: &str) {
+    let p = profile_name;
+    println!("[cookie_refresh profile={p} event=kill_existing] killing any firefox with profile_path={profile_path}");
+    let _ = Command::new("pkill")
+        .arg("-f")
+        .arg(format!("firefox.*{}", profile_path))
+        .output()
+        .await;
+    sleep(Duration::from_secs(2)).await;
+    println!("[cookie_refresh profile={p} event=kill_existing] done");
 }
 
 async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) -> Result<u32, String> {
