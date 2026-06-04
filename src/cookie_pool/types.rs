@@ -7,8 +7,11 @@ use std::{
 pub struct CookieSource {
     pub id: String,
     pub profile_name: String,
+    /// The working copy used by yt-dlp (may be a cache dir after materialize).
     pub profile_dir: PathBuf,
     pub cookies_sqlite: PathBuf,
+    /// The real Firefox profile dir on disk (for opening Firefox and login checks).
+    pub source_profile_dir: PathBuf,
 }
 
 impl CookieSource {

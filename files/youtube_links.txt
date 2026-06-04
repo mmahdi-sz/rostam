@@ -1,0 +1,10 @@
+# یوتیوب - لینک‌های refresh
+# هر خط یک لینک یوتیوب
+# خطوط خالی و شروع با # نادیده گرفته می‌شن
+
+https://www.youtube.com/watch?v=dQw4w9WgXcQ
+https://www.youtube.com/watch?v=jNQXAC9IVRw
+https://www.youtube.com/watch?v=9bZkp7q19f0
+https://www.youtube.com/watch?v=kXYiU_JCYtU
+https://www.youtube.com/watch?v=uelHwf8o7_U
+https://www.youtube.com/watch?v=OPf0YbXqDm0
