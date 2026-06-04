@@ -128,10 +128,16 @@ async fn open_firefox(profile_path: &str, links: &[String]) -> Result<u32, Strin
         return Err("no links to open".to_string());
     }
 
-    let child = Command::new("firefox")
+    let child = Command::new("sudo")
+        .arg("-u")
+        .arg("mahdi")
+        .arg("firefox")
         .arg("--profile")
         .arg(profile_path)
         .arg(&links[0])
+        .env("DISPLAY", ":0")
+        .env("WAYLAND_DISPLAY", "wayland-0")
+        .env("XDG_RUNTIME_DIR", "/run/user/1000")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -143,11 +149,17 @@ async fn open_firefox(profile_path: &str, links: &[String]) -> Result<u32, Strin
 
     for url in &links[1..] {
         sleep(Duration::from_secs(1)).await;
-        let _ = Command::new("firefox")
+        let _ = Command::new("sudo")
+            .arg("-u")
+            .arg("mahdi")
+            .arg("firefox")
             .arg("--profile")
             .arg(profile_path)
             .arg("--new-tab")
             .arg(url)
+            .env("DISPLAY", ":0")
+            .env("WAYLAND_DISPLAY", "wayland-0")
+            .env("XDG_RUNTIME_DIR", "/run/user/1000")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
