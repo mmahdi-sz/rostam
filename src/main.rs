@@ -92,6 +92,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let cookie_status = cookie_pool.status();
+
+    // Spawn cookie refresher background task
+    {
+        let profiles: Vec<(String, String)> = cookie_pool
+            .snapshot()
+            .available_cookies
+            .into_iter()
+            .map(|c| (c.profile_name, c.profile_dir.to_string_lossy().into_owned()))
+            .collect();
+
+        let admin_chat_id = config::admin_user_id().unwrap_or(0);
+        let refresh_interval_secs: u64 = config::config_value("COOKIE_REFRESH_INTERVAL_SECS")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(6 * 3600);
+        let refresh_api = api.clone();
+
+        if profiles.is_empty() {
+            println!("[cookie_refresher] no profiles found, skipping.");
+        } else {
+            println!(
+                "[cookie_refresher] background task starting: {} profile(s), interval={}s",
+                profiles.len(),
+                refresh_interval_secs
+            );
+            tokio::spawn(async move {
+                loop {
+                    for (profile_name, profile_path) in &profiles {
+                        let cfg = modules::cookie_refresher::CookieRefresherConfig {
+                            profile_path: profile_path.clone(),
+                            profile_name: profile_name.clone(),
+                            links_file: "files/youtube_links.txt".to_string(),
+                            duration_secs: 3600,
+                            link_count: 3,
+                            admin_chat_id,
+                        };
+                        println!("[cookie_refresher] running for profile={profile_name}");
+                        if let Err(e) = modules::cookie_refresher::run(&refresh_api, cfg).await {
+                            eprintln!("[cookie_refresher] profile={profile_name} error: {e}");
+                        }
+                    }
+                    println!("[cookie_refresher] all profiles done, sleeping {refresh_interval_secs}s");
+                    tokio::time::sleep(Duration::from_secs(refresh_interval_secs)).await;
+                }
+            });
+        }
+    }
+
     let mut flow_manager = FlowManager::new();
     let mut params = GetUpdatesParams::builder().timeout(30u32).build();
 
