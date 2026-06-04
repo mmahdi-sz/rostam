@@ -122,20 +122,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             tokio::spawn(async move {
                 loop {
-                    for (profile_name, profile_path, cache_dir) in &profiles {
-                        let cfg = modules::cookie_refresher::CookieRefresherConfig {
-                            profile_path: profile_path.clone(),
-                            profile_name: profile_name.clone(),
-                            cache_dir: cache_dir.clone(),
-                            links_file: "files/youtube_links.txt".to_string(),
-                            duration_secs: 3600,
-                            link_count: 3,
-                            admin_chat_id,
-                        };
-                        println!("[cookie_refresher] running for profile={profile_name}");
-                        if let Err(e) = modules::cookie_refresher::run(&refresh_api, cfg).await {
-                            eprintln!("[cookie_refresher] profile={profile_name} error: {e}");
-                        }
+                    for chunk in profiles.chunks(3) {
+                        println!(
+                            "[cookie_refresher] starting chunk of {} profile(s): {}",
+                            chunk.len(),
+                            chunk.iter().map(|(n, _, _)| n.as_str()).collect::<Vec<_>>().join(", ")
+                        );
+                        let futs: Vec<_> = chunk.iter().map(|(profile_name, profile_path, cache_dir)| {
+                            let cfg = modules::cookie_refresher::CookieRefresherConfig {
+                                profile_path: profile_path.clone(),
+                                profile_name: profile_name.clone(),
+                                cache_dir: cache_dir.clone(),
+                                links_file: "files/youtube_links.txt".to_string(),
+                                duration_secs: 3600,
+                                link_count: 3,
+                                admin_chat_id,
+                            };
+                            let api = refresh_api.clone();
+                            let pname = profile_name.clone();
+                            async move {
+                                println!("[cookie_refresher] running for profile={pname}");
+                                if let Err(e) = modules::cookie_refresher::run(&api, cfg).await {
+                                    eprintln!("[cookie_refresher] profile={pname} error: {e}");
+                                } else {
+                                    println!("[cookie_refresher] profile={pname} cookies updated on disk");
+                                }
+                            }
+                        }).collect();
+                        futures::future::join_all(futs).await;
+                        println!("[cookie_refresher] chunk done");
                     }
                     println!("[cookie_refresher] all profiles done, sleeping {refresh_interval_secs}s");
                     tokio::time::sleep(Duration::from_secs(refresh_interval_secs)).await;
