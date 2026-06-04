@@ -114,13 +114,36 @@ fn check_login(config: &CookieRefresherConfig) -> Result<bool, String> {
 
 async fn kill_existing_firefox(profile_path: &str, profile_name: &str) {
     let p = profile_name;
-    println!("[cookie_refresh profile={p} event=kill_existing] killing any firefox with profile_path={profile_path}");
+    let pattern = format!("firefox.*{}", profile_path);
+
+    println!("[cookie_refresh profile={p} event=kill_existing] pkill -TERM profile_path={profile_path}");
     let _ = Command::new("pkill")
         .arg("-f")
-        .arg(format!("firefox.*{}", profile_path))
+        .arg(&pattern)
+        .output()
+        .await;
+    sleep(Duration::from_secs(3)).await;
+
+    println!("[cookie_refresh profile={p} event=kill_existing] pkill -KILL profile_path={profile_path}");
+    let _ = Command::new("pkill")
+        .arg("-9")
+        .arg("-f")
+        .arg(&pattern)
         .output()
         .await;
     sleep(Duration::from_secs(2)).await;
+
+    // Remove Firefox lock files so the profile opens cleanly.
+    for lock in [".parentlock", "lock"] {
+        let path = std::path::Path::new(profile_path).join(lock);
+        if path.exists() {
+            match std::fs::remove_file(&path) {
+                Ok(_) => println!("[cookie_refresh profile={p} event=kill_existing] removed lock file={}", path.display()),
+                Err(e) => eprintln!("[cookie_refresh profile={p} event=kill_existing] failed to remove lock file={} err={e}", path.display()),
+            }
+        }
+    }
+
     println!("[cookie_refresh profile={p} event=kill_existing] done");
 }
 
