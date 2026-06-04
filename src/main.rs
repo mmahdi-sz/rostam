@@ -95,11 +95,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Spawn cookie refresher background task
     {
-        let profiles: Vec<(String, String)> = cookie_pool
+        let profiles: Vec<(String, String, String)> = cookie_pool
             .snapshot()
             .available_cookies
             .into_iter()
-            .map(|c| (c.profile_name, c.profile_dir.to_string_lossy().into_owned()))
+            .map(|c| (
+                c.profile_name,
+                c.source_profile_dir.to_string_lossy().into_owned(),
+                c.profile_dir.to_string_lossy().into_owned(),
+            ))
             .collect();
 
         let admin_chat_id = config::admin_user_id().unwrap_or(0);
@@ -118,10 +122,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             tokio::spawn(async move {
                 loop {
-                    for (profile_name, profile_path) in &profiles {
+                    for (profile_name, profile_path, cache_dir) in &profiles {
                         let cfg = modules::cookie_refresher::CookieRefresherConfig {
                             profile_path: profile_path.clone(),
                             profile_name: profile_name.clone(),
+                            cache_dir: cache_dir.clone(),
                             links_file: "files/youtube_links.txt".to_string(),
                             duration_secs: 3600,
                             link_count: 3,

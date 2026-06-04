@@ -9,8 +9,11 @@ use tokio::time::sleep;
 use crate::bot::send_text;
 
 pub struct CookieRefresherConfig {
+    /// Real Firefox profile dir — used for `firefox --profile` and yt-dlp login check.
     pub profile_path: String,
     pub profile_name: String,
+    /// Cache dir to copy fresh cookies into after Firefox closes (may equal profile_path if no cache).
+    pub cache_dir: String,
     pub links_file: String,
     pub duration_secs: u64,
     pub link_count: usize,
@@ -22,6 +25,7 @@ impl Default for CookieRefresherConfig {
         Self {
             profile_path: String::new(),
             profile_name: String::new(),
+            cache_dir: String::new(),
             links_file: "files/youtube_links.txt".to_string(),
             duration_secs: 3600,
             link_count: 3,
@@ -58,6 +62,10 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> Result<(), String>
         let msg = format!("⚠️ فایرفاکس اکانت {} قبل از اتمام زمان crash کرد!", config.profile_name);
         notify(api, config.admin_chat_id, &msg).await;
         return Err(format!("firefox crashed for profile {}", config.profile_name));
+    }
+
+    if !config.cache_dir.is_empty() && config.cache_dir != config.profile_path {
+        refresh_cache(&config.profile_path, &config.cache_dir, &config.profile_name);
     }
 
     let msg = format!("✅ کوکی‌های {} با موفقیت آپدیت شدن", config.profile_name);
@@ -188,6 +196,19 @@ async fn kill_firefox(pid: u32) {
             .arg(pid.to_string())
             .output()
             .await;
+    }
+}
+
+fn refresh_cache(source_dir: &str, cache_dir: &str, profile_name: &str) {
+    println!("[cookie_refresher] copying cookies {source_dir} → {cache_dir} profile={profile_name}");
+    for name in ["cookies.sqlite", "cookies.sqlite-wal", "cookies.sqlite-shm"] {
+        let src = std::path::Path::new(source_dir).join(name);
+        if !src.exists() { continue; }
+        let dst = std::path::Path::new(cache_dir).join(name);
+        match std::fs::copy(&src, &dst) {
+            Ok(_) => println!("[cookie_refresher] copied {name} profile={profile_name}"),
+            Err(e) => eprintln!("[cookie_refresher] failed to copy {name} profile={profile_name}: {e}"),
+        }
     }
 }
 

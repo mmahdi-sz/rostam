@@ -60,6 +60,7 @@ pub(super) fn materialize_profiles_cache(
             id: source.id,
             profile_name: source.profile_name,
             cookies_sqlite: dest_profile.join("cookies.sqlite"),
+            source_profile_dir: source.source_profile_dir,
             profile_dir: dest_profile,
         });
     }
@@ -102,6 +103,7 @@ fn push_profile(root: &Path, profiles: &mut Vec<CookieSource>, name: &str, profi
     let id = profile_dir.file_name().and_then(|f| f.to_str()).unwrap_or(profile_path).to_owned();
     profiles.push(CookieSource {
         profile_name: if name.is_empty() { id.clone() } else { name.to_owned() },
+        source_profile_dir: profile_dir.clone(),
         id, profile_dir, cookies_sqlite,
     });
 }
@@ -117,6 +119,7 @@ fn discover_from_profile_dirs(root: &Path) -> Vec<CookieSource> {
             Some(CookieSource {
                 profile_name: id.clone(),
                 cookies_sqlite: profile_dir.join("cookies.sqlite"),
+                source_profile_dir: profile_dir.clone(),
                 profile_dir,
                 id,
             })
