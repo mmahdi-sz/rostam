@@ -46,7 +46,7 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> Result<(), String>
         return Err("no links available".to_string());
     }
 
-    if !check_login(&config).await? {
+    if !check_login(&config)? {
         let msg = format!("⚠️ اکانت {} لاگین نشده!", p);
         notify(api, config.admin_chat_id, &msg).await;
         return Err(format!("profile {} is not logged in", p));
@@ -98,33 +98,17 @@ fn load_links(config: &CookieRefresherConfig) -> Result<Vec<String>, String> {
     Ok(all)
 }
 
-async fn check_login(config: &CookieRefresherConfig) -> Result<bool, String> {
+fn check_login(config: &CookieRefresherConfig) -> Result<bool, String> {
     let p = &config.profile_name;
-    println!("[cookie_refresh profile={p} event=login_check] checking via yt-dlp profile_path={}", config.profile_path);
-    let output = Command::new("yt-dlp")
-        .arg("--cookies-from-browser")
-        .arg(format!("firefox:{}", config.profile_path))
-        .arg("--print")
-        .arg("%(uploader)s")
-        .arg("--no-download")
-        .arg("--no-warnings")
-        .arg("https://www.youtube.com/feed/subscriptions")
-        .output()
-        .await
-        .map_err(|e| format!("failed to spawn yt-dlp: {e}"))?;
-
-    if !output.status.success() {
-        println!("[cookie_refresh profile={p} event=login_check] result=failed err=yt-dlp status={}", output.status);
-        return Ok(false);
+    let sqlite = std::path::Path::new(&config.profile_path).join("cookies.sqlite");
+    let exists = sqlite.exists() && sqlite.metadata().map(|m| m.len() > 0).unwrap_or(false);
+    if exists {
+        println!("[cookie_refresh profile={p} event=login_check] result=ok cookies.sqlite found size={}",
+            sqlite.metadata().map(|m| m.len()).unwrap_or(0));
+    } else {
+        println!("[cookie_refresh profile={p} event=login_check] result=failed err=cookies.sqlite missing or empty path={}", sqlite.display());
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let trimmed = stdout.trim();
-    if trimmed.is_empty() {
-        println!("[cookie_refresh profile={p} event=login_check] result=failed err=empty_output");
-        return Ok(false);
-    }
-    println!("[cookie_refresh profile={p} event=login_check] result=ok uploader={trimmed:?}");
-    Ok(true)
+    Ok(exists)
 }
 
 async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) -> Result<u32, String> {
