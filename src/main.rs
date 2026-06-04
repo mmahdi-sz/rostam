@@ -7,6 +7,7 @@ mod cookie_pool;
 mod database;
 mod emoji;
 mod i18n;
+mod modules;
 mod youtube;
 
 use bot::{send_text, send_start_menu, edit_to_start_menu, CB_START_EMOJI, CB_START_YOUTUBE};
