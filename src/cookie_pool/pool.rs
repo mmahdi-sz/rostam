@@ -5,7 +5,7 @@ use std::{
 };
 
 use super::{
-    DEFAULT_CACHE_ROOT, DEFAULT_COOLDOWN, DEFAULT_FIREFOX_ROOT, DEFAULT_MAX_COOKIES,
+    DEFAULT_CACHE_ROOT, DEFAULT_COOLDOWN, REFRESH_COOLDOWN, DEFAULT_FIREFOX_ROOT, DEFAULT_MAX_COOKIES,
     discover::{discover_firefox_cookies, materialize_profiles_cache},
     types::{CooldownEntry, CookiePoolSnapshot, CookiePoolStatus, CookieSource, SelectedCookie},
 };
@@ -81,9 +81,23 @@ impl CookiePool {
         true
     }
 
-    pub fn mark_last_rate_limited(&mut self) -> Option<bool> {
+    pub fn mark_last_rate_limited(&mut self) -> Option<CookieSource> {
         let cookie_id = self.last_used_cookie.clone()?;
-        Some(self.mark_rate_limited(&cookie_id))
+        self.cleanup_expired_cooldowns();
+        if self.cooldown_list.iter().any(|e| e.cookie_id == cookie_id) { return None; }
+        if self.cooldown_list.len() >= DEFAULT_MAX_COOKIES { return None; }
+        // Use REFRESH_COOLDOWN as a safety net; the caller is expected to call
+        // remove_from_cooldown() explicitly once the auto-refresh finishes.
+        self.cooldown_list.push(CooldownEntry {
+            cookie_id: cookie_id.clone(),
+            expire_at: SystemTime::now() + REFRESH_COOLDOWN,
+        });
+        self.available_cookies.iter().find(|c| c.id == cookie_id).cloned()
+    }
+
+    /// Explicitly removes a cookie from cooldown (called after a triggered refresh completes).
+    pub fn remove_from_cooldown(&mut self, cookie_id: &str) {
+        self.cooldown_list.retain(|e| e.cookie_id != cookie_id);
     }
 
     fn selectable_indexes(&self) -> Vec<usize> {
