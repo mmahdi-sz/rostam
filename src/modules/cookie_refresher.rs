@@ -179,7 +179,7 @@ async fn wait_or_crash(pid: u32, duration_secs: u64, profile_name: &str) -> bool
     loop {
         tokio::select! {
             _ = &mut deadline => {
-                println!("[cookie_refresh profile={p} event=firefox_wait] elapsed={duration_secs}s pid={pid} alive=true timeout=true");
+                println!("[cookie_refresh profile={p} event=firefox_timeout] elapsed={duration_secs}s pid={pid}");
                 return false;
             }
             _ = sleep(Duration::from_secs(5)) => {
