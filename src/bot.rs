@@ -6,7 +6,7 @@ use frankenstein::{
 };
 
 use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
-use crate::emoji::panel::btn_icon;
+use crate::emoji::panel::{btn_icon, btn_icon_danger};
 use crate::i18n::{entities_for_text, t};
 
 pub const CB_START_EMOJI: &str = "start:emoji";
@@ -161,10 +161,8 @@ pub async fn send_start_menu(
 pub fn start_menu_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
-            vec![
-                btn_icon(&t("start.emoji_button"), CB_START_EMOJI, "panel"),
-                btn_icon(&t("start.youtube_button"), CB_START_YOUTUBE, "clapper"),
-            ],
+            vec![btn_icon_danger(&t("start.youtube_button"), CB_START_YOUTUBE, "clapper")],
+            vec![btn_icon(&t("start.emoji_button"), CB_START_EMOJI, "panel")],
         ])
         .build()
 }
