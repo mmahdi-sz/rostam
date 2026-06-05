@@ -27,6 +27,7 @@ pub enum FlowState {
     AwaitingSttConfig { config: SttConfig },
     AwaitingSttAudio { config: SttConfig },
     AwaitingDenoiseAudio,
+    AwaitingUpscaleImage { scale_factor: u32, model_name: String },
 }
 
 #[derive(Debug, Default)]
