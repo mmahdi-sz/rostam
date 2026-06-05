@@ -120,7 +120,7 @@ async def separate(file: UploadFile = File(...), mode: str = Form("quality")):
             raise HTTPException(status_code=500, detail=str(e))
 
         elapsed = time.monotonic() - t_start
-        log.info(f"[separation trace={trace_id} event=processing_done] elapsed={elapsed:.1f}s vocals={len(result['vocals'])} instrumental={len(result['instrumental'])}")
+        log.info(f"[separation trace={trace_id} event=processing_done] elapsed={elapsed:.1f}s vocals_wav={len(result['vocals_wav'])} instrumental_wav={len(result['instrumental_wav'])} ext={result['compressed_ext']}")
 
     return JSONResponse(content=result)
 
