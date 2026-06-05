@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
 use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success, btn_success};
-use crate::i18n::{entities_for_text, t};
+use crate::i18n::{entities_for_text, apply_premium_to_md, t};
 
 pub const CB_START_EMOJI: &str = "start:emoji";
 pub const CB_START_YOUTUBE: &str = "start:youtube";
@@ -227,17 +227,14 @@ pub async fn edit_to_ai_lab(
     chat_id: i64,
     message_id: i32,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let text = t("start.ai_lab_title");
-    let entities = entities_for_text(&text);
-    let mut params = EditMessageTextParams::builder()
+    let text = apply_premium_to_md(&t("start.ai_lab_title"));
+    let params = EditMessageTextParams::builder()
         .chat_id(chat_id)
         .message_id(message_id)
         .text(&text)
+        .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(ai_lab_keyboard())
         .build();
-    if !entities.is_empty() {
-        params.entities = Some(entities);
-    }
     api.edit_message_text(&params).await?;
     Ok(())
 }
