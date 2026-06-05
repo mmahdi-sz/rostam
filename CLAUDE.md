@@ -332,6 +332,7 @@ Required files — all tracked in the repo under `files/`:
 ```text
 files/runtime/libvosk.so            — Vosk native library (vosk crate FFI)
 files/runtime/deep-filter            — DeepFilterNet3 statically-linked musl binary
+files/runtime/gwt-mini               — Gemini watermark removal binary (v0.3.1)
 files/models/vosk/vosk-model-fa-0.5  — Vosk Persian large model
 files/realesrgan/realesrgan-ncnn-vulkan  — Real-ESRGAN NCNN Vulkan binary
 files/realesrgan/models/realesr-animevideov3-x2.param/.bin  — Anime upscale x2
@@ -377,7 +378,7 @@ The bot currently supports:
 - Local bare Git server under `git-server/ros-telegram-bot.git`
 - Full emoji management panel (`/emoji`)
 - Full YouTube downloader: URL detection → preview → quality/codec/audio/subtitle selection → yt-dlp download → upload via local Bot API → cancel button
-- AI Lab submenu: Speech-to-Text (Vosk ASR + DeepFilterNet3), noise removal (DeepFilterNet3), image upscale (Real-ESRGAN NCNN Vulkan), vocal/instrumental separation (audio-separator + Kim_Vocal_2.onnx via Python FastAPI microservice)
+- AI Lab submenu: Speech-to-Text (Vosk ASR + DeepFilterNet3), noise removal (DeepFilterNet3), image upscale (Real-ESRGAN NCNN Vulkan), vocal/instrumental separation (audio-separator + Kim_Vocal_2.onnx via Python FastAPI microservice), Gemini watermark removal (gwt-mini binary)
 
 Secrets are not tracked. `.env`, `target/`, and `git-server/` are ignored.
 
@@ -558,6 +559,7 @@ skipped), so commands always reach step 5.
 | `AwaitingUpscaleImage` | `ai:upscale` button | image received → upscale; stores `model_name`, `scale_factor`, `anime_expanded` |
 | `AwaitingSeparation` | `ai:sep` button | audio message received → show mode keyboard |
 | `AwaitingSeparationMode` | audio received | mode button pressed → separate; stores `file_id`, `filename`, `prompt_msg_id` |
+| `AwaitingGeminiWmImage` | `ai:gwm` button | photo/document received → run gwt-mini → send result |
 
 ### Adding Emojis — Accepted Input Types
 
@@ -711,6 +713,9 @@ src/separation/types.rs              — SeparationMode, SeparationResult
 src/separation/error.rs              — SeparationError enum
 src/separation/client.rs             — separate_audio(): multipart POST to Python service, base64 decode
 src/separation/handle.rs             — enter_separation, handle_separation_audio, handle_separation_callback
+src/gemini_watermark/mod.rs          — gemini watermark removal module exports
+src/gemini_watermark/remove.rs       — remove_watermark(): runs gwt-mini binary in spawn_blocking
+src/gemini_watermark/handle.rs       — enter_gwm, handle_gwm_image, handle_gwm_cancel
 src/emoji/panel/                     — keyboard builders, text formatters, CB_* constants, btn_* helpers
 src/emoji/store/                     — all DB queries
 src/emoji/smart_name.rs
@@ -876,6 +881,37 @@ sep:cancel:{msg_id}         — cancel → back to AI Lab
 ```bash
 journalctl -u abc -f | grep separation        # Rust side
 journalctl -u separation -f                   # Python side
+```
+
+## Gemini Watermark Removal
+
+Removes the Gemini AI watermark from images using the `gwt-mini` binary (v0.3.1).
+
+### Architecture
+
+- **Binary**: `files/runtime/gwt-mini` — statically compiled, called as subprocess.
+- **Args**: `-i {input} -o {output} --quiet --no-banner`
+- **Exit 0** = success; non-zero = failed.
+- **Rust module**: `src/gemini_watermark/` — `remove.rs` spawns binary via `tokio::task::spawn_blocking`.
+
+### Flow
+
+1. AI Lab → حذف واترمارک Gemini → state: `AwaitingGeminiWmImage`
+2. User sends photo or document
+3. File downloaded to temp dir → gwt-mini runs → output sent as document
+4. Temp files cleaned up
+
+### Callback prefixes
+
+```text
+ai:gwm        — enter flow
+gwm:cancel    — cancel → back to AI Lab
+```
+
+### Log grep
+
+```bash
+journalctl -u abc -f | grep '\[gwm'
 ```
 
 ## Git Server
