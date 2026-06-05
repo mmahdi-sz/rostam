@@ -30,6 +30,7 @@ pub enum FlowState {
     AwaitingUpscaleImage { scale_factor: u32, model_name: String, anime_expanded: bool },
     AwaitingSeparation,
     AwaitingSeparationMode { file_id: String, filename: String, prompt_msg_id: Option<i32> },
+    AwaitingGeminiWmImage,
 }
 
 #[derive(Debug, Default)]
