@@ -19,6 +19,7 @@ pub const CB_START_AI_LAB: &str = "start:ai_lab";
 pub const CB_AI_DENOISE: &str = "ai:denoise";
 pub const CB_AI_UPSCALE: &str = "ai:upscale";
 pub const CB_AI_STT: &str = "ai:stt";
+pub const CB_AI_SEP: &str = "ai:sep";
 pub const CB_DENOISE_CANCEL: &str = "denoise:cancel";
 
 pub async fn send_text(
@@ -204,6 +205,7 @@ pub fn ai_lab_keyboard() -> InlineKeyboardMarkup {
             vec![btn(&t("start.ai_denoise_button"), CB_AI_DENOISE)],
             vec![btn(&t("start.ai_upscale_button"), CB_AI_UPSCALE)],
             vec![btn(&t("start.ai_stt_button"), CB_AI_STT)],
+            vec![btn(&t("start.ai_sep_button"), CB_AI_SEP)],
             vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
         ])
         .build()

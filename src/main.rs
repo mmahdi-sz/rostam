@@ -12,12 +12,14 @@ mod youtube;
 mod stt;
 mod denoise;
 mod upscale;
+mod separation;
 
-use bot::{send_text, send_start_menu, edit_to_start_menu, edit_to_ai_lab, CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB, CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_DENOISE_CANCEL};
+use bot::{send_text, send_start_menu, edit_to_start_menu, edit_to_ai_lab, CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB, CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_AI_SEP, CB_DENOISE_CANCEL};
 use emoji::panel::CB_START_PANEL;
 use stt::handle::{enter_stt_config, handle_stt_callback, handle_stt_audio};
 use denoise::{enter_denoise, handle_denoise_audio};
 use upscale::{enter_upscale, handle_upscale_image, handle_upscale_cancel, handle_upscale_model_pick, handle_upscale_anime_toggle, CB_UPSCALE_CANCEL, CB_UPSCALE_MODEL_PREFIX, CB_UPSCALE_ANIME_TOGGLE};
+use separation::{enter_separation, handle_separation_audio, handle_separation_callback, CB_SEP_PREFIX};
 use stt::config::CB_STT_CANCEL;
 use config::bot_token;
 use cookie_pool::{CookiePool, CookieSource};
@@ -336,6 +338,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 continue;
                             }
                         }
+                        if matches!(flow_manager.get(uid), FlowState::AwaitingSeparation) {
+                            let has_audio = message.audio.is_some() || message.voice.is_some() || message.document.is_some();
+                            let trace_id = next_trace_id();
+                            log_trace(trace_id, "separation_route_check", &format!(
+                                "user_id={uid} chat_id={} has_audio={has_audio}", message.chat.id
+                            ));
+                            if has_audio {
+                                handle_separation_audio(&api, &message, uid, &mut flow_manager).await;
+                                log_trace(trace_id, "separation_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
+                                continue;
+                            }
+                        }
                     }
 
                     if let Some(text) = message.text.as_deref() {
@@ -613,6 +627,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             log_trace(trace_id, "stt_callback_done", &format!("user_id={cb_user_id} data={cb_data:?}"));
                         } else {
                             log_trace(trace_id, "stt_callback_no_message", &format!("user_id={cb_user_id} data={cb_data:?}"));
+                        }
+                        continue;
+                    }
+                    if callback_query.data.as_deref() == Some(CB_AI_SEP) {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "cb_ai_sep_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
+                        let _ = api.answer_callback_query(
+                            &AnswerCallbackQueryParams::builder()
+                                .callback_query_id(callback_query.id)
+                                .build(),
+                        ).await;
+                        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+                            enter_separation(
+                                &api, message.chat.id, message.message_id,
+                                cb_user_id as i64, &mut flow_manager,
+                            ).await;
+                            log_trace(trace_id, "cb_ai_sep_done", &format!("user_id={cb_user_id} chat_id={}", message.chat.id));
+                        } else {
+                            log_trace(trace_id, "cb_ai_sep_no_message", &format!("user_id={cb_user_id}"));
+                        }
+                        continue;
+                    }
+                    if callback_query.data.as_deref().map(|d| d.starts_with(CB_SEP_PREFIX)).unwrap_or(false) {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "sep_callback", &format!("user_id={cb_user_id} data={cb_data:?}"));
+                        let _ = api.answer_callback_query(
+                            &AnswerCallbackQueryParams::builder()
+                                .callback_query_id(callback_query.id)
+                                .build(),
+                        ).await;
+                        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+                            handle_separation_callback(
+                                &api, cb_data, message.chat.id, message.message_id,
+                                cb_user_id as i64, &mut flow_manager,
+                            ).await;
+                            log_trace(trace_id, "sep_callback_done", &format!("user_id={cb_user_id} data={cb_data:?}"));
+                        } else {
+                            log_trace(trace_id, "sep_callback_no_message", &format!("user_id={cb_user_id} data={cb_data:?}"));
                         }
                         continue;
                     }
