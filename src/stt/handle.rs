@@ -1,5 +1,4 @@
-use std::time::{Duration, Instant};
-use std::io::Read;
+use std::time::Instant;
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
@@ -16,7 +15,7 @@ use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{entities_for_text, t, tf};
 use crate::stt::config::*;
 use crate::stt::deepfilter;
-use crate::stt::types::{SttConfig, SttResult, SttLang, SttModelSize};
+use crate::stt::types::{SttConfig, SttLang, SttModelSize};
 use crate::stt::vosk;
 use crate::youtube::log_trace;
 
@@ -178,11 +177,18 @@ async fn download_file(api: &Bot, file_id: &str, dest: &str) -> Result<(), Box<d
     let file_info = api.get_file(&GetFileParams::builder().file_id(file_id).build()).await?;
     let file_path = file_info.result.file_path.ok_or("no file_path")?;
 
+    // Local Bot API returns an absolute filesystem path in --local mode.
+    // In that case, copy directly from the filesystem.
+    if file_path.starts_with('/') {
+        std::fs::copy(&file_path, dest)?;
+        return Ok(());
+    }
+
     let url = if let Some(base) = crate::config::bot_api_base_url() {
         let base = base.trim_end_matches('/');
-        format!("{base}/file/bot{}/{}", crate::config::bot_token()?, file_path)
+        format!("{base}/file/bot{}/{file_path}", crate::config::bot_token()?)
     } else {
-        format!("https://api.telegram.org/file/bot{}/{}", crate::config::bot_token()?, file_path)
+        format!("https://api.telegram.org/file/bot{}/{file_path}", crate::config::bot_token()?)
     };
 
     let response = reqwest::get(&url).await?;
@@ -303,13 +309,14 @@ pub async fn handle_stt_audio(
 }
 
 fn wav_duration(path: &str) -> Result<f64, Box<dyn std::error::Error>> {
-    let mut f = std::fs::File::open(path)?;
-    let mut header = [0u8; 44];
-    f.read_exact(&mut header)?;
-    let byte_rate = u32::from_le_bytes([header[28], header[29], header[30], header[31]]);
-    let data_len = u32::from_le_bytes([header[40], header[41], header[42], header[43]]);
-    if byte_rate == 0 { return Ok(0.0); }
-    Ok(data_len as f64 / byte_rate as f64)
+    let output = std::process::Command::new("ffprobe")
+        .args(["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path])
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("ffprobe failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
+    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok(s.parse()?)
 }
 
 fn clean_up(dir: &std::path::Path) {

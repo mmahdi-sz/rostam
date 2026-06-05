@@ -26,6 +26,8 @@ pub enum FlowState {
     AwaitingImportMode { sql: String },
     AwaitingSttConfig { config: SttConfig },
     AwaitingSttAudio { config: SttConfig },
+    AwaitingDenoiseAudio,
+    AwaitingUpscaleImage { scale_factor: u32, model_name: String, anime_expanded: bool },
 }
 
 #[derive(Debug, Default)]
