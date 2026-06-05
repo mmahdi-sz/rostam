@@ -324,7 +324,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 continue;
                             }
                         }
-                        if let FlowState::AwaitingUpscaleImage { scale_factor, model_name } = flow_manager.get(uid) {
+                        if let FlowState::AwaitingUpscaleImage { scale_factor, model_name, .. } = flow_manager.get(uid) {
                             let has_image = message.photo.is_some() || message.document.is_some();
                             let trace_id = next_trace_id();
                             log_trace(trace_id, "upscale_route_check", &format!(
