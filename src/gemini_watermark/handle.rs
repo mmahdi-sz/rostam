@@ -139,18 +139,25 @@ pub async fn handle_gwm_image(
     std::fs::remove_dir_all(&work_dir).ok();
 
     // Run watermark removal.
-    eprintln!("[gwm trace={trace_id} event=remove_start]");
+    eprintln!("[gwm trace={trace_id} event=remove_start] user_id={user_id} ext={ext} bytes={}", image_bytes.len());
     let t_start = std::time::Instant::now();
     let result_bytes = match super::remove::remove_watermark(image_bytes, ext.clone(), user_id, trace_id).await {
         Ok(b) => b,
+        Err(super::remove::GwmError::NoWatermarkDetected(detail)) => {
+            let elapsed = t_start.elapsed().as_secs_f64();
+            eprintln!("[gwm trace={trace_id} event=no_watermark] elapsed={elapsed:.2}s detail={detail:?}");
+            let _ = send_text(api, chat_id, &t("gemini_wm.error.no_watermark")).await;
+            return;
+        }
         Err(e) => {
-            eprintln!("[gwm trace={trace_id} event=remove_failed] err={e}");
+            let elapsed = t_start.elapsed().as_secs_f64();
+            eprintln!("[gwm trace={trace_id} event=remove_failed] elapsed={elapsed:.2}s err={e}");
             let _ = send_text(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
             return;
         }
     };
     let elapsed = t_start.elapsed().as_secs_f64();
-    eprintln!("[gwm trace={trace_id} event=remove_done] elapsed={elapsed:.1}s output_bytes={}", result_bytes.len());
+    eprintln!("[gwm trace={trace_id} event=remove_done] elapsed={elapsed:.2}s output_bytes={}", result_bytes.len());
 
     // Write result and send as document.
     let out_path = std::env::temp_dir().join(format!("gwm_out_{trace_id}.{ext}"));
