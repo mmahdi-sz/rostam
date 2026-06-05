@@ -303,14 +303,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Check for STT audio state after emoji flow returned false
                         let uid = user_id.unwrap();
                         if let FlowState::AwaitingSttAudio { config } = flow_manager.get(uid) {
-                            if message.voice.is_some() || message.audio.is_some() || message.document.is_some() {
+                            let has_audio = message.voice.is_some() || message.audio.is_some() || message.document.is_some();
+                            let trace_id = next_trace_id();
+                            log_trace(trace_id, "stt_route_check", &format!("user_id={uid} chat_id={} has_audio={has_audio} state=AwaitingSttAudio", message.chat.id));
+                            if has_audio {
                                 handle_stt_audio(&api, &message, uid, &config).await;
+                                log_trace(trace_id, "stt_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
                                 continue;
                             }
                         }
                         if matches!(flow_manager.get(uid), FlowState::AwaitingDenoiseAudio) {
-                            if message.voice.is_some() || message.audio.is_some() || message.document.is_some() {
+                            let has_audio = message.voice.is_some() || message.audio.is_some() || message.document.is_some();
+                            let trace_id = next_trace_id();
+                            log_trace(trace_id, "denoise_route_check", &format!("user_id={uid} chat_id={} has_audio={has_audio}", message.chat.id));
+                            if has_audio {
                                 handle_denoise_audio(&api, &message, uid, &mut flow_manager).await;
+                                log_trace(trace_id, "denoise_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
                                 continue;
                             }
                         }
@@ -457,6 +465,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &api, message.chat.id, message.message_id,
                                 cb_user_id as i64, &mut flow_manager,
                             ).await;
+                            log_trace(trace_id, "cb_ai_denoise_done", &format!("user_id={cb_user_id} chat_id={}", message.chat.id));
+                        } else {
+                            log_trace(trace_id, "cb_ai_denoise_no_message", &format!("user_id={cb_user_id}"));
                         }
                         continue;
                     }
@@ -485,6 +496,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &api, message.chat.id, message.message_id,
                                 cb_user_id as i64, &mut flow_manager,
                             ).await;
+                            log_trace(trace_id, "cb_ai_stt_done", &format!("user_id={cb_user_id} chat_id={}", message.chat.id));
+                        } else {
+                            log_trace(trace_id, "cb_ai_stt_no_message", &format!("user_id={cb_user_id}"));
                         }
                         continue;
                     }
@@ -501,6 +515,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &api, message.chat.id, message.message_id,
                                 cb_user_id as i64, &mut flow_manager,
                             ).await;
+                            log_trace(trace_id, "denoise_cancel_done", &format!("user_id={cb_user_id} chat_id={}", message.chat.id));
+                        } else {
+                            log_trace(trace_id, "denoise_cancel_no_message", &format!("user_id={cb_user_id}"));
                         }
                         continue;
                     }
@@ -517,6 +534,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &api, cb_data, message.chat.id, message.message_id,
                                 cb_user_id as i64, &mut flow_manager,
                             ).await;
+                            log_trace(trace_id, "stt_callback_done", &format!("user_id={cb_user_id} data={cb_data:?}"));
+                        } else {
+                            log_trace(trace_id, "stt_callback_no_message", &format!("user_id={cb_user_id} data={cb_data:?}"));
                         }
                         continue;
                     }
