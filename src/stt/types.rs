@@ -17,17 +17,6 @@ pub enum SttModelSize {
     Small,
 }
 
-#[derive(Debug, Clone)]
-pub struct SttResult {
-    pub text: String,
-    pub lang: SttLang,
-    pub model_size: SttModelSize,
-    pub denoise: bool,
-    pub audio_duration_secs: f64,
-    pub processing_secs: f64,
-    pub denoise_secs: f64,
-}
-
 impl SttConfig {
     pub fn model_path(&self, base: &str) -> String {
         let name = match (self.lang, self.model_size) {

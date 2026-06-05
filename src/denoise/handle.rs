@@ -1,4 +1,3 @@
-use std::io::Read;
 use std::path::PathBuf;
 
 use frankenstein::{
@@ -298,13 +297,14 @@ fn convert_from_wav(input: &str, output: &str, ext: &str) -> Result<(), Box<dyn 
 }
 
 fn wav_duration(path: &str) -> Result<f64, Box<dyn std::error::Error>> {
-    let mut f = std::fs::File::open(path)?;
-    let mut header = [0u8; 44];
-    f.read_exact(&mut header)?;
-    let byte_rate = u32::from_le_bytes([header[28], header[29], header[30], header[31]]);
-    let data_len = u32::from_le_bytes([header[40], header[41], header[42], header[43]]);
-    if byte_rate == 0 { return Ok(0.0); }
-    Ok(data_len as f64 / byte_rate as f64)
+    let output = std::process::Command::new("ffprobe")
+        .args(["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path])
+        .output()?;
+    if !output.status.success() {
+        return Err(format!("ffprobe failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+    }
+    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok(s.parse()?)
 }
 
 async fn download_file(api: &Bot, file_id: &str, dest: &str) -> Result<(), Box<dyn std::error::Error>> {
