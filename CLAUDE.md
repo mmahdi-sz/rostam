@@ -324,6 +324,32 @@ static ACTIVE_DOWNLOADS: OnceLock<Mutex<HashMap<u64, Arc<Notify>>>> = OnceLock::
 - On upload success: status message deleted. On failure: new error message sent.
 - Directory cleaned up (`remove_dir_all`) after every outcome.
 
+## Prerequisites (Files & Runtime Dependencies)
+
+Required files — all tracked in the repo under `files/`:
+
+```text
+files/runtime/libvosk.so            — Vosk native library (vosk crate FFI)
+files/runtime/deep-filter            — DeepFilterNet3 statically-linked musl binary
+files/models/vosk/vosk-model-fa-0.5  — Vosk Persian large model
+files/models/vosk/vosk-model-fa-0.5-small  — Vosk Persian small model
+files/models/vosk/vosk-model-en-us-0.42  — Vosk English large model (300MB+)
+files/models/vosk/vosk-model-en-us-0.42-small  — Vosk English small model
+files/models/deepfilter/DeepFilterNet3_onnx.tar.gz  — DeepFilterNet3 model (extracted at startup)
+```
+
+Build setup (build.rs):
+- `cargo:rustc-link-search={manifest_dir}/files/runtime` so the vosk crate finds `libvosk.so` at link time
+- `cargo:rustc-link-lib=vosk` links the native library
+
+The deep-filter binary is called as a subprocess with `-m` model flag.
+DeepFilterNet3 model tarball is extracted to `files/models/deepfilter/DeepFilterNet3/` on first run
+(or manually: `tar xzf files/models/deepfilter/DeepFilterNet3_onnx.tar.gz -C files/models/deepfilter/`).
+
+Required system packages:
+- `ffmpeg` — audio conversion (16kHz mono 16-bit PCM WAV)
+- `libvosk.so` compatible with the `vosk = "0.3"` crate
+
 ## Project Summary
 
 This project is a Rust Telegram bot named `ros-telegram-bot`.
@@ -332,8 +358,8 @@ systemd service named `abc`.
 
 The bot currently supports:
 
-- Telegram long polling with `getUpdates`
-- `/start` command with a green inline button
+- Telegram long polling with `getUpdates` (offset persisted per-update)
+- `/start` command with AI Lab, YouTube, and Emoji buttons
 - Reading `BOT_TOKEN` from `.env`, `/etc/default/abc`, or process env
 - Firefox Cookie Pool management for user `mahdi`
 - Optional PostgreSQL persistence for Cookie Pool state
@@ -341,6 +367,7 @@ The bot currently supports:
 - Local bare Git server under `git-server/ros-telegram-bot.git`
 - Full emoji management panel (`/emoji`)
 - Full YouTube downloader: URL detection → preview → quality/codec/audio/subtitle selection → yt-dlp download → upload via local Bot API → cancel button
+- AI Lab submenu with Speech-to-Text (Vosk ASR + DeepFilterNet3 noise reduction)
 
 Secrets are not tracked. `.env`, `target/`, and `git-server/` are ignored.
 
@@ -498,8 +525,12 @@ For every incoming `Message`, routing happens in this exact order:
    `handle_emoji_flow_message`; if it returns `true`, skip everything else
 3. **command dispatch** — `/emoji`, `/se`, `/start`, `/cookie_*`, YouTube URLs
 
+4. **STT audio handling** — if user has `AwaitingSttAudio` and message has
+   voice/audio/document, call `handle_stt_audio()` and skip everything else
+5. **command dispatch** — `/emoji`, `/se`, `/start`, `/cookie_*`, YouTube URLs
+
 Messages starting with `/` are never matched as addemoji links (step 1 is
-skipped), so commands always reach step 3.
+skipped), so commands always reach step 5.
 
 ### Flow States
 
@@ -511,6 +542,8 @@ skipped), so commands always reach step 3.
 | `AwaitingTestText` | CB_TEST | cancel button or `/emoji` |
 | `AwaitingImportFile` | CB_IMPORT | cancel button or document sent → `AwaitingImportMode` |
 | `AwaitingImportMode` | file analyzed | import mode button pressed |
+| `AwaitingSttConfig` | `ai:stt` button | lang/size/denoise chosen → `AwaitingSttAudio` |
+| `AwaitingSttAudio` | lang chosen in config | audio message received → transcribe |
 
 ### Adding Emojis — Accepted Input Types
 
@@ -647,6 +680,12 @@ src/youtube/types.rs                 — VideoInfo, VideoCodec, VideoFormatOptio
 src/database/mod.rs
 src/database/posfreSQL/postgresql.rs — PostgreSQL connection + cookie pool tables
 src/database/posfreSQL/schema.sql    — CREATE TABLE statements
+src/stt/mod.rs                       — STT module exports
+src/stt/types.rs                     — SttConfig, SttLang, SttModelSize
+src/stt/vosk.rs                      — Vosk transcribe: WAV → text via vosk crate
+src/stt/deepfilter.rs                — DeepFilterNet3 noise reduction subprocess
+src/stt/config.rs                    — CB_STT_* constants + keyboard builders
+src/stt/handle.rs                    — enter_stt_config, handle_stt_callback, handle_stt_audio
 src/emoji/mod.rs
 src/emoji/cache/                     — EmojiCache, {key} expansion, 5-min refresh task
 src/emoji/flow.rs
