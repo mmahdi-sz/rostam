@@ -5,7 +5,8 @@ use frankenstein::{
     types::{InlineKeyboardMarkup, MessageEntity, ReplyMarkup},
 };
 
-use rand::seq::SliceRandom;
+use rand::Rng;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
 use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
@@ -161,14 +162,26 @@ pub async fn send_start_menu(
     Ok(())
 }
 
+static LAST_AI_ICON_IDX: AtomicUsize = AtomicUsize::new(usize::MAX);
+
 pub fn start_menu_keyboard() -> InlineKeyboardMarkup {
     const AI_ICONS: &[&str] = &["gemini_logo", "chatgpt_logo", "claude_logo", "animated_bot_emoji"];
-    let icon = AI_ICONS.choose(&mut rand::thread_rng()).copied().unwrap_or("animated_bot_emoji");
+    let last = LAST_AI_ICON_IDX.load(Ordering::Relaxed);
+    let idx = {
+        let mut rng = rand::thread_rng();
+        let mut i = rng.gen_range(0..AI_ICONS.len());
+        if i == last && AI_ICONS.len() > 1 {
+            i = (i + 1) % AI_ICONS.len();
+        }
+        i
+    };
+    LAST_AI_ICON_IDX.store(idx, Ordering::Relaxed);
+    let icon = AI_ICONS[idx];
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
+            vec![btn_icon_success(&t("start.ai_lab_button"), CB_START_AI_LAB, icon)],
             vec![btn_icon_danger(&t("start.youtube_button"), CB_START_YOUTUBE, "clapper")],
             vec![btn_icon(&t("start.emoji_button"), CB_START_EMOJI, "panel")],
-            vec![btn_icon_success(&t("start.ai_lab_button"), CB_START_AI_LAB, icon)],
         ])
         .build()
 }
