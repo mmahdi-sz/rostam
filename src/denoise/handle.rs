@@ -111,7 +111,7 @@ pub async fn handle_denoise_audio(
     let work_dir = std::env::temp_dir().join(format!("denoise_{trace_id}"));
     std::fs::create_dir_all(&work_dir).ok();
 
-    let input_path = work_dir.join("input");
+    let input_path = work_dir.join(format!("input.{}", orig_ext));
     let wav_path = work_dir.join("denoise_input.wav");
     let denoised_path = work_dir.join("denoised.wav");
     let output_path = work_dir.join(format!("output.{}", orig_ext));
