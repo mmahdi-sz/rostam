@@ -328,6 +328,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 UpdateContent::CallbackQuery(callback_query) => {
+                    let cb_user_id = callback_query.from.id;
+                    let cb_data = callback_query.data.as_deref().unwrap_or("");
+                    let cb_chat_id = callback_query.message.as_ref().and_then(|m| match m {
+                        MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
+                        _ => None,
+                    }).unwrap_or(0);
+                    eprintln!(
+                        "[main event=callback_received] user_id={cb_user_id} chat_id={cb_chat_id} data={cb_data:?}"
+                    );
                     if callback_query.data.as_deref().map(|d| d.starts_with("emoji:")).unwrap_or(false) {
                         emoji_handler::handle_emoji_callback(&api, &callback_query, &mut flow_manager, &database).await;
                         continue;
@@ -336,6 +345,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
                     if callback_query.data.as_deref() == Some(CB_START_EMOJI) {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "cb_start_emoji", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
                         let _ = api.answer_callback_query(
                             &AnswerCallbackQueryParams::builder()
                                 .callback_query_id(callback_query.id)
@@ -347,9 +358,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 &mut flow_manager, &database,
                             ).await;
                         }
+                        log_trace(trace_id, "cb_start_emoji_done", "");
                         continue;
                     }
                     if callback_query.data.as_deref() == Some(CB_START_YOUTUBE) {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "cb_start_youtube", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
                         let _ = api.answer_callback_query(
                             &AnswerCallbackQueryParams::builder()
                                 .callback_query_id(callback_query.id)
@@ -377,21 +391,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .link_preview_options(no_preview)
                                 .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard))
                                 .build();
-                            let _ = api.send_message(&params).await;
+                            let r = api.send_message(&params).await;
+                            log_trace(trace_id, "cb_start_youtube_sent", &format!("ok={}", r.is_ok()));
                         }
                         continue;
                     }
                     if callback_query.data.as_deref() == Some(CB_START_PANEL) {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "cb_start_panel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
                         let _ = api.answer_callback_query(
                             &AnswerCallbackQueryParams::builder()
                                 .callback_query_id(callback_query.id)
                                 .build(),
                         ).await;
                         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-                            let _ = edit_to_start_menu(&api, message.chat.id, message.message_id).await;
+                            let r = edit_to_start_menu(&api, message.chat.id, message.message_id).await;
+                            log_trace(trace_id, "cb_start_panel_done", &format!("ok={}", r.is_ok()));
                         }
                         continue;
                     }
+                    eprintln!(
+                        "[main event=callback_unhandled] user_id={cb_user_id} chat_id={cb_chat_id} data={cb_data:?}"
+                    );
                 }
                 _ => {}
             }
