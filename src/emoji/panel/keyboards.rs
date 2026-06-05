@@ -94,6 +94,7 @@ pub fn pack_choice_keyboard(packs: &[EmojiPack], page: usize, total_pages: usize
         }
         if !nav.is_empty() { rows.push(nav); }
     }
+    rows.push(vec![btn_icon(&t("emoji.panel.back_to_panel"), CB_BACK, "panel")]);
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }
 
