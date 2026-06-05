@@ -59,4 +59,5 @@ pub static EMOJI_MAP: &[(&str, &str)] = &[
     ("⚡️", "speed_fast"),
     ("⚡", "speed_fast"),
     ("🔬", "model_large"),
+    ("🎵", "music_note"),
 ];

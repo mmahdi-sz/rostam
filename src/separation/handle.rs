@@ -29,6 +29,16 @@ fn next_trace_id() -> u64 {
 pub const CB_AI_SEP: &str = "ai:sep";
 pub const CB_SEP_PREFIX: &str = "sep:";
 
+pub const CB_SEP_BACK: &str = "sep:back";
+
+fn prompt_keyboard(msg_id: i32) -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![
+            vec![btn_icon(&t("start.back"), &format!("{CB_SEP_BACK}:{msg_id}"), "back")],
+        ])
+        .build()
+}
+
 fn mode_keyboard(msg_id: i32) -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
@@ -58,6 +68,7 @@ pub async fn enter_separation(
         .chat_id(chat_id)
         .message_id(message_id)
         .text(&text)
+        .reply_markup(prompt_keyboard(message_id))
         .build();
     match api.edit_message_text(&params).await {
         Ok(_) => eprintln!("[separation trace={trace_id} event=prompt_shown]"),
@@ -140,11 +151,18 @@ pub async fn handle_separation_callback(
     let trace_id = next_trace_id();
     eprintln!("[separation trace={trace_id} event=callback] user_id={user_id} chat_id={chat_id} data={cb_data}");
 
+    // sep:back:{msg_id} — برگشت به AI Lab از صفحه prompt
+    if cb_data.starts_with("sep:back:") {
+        flow_manager.clear(user_id);
+        let r = edit_to_ai_lab(api, chat_id, message_id).await;
+        eprintln!("[separation trace={trace_id} event=back_done] ok={}", r.is_ok());
+        return;
+    }
+
     // sep:cancel:{msg_id}
     if let Some(rest) = cb_data.strip_prefix("sep:cancel:") {
         eprintln!("[separation trace={trace_id} event=cancel] msg_id_from_cb={rest}");
         flow_manager.clear(user_id);
-        // Edit the keyboard message back to AI Lab.
         let r = edit_to_ai_lab(api, chat_id, message_id).await;
         eprintln!("[separation trace={trace_id} event=cancel_done] ok={}", r.is_ok());
         return;
