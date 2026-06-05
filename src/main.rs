@@ -305,6 +305,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
 
+                    // «لغو عملیات» از reply keyboard — فقط وقتی Idle باشه منوی استارت نشون بده
+                    // (توی flow، خود flow این متن رو handle می‌کنه)
+                    if let (Some(uid), Some(text)) = (user_id, message.text.as_deref()) {
+                        if text.contains("لغو عملیات") && matches!(flow_manager.get(uid), FlowState::Idle) {
+                            send_start_menu(&api, message.chat.id).await?;
+                            continue;
+                        }
+                    }
+
                     if user_id.is_some()
                         && !matches!(flow_manager.get(user_id.unwrap()), FlowState::Idle)
                     {
