@@ -100,11 +100,13 @@ pub async fn handle_denoise_audio(
         return;
     };
 
-    log_trace(trace_id, "denoise_audio_received", &format!("user_id={user_id} chat_id={chat_id}"));
-
-    // Determine input type and format
     let is_voice = message.voice.is_some();
+    let is_audio = message.audio.is_some();
+    let is_doc = message.document.is_some();
     let orig_ext = detect_format(message);
+    log_trace(trace_id, "denoise_audio_received", &format!(
+        "user_id={user_id} chat_id={chat_id} voice={is_voice} audio={is_audio} doc={is_doc} ext={orig_ext}"
+    ));
 
     let _ = send_text(api, chat_id, &t("denoise.preparing")).await;
 
@@ -123,7 +125,8 @@ pub async fn handle_denoise_audio(
         clean_up(&work_dir);
         return;
     }
-    log_trace(trace_id, "denoise_downloaded", "");
+    let file_size = std::fs::metadata(input_path.to_str().unwrap()).map(|m| m.len()).unwrap_or(0);
+    log_trace(trace_id, "denoise_downloaded", &format!("size={file_size}"));
 
     // 2. Convert to 48kHz mono 16-bit PCM WAV (DeepFilterNet optimal sample rate)
     if let Err(e) = convert_to_wav(input_path.to_str().unwrap(), wav_path.to_str().unwrap(), 48000) {
@@ -240,16 +243,17 @@ fn mime_to_ext(mime: &str) -> String {
 }
 
 fn convert_to_wav(input: &str, output: &str, sample_rate: u32) -> Result<(), Box<dyn std::error::Error>> {
-    let status = std::process::Command::new("ffmpeg")
+    let output = std::process::Command::new("ffmpeg")
         .args([
             "-y", "-i", input,
             "-ar", &sample_rate.to_string(), "-ac", "1", "-sample_fmt", "s16",
             "-f", "wav", output,
         ])
-        .status()
-        .map_err(|e| format!("ffmpeg failed: {e}"))?;
-    if !status.success() {
-        return Err("ffmpeg conversion failed".into());
+        .output()
+        .map_err(|e| format!("ffmpeg spawn failed: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffmpeg conversion failed: {stderr}").into());
     }
     Ok(())
 }
