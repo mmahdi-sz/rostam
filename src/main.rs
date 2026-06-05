@@ -10,7 +10,7 @@ mod i18n;
 mod modules;
 mod youtube;
 
-use bot::{send_text, send_start_menu, edit_to_start_menu, CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB};
+use bot::{send_text, send_start_menu, edit_to_start_menu, edit_to_ai_lab, CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB, CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT};
 use emoji::panel::CB_START_PANEL;
 use config::bot_token;
 use cookie_pool::{CookiePool, CookieSource};
@@ -419,10 +419,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .callback_query_id(callback_query.id)
                                 .build(),
                         ).await;
-                        if cb_chat_id != 0 {
-                            let _ = send_text(&api, cb_chat_id, &t("start.ai_lab_soon")).await;
+                        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+                            let r = edit_to_ai_lab(&api, message.chat.id, message.message_id).await;
+                            log_trace(trace_id, "cb_start_ai_lab_done", &format!("ok={}", r.is_ok()));
                         }
-                        log_trace(trace_id, "cb_start_ai_lab_done", "");
+                        continue;
+                    }
+                    if matches!(callback_query.data.as_deref(), Some(d) if d == CB_AI_DENOISE || d == CB_AI_UPSCALE || d == CB_AI_STT) {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "cb_ai_feature", &format!("user_id={cb_user_id} data={cb_data:?}"));
+                        let _ = api.answer_callback_query(
+                            &AnswerCallbackQueryParams::builder()
+                                .callback_query_id(callback_query.id)
+                                .text(t("start.ai_lab_soon"))
+                                .show_alert(false)
+                                .build(),
+                        ).await;
                         continue;
                     }
                     eprintln!(
