@@ -5,13 +5,20 @@ use frankenstein::{
     types::{InlineKeyboardMarkup, MessageEntity, ReplyMarkup},
 };
 
+use rand::Rng;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
-use crate::emoji::panel::btn_icon;
+use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
 use crate::i18n::{entities_for_text, t};
 
 pub const CB_START_EMOJI: &str = "start:emoji";
 pub const CB_START_YOUTUBE: &str = "start:youtube";
 pub const CB_START_PANEL: &str = "start:panel";
+pub const CB_START_AI_LAB: &str = "start:ai_lab";
+pub const CB_AI_DENOISE: &str = "ai:denoise";
+pub const CB_AI_UPSCALE: &str = "ai:upscale";
+pub const CB_AI_STT: &str = "ai:stt";
 
 pub async fn send_text(
     api: &Bot,
@@ -158,15 +165,67 @@ pub async fn send_start_menu(
     Ok(())
 }
 
+static LAST_AI_ICON_IDX: AtomicUsize = AtomicUsize::new(usize::MAX);
+
 pub fn start_menu_keyboard() -> InlineKeyboardMarkup {
+    const AI_ICONS: &[&str] = &["gemini_logo", "chatgpt_logo", "claude_logo", "animated_bot_emoji"];
+    let last = LAST_AI_ICON_IDX.load(Ordering::Relaxed);
+    let idx = {
+        let mut rng = rand::thread_rng();
+        let mut i = rng.gen_range(0..AI_ICONS.len());
+        if i == last && AI_ICONS.len() > 1 {
+            i = (i + 1) % AI_ICONS.len();
+        }
+        i
+    };
+    LAST_AI_ICON_IDX.store(idx, Ordering::Relaxed);
+    let icon = AI_ICONS[idx];
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
-            vec![
-                btn_icon(&t("start.emoji_button"), CB_START_EMOJI, "panel"),
-                btn_icon(&t("start.youtube_button"), CB_START_YOUTUBE, "clapper"),
-            ],
+            vec![btn_icon_success(&t("start.ai_lab_button"), CB_START_AI_LAB, icon)],
+            vec![btn_icon_danger(&t("start.youtube_button"), CB_START_YOUTUBE, "clapper")],
+            vec![btn_icon(&t("start.emoji_button"), CB_START_EMOJI, "panel")],
         ])
         .build()
+}
+
+pub fn ai_lab_keyboard() -> InlineKeyboardMarkup {
+    use frankenstein::types::InlineKeyboardButton;
+    let btn = |text: &str, cb: &str| InlineKeyboardButton {
+        text: text.to_string(),
+        callback_data: Some(cb.to_string()),
+        style: None, icon_custom_emoji_id: None, url: None, login_url: None,
+        web_app: None, switch_inline_query: None, switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None, copy_text: None, callback_game: None, pay: None,
+    };
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![
+            vec![btn(&t("start.ai_denoise_button"), CB_AI_DENOISE)],
+            vec![btn(&t("start.ai_upscale_button"), CB_AI_UPSCALE)],
+            vec![btn(&t("start.ai_stt_button"), CB_AI_STT)],
+            vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
+        ])
+        .build()
+}
+
+pub async fn edit_to_ai_lab(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let text = t("start.ai_lab_title");
+    let entities = entities_for_text(&text);
+    let mut params = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(&text)
+        .reply_markup(ai_lab_keyboard())
+        .build();
+    if !entities.is_empty() {
+        params.entities = Some(entities);
+    }
+    api.edit_message_text(&params).await?;
+    Ok(())
 }
 
 pub async fn edit_to_start_menu(

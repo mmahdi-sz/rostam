@@ -61,6 +61,10 @@ pub async fn handle_emoji_flow_message(
             eprintln!("[emoji_msg trace={trace_id} event=handler_call] handler=flow_misc::test_text");
             flow_misc::handle_test_text(api, message, chat_id, user_id, flow_manager).await
         }
+        FlowState::AwaitingSttConfig { .. } | FlowState::AwaitingSttAudio { .. } => {
+            eprintln!("[emoji_msg trace={trace_id} event=stt_skip] — handled in main");
+            false
+        }
     }
 }
 
@@ -73,5 +77,7 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingImportFile => "AwaitingImportFile",
         FlowState::AwaitingImportMode { .. } => "AwaitingImportMode",
         FlowState::AwaitingTestText => "AwaitingTestText",
+        FlowState::AwaitingSttConfig { .. } => "AwaitingSttConfig",
+        FlowState::AwaitingSttAudio { .. } => "AwaitingSttAudio",
     }
 }
