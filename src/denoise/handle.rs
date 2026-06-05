@@ -315,11 +315,19 @@ async fn download_file(api: &Bot, file_id: &str, dest: &str) -> Result<(), Box<d
 
     log_trace(next_trace_id(), "denoise_file_path", &format!("file_path={file_path}"));
 
+    // Local Bot API returns an absolute filesystem path in --local mode.
+    // In that case, copy directly from the filesystem.
+    if file_path.starts_with('/') {
+        std::fs::copy(&file_path, dest)?;
+        log_trace(next_trace_id(), "denoise_file_local_copy", &format!("size={}", std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0)));
+        return Ok(());
+    }
+
     let url = if let Some(base) = crate::config::bot_api_base_url() {
         let base = base.trim_end_matches('/');
-        format!("{base}/file/bot{}/{}", crate::config::bot_token()?, file_path)
+        format!("{base}/file/bot{}/{file_path}", crate::config::bot_token()?)
     } else {
-        format!("https://api.telegram.org/file/bot{}/{}", crate::config::bot_token()?, file_path)
+        format!("https://api.telegram.org/file/bot{}/{file_path}", crate::config::bot_token()?)
     };
 
     let response = reqwest::get(&url).await?;
