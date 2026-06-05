@@ -890,9 +890,12 @@ Removes the Gemini AI watermark from images using the `gwt-mini` binary (v0.3.1)
 ### Architecture
 
 - **Binary**: `files/runtime/gwt-mini` — statically compiled, called as subprocess.
-- **Args**: `-i {input} -o {output} --quiet --no-banner`
-- **Exit codes**: 0 = watermark removed; 1 + `[SKIP]` in stdout = no watermark detected (soft); other non-zero = hard failure.
-- `remove.rs` strips ANSI escape codes from stdout, then checks for `[SKIP]`/`no watermark detected`/`skipped` before treating non-zero as error.
+- **Base args**: `-i {input} -o {output} --denoise telea --radius 20 --quiet --no-banner`
+- **Two-stage detection**: attempt 1 uses current watermark profile; if `[SKIP]`, attempt 2 retries with `--legacy` (pre-Gemini-3.5 profile).
+- **Why two stages**: gwt-mini v0.3.1 has a bug where `--denoise` silently disables its automatic current→legacy fallback. We re-implement the fallback explicitly.
+- **Why TELEA + radius 20**: the binary's alpha-map removal only fades the watermark to ~50% (alpha range 0.0–0.5137). TELEA inpainting at radius 20 fills the residual sparkle and JPEG ringing for a clean output. AI denoise is slower (≈10s via llvmpipe CPU) and leaves visible artifacts.
+- **Exit codes**: 0 = watermark removed; 1 + `[SKIP]` in stdout = no watermark detected (soft, treated as `NoWatermarkDetected`); other non-zero = hard failure.
+- `remove.rs` strips ANSI escape codes from stdout/stderr, logs full output of every attempt (not truncated), and reports `attempt=N` + `profile=current/legacy` so failures are diagnosable without re-running.
 - **Rust module**: `src/gemini_watermark/` — `remove.rs` spawns binary via `tokio::task::spawn_blocking`.
 
 ### Flow
