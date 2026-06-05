@@ -26,6 +26,7 @@ pub enum FlowState {
     AwaitingImportMode { sql: String },
     AwaitingSttConfig { config: SttConfig },
     AwaitingSttAudio { config: SttConfig },
+    AwaitingDenoiseAudio,
 }
 
 #[derive(Debug, Default)]

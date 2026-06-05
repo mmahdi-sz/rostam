@@ -10,10 +10,12 @@ mod i18n;
 mod modules;
 mod youtube;
 mod stt;
+mod denoise;
 
-use bot::{send_text, send_start_menu, edit_to_start_menu, edit_to_ai_lab, CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB, CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT};
+use bot::{send_text, send_start_menu, edit_to_start_menu, edit_to_ai_lab, CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB, CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_DENOISE_CANCEL};
 use emoji::panel::CB_START_PANEL;
 use stt::handle::{enter_stt_config, handle_stt_callback, handle_stt_audio};
+use denoise::{enter_denoise, handle_denoise_audio};
 use stt::config::CB_STT_CANCEL;
 use config::bot_token;
 use cookie_pool::{CookiePool, CookieSource};
@@ -306,6 +308,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 continue;
                             }
                         }
+                        if matches!(flow_manager.get(uid), FlowState::AwaitingDenoiseAudio) {
+                            if message.voice.is_some() || message.audio.is_some() || message.document.is_some() {
+                                handle_denoise_audio(&api, &message, uid, &mut flow_manager).await;
+                                continue;
+                            }
+                        }
                     }
 
                     if let Some(text) = message.text.as_deref() {
@@ -436,9 +444,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         continue;
                     }
-                    if matches!(callback_query.data.as_deref(), Some(d) if d == CB_AI_DENOISE || d == CB_AI_UPSCALE) {
+                    if callback_query.data.as_deref() == Some(CB_AI_DENOISE) {
                         let trace_id = next_trace_id();
-                        log_trace(trace_id, "cb_ai_feature", &format!("user_id={cb_user_id} data={cb_data:?}"));
+                        log_trace(trace_id, "cb_ai_denoise_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
+                        let _ = api.answer_callback_query(
+                            &AnswerCallbackQueryParams::builder()
+                                .callback_query_id(callback_query.id)
+                                .build(),
+                        ).await;
+                        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+                            enter_denoise(
+                                &api, message.chat.id, message.message_id,
+                                cb_user_id as i64, &mut flow_manager,
+                            ).await;
+                        }
+                        continue;
+                    }
+                    if callback_query.data.as_deref() == Some(CB_AI_UPSCALE) {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "cb_ai_upscale", &format!("user_id={cb_user_id}"));
                         let _ = api.answer_callback_query(
                             &AnswerCallbackQueryParams::builder()
                                 .callback_query_id(callback_query.id)
@@ -458,6 +482,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ).await;
                         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
                             enter_stt_config(
+                                &api, message.chat.id, message.message_id,
+                                cb_user_id as i64, &mut flow_manager,
+                            ).await;
+                        }
+                        continue;
+                    }
+                    if callback_query.data.as_deref() == Some(CB_DENOISE_CANCEL) {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "denoise_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
+                        let _ = api.answer_callback_query(
+                            &AnswerCallbackQueryParams::builder()
+                                .callback_query_id(callback_query.id)
+                                .build(),
+                        ).await;
+                        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+                            denoise::handle_denoise_cancel(
                                 &api, message.chat.id, message.message_id,
                                 cb_user_id as i64, &mut flow_manager,
                             ).await;
