@@ -11,10 +11,11 @@ git add <changed files>
 git commit -m "..."
 ```
 
-2. Restart the service:
+2. Restart the relevant service(s):
 
 ```bash
-systemctl restart abc
+systemctl restart abc          # Rust bot
+systemctl restart separation   # Python separation service (only if changed)
 ```
 
 Always do both steps — commit first, then restart.
@@ -342,6 +343,7 @@ files/models/vosk/vosk-model-fa-0.5-small  — Vosk Persian small model
 files/models/vosk/vosk-model-en-us-0.42  — Vosk English large model (300MB+)
 files/models/vosk/vosk-model-en-us-0.42-small  — Vosk English small model
 files/models/deepfilter/DeepFilterNet3_onnx.tar.gz  — DeepFilterNet3 model (extracted at startup)
+separation-service/models/Kim_Vocal_2.onnx  — MDX-Net vocal separation model (downloaded by install.sh)
 ```
 
 Build setup (build.rs):
@@ -353,9 +355,10 @@ DeepFilterNet3 model tarball is extracted to `files/models/deepfilter/DeepFilter
 (or manually: `tar xzf files/models/deepfilter/DeepFilterNet3_onnx.tar.gz -C files/models/deepfilter/`).
 
 Required system packages:
-- `ffmpeg` — audio conversion (16kHz mono 16-bit PCM WAV)
+- `ffmpeg` — audio conversion (16kHz mono 16-bit PCM WAV) + ffprobe for duration detection
 - `libvulkan1` + `mesa-vulkan-drivers` — Vulkan runtime for Real-ESRGAN NCNN (uses llvmpipe software rendering on CPU if no GPU)
 - `libvosk.so` compatible with the `vosk = "0.3"` crate
+- Python 3 + pip — for separation-service venv (run `separation-service/install.sh` once)
 
 ## Project Summary
 
@@ -374,7 +377,7 @@ The bot currently supports:
 - Local bare Git server under `git-server/ros-telegram-bot.git`
 - Full emoji management panel (`/emoji`)
 - Full YouTube downloader: URL detection → preview → quality/codec/audio/subtitle selection → yt-dlp download → upload via local Bot API → cancel button
-- AI Lab submenu: Speech-to-Text (Vosk ASR + DeepFilterNet3), noise removal (DeepFilterNet3), image upscale (Real-ESRGAN NCNN Vulkan)
+- AI Lab submenu: Speech-to-Text (Vosk ASR + DeepFilterNet3), noise removal (DeepFilterNet3), image upscale (Real-ESRGAN NCNN Vulkan), vocal/instrumental separation (audio-separator + Kim_Vocal_2.onnx via Python FastAPI microservice)
 
 Secrets are not tracked. `.env`, `target/`, and `git-server/` are ignored.
 
@@ -551,6 +554,10 @@ skipped), so commands always reach step 5.
 | `AwaitingImportMode` | file analyzed | import mode button pressed |
 | `AwaitingSttConfig` | `ai:stt` button | lang/size/denoise chosen → `AwaitingSttAudio` |
 | `AwaitingSttAudio` | lang chosen in config | audio message received → transcribe |
+| `AwaitingDenoiseAudio` | `ai:denoise` button | audio message received → denoise |
+| `AwaitingUpscaleImage` | `ai:upscale` button | image received → upscale; stores `model_name`, `scale_factor`, `anime_expanded` |
+| `AwaitingSeparation` | `ai:sep` button | audio message received → show mode keyboard |
+| `AwaitingSeparationMode` | audio received | mode button pressed → separate; stores `file_id`, `filename`, `prompt_msg_id` |
 
 ### Adding Emojis — Accepted Input Types
 
@@ -699,6 +706,11 @@ src/emoji/flow.rs
 src/emoji/handler/                   — all callback + message handlers
 src/upscale/mod.rs                   — upscale module exports
 src/upscale/handle.rs                — upscale flow: model selection, image processing, report
+src/separation/mod.rs                — separation module exports
+src/separation/types.rs              — SeparationMode, SeparationResult
+src/separation/error.rs              — SeparationError enum
+src/separation/client.rs             — separate_audio(): multipart POST to Python service, base64 decode
+src/separation/handle.rs             — enter_separation, handle_separation_audio, handle_separation_callback
 src/emoji/panel/                     — keyboard builders, text formatters, CB_* constants, btn_* helpers
 src/emoji/store/                     — all DB queries
 src/emoji/smart_name.rs
@@ -781,6 +793,90 @@ eventهای اصلی: `start`, `login_check`, `kill_existing`, `firefox_open`, `
 1. یک پروفایل فایرفاکس جدید بساز و با اکانت Google لاگین کن
 2. مطمئن شو `cookies.sqlite` در پروفایل وجود داره
 3. `systemctl restart abc` — کشف خودکار انجام می‌شه
+
+## Image Upscale (Real-ESRGAN)
+
+Fully implemented. Upscales images using Real-ESRGAN NCNN Vulkan (llvmpipe CPU rendering).
+
+### Models
+
+| Button label | Model name | Scale |
+|---|---|---|
+| عمومی x4 (default) | `realesrgan-x4plus` | 4x |
+| انیمه حرفه‌ای x4 | `realesrgan-x4plus-anime` | 4x |
+| انیمه x4 | `realesr-animevideov3-x4` | 4x |
+| انیمه x3 | `realesr-animevideov3-x3` | 3x |
+| انیمه x2 | `realesr-animevideov3-x2` | 2x |
+
+### Keyboard UI
+
+- 2 top-level buttons: "عمومی x4" and "انیمه و کارتون ▼"
+- Clicking "انیمه و کارتون" expands/collapses 4 anime sub-buttons (toggle)
+- `anime_expanded: bool` stored in `FlowState::AwaitingUpscaleImage` — NOT derived from model name
+- Active model highlighted with ✅ and `ButtonStyle::Primary`
+
+### Flow states
+
+`FlowState::AwaitingUpscaleImage { scale_factor, model_name, anime_expanded }` — all three fields required.
+
+### Callback prefixes
+
+```text
+upscale:model:{model_name}   — model selected
+upscale:anime_toggle         — expand/collapse anime submenu
+upscale:cancel               — cancel → back to AI Lab
+```
+
+## Vocal/Instrumental Separation
+
+Fully implemented. Splits audio into vocals + instrumental using Kim_Vocal_2.onnx (MDX-Net model).
+
+### Architecture
+
+- **Python microservice** (`separation-service/`): FastAPI on port 6589, loads model at startup.
+- **Rust client** (`src/separation/client.rs`): multipart POST, 10-min timeout, inline base64 decoder.
+- **systemd unit**: `separation.service` — runs `separation-service/start.sh`, `Restart=always`.
+
+### Setup (first time)
+
+```bash
+bash separation-service/install.sh   # creates venv, installs deps, downloads model
+systemctl enable separation && systemctl start separation
+```
+
+### Flow
+
+1. AI Lab → جداسازی صدا از موزیک → state: `AwaitingSeparation`
+2. User sends audio/voice/document → mode keyboard shown (کیفیت بالا / سریع / لغو)
+3. State transitions to `AwaitingSeparationMode { file_id, filename, prompt_msg_id }`
+4. User taps mode → editing message to ⏳ → download audio → POST to Python service
+5. Service returns `{ vocals: base64_wav, instrumental: base64_wav, duration_seconds: f64 }`
+6. Two audio files sent (vocals.wav + instrumental.wav), processing message deleted
+
+### Python service details
+
+- Model: `Kim_Vocal_2.onnx` stored in `separation-service/models/`
+- Load model with filename (`.onnx`), not display name
+- `overlap`: quality=0.50, fast=0.25
+- `OMP_NUM_THREADS=16` for ONNX Runtime
+- One request at a time via `asyncio.Lock`
+- Max file size: 50MB; validates with ffprobe before processing
+- Health check: `curl http://127.0.0.1:6589/health` → `{"status":"ok","model_loaded":true}`
+
+### Callback prefixes
+
+```text
+sep:quality:{orig_msg_id}   — quality mode selected
+sep:fast:{orig_msg_id}      — fast mode selected
+sep:cancel:{msg_id}         — cancel → back to AI Lab
+```
+
+### Log grep
+
+```bash
+journalctl -u abc -f | grep separation        # Rust side
+journalctl -u separation -f                   # Python side
+```
 
 ## Git Server
 

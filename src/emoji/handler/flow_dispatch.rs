@@ -73,6 +73,10 @@ pub async fn handle_emoji_flow_message(
             eprintln!("[emoji_msg trace={trace_id} event=upscale_skip] — handled in main");
             false
         }
+        FlowState::AwaitingSeparation | FlowState::AwaitingSeparationMode { .. } => {
+            eprintln!("[emoji_msg trace={trace_id} event=separation_skip] — handled in main");
+            false
+        }
     }
 }
 
@@ -89,5 +93,7 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingSttAudio { .. } => "AwaitingSttAudio",
         FlowState::AwaitingDenoiseAudio => "AwaitingDenoiseAudio",
         FlowState::AwaitingUpscaleImage { .. } => "AwaitingUpscaleImage",
+        FlowState::AwaitingSeparation => "AwaitingSeparation",
+        FlowState::AwaitingSeparationMode { .. } => "AwaitingSeparationMode",
     }
 }
