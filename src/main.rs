@@ -298,6 +298,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
 
+                    // /start همیشه اولویت داره — هر flow ای رو کنسل می‌کنه
+                    if let (Some(uid), Some("/start")) = (user_id, message.text.as_deref()) {
+                        flow_manager.clear(uid);
+                        send_start_menu(&api, message.chat.id).await?;
+                        continue;
+                    }
+
                     if user_id.is_some()
                         && !matches!(flow_manager.get(user_id.unwrap()), FlowState::Idle)
                     {
