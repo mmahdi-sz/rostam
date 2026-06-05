@@ -159,18 +159,23 @@ def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str)
 
         log.info(f"[separation trace={trace_id} event=separator_output] files={output_files}")
 
-        # Find vocals and instrumental output files
+        # Find vocals and instrumental output files.
+        # Check instrumental FIRST — output filenames contain model name (Kim_Vocal_2)
+        # so both files have "vocal" in their path. We identify instrumental by its
+        # stem tag, then treat the remaining file as vocals.
         vocals_path = None
         instrumental_path = None
         for path in output_files:
-            lower = path.lower()
-            if "vocal" in lower:
-                vocals_path = path
-            elif "instrument" in lower or "no_vocal" in lower or "accompaniment" in lower or "karaoke" in lower:
+            lower = os.path.basename(path).lower()
+            if "(instrumental)" in lower or "no_vocal" in lower or "accompaniment" in lower or "karaoke" in lower:
                 instrumental_path = path
+            elif "(vocals)" in lower or "(vocal)" in lower:
+                vocals_path = path
 
+        # Fallback: if stem tags not found, use file index order from audio-separator
+        # (index 0 = vocals stem, index 1 = instrumental stem for Kim_Vocal_2)
         if not vocals_path or not instrumental_path:
-            # Fall back: first file = vocals, second = instrumental
+            log.warning(f"[separation trace={trace_id} event=stem_tag_fallback] files={output_files}")
             if len(output_files) >= 2:
                 vocals_path = output_files[0]
                 instrumental_path = output_files[1]
