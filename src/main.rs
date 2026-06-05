@@ -10,7 +10,7 @@ mod i18n;
 mod modules;
 mod youtube;
 
-use bot::{send_text, send_start_menu, edit_to_start_menu, CB_START_EMOJI, CB_START_YOUTUBE};
+use bot::{send_text, send_start_menu, edit_to_start_menu, CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB};
 use emoji::panel::CB_START_PANEL;
 use config::bot_token;
 use cookie_pool::{CookiePool, CookieSource};
@@ -409,6 +409,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let r = edit_to_start_menu(&api, message.chat.id, message.message_id).await;
                             log_trace(trace_id, "cb_start_panel_done", &format!("ok={}", r.is_ok()));
                         }
+                        continue;
+                    }
+                    if callback_query.data.as_deref() == Some(CB_START_AI_LAB) {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "cb_start_ai_lab", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
+                        let _ = api.answer_callback_query(
+                            &AnswerCallbackQueryParams::builder()
+                                .callback_query_id(callback_query.id)
+                                .build(),
+                        ).await;
+                        if cb_chat_id != 0 {
+                            let _ = send_text(&api, cb_chat_id, &t("start.ai_lab_soon")).await;
+                        }
+                        log_trace(trace_id, "cb_start_ai_lab_done", "");
                         continue;
                     }
                     eprintln!(

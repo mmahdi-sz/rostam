@@ -5,13 +5,16 @@ use frankenstein::{
     types::{InlineKeyboardMarkup, MessageEntity, ReplyMarkup},
 };
 
+use rand::seq::SliceRandom;
+
 use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
-use crate::emoji::panel::{btn_icon, btn_icon_danger};
+use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
 use crate::i18n::{entities_for_text, t};
 
 pub const CB_START_EMOJI: &str = "start:emoji";
 pub const CB_START_YOUTUBE: &str = "start:youtube";
 pub const CB_START_PANEL: &str = "start:panel";
+pub const CB_START_AI_LAB: &str = "start:ai_lab";
 
 pub async fn send_text(
     api: &Bot,
@@ -159,10 +162,13 @@ pub async fn send_start_menu(
 }
 
 pub fn start_menu_keyboard() -> InlineKeyboardMarkup {
+    const AI_ICONS: &[&str] = &["gemini_logo", "chatgpt_logo", "claude_logo", "animated_bot_emoji"];
+    let icon = AI_ICONS.choose(&mut rand::thread_rng()).copied().unwrap_or("animated_bot_emoji");
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![btn_icon_danger(&t("start.youtube_button"), CB_START_YOUTUBE, "clapper")],
             vec![btn_icon(&t("start.emoji_button"), CB_START_EMOJI, "panel")],
+            vec![btn_icon_success(&t("start.ai_lab_button"), CB_START_AI_LAB, icon)],
         ])
         .build()
 }
