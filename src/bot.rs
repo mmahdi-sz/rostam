@@ -9,7 +9,7 @@ use rand::Rng;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
-use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
+use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success, btn_success};
 use crate::i18n::{entities_for_text, t};
 
 pub const CB_START_EMOJI: &str = "start:emoji";
@@ -193,21 +193,13 @@ pub fn start_menu_keyboard() -> InlineKeyboardMarkup {
 }
 
 pub fn ai_lab_keyboard() -> InlineKeyboardMarkup {
-    use frankenstein::types::InlineKeyboardButton;
-    let btn = |text: &str, cb: &str| InlineKeyboardButton {
-        text: text.to_string(),
-        callback_data: Some(cb.to_string()),
-        style: None, icon_custom_emoji_id: None, url: None, login_url: None,
-        web_app: None, switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None, callback_game: None, pay: None,
-    };
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
-            vec![btn(&t("start.ai_denoise_button"), CB_AI_DENOISE)],
-            vec![btn(&t("start.ai_upscale_button"), CB_AI_UPSCALE)],
-            vec![btn(&t("start.ai_stt_button"), CB_AI_STT)],
-            vec![btn(&t("start.ai_sep_button"), CB_AI_SEP)],
-            vec![btn(&t("start.ai_gwm_button"), CB_AI_GWM)],
+            vec![btn_success(&t("start.ai_denoise_button"), CB_AI_DENOISE)],
+            vec![btn_icon_success(&t("start.ai_upscale_button"), CB_AI_UPSCALE, "sparkles")],
+            vec![btn_success(&t("start.ai_stt_button"), CB_AI_STT)],
+            vec![btn_success(&t("start.ai_sep_button"), CB_AI_SEP)],
+            vec![btn_icon_success(&t("start.ai_gwm_button"), CB_AI_GWM, "gemini_logo")],
             vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
         ])
         .build()
