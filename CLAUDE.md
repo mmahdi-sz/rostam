@@ -332,6 +332,12 @@ Required files — all tracked in the repo under `files/`:
 files/runtime/libvosk.so            — Vosk native library (vosk crate FFI)
 files/runtime/deep-filter            — DeepFilterNet3 statically-linked musl binary
 files/models/vosk/vosk-model-fa-0.5  — Vosk Persian large model
+files/realesrgan/realesrgan-ncnn-vulkan  — Real-ESRGAN NCNN Vulkan binary
+files/realesrgan/models/realesr-animevideov3-x2.param/.bin  — Anime upscale x2
+files/realesrgan/models/realesr-animevideov3-x3.param/.bin  — Anime upscale x3
+files/realesrgan/models/realesr-animevideov3-x4.param/.bin  — Anime upscale x4
+files/realesrgan/models/realesrgan-x4plus-anime.param/.bin  — Anime pro upscale x4
+files/realesrgan/models/realesrgan-x4plus.param/.bin  — General upscale x4
 files/models/vosk/vosk-model-fa-0.5-small  — Vosk Persian small model
 files/models/vosk/vosk-model-en-us-0.42  — Vosk English large model (300MB+)
 files/models/vosk/vosk-model-en-us-0.42-small  — Vosk English small model
@@ -348,6 +354,7 @@ DeepFilterNet3 model tarball is extracted to `files/models/deepfilter/DeepFilter
 
 Required system packages:
 - `ffmpeg` — audio conversion (16kHz mono 16-bit PCM WAV)
+- `libvulkan1` + `mesa-vulkan-drivers` — Vulkan runtime for Real-ESRGAN NCNN (uses llvmpipe software rendering on CPU if no GPU)
 - `libvosk.so` compatible with the `vosk = "0.3"` crate
 
 ## Project Summary
@@ -367,7 +374,7 @@ The bot currently supports:
 - Local bare Git server under `git-server/ros-telegram-bot.git`
 - Full emoji management panel (`/emoji`)
 - Full YouTube downloader: URL detection → preview → quality/codec/audio/subtitle selection → yt-dlp download → upload via local Bot API → cancel button
-- AI Lab submenu with Speech-to-Text (Vosk ASR + DeepFilterNet3 noise reduction)
+- AI Lab submenu: Speech-to-Text (Vosk ASR + DeepFilterNet3), noise removal (DeepFilterNet3), image upscale (Real-ESRGAN NCNN Vulkan)
 
 Secrets are not tracked. `.env`, `target/`, and `git-server/` are ignored.
 
@@ -690,6 +697,8 @@ src/emoji/mod.rs
 src/emoji/cache/                     — EmojiCache, {key} expansion, 5-min refresh task
 src/emoji/flow.rs
 src/emoji/handler/                   — all callback + message handlers
+src/upscale/mod.rs                   — upscale module exports
+src/upscale/handle.rs                — upscale flow: model selection, image processing, report
 src/emoji/panel/                     — keyboard builders, text formatters, CB_* constants, btn_* helpers
 src/emoji/store/                     — all DB queries
 src/emoji/smart_name.rs
