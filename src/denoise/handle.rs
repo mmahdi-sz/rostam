@@ -103,8 +103,20 @@ pub async fn handle_denoise_audio(
     let is_audio = message.audio.is_some();
     let is_doc = message.document.is_some();
     let orig_ext = detect_format(message);
+
+    // Extract original filename for output naming
+    let orig_stem = message
+        .audio.as_ref().and_then(|a| a.file_name.as_deref())
+        .or_else(|| message.document.as_ref().and_then(|d| d.file_name.as_deref()))
+        .and_then(|name| {
+            let dot = name.rfind('.')?;
+            Some(&name[..dot])
+        })
+        .unwrap_or("voice");
+    let clean_filename = format!("{orig_stem}_clean.{orig_ext}");
+
     log_trace(trace_id, "denoise_audio_received", &format!(
-        "user_id={user_id} chat_id={chat_id} voice={is_voice} audio={is_audio} doc={is_doc} ext={orig_ext}"
+        "user_id={user_id} chat_id={chat_id} voice={is_voice} audio={is_audio} doc={is_doc} ext={orig_ext} stem={orig_stem} clean={clean_filename}"
     ));
 
     let _ = send_text(api, chat_id, &t("denoise.preparing")).await;
@@ -115,7 +127,7 @@ pub async fn handle_denoise_audio(
     let input_path = work_dir.join(format!("input.{}", orig_ext));
     let wav_path = work_dir.join("denoise_input.wav");
     let denoised_path = work_dir.join("denoised.wav");
-    let output_path = work_dir.join(format!("output.{}", orig_ext));
+    let output_path = work_dir.join(&clean_filename);
 
     // 1. Download
     if let Err(e) = download_file(api, file_id, input_path.to_str().unwrap()).await {
