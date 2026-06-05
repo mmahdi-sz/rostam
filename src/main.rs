@@ -281,6 +281,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for update in updates {
             params.offset = Some(update.update_id as i64 + 1);
 
+            // DEV_MODE: فقط ادمین می‌تونه استفاده کنه
+            if config::dev_mode() {
+                let admin = config::admin_user_id();
+                let sender = match &update.content {
+                    UpdateContent::Message(m) => m.from.as_ref().map(|u| u.id as i64),
+                    UpdateContent::CallbackQuery(c) => Some(c.from.id as i64),
+                    _ => None,
+                };
+                if sender.is_some() && sender != admin {
+                    eprintln!("[dev_mode] blocked user_id={:?}", sender);
+                    continue;
+                }
+            }
+
             match update.content {
                 UpdateContent::Message(message) => {
                     let user_id = message.from.as_ref().map(|u| u.id as i64);

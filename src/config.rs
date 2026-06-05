@@ -13,6 +13,12 @@ pub fn bot_api_base_url() -> Option<String> {
     config_value("BOT_API_BASE_URL")
 }
 
+pub fn dev_mode() -> bool {
+    config_value("DEV_MODE")
+        .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+}
+
 pub fn config_value(key: &str) -> Option<String> {
     value_from_env_file(".env", key)
         .or_else(|| value_from_env_file("/etc/default/abc", key))
