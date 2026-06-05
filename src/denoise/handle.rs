@@ -186,10 +186,13 @@ pub async fn handle_denoise_audio(
     }
 
     // 6. Send report
+    let duration_str = escape_md(&format!("{:.1}", audio_duration));
+    let processing_str = escape_md(&format!("{:.1}", processing_secs));
+    let ratio_str = escape_md(&format!("{:.1}", efficiency));
     let report = tf("denoise.report", &[
-        ("duration", &format!("{:.1}", audio_duration)),
-        ("processing", &format!("{:.1}", processing_secs)),
-        ("ratio", &format!("{:.1}", efficiency)),
+        ("duration", &duration_str),
+        ("processing", &processing_str),
+        ("ratio", &ratio_str),
     ]);
     let _ = send_text_md(api, chat_id, &report).await;
     log_trace(trace_id, "denoise_report_sent", &format!("duration={audio_duration:.1}s processing={processing_secs:.1}s"));
@@ -317,6 +320,17 @@ async fn download_file(api: &Bot, file_id: &str, dest: &str) -> Result<(), Box<d
     let bytes = response.bytes().await?;
     std::fs::write(dest, &bytes)?;
     Ok(())
+}
+
+/// Escape MarkdownV2 special characters in dynamic text.
+/// Does NOT touch `*` since those may be formatting markers in the i18n template.
+fn escape_md(s: &str) -> String {
+    s.chars().map(|c| match c {
+        '_' | '[' | ']' | '(' | ')' | '~' | '`' | '>' | '#' | '+' | '-' | '=' | '|' | '{' | '}' | '.' | '!' => {
+            format!("\\{c}")
+        }
+        other => other.to_string(),
+    }).collect()
 }
 
 fn clean_up(dir: &std::path::Path) {
