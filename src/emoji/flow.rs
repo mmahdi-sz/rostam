@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::stt::types::SttConfig;
+
 #[derive(Debug, Clone)]
 pub struct PendingEmoji {
     pub custom_emoji_id: String,
@@ -22,6 +24,8 @@ pub enum FlowState {
     AwaitingTestText,
     AwaitingImportFile,
     AwaitingImportMode { sql: String },
+    AwaitingSttConfig { config: SttConfig },
+    AwaitingSttAudio { config: SttConfig },
 }
 
 #[derive(Debug, Default)]

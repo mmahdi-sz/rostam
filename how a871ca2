@@ -1,0 +1,984 @@
+[33mcommit b9de5807d689f5759fdf3ee648ad8d143f5387db[m
+Author: Codex <codex@local>
+Date:   Thu Jun 4 18:57:36 2026 +0000
+
+    Switch cookie pool from Firefox SQLite to Netscape cookies.txt
+    
+    YouTube rotates auth tokens (PSIDTS) on every open browser tab as
+    anti-abuse. The old --cookies-from-browser model caused race conditions
+    between Firefox and yt-dlp, and the cookie_refresher background task was
+    actively counterproductive (open tab → token rotation → stale cookies).
+    
+    New model:
+    - cookie_profiles/<name>.txt holds one Netscape cookies.txt per account
+    - yt-dlp uses --cookies <path> as both input and output (writes back
+      Set-Cookie updates on every run, so cookies stay fresh through use)
+    - Pool scans the directory at startup; ID = filename without .txt
+    - No browser ever opens the account again after initial export
+    
+    Removed:
+    - cookie_refresher module (no longer needed, was counterproductive)
+    - Firefox profile discovery (profiles.ini, materialize_profiles_cache)
+    - profile_dir / source_profile_dir / cookies_sqlite fields
+    - files/youtube_links.txt
+    
+    Migration: each account must be re-exported via the procedure in
+    cookie_profiles/README.md (incognito → login → robots.txt → export → close).
+    Long-lived auth cookies last months as long as the profile is never opened
+    in a browser again.
+    
+    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mindex a1cfd22..6c6d5ff 100644[m
+[1m--- a/.gitignore[m
+[1m+++ b/.gitignore[m
+[36m@@ -2,4 +2,6 @@[m
+ target/[m
+ git-server/[m
+ cookie_profiles_cache/[m
+[32m+[m[32mcookie_profiles/*.txt[m
+[32m+[m[32mcookie_profiles/*.txt.bak[m
+ [m
+[1mdiff --git a/CLAUDE.md b/CLAUDE.md[m
+[1mindex 97330b0..9b7039b 100644[m
+[1m--- a/CLAUDE.md[m
+[1m+++ b/CLAUDE.md[m
+[36m@@ -218,7 +218,7 @@[m [msrc/youtube/types.rs            — VideoInfo, VideoCodec, VideoFormatOption, Au[m
+ [m
+ 1. `main.rs` detects YouTube URL → creates `trace_id`.[m
+ 2. `handle_youtube_url()` immediately replies with a spinning `⏳` premium emoji (analyzing message).[m
+[31m-3. Firefox cookie selected from Cookie Pool. `fetch_video_info()` runs `yt-dlp --dump-single-json`.[m
+[32m+[m[32m3. Cookies.txt selected from Cookie Pool. `fetch_video_info()` runs `yt-dlp --cookies <path> --dump-single-json`.[m
+ 4. Analyzing message is deleted. Preview thumbnail/caption + description chunks sent.[m
+ 5. `send_quality_prompt()` stores a `YoutubeRequest` in `REQUESTS` (keyed by `request_id: u64`)[m
+    and sends the quality inline keyboard.[m
+[36m@@ -335,7 +335,7 @@[m [mThe bot currently supports:[m
+ - Telegram long polling with `getUpdates`[m
+ - `/start` command with a green inline button[m
+ - Reading `BOT_TOKEN` from `.env`, `/etc/default/abc`, or process env[m
+[31m-- Firefox Cookie Pool management for user `mahdi`[m
+[32m+[m[32m- Cookie Pool management via `cookie_profiles/*.txt` (Netscape format)[m
+ - Optional PostgreSQL persistence for Cookie Pool state[m
+ - systemd deployment through `abc.service`[m
+ - Local bare Git server under `git-server/ros-telegram-bot.git`[m
+[36m@@ -454,24 +454,6 @@[m [mOpens the emoji management panel. Clears any active flow for the user.[m
+ Sets an alias on an emoji item. Example: `/se 5 boss` or `/se sparkle1 star`.[m
+ Use `-` as alias to remove it.[m
+ [m
+[31m-```text[m
+[31m-/cookie_status[m
+[31m-```[m
+[31m-[m
+[31m-Shows Cookie Pool state.[m
+[31m-[m
+[31m-```text[m
+[31m-/cookie_next[m
+[31m-```[m
+[31m-[m
+[31m-Selects the next Firefox cookie profile and returns the `yt-dlp` browser spec.[m
+[31m-[m
+[31m-```text[m
+[31m-/cookie_429[m
+[31m-```[m
+[31m-[m
+[31m-Marks the last selected cookie as rate-limited and moves it to a 20-hour[m
+[31m-cooldown.[m
+ [m
+ ## Emoji Panel[m
+ [m
+[36m@@ -628,7 +610,7 @@[m [mWhen a user deletes their last pack, both `emoji_packs_id_seq` and[m
+ src/main.rs                          — event loop + routing[m
+ src/config.rs                        — BOT_TOKEN / DATABASE_URL / ADMIN_USER_ID reading[m
+ src/bot.rs                           — send_text, send_text_md, send_start_button[m
+[31m-src/cookie_pool.rs                   — CookiePool + format helpers + save_snapshot[m
+[32m+[m[32msrc/cookie_pool/                     — CookiePool + discover (.txt scan) + format + save_snapshot[m
+ src/i18n/mod.rs                      — t() / tf() / entities_for_text() / apply_premium_to_md()[m
+ src/i18n/emoji_map.rs                — EMOJI_MAP: visible char → emoji.panel.icons key[m
+ src/i18n/entities.rs                 — entities_for_text(): UTF-16 CustomEmoji entities[m
+[36m@@ -672,13 +654,39 @@[m [mSchema is created automatically at startup when `DATABASE_URL` is set.[m
+ [m
+ ## Cookie Pool Rules[m
+ [m
+[31m-Implemented in `src/cookie_pool.rs`.[m
+[32m+[m[32mImplemented in `src/cookie_pool/`.[m
+ [m
+[31m-- Pool discovered from Firefox profiles under `/home/mahdi/.mozilla/firefox`[m
+[32m+[m[32m- Pool discovered from `cookie_profiles/*.txt` (Netscape cookies.txt format).[m
+[32m+[m[32m  Filename without `.txt` is the cookie ID.[m
+[32m+[m[32m- Each cookie file is passed to yt-dlp via `--cookies <path>` (NOT[m
+[32m+[m[32m  `--cookies-from-browser`). yt-dlp writes back Set-Cookie updates after every[m
+[32m+[m[32m  run, so the file is the live source of truth.[m
+ - Maximum pool size: 20[m
+ - Selection excludes cookies in cooldown and `last_used_cookie`[m
+ - Selection is random from remaining pool[m
+[31m-- Cooldown duration: 20 hours, triggered only by `/cookie_429`[m
+[32m+[m[32m- Cooldown duration: 20 hours, triggered by 429 from yt-dlp[m
+[32m+[m
+[32m+[m[32m### Why cookies.txt instead of Firefox profiles[m
+[32m+[m
+[32m+[m[32mYouTube rotates auth tokens (`__Secure-1PSIDTS`, `__Secure-3PSIDTS`) on every[m
+[32m+[m[32mopen YouTube browser tab as anti-abuse. The previous architecture (Firefox[m
+[32m+[m[32m`--cookies-from-browser`) caused race conditions: Firefox would rotate tokens[m
+[32m+[m[32mon disk while yt-dlp was reading them, and any background "keep-alive" of the[m
+[32m+[m[32mprofile made things worse, not better.[m
+[32m+[m
+[32m+[m[32mThe cookies.txt model has a single owner (yt-dlp), no race conditions, and the[m
+[32m+[m[32mlong-lived auth cookies (`SID`, `__Secure-3PSID`) stay valid for months as long[m
+[32m+[m[32mas the account is never opened in a browser again.[m
+[32m+[m
+[32m+[m[32m### Account setup (one-time, manual)[m
+[32m+[m
+[32m+[m[32mSee `cookie_profiles/README.md` for the full procedure. Summary:[m
+[32m+[m
+[32m+[m[32m1. Private/incognito Firefox window → log in to YouTube[m
+[32m+[m[32m2. Navigate to `youtube.com/robots.txt` (avoid activity on home/feed)[m
+[32m+[m[32m3. Export `youtube.com` cookies with "Get cookies.txt LOCALLY" extension[m
+[32m+[m[32m4. Save to `cookie_profiles/<name>.txt`[m
+[32m+[m[32m5. Close window, never open that account in a browser again[m
+ [m
+ ## Git Server[m
+ [m
+[1mdiff --git a/cookie_profiles/README.md b/cookie_profiles/README.md[m
+[1mnew file mode 100644[m
+[1mindex 0000000..cbf36d3[m
+[1m--- /dev/null[m
+[1m+++ b/cookie_profiles/README.md[m
+[36m@@ -0,0 +1,56 @@[m
+[32m+[m[32m# cookie_profiles/[m
+[32m+[m
+[32m+[m[32mEach `*.txt` file in this directory is one YouTube account, in Netscape[m
+[32m+[m[32mcookies.txt format. The filename (without `.txt`) becomes the cookie ID[m
+[32m+[m[32mshown in the pool (`account1.txt` → `account1`).[m
+[32m+[m
+[32m+[m[32m## How to set up a new account[m
+[32m+[m
+[32m+[m[32mThe goal is to capture a fresh logged-in session **once**, then never[m
+[32m+[m[32mopen that account in a browser again. yt-dlp will keep the cookies alive[m
+[32m+[m[32mthrough normal use (it writes back `Set-Cookie` updates after every run).[m
+[32m+[m
+[32m+[m[32mWhy this matters: YouTube rotates auth tokens (`__Secure-3PSIDTS`, etc.)[m
+[32m+[m[32mon every open YouTube tab as anti-abuse. If you open the same account in[m
+[32m+[m[32ma browser later, the tokens get rotated and the yt-dlp cookies become[m
+[32m+[m[32mstale. So: log in → export → close → never open again.[m
+[32m+[m
+[32m+[m[32m### Steps[m
+[32m+[m
+[32m+[m[32m1. Open a **private/incognito** Firefox window (Ctrl+Shift+P).[m
+[32m+[m[32m2. Log in to YouTube with the account.[m
+[32m+[m[32m3. Navigate the tab to <https://www.youtube.com/robots.txt> (a static[m
+[32m+[m[32m   page that does not trigger session activity). **Do not** stay on the[m
+[32m+[m[32m   homepage or feed.[m
+[32m+[m[32m4. Use the browser extension **"Get cookies.txt LOCALLY"** to export the[m
+[32m+[m[32m   `youtube.com` cookies as Netscape format.[m
+[32m+[m[32m5. Save the file to `cookie_profiles/<account_name>.txt` on the server.[m
+[32m+[m[32m6. Close the private window without ever opening YouTube there again.[m
+[32m+[m
+[32m+[m[32m### Validation[m
+[32m+[m
+[32m+[m[32mAfter dropping a file in here, restart the bot:[m
+[32m+[m
+[32m+[m[32m```[m
+[32m+[m[32msystemctl restart abc[m
+[32m+[m[32mjournalctl -u abc -n 30 | grep -i cookie[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32mThe startup log will show how many profiles were discovered.[m
+[32m+[m
+[32m+[m[32m## When cookies expire[m
+[32m+[m
+[32m+[m[32mIf a profile starts failing (yt-dlp returns "Sign in to confirm…" or[m
+[32m+[m[32msimilar), it will be marked as a bad cookie and excluded from the pool.[m
+[32m+[m[32mRe-do the setup procedure above to replace the file. The long-lived[m
+[32m+[m[32mauth cookies (`SID`, `__Secure-3PSID`) typically last months as long as[m
+[32m+[m[32mthey are not touched by a browser.[m
+[32m+[m
+[32m+[m[32m## Notes[m
+[32m+[m
+[32m+[m[32m- Maximum 20 accounts in the pool (`DEFAULT_MAX_COOKIES`).[m
+[32m+[m[32m- Files are sorted by filename alphabetically.[m
+[32m+[m[32m- The pool uses random selection (excluding the last-used cookie and any[m
+[32m+[m[32m  on cooldown).[m
+[32m+[m[32m- 429s put a cookie on 20-hour cooldown (`/cookie_429` legacy command,[m
+[32m+[m[32m  or automatic via the YouTube handler).[m
+[1mdiff --git a/files/youtube_links.txt b/files/youtube_links.txt[m
+[1mdeleted file mode 100644[m
+[1mindex 6e1b8d4..0000000[m
+[1m--- a/files/youtube_links.txt[m
+[1m+++ /dev/null[m
+[36m@@ -1,10 +0,0 @@[m
+[31m-# یوتیوب - لینک‌های refresh[m
+[31m-# هر خط یک لینک یوتیوب[m
+[31m-# خطوط خالی و شروع با # نادیده گرفته می‌شن[m
+[31m-[m
+[31m-https://www.youtube.com/watch?v=dQw4w9WgXcQ[m
+[31m-https://www.youtube.com/watch?v=jNQXAC9IVRw[m
+[31m-https://www.youtube.com/watch?v=9bZkp7q19f0[m
+[31m-https://www.youtube.com/watch?v=kXYiU_JCYtU[m
+[31m-https://www.youtube.com/watch?v=uelHwf8o7_U[m
+[31m-https://www.youtube.com/watch?v=OPf0YbXqDm0[m
+[1mdiff --git a/i18n.json b/i18n.json[m
+[1mindex 4f6bb8b..8de6889 100644[m
+[1m--- a/i18n.json[m
+[1m+++ b/i18n.json[m
+[36m@@ -13,7 +13,7 @@[m
+     "status_line_cooldown": "cooldown_list: {cooldown}",[m
+     "status_line_last_used": "last_used_cookie: {last_used}",[m
+     "status_line_next_available": "next_available_in: {wait}",[m
+[31m-    "selected": "selected_cookie: {id}\nprofile: {profile}\ncookies_file: {file}\nyt-dlp:\nyt-dlp --cookies-from-browser '{spec}'",[m
+[32m+[m[32m    "selected": "selected_cookie: {id}\nprofile: {profile}\ncookies_file: {file}\nyt-dlp:\nyt-dlp --cookies '{spec}'",[m
+     "none_available": "کوکی قابل استفاده موجود نیست. باید حدود {wait} صبر کرد.",[m
+     "marked_429": "آخرین کوکی انتخاب‌شده وارد cooldown بیست ساعته شد.",[m
+     "already_cooldown": "آخرین کوکی از قبل داخل cooldown است یا cooldown پر شده.",[m
+[1mdiff --git a/src/cookie_pool/discover.rs b/src/cookie_pool/discover.rs[m
+[1mindex 54f1a8d..98c7e87 100644[m
+[1m--- a/src/cookie_pool/discover.rs[m
+[1m+++ b/src/cookie_pool/discover.rs[m
+[36m@@ -1,128 +1,47 @@[m
+[31m-use std::{fs, path::{Path, PathBuf}};[m
+[32m+[m[32muse std::{fs, path::Path};[m
+ [m
+ use super::types::CookieSource;[m
+ [m
+[31m-pub(super) fn discover_firefox_cookies(root: &Path) -> Vec<CookieSource> {[m
+[31m-    let mut cookies = discover_from_profiles_ini(root);[m
+[31m-    if cookies.is_empty() {[m
+[31m-        cookies = discover_from_profile_dirs(root);[m
+[31m-    }[m
+[31m-    cookies[m
+[31m-}[m
+[31m-[m
+[31m-pub(super) fn materialize_profiles_cache([m
+[31m-    cache_root: &Path,[m
+[31m-    sources: Vec<CookieSource>,[m
+[31m-) -> Vec<CookieSource> {[m
+[31m-    if cache_root.exists() {[m
+[31m-        if let Err(error) = fs::remove_dir_all(cache_root) {[m
+[31m-            eprintln!("failed to clear cookie cache at {}: {error}", cache_root.display());[m
+[31m-        }[m
+[31m-    }[m
+[31m-    if let Err(error) = fs::create_dir_all(cache_root) {[m
+[31m-        eprintln!("failed to create cookie cache at {}: {error}", cache_root.display());[m
+[31m-        return sources;[m
+[31m-    }[m
+[31m-[m
+[31m-    let mut copied = Vec::with_capacity(sources.len());[m
+[31m-[m
+[31m-    for source in sources {[m
+[31m-        let dest_profile = cache_root.join(&source.id);[m
+[31m-        if let Err(error) = fs::create_dir_all(&dest_profile) {[m
+[31m-            eprintln!("failed to create cache dir {}: {error}", dest_profile.display());[m
+[31m-            continue;[m
+[31m-        }[m
+[31m-[m
+[31m-        let entries = match fs::read_dir(&source.profile_dir) {[m
+[31m-            Ok(entries) => entries,[m
+[31m-            Err(error) => {[m
+[31m-                eprintln!("failed to read profile dir {}: {error}", source.profile_dir.display());[m
+[31m-                continue;[m
+[31m-            }[m
+[31m-        };[m
+[31m-[m
+[31m-        let mut copied_any = false;[m
+[31m-        for entry in entries.flatten() {[m
+[31m-            let name = entry.file_name();[m
+[31m-            let Some(name_str) = name.to_str() else { continue };[m
+[31m-            if !name_str.starts_with("cookies.sqlite") { continue; }[m
+[31m-            let src = entry.path();[m
+[31m-            let dst = dest_profile.join(name_str);[m
+[31m-            match fs::copy(&src, &dst) {[m
+[31m-                Ok(_) => copied_any = true,[m
+[31m-                Err(error) => eprintln!("failed to copy {} to {}: {error}", src.display(), dst.display()),[m
+[31m-            }[m
+[31m-        }[m
+[31m-[m
+[31m-        if !copied_any { continue; }[m
+[31m-[m
+[31m-        copied.push(CookieSource {[m
+[31m-            id: source.id,[m
+[31m-            profile_name: source.profile_name,[m
+[31m-            cookies_sqlite: dest_profile.join("cookies.sqlite"),[m
+[31m-            source_profile_dir: source.source_profile_dir,[m
+[31m-            profile_dir: dest_profile,[m
+[31m-        });[m
+[31m-    }[m
+[31m-[m
+[31m-    copied[m
+[31m-}[m
+[32m+[m[32m/// Scan a directory for Netscape-format cookies.txt files.[m
+[32m+[m[32m/// Each `<name>.txt` becomes one `CookieSource` with `id = <name>`.[m
+[32m+[m[32mpub(super) fn discover_cookie_files(root: &Path) -> Vec<CookieSource> {[m
+[32m+[m[32m    let Ok(entries) = fs::read_dir(root) else {[m
+[32m+[m[32m        eprintln!("[cookie_pool] profile root {} not found", root.display());[m
+[32m+[m[32m        return Vec::new();[m
+[32m+[m[32m    };[m
+ [m
+[31m-fn discover_from_profiles_ini(root: &Path) -> Vec<CookieSource> {[m
+[31m-    let profiles_ini = root.join("profiles.ini");[m
+[31m-    let Ok(contents) = fs::read_to_string(profiles_ini) else { return Vec::new() };[m
+[31m-[m
+[31m-    let mut profiles = Vec::new();[m
+[31m-    let mut name = String::new();[m
+[31m-    let mut path = String::new();[m
+[31m-    let mut is_relative = true;[m
+[31m-[m
+[31m-    for line in contents.lines().map(str::trim).chain([""]) {[m
+[31m-        if line.starts_with('[') {[m
+[31m-            push_profile(root, &mut profiles, &name, &path, is_relative);[m
+[31m-            name.clear(); path.clear(); is_relative = true;[m
+[31m-            continue;[m
+[31m-        }[m
+[31m-        let Some((key, value)) = line.split_once('=') else { continue };[m
+[31m-        match key {[m
+[31m-            "Name" => name = value.to_owned(),[m
+[31m-            "Path" => path = value.to_owned(),[m
+[31m-            "IsRelative" => is_relative = value != "0",[m
+[31m-            _ => {}[m
+[31m-        }[m
+[31m-    }[m
+[31m-[m
+[31m-    profiles[m
+[31m-}[m
+[31m-[m
+[31m-fn push_profile(root: &Path, profiles: &mut Vec<CookieSource>, name: &str, profile_path: &str, is_relative: bool) {[m
+[31m-    if profile_path.is_empty() { return; }[m
+[31m-    let profile_dir = if is_relative { root.join(profile_path) } else { PathBuf::from(profile_path) };[m
+[31m-    let cookies_sqlite = profile_dir.join("cookies.sqlite");[m
+[31m-    if !cookies_sqlite.is_file() { return; }[m
+[31m-    let id = profile_dir.file_name().and_then(|f| f.to_str()).unwrap_or(profile_path).to_owned();[m
+[31m-    profiles.push(CookieSource {[m
+[31m-        profile_name: if name.is_empty() { id.clone() } else { name.to_owned() },[m
+[31m-        source_profile_dir: profile_dir.clone(),[m
+[31m-        id, profile_dir, cookies_sqlite,[m
+[31m-    });[m
+[31m-}[m
+[31m-[m
+[31m-fn discover_from_profile_dirs(root: &Path) -> Vec<CookieSource> {[m
+[31m-    let Ok(entries) = fs::read_dir(root) else { return Vec::new() };[m
+[31m-    entries[m
+[32m+[m[32m    let mut sources: Vec<CookieSource> = entries[m
+         .filter_map(Result::ok)[m
+[31m-        .map(|e| e.path())[m
+[31m-        .filter(|p| p.join("cookies.sqlite").is_file())[m
+[31m-        .filter_map(|profile_dir| {[m
+[31m-            let id = profile_dir.file_name()?.to_str()?.to_owned();[m
+[32m+[m[32m        .filter_map(|entry| {[m
+[32m+[m[32m            let path = entry.path();[m
+[32m+[m[32m            if !path.is_file() { return None; }[m
+[32m+[m[32m            let name = path.file_name()?.to_str()?;[m
+[32m+[m[32m            let id = name.strip_suffix(".txt")?;[m
+[32m+[m[32m            if id.is_empty() || id.starts_with('.') { return None; }[m
+[32m+[m[32m            if !is_valid_netscape_file(&path) {[m
+[32m+[m[32m                eprintln!("[cookie_pool] skipping {} — not a valid Netscape cookies file", path.display());[m
+[32m+[m[32m                return None;[m
+[32m+[m[32m            }[m
+             Some(CookieSource {[m
+[31m-                profile_name: id.clone(),[m
+[31m-                cookies_sqlite: profile_dir.join("cookies.sqlite"),[m
+[31m-                source_profile_dir: profile_dir.clone(),[m
+[31m-                profile_dir,[m
+[31m-                id,[m
+[32m+[m[32m                id: id.to_owned(),[m
+[32m+[m[32m                profile_name: id.to_owned(),[m
+[32m+[m[32m                cookies_file: path,[m
+             })[m
+         })[m
+[31m-        .collect()[m
+[32m+[m[32m        .collect();[m
+[32m+[m
+[32m+[m[32m    sources.sort_by(|l, r| l.id.cmp(&r.id));[m
+[32m+[m[32m    sources[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32m/// Quick sanity check: file is non-empty and looks like Netscape cookies format.[m
+[32m+[m[32mfn is_valid_netscape_file(path: &Path) -> bool {[m
+[32m+[m[32m    let Ok(contents) = fs::read_to_string(path) else { return false };[m
+[32m+[m[32m    if contents.trim().is_empty() { return false; }[m
+[32m+[m[32m    contents.lines().any(|line| {[m
+[32m+[m[32m        let line = line.trim();[m
+[32m+[m[32m        line.starts_with("# Netscape HTTP Cookie File")[m
+[32m+[m[32m            || line.starts_with("# HTTP Cookie File")[m
+[32m+[m[32m            || (!line.is_empty() && !line.starts_with('#') && line.split('\t').count() >= 6)[m
+[32m+[m[32m    })[m
+ }[m
+[1mdiff --git a/src/cookie_pool/format.rs b/src/cookie_pool/format.rs[m
+[1mindex 7ad9070..8815506 100644[m
+[1m--- a/src/cookie_pool/format.rs[m
+[1m+++ b/src/cookie_pool/format.rs[m
+[36m@@ -25,7 +25,7 @@[m [mpub fn format_selected_cookie(cookie: &SelectedCookie) -> String {[m
+             ("id", &cookie.id),[m
+             ("profile", &cookie.profile_name),[m
+             ("file", &cookie.cookies_file.display().to_string()),[m
+[31m-            ("spec", &cookie.yt_dlp_browser_spec),[m
+[32m+[m[32m            ("spec", &cookie.yt_dlp_cookies_arg),[m
+         ],[m
+     )[m
+ }[m
+[1mdiff --git a/src/cookie_pool/mod.rs b/src/cookie_pool/mod.rs[m
+[1mindex e07ca04..00bd620 100644[m
+[1m--- a/src/cookie_pool/mod.rs[m
+[1m+++ b/src/cookie_pool/mod.rs[m
+[36m@@ -11,7 +11,6 @@[m [mpub use pool::CookiePool;[m
+ pub use format::{format_cookie_status, format_selected_cookie, format_no_cookie_available, format_duration};[m
+ pub use snapshot::save_snapshot;[m
+ [m
+[31m-const DEFAULT_FIREFOX_ROOT: &str = "/home/mahdi/.mozilla/firefox";[m
+[32m+[m[32mconst DEFAULT_PROFILES_ROOT: &str = "cookie_profiles";[m
+ const DEFAULT_MAX_COOKIES: usize = 20;[m
+ const DEFAULT_COOLDOWN: Duration = Duration::from_secs(20 * 60 * 60);[m
+[31m-const DEFAULT_CACHE_ROOT: &str = "cookie_profiles_cache";[m
+[1mdiff --git a/src/cookie_pool/pool.rs b/src/cookie_pool/pool.rs[m
+[1mindex d0e44c2..f16232c 100644[m
+[1m--- a/src/cookie_pool/pool.rs[m
+[1m+++ b/src/cookie_pool/pool.rs[m
+[36m@@ -5,8 +5,8 @@[m [muse std::{[m
+ };[m
+ [m
+ use super::{[m
+[31m-    DEFAULT_CACHE_ROOT, DEFAULT_COOLDOWN, DEFAULT_FIREFOX_ROOT, DEFAULT_MAX_COOKIES,[m
+[31m-    discover::{discover_firefox_cookies, materialize_profiles_cache},[m
+[32m+[m[32m    DEFAULT_COOLDOWN, DEFAULT_MAX_COOKIES, DEFAULT_PROFILES_ROOT,[m
+[32m+[m[32m    discover::discover_cookie_files,[m
+     types::{CooldownEntry, CookiePoolSnapshot, CookiePoolStatus, CookieSource, SelectedCookie},[m
+ };[m
+ [m
+[36m@@ -19,16 +19,21 @@[m [mpub struct CookiePool {[m
+ }[m
+ [m
+ impl CookiePool {[m
+[31m-    pub fn from_default_firefox() -> Self {[m
+[31m-        Self::from_firefox_root(DEFAULT_FIREFOX_ROOT)[m
+[32m+[m[32m    /// Discover cookies.txt files in the default profiles directory (`cookie_profiles/`).[m
+[32m+[m[32m    pub fn from_default_profiles() -> Self {[m
+[32m+[m[32m        Self::from_profiles_root(DEFAULT_PROFILES_ROOT)[m
+     }[m
+ [m
+[31m-    pub fn from_firefox_root(root: impl AsRef<Path>) -> Self {[m
+[31m-        let mut available_cookies = discover_firefox_cookies(root.as_ref());[m
+[31m-        available_cookies.sort_by(|l, r| l.id.cmp(&r.id));[m
+[32m+[m[32m    pub fn from_profiles_root(root: impl AsRef<Path>) -> Self {[m
+[32m+[m[32m        let mut available_cookies = discover_cookie_files(root.as_ref());[m
+         available_cookies.truncate(DEFAULT_MAX_COOKIES);[m
+[31m-        available_cookies = materialize_profiles_cache(Path::new(DEFAULT_CACHE_ROOT), available_cookies);[m
+[31m-        Self { available_cookies, last_used_cookie: None, cooldown_list: Vec::new(), cooldown: DEFAULT_COOLDOWN, random_counter: 0 }[m
+[32m+[m[32m        Self {[m
+[32m+[m[32m            available_cookies,[m
+[32m+[m[32m            last_used_cookie: None,[m
+[32m+[m[32m            cooldown_list: Vec::new(),[m
+[32m+[m[32m            cooldown: DEFAULT_COOLDOWN,[m
+[32m+[m[32m            random_counter: 0,[m
+[32m+[m[32m        }[m
+     }[m
+ [m
+     pub fn status(&mut self) -> CookiePoolStatus {[m
+[36m@@ -68,9 +73,14 @@[m [mimpl CookiePool {[m
+         if selectable.is_empty() { return None; }[m
+         let selected_index = selectable[self.random_index(selectable.len())];[m
+         let selected = self.available_cookies[selected_index].clone();[m
+[31m-        let yt_dlp_browser_spec = selected.yt_dlp_browser_spec();[m
+[32m+[m[32m        let yt_dlp_cookies_arg = selected.yt_dlp_cookies_arg();[m
+         self.last_used_cookie = Some(selected.id.clone());[m
+[31m-        Some(SelectedCookie { id: selected.id, profile_name: selected.profile_name, cookies_file: selected.cookies_sqlite, yt_dlp_browser_spec })[m
+[32m+[m[32m        Some(SelectedCookie {[m
+[32m+[m[32m            id: selected.id,[m
+[32m+[m[32m            profile_name: selected.profile_name,[m
+[32m+[m[32m            cookies_file: selected.cookies_file,[m
+[32m+[m[32m            yt_dlp_cookies_arg,[m
+[32m+[m[32m        })[m
+     }[m
+ [m
+     pub fn mark_rate_limited(&mut self, cookie_id: &str) -> bool {[m
+[1mdiff --git a/src/cookie_pool/types.rs b/src/cookie_pool/types.rs[m
+[1mindex 0fb848d..3f30752 100644[m
+[1m--- a/src/cookie_pool/types.rs[m
+[1m+++ b/src/cookie_pool/types.rs[m
+[36m@@ -7,16 +7,14 @@[m [muse std::{[m
+ pub struct CookieSource {[m
+     pub id: String,[m
+     pub profile_name: String,[m
+[31m-    /// The working copy used by yt-dlp (may be a cache dir after materialize).[m
+[31m-    pub profile_dir: PathBuf,[m
+[31m-    pub cookies_sqlite: PathBuf,[m
+[31m-    /// The real Firefox profile dir on disk (for opening Firefox and login checks).[m
+[31m-    pub source_profile_dir: PathBuf,[m
+[32m+[m[32m    /// Absolute path to a Netscape-format cookies.txt file.[m
+[32m+[m[32m    pub cookies_file: PathBuf,[m
+ }[m
+ [m
+ impl CookieSource {[m
+[31m-    pub fn yt_dlp_browser_spec(&self) -> String {[m
+[31m-        format!("firefox:{}", self.profile_dir.display())[m
+[32m+[m[32m    /// Returns the path string for `yt-dlp --cookies <path>`.[m
+[32m+[m[32m    pub fn yt_dlp_cookies_arg(&self) -> String {[m
+[32m+[m[32m        self.cookies_file.display().to_string()[m
+     }[m
+ }[m
+ [m
+[36m@@ -31,7 +29,8 @@[m [mpub struct SelectedCookie {[m
+     pub id: String,[m
+     pub profile_name: String,[m
+     pub cookies_file: PathBuf,[m
+[31m-    pub yt_dlp_browser_spec: String,[m
+[32m+[m[32m    /// Value to pass after `yt-dlp --cookies`.[m
+[32m+[m[32m    pub yt_dlp_cookies_arg: String,[m
+ }[m
+ [m
+ #[derive(Debug)][m
+[1mdiff --git a/src/database/posfreSQL/postgresql.rs b/src/database/posfreSQL/postgresql.rs[m
+[1mindex dd3f72f..fea89aa 100644[m
+[1m--- a/src/database/posfreSQL/postgresql.rs[m
+[1m+++ b/src/database/posfreSQL/postgresql.rs[m
+[36m@@ -138,8 +138,12 @@[m [mimpl PostgresDatabase {[m
+                     &[[m
+                         &cookie.id,[m
+                         &cookie.profile_name,[m
+[31m-                        &path_to_string(&cookie.profile_dir),[m
+[31m-                        &path_to_string(&cookie.cookies_sqlite),[m
+[32m+[m[32m                        &cookie[m
+[32m+[m[32m                            .cookies_file[m
+[32m+[m[32m                            .parent()[m
+[32m+[m[32m                            .map(|p| p.display().to_string())[m
+[32m+[m[32m                            .unwrap_or_default(),[m
+[32m+[m[32m                        &path_to_string(&cookie.cookies_file),[m
+                         &now_epoch(),[m
+                     ],[m
+                 )[m
+[1mdiff --git a/src/main.rs b/src/main.rs[m
+[1mindex 56cd118..75fe0a6 100644[m
+[1m--- a/src/main.rs[m
+[1m+++ b/src/main.rs[m
+[36m@@ -7,7 +7,6 @@[m [mmod cookie_pool;[m
+ mod database;[m
+ mod emoji;[m
+ mod i18n;[m
+[31m-mod modules;[m
+ mod youtube;[m
+ [m
+ use bot::{send_text, send_start_menu, edit_to_start_menu, CB_START_EMOJI, CB_START_YOUTUBE};[m
+[36m@@ -32,7 +31,7 @@[m [muse youtube::{extract_youtube_urls, handle_quality_callback, handle_youtube_url,[m
+ async fn main() -> Result<(), Box<dyn std::error::Error>> {[m
+     let token = bot_token()?;[m
+     let api = build_bot_api(&token).await?;[m
+[31m-    let mut cookie_pool = CookiePool::from_default_firefox();[m
+[32m+[m[32m    let mut cookie_pool = CookiePool::from_default_profiles();[m
+ [m
+     let database = match config::config_value("DATABASE_URL") {[m
+         Some(database_url) => match PostgresDatabase::connect(&database_url).await {[m
+[36m@@ -92,58 +91,6 @@[m [masync fn main() -> Result<(), Box<dyn std::error::Error>> {[m
+     };[m
+ [m
+     let cookie_status = cookie_pool.status();[m
+[31m-[m
+[31m-    // Spawn cookie refresher background task[m
+[31m-    {[m
+[31m-        let profiles: Vec<(String, String, String)> = cookie_pool[m
+[31m-            .snapshot()[m
+[31m-            .available_cookies[m
+[31m-            .into_iter()[m
+[31m-            .map(|c| ([m
+[31m-                c.profile_name,[m
+[31m-                c.source_profile_dir.to_string_lossy().into_owned(),[m
+[31m-                c.profile_dir.to_string_lossy().into_owned(),[m
+[31m-            ))[m
+[31m-            .collect();[m
+[31m-[m
+[31m-        let admin_chat_id = config::admin_user_id().unwrap_or(0);[m
+[31m-        let refresh_interval_secs: u64 = config::config_value("COOKIE_REFRESH_INTERVAL_SECS")[m
+[31m-            .and_then(|v| v.parse().ok())[m
+[31m-            .unwrap_or(6 * 3600);[m
+[31m-        let refresh_api = api.clone();[m
+[31m-[m
+[31m-        if profiles.is_empty() {[m
+[31m-            println!("[cookie_refresher] no profiles found, skipping.");[m
+[31m-        } else {[m
+[31m-            println!([m
+[31m-                "[cookie_refresher] background task starting: {} profile(s), interval={}s",[m
+[31m-                profiles.len(),[m
+[31m-                refresh_interval_secs[m
+[31m-            );[m
+[31m-            tokio::spawn(async move {[m
+[31m-                loop {[m
+[31m-                    for (profile_name, profile_path, cache_dir) in &profiles {[m
+[31m-                        let cfg = modules::cookie_refresher::CookieRefresherConfig {[m
+[31m-                            profile_path: profile_path.clone(),[m
+[31m-                            profile_name: profile_name.clone(),[m
+[31m-                            cache_dir: cache_dir.clone(),[m
+[31m-                            links_file: "files/youtube_links.txt".to_string(),[m
+[31m-                            duration_secs: 3600,[m
+[31m-                            link_count: 3,[m
+[31m-                            admin_chat_id,[m
+[31m-                        };[m
+[31m-                        println!("[cookie_refresher] running for profile={profile_name}");[m
+[31m-                        if let Err(e) = modules::cookie_refresher::run(&refresh_api, cfg).await {[m
+[31m-                            eprintln!("[cookie_refresher] profile={profile_name} error: {e}");[m
+[31m-                        }[m
+[31m-                    }[m
+[31m-                    println!("[cookie_refresher] all profiles done, sleeping {refresh_interval_secs}s");[m
+[31m-                    tokio::time::sleep(Duration::from_secs(refresh_interval_secs)).await;[m
+[31m-                }[m
+[31m-            });[m
+[31m-        }[m
+[31m-    }[m
+[31m-[m
+     let mut flow_manager = FlowManager::new();[m
+     let mut params = GetUpdatesParams::builder().timeout(30u32).build();[m
+ [m
+[1mdiff --git a/src/modules/cookie_refresher.rs b/src/modules/cookie_refresher.rs[m
+[1mdeleted file mode 100644[m
+[1mindex b5e35f0..0000000[m
+[1m--- a/src/modules/cookie_refresher.rs[m
+[1m+++ /dev/null[m
+[36m@@ -1,223 +0,0 @@[m
+[31m-use std::process::Stdio;[m
+[31m-use std::time::Duration;[m
+[31m-[m
+[31m-use frankenstein::client_reqwest::Bot;[m
+[31m-use rand::seq::SliceRandom;[m
+[31m-use tokio::process::Command;[m
+[31m-use tokio::time::sleep;[m
+[31m-[m
+[31m-use crate::bot::send_text;[m
+[31m-[m
+[31m-pub struct CookieRefresherConfig {[m
+[31m-    /// Real Firefox profile dir — used for `firefox --profile` and yt-dlp login check.[m
+[31m-    pub profile_path: String,[m
+[31m-    pub profile_name: String,[m
+[31m-    /// Cache dir to copy fresh cookies into after Firefox closes (may equal profile_path if no cache).[m
+[31m-    pub cache_dir: String,[m
+[31m-    pub links_file: String,[m
+[31m-    pub duration_secs: u64,[m
+[31m-    pub link_count: usize,[m
+[31m-    pub admin_chat_id: i64,[m
+[31m-}[m
+[31m-[m
+[31m-impl Default for CookieRefresherConfig {[m
+[31m-    fn default() -> Self {[m
+[31m-        Self {[m
+[31m-            profile_path: String::new(),[m
+[31m-            profile_name: String::new(),[m
+[31m-            cache_dir: String::new(),[m
+[31m-            links_file: "files/youtube_links.txt".to_string(),[m
+[31m-            duration_secs: 3600,[m
+[31m-            link_count: 3,[m
+[31m-            admin_chat_id: 0,[m
+[31m-        }[m
+[31m-    }[m
+[31m-}[m
+[31m-[m
+[31m-pub async fn run(api: &Bot, config: CookieRefresherConfig) -> Result<(), String> {[m
+[31m-    println!("[cookie_refresher] starting for profile={}", config.profile_name);[m
+[31m-[m
+[31m-    let links = load_links(&config)?;[m
+[31m-    if links.is_empty() {[m
+[31m-        let msg = format!("⚠️ فایل لینک‌های {} خالیه یا پیدا نشد!", config.profile_name);[m
+[31m-        notify(api, config.admin_chat_id, &msg).await;[m
+[31m-        return Err("no links available".to_string());[m
+[31m-    }[m
+[31m-[m
+[31m-    if !check_login(&config).await? {[m
+[31m-        let msg = format!("⚠️ اکانت {} لاگین نشده!", config.profile_name);[m
+[31m-        notify(api, config.admin_chat_id, &msg).await;[m
+[31m-        return Err(format!("profile {} is not logged in", config.profile_name));[m
+[31m-    }[m
+[31m-[m
+[31m-    println!("[cookie_refresher] login ok, opening firefox with {} links", links.len());[m
+[31m-[m
+[31m-    let pid = open_firefox(&config.profile_path, &links).await?;[m
+[31m-[m
+[31m-    let crashed = wait_or_crash(pid, config.duration_secs).await;[m
+[31m-[m
+[31m-    kill_firefox(pid).await;[m
+[31m-[m
+[31m-    if crashed {[m
+[31m-        let msg = format!("⚠️ فایرفاکس اکانت {} قبل از اتمام زمان crash کرد!", config.profile_name);[m
+[31m-        notify(api, config.admin_chat_id, &msg).await;[m
+[31m-        return Err(format!("firefox crashed for profile {}", config.profile_name));[m
+[31m-    }[m
+[31m-[m
+[31m-    if !config.cache_dir.is_empty() && config.cache_dir != config.profile_path {[m
+[31m-        refresh_cache(&config.profile_path, &config.cache_dir, &config.profile_name);[m
+[31m-    }[m
+[31m-[m
+[31m-    let msg = format!("✅ کوکی‌های {} با موفقیت آپدیت شدن", config.profile_name);[m
+[31m-    notify(api, config.admin_chat_id, &msg).await;[m
+[31m-    println!("[cookie_refresher] done for profile={}", config.profile_name);[m
+[31m-    Ok(())[m
+[31m-}[m
+[31m-[m
+[31m-fn load_links(config: &CookieRefresherConfig) -> Result<Vec<String>, String> {[m
+[31m-    let contents = std::fs::read_to_string(&config.links_file)[m
+[31m-        .map_err(|e| format!("failed to read links file {}: {e}", config.links_file))?;[m
+[31m-[m
+[31m-    let mut all: Vec<String> = contents[m
+[31m-        .lines()[m
+[31m-        .map(str::trim)[m
+[31m-        .filter(|l| !l.is_empty() && !l.starts_with('#'))[m
+[31m-        .map(|l| l.to_string())[m
+[31m-        .collect();[m
+[31m-[m
+[31m-    if all.is_empty() {[m
+[31m-        return Ok(vec![]);[m
+[31m-    }[m
+[31m-[m
+[31m-    let mut rng = rand::thread_rng();[m
+[31m-    all.shuffle(&mut rng);[m
+[31m-    all.truncate(config.link_count);[m
+[31m-    Ok(all)[m
+[31m-}[m
+[31m-[m
+[31m-async fn check_login(config: &CookieRefresherConfig) -> Result<bool, String> {[m
+[31m-    println!("[cookie_refresher] checking login for profile={}", config.profile_name);[m
+[31m-    let output = Command::new("yt-dlp")[m
+[31m-        .arg("--cookies-from-browser")[m
+[31m-        .arg(format!("firefox:{}", config.profile_path))[m
+[31m-        .arg("--print")[m
+[31m-        .arg("%(uploader)s")[m
+[31m-        .arg("--no-download")[m
+[31m-        .arg("--no-warnings")[m
+[31m-        .arg("https://www.youtube.com/feed/subscriptions")[m
+[31m-        .output()[m
+[31m-        .await[m
+[31m-        .map_err(|e| format!("failed to spawn yt-dlp: {e}"))?;[m
+[31m-[m
+[31m-    if !output.status.success() {[m
+[31m-        println!("[cookie_refresher] yt-dlp login check failed status={}", output.status);[m
+[31m-        return Ok(false);[m
+[31m-    }[m
+[31m-    let stdout = String::from_utf8_lossy(&output.stdout);[m
+[31m-    let trimmed = stdout.trim();[m
+[31m-    if trimmed.is_empty() {[m
+[31m-        println!("[cookie_refresher] yt-dlp login check: empty output");[m
+[31m-        return Ok(false);[m
+[31m-    }[m
+[31m-    println!("[cookie_refresher] login check ok uploader={trimmed:?}");[m
+[31m-    Ok(true)[m
+[31m-}[m
+[31m-[m
+[31m-async fn open_firefox(profile_path: &str, links: &[String]) -> Result<u32, String> {[m
+[31m-    if links.is_empty() {[m
+[31m-        return Err("no links to open".to_string());[m
+[31m-    }[m
+[31m-[m
+[31m-    let child = Command::new("firefox")[m
+[31m-        .arg("--profile")[m
+[31m-        .arg(profile_path)[m
+[31m-        .arg(&links[0])[m
+[31m-        .stdin(Stdio::null())[m
+[31m-        .stdout(Stdio::null())[m
+[31m-        .stderr(Stdio::null())[m
+[31m-        .spawn()[m
+[31m-        .map_err(|e| format!("failed to spawn firefox: {e}"))?;[m
+[31m-[m
+[31m-    let pid = child.id().ok_or("firefox has no pid")?;[m
+[31m-    println!("[cookie_refresher] firefox opened pid={pid} first_url={}", links[0]);[m
+[31m-[m
+[31m-    for url in &links[1..] {[m
+[31m-        sleep(Duration::from_secs(1)).await;[m
+[31m-        let _ = Command::new("firefox")[m
+[31m-            .arg("--profile")[m
+[31m-            .arg(profile_path)[m
+[31m-            .arg("--new-tab")[m
+[31m-            .arg(url)[m
+[31m-            .stdin(Stdio::null())[m
+[31m-            .stdout(Stdio::null())[m
+[31m-            .stderr(Stdio::null())[m
+[31m-            .spawn();[m
+[31m-        println!("[cookie_refresher] opened new tab url={url}");[m
+[31m-    }[m
+[31m-[m
+[31m-    Ok(pid)[m
+[31m-}[m
+[31m-[m
+[31m-async fn wait_or_crash(pid: u32, duration_secs: u64) -> bool {[m
+[31m-    let deadline = sleep(Duration::from_secs(duration_secs));[m
+[31m-    tokio::pin!(deadline);[m
+[31m-[m
+[31m-    loop {[m
+[31m-        tokio::select! {[m
+[31m-            _ = &mut deadline => {[m
+[31m-                println!("[cookie_refresher] duration elapsed pid={pid}");[m
+[31m-                return false;[m
+[31m-            }[m
+[31m-            _ = sleep(Duration::from_secs(5)) => {[m
+[31m-                if !is_running(pid) {[m
+[31m-                    println!("[cookie_refresher] firefox pid={pid} is no longer running (crash)");[m
+[31m-                    return true;[m
+[31m-                }[m
+[31m-            }[m
+[31m-        }[m
+[31m-    }[m
+[31m-}[m
+[31m-[m
+[31m-fn is_running(pid: u32) -> bool {[m
+[31m-    std::path::Path::new(&format!("/proc/{pid}")).exists()[m
+[31m-}[m
+[31m-[m
+[31m-async fn kill_firefox(pid: u32) {[m
+[31m-    println!("[cookie_refresher] killing firefox pid={pid}");[m
+[31m-    let _ = Command::new("kill")[m
+[31m-        .arg("-TERM")[m
+[31m-        .arg(pid.to_string())[m
+[31m-        .output()[m
+[31m-        .await;[m
+[31m-    sleep(Duration::from_secs(3)).await;[m
+[31m-    if is_running(pid) {[m
+[31m-        let _ = Command::new("kill")[m
+[31m-            .arg("-KILL")[m
+[31m-            .arg(pid.to_string())[m
+[31m-            .output()[m
+[31m-            .await;[m
+[31m-    }[m
+[31m-}[m
+[31m-[m
+[31m-fn refresh_cache(source_dir: &str, cache_dir: &str, profile_name: &str) {[m
+[31m-    println!("[cookie_refresher] copying cookies {source_dir} → {cache_dir} profile={profile_name}");[m
+[31m-    for name in ["cookies.sqlite", "cookies.sqlite-wal", "cookies.sqlite-shm"] {[m
+[31m-        let src = std::path::Path::new(source_dir).join(name);[m
+[31m-        if !src.exists() { continue; }[m
+[31m-        let dst = std::path::Path::new(cache_dir).join(name);[m
+[31m-        match std::fs::copy(&src, &dst) {[m
+[31m-            Ok(_) => println!("[cookie_refresher] copied {name} profile={profile_name}"),[m
+[31m-            Err(e) => eprintln!("[cookie_refresher] failed to copy {name} profile={profile_name}: {e}"),[m
+[31m-        }[m
+[31m-    }[m
+[31m-}[m
+[31m-[m
+[31m-async fn notify(api: &Bot, chat_id: i64, text: &str) {[m
+[31m-    println!("[cookie_refresher] notify chat_id={chat_id} msg={text:?}");[m
+[31m-    if chat_id == 0 {[m
+[31m-        return;[m
+[31m-    }[m
+[31m-    if let Err(e) = send_text(api, chat_id, text).await {[m
+[31m-        eprintln!("[cookie_refresher] failed to send notify: {e}");[m
+[31m-    }[m
+[31m-}[m
+[1mdiff --git a/src/modules/mod.rs b/src/modules/mod.rs[m
+[1mdeleted file mode 100644[m
+[1mindex d54ac4d..0000000[m
+[1m--- a/src/modules/mod.rs[m
+[1m+++ /dev/null[m
+[36m@@ -1 +0,0 @@[m
+[31m-pub mod cookie_refresher;[m
+[1mdiff --git a/src/youtube/download.rs b/src/youtube/download.rs[m
+[1mindex c489e55..a6d7d9a 100644[m
+[1m--- a/src/youtube/download.rs[m
+[1m+++ b/src/youtube/download.rs[m
+[36m@@ -53,7 +53,7 @@[m [mpub struct YoutubeRequest {[m
+     pub chat_id: i64,[m
+     pub user_id: Option<i64>,[m
+     pub webpage_url: String,[m
+[31m-    pub cookie_spec: String,[m
+[32m+[m[32m    pub cookies_path: String,[m
+     pub title: String,[m
+     pub duration: Option<u64>,[m
+     pub thumbnail_url: Option<String>,[m
+[36m@@ -424,8 +424,8 @@[m [masync fn run_download([m
+         trace_id,[m
+         "download_args",[m
+         &format!([m
+[31m-            "cookie_spec={} format_spec={format_spec} output={output_template}",[m
+[31m-            req.cookie_spec[m
+[32m+[m[32m            "cookies_path={} format_spec={format_spec} output={output_template}",[m
+[32m+[m[32m            req.cookies_path[m
+         ),[m
+     );[m
+ [m
+[36m@@ -453,8 +453,8 @@[m [masync fn run_download([m
+     let mut cmd = Command::new("yt-dlp");[m
+     cmd.arg("--js-runtimes")[m
+         .arg("deno:/root/.deno/bin/deno")[m
+[31m-        .arg("--cookies-from-browser")[m
+[31m-        .arg(&req.cookie_spec)[m
+[32m+[m[32m        .arg("--cookies")[m
+[32m+[m[32m        .arg(&req.cookies_path)[m
+         .arg("--no-warnings")[m
+         .arg("--no-playlist")[m
+         .arg("--progress")[m
+[1mdiff --git a/src/youtube/fetch.rs b/src/youtube/fetch.rs[m
+[1mindex 781d430..4390176 100644[m
+[1m--- a/src/youtube/fetch.rs[m
+[1m+++ b/src/youtube/fetch.rs[m
+[36m@@ -10,18 +10,18 @@[m [muse super::types::{[m
+ pub async fn fetch_video_info([m
+     trace_id: u64,[m
+     url: &str,[m
+[31m-    yt_dlp_browser_spec: &str,[m
+[32m+[m[32m    cookies_path: &str,[m
+ ) -> Result<VideoInfo, FetchError> {[m
+     log_trace([m
+         trace_id,[m
+         "fetch_start",[m
+[31m-        &format!("url={url} cookie_spec={yt_dlp_browser_spec}"),[m
+[32m+[m[32m        &format!("url={url} cookies_path={cookies_path}"),[m
+     );[m
+     let output = Command::new("yt-dlp")[m
+         .arg("--js-runtimes")[m
+         .arg("deno:/root/.deno/bin/deno")[m
+[31m-        .arg("--cookies-from-browser")[m
+[31m-        .arg(yt_dlp_browser_spec)[m
+[32m+[m[32m        .arg("--cookies")[m
+[32m+[m[32m        .arg(cookies_path)[m
+         .arg("--dump-single-json")[m
+         .arg("--no-download")[m
+         .arg("--no-warnings")[m
+[36m@@ -48,11 +48,12 @@[m [mpub async fn fetch_video_info([m
+             );[m
+             return Err(FetchError::RateLimited);[m
+         }[m
+[31m-        if lower.contains("no such table: moz_cookies")[m
+[31m-            || lower.contains("database is locked")[m
+[31m-            || lower.contains("could not find cookies")[m
+[31m-            || lower.contains("unable to open database file")[m
+[32m+[m[32m        if lower.contains("could not find cookies")[m
+             || lower.contains("no cookies found")[m
+[32m+[m[32m            || lower.contains("cookies file")[m
+[32m+[m[32m            || lower.contains("sign in to confirm")[m
+[32m+[m[32m            || lower.contains("login required")[m
+[32m+[m[32m            || lower.contains("account has been terminated")[m
+         {[m
+             log_trace([m
+                 trace_id,[m
+[1mdiff --git a/src/youtube/handle.rs b/src/youtube/handle.rs[m
+[1mindex b27204f..c12bcb6 100644[m
+[1m--- a/src/youtube/handle.rs[m
+[1m+++ b/src/youtube/handle.rs[m
+[36m@@ -73,7 +73,7 @@[m [mpub async fn handle_youtube_url([m
+         log_trace(trace_id, "cookie_selected", &format!("cookie_id={} profile={}", cookie.id, cookie.profile_name));[m
+         save_snapshot(database, cookie_pool).await;[m
+ [m
+[31m-        match fetch_video_info(trace_id, url, &cookie.yt_dlp_browser_spec).await {[m
+[32m+[m[32m        match fetch_video_info(trace_id, url, &cookie.yt_dlp_cookies_arg).await {[m
+             Ok(info) => {[m
+                 log_trace(trace_id, "fetch_ok", &format!("title={:?} heights={:?} thumbnail={}", info.title, info.available_heights, info.thumbnail.is_some()));[m
+                 if let Some(amid) = analyzing_msg_id {[m
+[36m@@ -122,7 +122,7 @@[m [mpub async fn handle_youtube_url([m
+                     api,[m
+                     chat_id,[m
+                     user_id,[m
+[31m-                    &cookie.yt_dlp_browser_spec,[m
+[32m+[m[32m                    &cookie.yt_dlp_cookies_arg,[m
+                     &info,[m
+                 )[m
+                 .await[m
+[1mdiff --git a/src/youtube/quality_keyboard.rs b/src/youtube/quality_keyboard.rs[m
+[1mindex d86dc7c..2055f6e 100644[m
+[1m--- a/src/youtube/quality_keyboard.rs[m
+[1m+++ b/src/youtube/quality_keyboard.rs[m
+[36m@@ -46,7 +46,7 @@[m [mpub async fn send_quality_prompt([m
+     api: &Bot,[m
+     chat_id: i64,[m
+     user_id: Option<i64>,[m
+[31m-    cookie_spec: &str,[m
+[32m+[m[32m    cookies_path: &str,[m
+     info: &VideoInfo,[m
+ ) -> Result<(), Box<dyn std::error::Error>> {[m
+     let options = quality_options(info);[m
+[36m@@ -68,7 +68,7 @@[m [mpub async fn send_quality_prompt([m
+         chat_id,[m
+         user_id,[m
+         webpage_url: info.webpage_url.clone(),[m
+[31m-        cookie_spec: cookie_spec.to_string(),[m
+[32m+[m[32m        cookies_path: cookies_path.to_string(),[m
+         title: info.title.clone(),[m
+         duration: info.duration,[m
+         thumbnail_url: info.thumbnail.clone(),[m

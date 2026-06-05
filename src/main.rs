@@ -9,9 +9,12 @@ mod emoji;
 mod i18n;
 mod modules;
 mod youtube;
+mod stt;
 
 use bot::{send_text, send_start_menu, edit_to_start_menu, edit_to_ai_lab, CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB, CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT};
 use emoji::panel::CB_START_PANEL;
+use stt::handle::{enter_stt_config, handle_stt_callback, handle_stt_audio};
+use stt::config::CB_STT_CANCEL;
 use config::bot_token;
 use cookie_pool::{CookiePool, CookieSource};
 use database::postgresql::PostgresDatabase;
@@ -295,6 +298,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ).await {
                             continue;
                         }
+                        // Check for STT audio state after emoji flow returned false
+                        let uid = user_id.unwrap();
+                        if let FlowState::AwaitingSttAudio { config } = flow_manager.get(uid) {
+                            if message.voice.is_some() || message.audio.is_some() || message.document.is_some() {
+                                handle_stt_audio(&api, &message, uid, &config).await;
+                                continue;
+                            }
+                        }
                     }
 
                     if let Some(text) = message.text.as_deref() {
@@ -425,7 +436,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         continue;
                     }
-                    if matches!(callback_query.data.as_deref(), Some(d) if d == CB_AI_DENOISE || d == CB_AI_UPSCALE || d == CB_AI_STT) {
+                    if matches!(callback_query.data.as_deref(), Some(d) if d == CB_AI_DENOISE || d == CB_AI_UPSCALE) {
                         let trace_id = next_trace_id();
                         log_trace(trace_id, "cb_ai_feature", &format!("user_id={cb_user_id} data={cb_data:?}"));
                         let _ = api.answer_callback_query(
@@ -435,6 +446,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .show_alert(false)
                                 .build(),
                         ).await;
+                        continue;
+                    }
+                    if callback_query.data.as_deref() == Some(CB_AI_STT) {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "cb_ai_stt_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
+                        let _ = api.answer_callback_query(
+                            &AnswerCallbackQueryParams::builder()
+                                .callback_query_id(callback_query.id)
+                                .build(),
+                        ).await;
+                        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+                            enter_stt_config(
+                                &api, message.chat.id, message.message_id,
+                                cb_user_id as i64, &mut flow_manager,
+                            ).await;
+                        }
+                        continue;
+                    }
+                    if callback_query.data.as_deref().map(|d| d.starts_with("stt:")).unwrap_or(false) {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "stt_callback", &format!("user_id={cb_user_id} data={cb_data:?}"));
+                        let _ = api.answer_callback_query(
+                            &AnswerCallbackQueryParams::builder()
+                                .callback_query_id(callback_query.id)
+                                .build(),
+                        ).await;
+                        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+                            handle_stt_callback(
+                                &api, cb_data, message.chat.id, message.message_id,
+                                cb_user_id as i64, &mut flow_manager,
+                            ).await;
+                        }
                         continue;
                     }
                     eprintln!(
