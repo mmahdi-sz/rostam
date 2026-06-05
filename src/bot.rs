@@ -1,8 +1,8 @@
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
-    methods::{EditMessageTextParams, SendMessageParams},
-    types::{InlineKeyboardMarkup, MessageEntity, ReplyMarkup},
+    methods::{DeleteMessageParams, EditMessageTextParams, SendMessageParams},
+    types::{InlineKeyboardMarkup, MessageEntity, ReplyKeyboardRemove, ReplyMarkup},
 };
 
 use rand::Rng;
@@ -154,6 +154,23 @@ pub async fn send_start_menu(
     api: &Bot,
     chat_id: i64,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // پاک کردن هر reply keyboard باقی‌مانده — یه پیام موقت می‌فرستیم و فوری حذف می‌کنیم
+    let remove_params = SendMessageParams::builder()
+        .chat_id(chat_id)
+        .text("\u{200B}")
+        .reply_markup(ReplyMarkup::ReplyKeyboardRemove(
+            ReplyKeyboardRemove::builder().remove_keyboard(true).build(),
+        ))
+        .build();
+    if let Ok(res) = api.send_message(&remove_params).await {
+        let _ = api.delete_message(
+            &DeleteMessageParams::builder()
+                .chat_id(chat_id)
+                .message_id(res.result.message_id)
+                .build(),
+        ).await;
+    }
+
     let text = t("start.welcome");
     let entities = entities_for_text(&text);
     let mut params = SendMessageParams::builder()
