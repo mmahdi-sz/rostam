@@ -891,7 +891,8 @@ Removes the Gemini AI watermark from images using the `gwt-mini` binary (v0.3.1)
 
 - **Binary**: `files/runtime/gwt-mini` — statically compiled, called as subprocess.
 - **Args**: `-i {input} -o {output} --quiet --no-banner`
-- **Exit 0** = success; non-zero = failed.
+- **Exit codes**: 0 = watermark removed; 1 + `[SKIP]` in stdout = no watermark detected (soft); other non-zero = hard failure.
+- `remove.rs` strips ANSI escape codes from stdout, then checks for `[SKIP]`/`no watermark detected`/`skipped` before treating non-zero as error.
 - **Rust module**: `src/gemini_watermark/` — `remove.rs` spawns binary via `tokio::task::spawn_blocking`.
 
 ### Flow
