@@ -183,15 +183,54 @@ def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str)
                 raise RuntimeError(f"Separator did not produce 2 output files: {output_files}")
 
         with open(vocals_path, "rb") as f:
-            vocals_b64 = base64.b64encode(f.read()).decode()
+            vocals_wav_b64 = base64.b64encode(f.read()).decode()
         with open(instrumental_path, "rb") as f:
-            instrumental_b64 = base64.b64encode(f.read()).decode()
+            instrumental_wav_b64 = base64.b64encode(f.read()).decode()
 
-        log.info(f"[separation trace={trace_id} event=encode_done] vocals_b64_len={len(vocals_b64)} instrumental_b64_len={len(instrumental_b64)} duration={duration:.1f}s")
+        # Convert WAV → compressed format matching original input extension.
+        # Supported: mp3, ogg, m4a, aac, flac. Fallback: mp3 320k.
+        compressed_ext = ext.lstrip(".").lower()
+        if compressed_ext not in ("mp3", "ogg", "m4a", "aac", "flac"):
+            compressed_ext = "mp3"
+
+        ffmpeg_codec = {
+            "mp3": ["-codec:a", "libmp3lame", "-qscale:a", "0"],
+            "ogg": ["-codec:a", "libvorbis", "-qscale:a", "6"],
+            "m4a": ["-codec:a", "aac", "-b:a", "256k"],
+            "aac": ["-codec:a", "aac", "-b:a", "256k"],
+            "flac": ["-codec:a", "flac"],
+        }[compressed_ext]
+
+        vocals_compressed_path = os.path.join(work_dir, f"vocals.{compressed_ext}")
+        instrumental_compressed_path = os.path.join(work_dir, f"instrumental.{compressed_ext}")
+
+        for src, dst in [(vocals_path, vocals_compressed_path), (instrumental_path, instrumental_compressed_path)]:
+            r = subprocess.run(
+                ["ffmpeg", "-y", "-i", src] + ffmpeg_codec + [dst],
+                capture_output=True
+            )
+            log.info(f"[separation trace={trace_id} event=ffmpeg_convert] src={os.path.basename(src)} dst={os.path.basename(dst)} ok={r.returncode == 0}")
+            if r.returncode != 0:
+                log.warning(f"[separation trace={trace_id} event=ffmpeg_failed] stderr={r.stderr[-200:].decode(errors='replace')}")
+
+        with open(vocals_compressed_path, "rb") as f:
+            vocals_compressed_b64 = base64.b64encode(f.read()).decode()
+        with open(instrumental_compressed_path, "rb") as f:
+            instrumental_compressed_b64 = base64.b64encode(f.read()).decode()
+
+        log.info(
+            f"[separation trace={trace_id} event=encode_done] "
+            f"vocals_wav={len(vocals_wav_b64)} instrumental_wav={len(instrumental_wav_b64)} "
+            f"vocals_compressed={len(vocals_compressed_b64)} instrumental_compressed={len(instrumental_compressed_b64)} "
+            f"compressed_ext={compressed_ext} duration={duration:.1f}s"
+        )
 
         return {
-            "vocals": vocals_b64,
-            "instrumental": instrumental_b64,
+            "vocals_wav": vocals_wav_b64,
+            "instrumental_wav": instrumental_wav_b64,
+            "vocals_compressed": vocals_compressed_b64,
+            "instrumental_compressed": instrumental_compressed_b64,
+            "compressed_ext": compressed_ext,
             "duration_seconds": duration,
         }
 

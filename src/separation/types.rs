@@ -15,5 +15,8 @@ impl SeparationMode {
 pub struct SeparationResult {
     pub vocals_wav: Vec<u8>,
     pub instrumental_wav: Vec<u8>,
+    pub vocals_compressed: Vec<u8>,
+    pub instrumental_compressed: Vec<u8>,
+    pub compressed_ext: String,
     pub duration_seconds: f64,
 }

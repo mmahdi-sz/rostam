@@ -93,31 +93,48 @@ pub async fn separate_audio(
         return Err(SeparationError::ProcessingFailed(err_msg.to_string()));
     }
 
-    let vocals_b64 = json.get("vocals").and_then(|v| v.as_str()).ok_or_else(|| {
-        eprintln!("[separation trace={trace_id} event=error] type=missing_field field=vocals");
-        SeparationError::ProcessingFailed("missing vocals field".into())
+    let vocals_b64 = json.get("vocals_wav").and_then(|v| v.as_str()).ok_or_else(|| {
+        eprintln!("[separation trace={trace_id} event=error] type=missing_field field=vocals_wav");
+        SeparationError::ProcessingFailed("missing vocals_wav field".into())
     })?;
-    let instrumental_b64 = json.get("instrumental").and_then(|v| v.as_str()).ok_or_else(|| {
-        eprintln!("[separation trace={trace_id} event=error] type=missing_field field=instrumental");
-        SeparationError::ProcessingFailed("missing instrumental field".into())
+    let instrumental_b64 = json.get("instrumental_wav").and_then(|v| v.as_str()).ok_or_else(|| {
+        eprintln!("[separation trace={trace_id} event=error] type=missing_field field=instrumental_wav");
+        SeparationError::ProcessingFailed("missing instrumental_wav field".into())
     })?;
+    let vocals_compressed_b64 = json.get("vocals_compressed").and_then(|v| v.as_str()).ok_or_else(|| {
+        eprintln!("[separation trace={trace_id} event=error] type=missing_field field=vocals_compressed");
+        SeparationError::ProcessingFailed("missing vocals_compressed field".into())
+    })?;
+    let instrumental_compressed_b64 = json.get("instrumental_compressed").and_then(|v| v.as_str()).ok_or_else(|| {
+        eprintln!("[separation trace={trace_id} event=error] type=missing_field field=instrumental_compressed");
+        SeparationError::ProcessingFailed("missing instrumental_compressed field".into())
+    })?;
+    let compressed_ext = json.get("compressed_ext").and_then(|v| v.as_str()).unwrap_or("mp3").to_string();
     let duration_seconds = json.get("duration_seconds").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
     let vocals_wav = b64_decode(vocals_b64).map_err(|e| {
-        eprintln!("[separation trace={trace_id} event=error] type=base64_vocals err={e}");
-        SeparationError::ProcessingFailed(format!("base64 vocals: {e}"))
+        eprintln!("[separation trace={trace_id} event=error] type=base64_vocals_wav err={e}");
+        SeparationError::ProcessingFailed(format!("base64 vocals_wav: {e}"))
     })?;
     let instrumental_wav = b64_decode(instrumental_b64).map_err(|e| {
-        eprintln!("[separation trace={trace_id} event=error] type=base64_instrumental err={e}");
-        SeparationError::ProcessingFailed(format!("base64 instrumental: {e}"))
+        eprintln!("[separation trace={trace_id} event=error] type=base64_instrumental_wav err={e}");
+        SeparationError::ProcessingFailed(format!("base64 instrumental_wav: {e}"))
+    })?;
+    let vocals_compressed = b64_decode(vocals_compressed_b64).map_err(|e| {
+        eprintln!("[separation trace={trace_id} event=error] type=base64_vocals_compressed err={e}");
+        SeparationError::ProcessingFailed(format!("base64 vocals_compressed: {e}"))
+    })?;
+    let instrumental_compressed = b64_decode(instrumental_compressed_b64).map_err(|e| {
+        eprintln!("[separation trace={trace_id} event=error] type=base64_instrumental_compressed err={e}");
+        SeparationError::ProcessingFailed(format!("base64 instrumental_compressed: {e}"))
     })?;
 
     eprintln!(
-        "[separation trace={trace_id} event=decode_complete] vocals_size={} instrumental_size={} audio_duration={duration_seconds:.1}s",
-        vocals_wav.len(), instrumental_wav.len()
+        "[separation trace={trace_id} event=decode_complete] vocals_wav={} instrumental_wav={} vocals_compressed={} instrumental_compressed={} ext={compressed_ext} duration={duration_seconds:.1}s",
+        vocals_wav.len(), instrumental_wav.len(), vocals_compressed.len(), instrumental_compressed.len()
     );
 
-    Ok(SeparationResult { vocals_wav, instrumental_wav, duration_seconds })
+    Ok(SeparationResult { vocals_wav, instrumental_wav, vocals_compressed, instrumental_compressed, compressed_ext, duration_seconds })
 }
 
 // Simple RFC-4648 base64 decoder — no external crate needed.

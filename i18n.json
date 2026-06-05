@@ -279,8 +279,10 @@
     "select_mode": "حالت جداسازی رو انتخاب کن:",
     "processing": "⏳ در حال جداسازی صدا...",
     "result": {
-      "vocals_caption": "🎤 صدای خواننده",
-      "instrumental_caption": "🎵 موزیک بی‌کلام"
+      "vocals_compressed_caption": "🎤 صدای خواننده — برای استفاده معمولی و شبکه‌های اجتماعی",
+      "vocals_wav_caption": "🎤 صدای خواننده — برای ادیت و تدوین (WAV)",
+      "instrumental_compressed_caption": "🎵 موزیک بی‌کلام — برای استفاده معمولی و شبکه‌های اجتماعی",
+      "instrumental_wav_caption": "🎵 موزیک بی‌کلام — برای ادیت و تدوین (WAV)"
     },
     "error": {
       "service_unavailable": "❌ سرویس جداسازی در دسترس نیست",

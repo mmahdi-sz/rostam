@@ -220,40 +220,72 @@ pub async fn handle_separation_callback(
     eprintln!("[separation trace={trace_id} event=separate_start] mode={mode_label}");
     match separate_audio(audio_bytes, &filename, mode, user_id).await {
         Ok(result) => {
-            eprintln!("[separation trace={trace_id} event=separate_done] duration={:.1}s vocals={} instrumental={}",
-                result.duration_seconds, result.vocals_wav.len(), result.instrumental_wav.len());
+            eprintln!("[separation trace={trace_id} event=separate_done] duration={:.1}s vocals_wav={} instrumental_wav={} vocals_compressed={} instrumental_compressed={} ext={}",
+                result.duration_seconds, result.vocals_wav.len(), result.instrumental_wav.len(),
+                result.vocals_compressed.len(), result.instrumental_compressed.len(), result.compressed_ext);
 
             // Delete processing message.
             let _ = delete_message(api, chat_id, message_id).await;
 
-            // Send vocals.
             let tmp_dir = std::env::temp_dir().join(format!("sep_{trace_id}"));
             std::fs::create_dir_all(&tmp_dir).ok();
-            let vocals_path = tmp_dir.join("vocals.wav");
-            let instrumental_path = tmp_dir.join("instrumental.wav");
-            std::fs::write(&vocals_path, &result.vocals_wav).ok();
-            std::fs::write(&instrumental_path, &result.instrumental_wav).ok();
 
-            eprintln!("[separation trace={trace_id} event=send_vocals] chat_id={chat_id}");
-            let vocals_params = SendAudioParams::builder()
+            let vocals_wav_path = tmp_dir.join("vocals.wav");
+            let instrumental_wav_path = tmp_dir.join("instrumental.wav");
+            let vocals_compressed_path = tmp_dir.join(format!("vocals.{}", result.compressed_ext));
+            let instrumental_compressed_path = tmp_dir.join(format!("instrumental.{}", result.compressed_ext));
+
+            std::fs::write(&vocals_wav_path, &result.vocals_wav).ok();
+            std::fs::write(&instrumental_wav_path, &result.instrumental_wav).ok();
+            std::fs::write(&vocals_compressed_path, &result.vocals_compressed).ok();
+            std::fs::write(&instrumental_compressed_path, &result.instrumental_compressed).ok();
+
+            // 1. vocals compressed (audio — inline playback)
+            eprintln!("[separation trace={trace_id} event=send_vocals_compressed]");
+            let p = SendAudioParams::builder()
                 .chat_id(chat_id)
-                .audio(PathBuf::from(&vocals_path))
-                .caption(t("separation.result.vocals_caption"))
+                .audio(PathBuf::from(&vocals_compressed_path))
+                .caption(t("separation.result.vocals_compressed_caption"))
                 .build();
-            match api.send_audio(&vocals_params).await {
-                Ok(_) => eprintln!("[separation trace={trace_id} event=vocals_sent]"),
-                Err(e) => eprintln!("[separation trace={trace_id} event=vocals_failed] err={e}"),
+            match api.send_audio(&p).await {
+                Ok(_) => eprintln!("[separation trace={trace_id} event=vocals_compressed_sent]"),
+                Err(e) => eprintln!("[separation trace={trace_id} event=vocals_compressed_failed] err={e}"),
             }
 
-            eprintln!("[separation trace={trace_id} event=send_instrumental] chat_id={chat_id}");
-            let instr_params = SendAudioParams::builder()
+            // 2. vocals WAV (document — for editing)
+            eprintln!("[separation trace={trace_id} event=send_vocals_wav]");
+            let p = frankenstein::methods::SendDocumentParams::builder()
                 .chat_id(chat_id)
-                .audio(PathBuf::from(&instrumental_path))
-                .caption(t("separation.result.instrumental_caption"))
+                .document(PathBuf::from(&vocals_wav_path))
+                .caption(t("separation.result.vocals_wav_caption"))
                 .build();
-            match api.send_audio(&instr_params).await {
-                Ok(_) => eprintln!("[separation trace={trace_id} event=instrumental_sent]"),
-                Err(e) => eprintln!("[separation trace={trace_id} event=instrumental_failed] err={e}"),
+            match api.send_document(&p).await {
+                Ok(_) => eprintln!("[separation trace={trace_id} event=vocals_wav_sent]"),
+                Err(e) => eprintln!("[separation trace={trace_id} event=vocals_wav_failed] err={e}"),
+            }
+
+            // 3. instrumental compressed (audio — inline playback)
+            eprintln!("[separation trace={trace_id} event=send_instrumental_compressed]");
+            let p = SendAudioParams::builder()
+                .chat_id(chat_id)
+                .audio(PathBuf::from(&instrumental_compressed_path))
+                .caption(t("separation.result.instrumental_compressed_caption"))
+                .build();
+            match api.send_audio(&p).await {
+                Ok(_) => eprintln!("[separation trace={trace_id} event=instrumental_compressed_sent]"),
+                Err(e) => eprintln!("[separation trace={trace_id} event=instrumental_compressed_failed] err={e}"),
+            }
+
+            // 4. instrumental WAV (document — for editing)
+            eprintln!("[separation trace={trace_id} event=send_instrumental_wav]");
+            let p = frankenstein::methods::SendDocumentParams::builder()
+                .chat_id(chat_id)
+                .document(PathBuf::from(&instrumental_wav_path))
+                .caption(t("separation.result.instrumental_wav_caption"))
+                .build();
+            match api.send_document(&p).await {
+                Ok(_) => eprintln!("[separation trace={trace_id} event=instrumental_wav_sent]"),
+                Err(e) => eprintln!("[separation trace={trace_id} event=instrumental_wav_failed] err={e}"),
             }
 
             std::fs::remove_dir_all(&tmp_dir).ok();
