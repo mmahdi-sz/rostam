@@ -9,7 +9,7 @@ use frankenstein::{
 
 use crate::bot::send_text;
 use crate::emoji::{FlowManager, FlowState};
-use crate::emoji::panel::{btn_icon, btn_icon_success, btn_icon_danger};
+use crate::emoji::panel::{btn_icon, btn_icon_plain, btn_icon_success, btn_icon_danger};
 use crate::i18n::{t, tf, apply_premium_to_md};
 use crate::youtube::log_trace;
 
@@ -54,20 +54,15 @@ fn upscale_keyboard(anime_expanded: bool, active_model: &str) -> InlineKeyboardM
     rows.push(vec![if general_active {
         btn_icon_success(&t("upscale.model.general"), &general_cb, "sparkles")
     } else {
-        btn_icon(&t("upscale.model.general"), &general_cb, "sparkles")
+        btn_icon_plain(&t("upscale.model.general"), &general_cb, "sparkles")
     }]);
 
-    let anime_header_active = is_anime_model(active_model);
     let anime_label = if anime_expanded {
         format!("{} ▲", t("upscale.model.anime_group"))
     } else {
         format!("{} ▼", t("upscale.model.anime_group"))
     };
-    rows.push(vec![if anime_header_active {
-        btn_icon_success(&anime_label, CB_UPSCALE_ANIME_TOGGLE, "quality_high")
-    } else {
-        btn_icon(&anime_label, CB_UPSCALE_ANIME_TOGGLE, "quality_high")
-    }]);
+    rows.push(vec![btn_icon_plain(&anime_label, CB_UPSCALE_ANIME_TOGGLE, "quality_high")]);
 
     if anime_expanded {
         for (model_name, _scale, label_key) in ANIME_MODELS {
@@ -76,7 +71,7 @@ fn upscale_keyboard(anime_expanded: bool, active_model: &str) -> InlineKeyboardM
             rows.push(vec![if is_active {
                 btn_icon_success(&t(label_key), &cb, "")
             } else {
-                btn_icon(&t(label_key), &cb, "")
+                btn_icon_plain(&t(label_key), &cb, "")
             }]);
         }
     }
