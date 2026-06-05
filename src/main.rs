@@ -13,7 +13,7 @@ mod youtube;
 use bot::{send_text, send_start_menu, edit_to_start_menu, CB_START_EMOJI, CB_START_YOUTUBE};
 use emoji::panel::CB_START_PANEL;
 use config::bot_token;
-use cookie_pool::CookiePool;
+use cookie_pool::{CookiePool, CookieSource};
 use database::postgresql::PostgresDatabase;
 use emoji::{FlowManager, FlowState, handler as emoji_handler};
 use frankenstein::{
@@ -93,6 +93,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cookie_status = cookie_pool.status();
 
+    // Channels for auto-refresh when a cookie is rate-limited.
+    // rate_limit_tx  : handle_youtube_url → main loop, carries the CookieSource that got 429'd
+    // cooldown_done_tx: refresh task → main loop, carries cookie_id to remove from cooldown
+    let (rate_limit_tx, mut rate_limit_rx) = tokio::sync::mpsc::unbounded_channel::<CookieSource>();
+    let (cooldown_done_tx, mut cooldown_done_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
     // Spawn cookie refresher background task
     {
         let profiles: Vec<(String, String, String)> = cookie_pool
@@ -122,20 +128,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             tokio::spawn(async move {
                 loop {
-                    for (profile_name, profile_path, cache_dir) in &profiles {
-                        let cfg = modules::cookie_refresher::CookieRefresherConfig {
-                            profile_path: profile_path.clone(),
-                            profile_name: profile_name.clone(),
-                            cache_dir: cache_dir.clone(),
-                            links_file: "files/youtube_links.txt".to_string(),
-                            duration_secs: 3600,
-                            link_count: 3,
-                            admin_chat_id,
-                        };
-                        println!("[cookie_refresher] running for profile={profile_name}");
-                        if let Err(e) = modules::cookie_refresher::run(&refresh_api, cfg).await {
-                            eprintln!("[cookie_refresher] profile={profile_name} error: {e}");
-                        }
+                    for chunk in profiles.chunks(3) {
+                        println!(
+                            "[cookie_refresher] starting chunk of {} profile(s): {}",
+                            chunk.len(),
+                            chunk.iter().map(|(n, _, _)| n.as_str()).collect::<Vec<_>>().join(", ")
+                        );
+                        let futs: Vec<_> = chunk.iter().map(|(profile_name, profile_path, cache_dir)| {
+                            let cfg = modules::cookie_refresher::CookieRefresherConfig {
+                                profile_path: profile_path.clone(),
+                                profile_name: profile_name.clone(),
+                                cache_dir: cache_dir.clone(),
+                                links_file: "files/youtube_links.txt".to_string(),
+                                duration_secs: 3600,
+                                link_count: 3,
+                                admin_chat_id,
+                            };
+                            let api = refresh_api.clone();
+                            let pname = profile_name.clone();
+                            async move {
+                                println!("[cookie_refresher] running for profile={pname}");
+                                if let Err(e) = modules::cookie_refresher::run(&api, cfg).await {
+                                    eprintln!("[cookie_refresher] profile={pname} error: {e}");
+                                } else {
+                                    println!("[cookie_refresher] profile={pname} cookies updated on disk");
+                                }
+                            }
+                        }).collect();
+                        futures::future::join_all(futs).await;
+                        println!("[cookie_refresher] chunk done");
                     }
                     println!("[cookie_refresher] all profiles done, sleeping {refresh_interval_secs}s");
                     tokio::time::sleep(Duration::from_secs(refresh_interval_secs)).await;
@@ -211,8 +232,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
 
+        // Process any completed cooldown refreshes — re-add cookies to pool.
+        while let Ok(cookie_id) = cooldown_done_rx.try_recv() {
+            println!("[cookie_refresher] cooldown refresh done, re-adding cookie_id={cookie_id} to pool");
+            cookie_pool.remove_from_cooldown(&cookie_id);
+        }
+
+        // Spawn refresh tasks for newly rate-limited cookies (fires after 30 min cooldown).
+        while let Ok(source) = rate_limit_rx.try_recv() {
+            let done_tx = cooldown_done_tx.clone();
+            let api_clone = api.clone();
+            let admin_chat_id = config::admin_user_id().unwrap_or(0);
+            tokio::spawn(async move {
+                let p = &source.profile_name;
+                let cookie_id = source.id.clone();
+                tokio::time::sleep(Duration::from_secs(30 * 60)).await;
+                println!("[cookie_refresh profile={p} event=cooldown_refresh_start] cookie_id={cookie_id}");
+                let cfg = modules::cookie_refresher::CookieRefresherConfig {
+                    profile_path: source.source_profile_dir.to_string_lossy().into_owned(),
+                    profile_name: source.profile_name.clone(),
+                    cache_dir: source.profile_dir.to_string_lossy().into_owned(),
+                    links_file: "files/youtube_links.txt".to_string(),
+                    duration_secs: 3600,
+                    link_count: 3,
+                    admin_chat_id,
+                };
+                if let Err(e) = modules::cookie_refresher::run(&api_clone, cfg).await {
+                    eprintln!("[cookie_refresh profile={p} event=cooldown_refresh_failed] cookie_id={cookie_id} err={e}");
+                } else {
+                    println!("[cookie_refresh profile={p} event=cooldown_refresh_done] cookie_id={cookie_id} re-adding to pool");
+                }
+                // Always re-add to pool after refresh attempt (success or fail).
+                let _ = done_tx.send(cookie_id);
+            });
+        }
+
         for update in updates {
-            params.offset = Some((update.update_id + 1) as i64);
 
             match update.content {
                 UpdateContent::Message(message) => {
@@ -266,7 +321,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 for url in urls {
                                     let trace_id = next_trace_id();
                                     log_trace(trace_id, "route_youtube_url", &format!("user_id={user_id:?} chat_id={} url={url}", message.chat.id));
-                                    handle_youtube_url(&api, message.chat.id, message.message_id, user_id, trace_id, &url, &mut cookie_pool, &database).await;
+                                    handle_youtube_url(&api, message.chat.id, message.message_id, user_id, trace_id, &url, &mut cookie_pool, &database, &rate_limit_tx).await;
                                 }
                             }
                         }

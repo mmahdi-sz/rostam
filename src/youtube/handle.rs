@@ -9,7 +9,7 @@ use frankenstein::{
 };
 
 use crate::bot::send_text;
-use crate::cookie_pool::{CookiePool, format_no_cookie_available, save_snapshot};
+use crate::cookie_pool::{CookiePool, CookieSource, format_no_cookie_available, save_snapshot};
 use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::{t, tf};
 
@@ -28,6 +28,7 @@ pub async fn handle_youtube_url(
     url: &str,
     cookie_pool: &mut CookiePool,
     database: &Option<PostgresDatabase>,
+    rate_limit_tx: &tokio::sync::mpsc::UnboundedSender<CookieSource>,
 ) {
     log_trace(trace_id, "handle_start", &format!("user_id={user_id:?} chat_id={chat_id} url={url}"));
 
@@ -134,8 +135,11 @@ pub async fn handle_youtube_url(
                 return;
             }
             Err(FetchError::RateLimited) => {
-                if cookie_pool.mark_last_rate_limited() == Some(true) {
+                if let Some(source) = cookie_pool.mark_last_rate_limited() {
                     save_snapshot(database, cookie_pool).await;
+                    let p = source.profile_name.clone();
+                    println!("[cookie_refresh profile={p} event=cooldown_refresh_scheduled] cookie_id={} waiting 30min then refresh", source.id);
+                    let _ = rate_limit_tx.send(source);
                 }
                 eprintln!("yt-dlp 429 with cookie {}; retrying", cookie.id);
                 log_trace(trace_id, "fetch_rate_limited", &format!("cookie_id={}", cookie.id));
