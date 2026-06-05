@@ -10,7 +10,7 @@ use frankenstein::{
 
 use crate::bot::{send_text, edit_to_ai_lab};
 use crate::emoji::{FlowManager, FlowState};
-use crate::i18n::t;
+use crate::i18n::{t, tf};
 
 static NEXT_TRACE: AtomicU64 = AtomicU64::new(1);
 
@@ -141,8 +141,8 @@ pub async fn handle_gwm_image(
     // Run watermark removal.
     eprintln!("[gwm trace={trace_id} event=remove_start] user_id={user_id} ext={ext} bytes={}", image_bytes.len());
     let t_start = std::time::Instant::now();
-    let result_bytes = match super::remove::remove_watermark(image_bytes, ext.clone(), user_id, trace_id).await {
-        Ok(b) => b,
+    let pass_outputs = match super::remove::remove_watermark(image_bytes, ext.clone(), user_id, trace_id).await {
+        Ok(v) => v,
         Err(super::remove::GwmError::NoWatermarkDetected(detail)) => {
             let elapsed = t_start.elapsed().as_secs_f64();
             eprintln!("[gwm trace={trace_id} event=no_watermark] elapsed={elapsed:.2}s detail={detail:?}");
@@ -157,29 +157,71 @@ pub async fn handle_gwm_image(
         }
     };
     let elapsed = t_start.elapsed().as_secs_f64();
-    eprintln!("[gwm trace={trace_id} event=remove_done] elapsed={elapsed:.2}s output_bytes={}", result_bytes.len());
+    let n = pass_outputs.len();
+    eprintln!(
+        "[gwm trace={trace_id} event=remove_done] elapsed={elapsed:.2}s passes={n}"
+    );
 
-    // Write result and send as document.
-    let out_path = std::env::temp_dir().join(format!("gwm_out_{trace_id}.{ext}"));
-    if let Err(e) = std::fs::write(&out_path, &result_bytes) {
-        eprintln!("[gwm trace={trace_id} event=write_failed] err={e}");
+    if n == 0 {
         let _ = send_text(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
         return;
     }
 
-    let p = SendDocumentParams::builder()
-        .chat_id(chat_id)
-        .document(PathBuf::from(&out_path))
-        .caption(t("gemini_wm.result_caption"))
-        .build();
-    match api.send_document(&p).await {
-        Ok(_) => eprintln!("[gwm trace={trace_id} event=result_sent]"),
-        Err(e) => {
-            eprintln!("[gwm trace={trace_id} event=result_failed] err={e}");
-            let _ = send_text(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
+    // Send each pass output as its own document. The first pass also carries
+    // the multi-pass explanation so the user understands why several images
+    // are arriving and what the trade-off is.
+    for (idx, output) in pass_outputs.iter().enumerate() {
+        let pass_num = output.pass_num;
+        let out_path = std::env::temp_dir().join(format!("gwm_out_{trace_id}_p{pass_num}.{ext}"));
+        if let Err(e) = std::fs::write(&out_path, &output.bytes) {
+            eprintln!("[gwm trace={trace_id} event=write_failed] pass={pass_num} err={e}");
+            continue;
         }
+
+        let caption = build_caption(n, pass_num, idx == 0);
+        eprintln!(
+            "[gwm trace={trace_id} event=sending_pass] pass={pass_num} total={n} \
+             bytes={} caption_len={}",
+            output.bytes.len(),
+            caption.chars().count()
+        );
+
+        let p = SendDocumentParams::builder()
+            .chat_id(chat_id)
+            .document(PathBuf::from(&out_path))
+            .caption(&caption)
+            .build();
+        match api.send_document(&p).await {
+            Ok(_) => eprintln!("[gwm trace={trace_id} event=pass_sent] pass={pass_num}"),
+            Err(e) => eprintln!("[gwm trace={trace_id} event=pass_send_failed] pass={pass_num} err={e}"),
+        }
+        std::fs::remove_file(&out_path).ok();
     }
-    std::fs::remove_file(&out_path).ok();
+
+    eprintln!("[gwm trace={trace_id} event=all_passes_sent] passes={n}");
+}
+
+/// Build the caption for one pass. The first message in a multi-pass set also
+/// contains the up-front explanation; later passes get just their own label.
+fn build_caption(total: usize, pass_num: u32, is_first: bool) -> String {
+    if total == 1 {
+        return t("gemini_wm.result.single_caption");
+    }
+
+    let label_key = match pass_num {
+        1 => "gemini_wm.result.pass1_label",
+        2 => "gemini_wm.result.pass2_label",
+        3 => "gemini_wm.result.pass3_label",
+        _ => "gemini_wm.result.pass_generic_label",
+    };
+    let label = t(label_key);
+
+    if is_first {
+        let intro = tf("gemini_wm.result.multi_intro", &[("count", &total.to_string())]);
+        format!("{intro}\n\n{label}")
+    } else {
+        label
+    }
 }
 
 fn detect_ext(message: &Message) -> String {
