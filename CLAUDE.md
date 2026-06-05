@@ -905,8 +905,19 @@ Removes the Gemini AI watermark from images using the `gwt-mini` binary (v0.3.1)
 
 1. AI Lab → حذف واترمارک Gemini → state: `AwaitingGeminiWmImage`
 2. User sends photo or document
-3. File downloaded to temp dir → gwt-mini runs → output sent as document
-4. Temp files cleaned up
+3. File downloaded → `remove_watermark()` returns `Vec<PassOutput>` (1-3 passes)
+4. Each pass sent as its own `SendDocument` with a distinct caption:
+   - First image carries the multi-pass intro + ⚠️ AI-overshoot warning + pass 1 label
+   - Subsequent images get just their label (pass 2 = balanced, pass 3 = max clean)
+5. If only 1 pass completed (residual SKIP after pass 1), single image with `single_caption` is sent
+6. Temp files cleaned up per-pass
+
+### Why all passes are sent
+
+Pass 1 preserves the surrounding detail best but may leave a faint trace of
+the watermark. Pass 3 fully removes the watermark but may slightly over-blur
+the watermark region. Sending all of them lets the user pick the trade-off
+that matters for their use case rather than the bot deciding for them.
 
 ### Callback prefixes
 
