@@ -313,6 +313,8 @@ async fn download_file(api: &Bot, file_id: &str, dest: &str) -> Result<(), Box<d
     let file_info = api.get_file(&GetFileParams::builder().file_id(file_id).build()).await?;
     let file_path = file_info.result.file_path.ok_or("no file_path")?;
 
+    log_trace(next_trace_id(), "denoise_file_path", &format!("file_path={file_path}"));
+
     let url = if let Some(base) = crate::config::bot_api_base_url() {
         let base = base.trim_end_matches('/');
         format!("{base}/file/bot{}/{}", crate::config::bot_token()?, file_path)
