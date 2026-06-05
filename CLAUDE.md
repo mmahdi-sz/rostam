@@ -332,6 +332,7 @@ Required files — all tracked in the repo under `files/`:
 ```text
 files/runtime/libvosk.so            — Vosk native library (vosk crate FFI)
 files/runtime/deep-filter            — DeepFilterNet3 statically-linked musl binary
+files/runtime/gwt-mini               — Gemini watermark removal binary (v0.3.1)
 files/models/vosk/vosk-model-fa-0.5  — Vosk Persian large model
 files/realesrgan/realesrgan-ncnn-vulkan  — Real-ESRGAN NCNN Vulkan binary
 files/realesrgan/models/realesr-animevideov3-x2.param/.bin  — Anime upscale x2
@@ -377,7 +378,7 @@ The bot currently supports:
 - Local bare Git server under `git-server/ros-telegram-bot.git`
 - Full emoji management panel (`/emoji`)
 - Full YouTube downloader: URL detection → preview → quality/codec/audio/subtitle selection → yt-dlp download → upload via local Bot API → cancel button
-- AI Lab submenu: Speech-to-Text (Vosk ASR + DeepFilterNet3), noise removal (DeepFilterNet3), image upscale (Real-ESRGAN NCNN Vulkan), vocal/instrumental separation (audio-separator + Kim_Vocal_2.onnx via Python FastAPI microservice)
+- AI Lab submenu: Speech-to-Text (Vosk ASR + DeepFilterNet3), noise removal (DeepFilterNet3), image upscale (Real-ESRGAN NCNN Vulkan), vocal/instrumental separation (audio-separator + Kim_Vocal_2.onnx via Python FastAPI microservice), Gemini watermark removal (gwt-mini binary)
 
 Secrets are not tracked. `.env`, `target/`, and `git-server/` are ignored.
 
@@ -558,6 +559,7 @@ skipped), so commands always reach step 5.
 | `AwaitingUpscaleImage` | `ai:upscale` button | image received → upscale; stores `model_name`, `scale_factor`, `anime_expanded` |
 | `AwaitingSeparation` | `ai:sep` button | audio message received → show mode keyboard |
 | `AwaitingSeparationMode` | audio received | mode button pressed → separate; stores `file_id`, `filename`, `prompt_msg_id` |
+| `AwaitingGeminiWmImage` | `ai:gwm` button | photo/document received → run gwt-mini → send result |
 
 ### Adding Emojis — Accepted Input Types
 
@@ -711,6 +713,9 @@ src/separation/types.rs              — SeparationMode, SeparationResult
 src/separation/error.rs              — SeparationError enum
 src/separation/client.rs             — separate_audio(): multipart POST to Python service, base64 decode
 src/separation/handle.rs             — enter_separation, handle_separation_audio, handle_separation_callback
+src/gemini_watermark/mod.rs          — gemini watermark removal module exports
+src/gemini_watermark/remove.rs       — remove_watermark(): runs gwt-mini binary in spawn_blocking
+src/gemini_watermark/handle.rs       — enter_gwm, handle_gwm_image, handle_gwm_cancel
 src/emoji/panel/                     — keyboard builders, text formatters, CB_* constants, btn_* helpers
 src/emoji/store/                     — all DB queries
 src/emoji/smart_name.rs
@@ -876,6 +881,55 @@ sep:cancel:{msg_id}         — cancel → back to AI Lab
 ```bash
 journalctl -u abc -f | grep separation        # Rust side
 journalctl -u separation -f                   # Python side
+```
+
+## Gemini Watermark Removal
+
+Removes the Gemini AI watermark from images using the `gwt-mini` binary (v0.3.1).
+
+### Architecture
+
+- **Binary**: `files/runtime/gwt-mini` — statically compiled, called as subprocess.
+- **Base args**: `-i {input} -o {output} --denoise telea --radius 25 --quiet --no-banner`
+- **Pass 1 — detection gate** (default threshold 0.25): try current watermark profile, on `[SKIP]` retry with `--legacy`. If both skip → `NoWatermarkDetected`.
+- **Passes 2-3 — residual cleanup** (`--threshold 0.05`, same profile that won pass 1): each pass takes the previous pass's output as input. Stops early on `[SKIP]`. Maximum 3 passes total.
+- **Why multi-pass**: a single pass fades the watermark to ~5% but doesn't fully remove it. Empirically: pass 1 detects at ~71%, pass 2 at ~43%, pass 3 at ~13%, pass 4 always rejected (spatial confidence goes negative). 3 is the natural ceiling.
+- **Why two profiles**: gwt-mini v0.3.1 silently disables its automatic current→legacy fallback when `--denoise` is set, so we re-implement the fallback explicitly.
+- **Why TELEA + radius 25**: the binary's alpha-map alone fades the watermark to ~50% (alpha max 0.5137). TELEA inpainting at max radius covers the sparkle and JPEG ringing. AI denoise is slower (≈10s via llvmpipe CPU) and visually worse. Radius is capped at 25 by argument validation.
+- **Why threshold 0.05 from pass 2**: residual signal is below the default 0.25 gate. The binary's hard spatial-confidence floor still prevents damaging clean regions (it rejects when spatial confidence < ~0.25 regardless of `--threshold`), so over-processing is impossible.
+- **Exit codes**: 0 = watermark removed; 1 + `[SKIP]` in stdout = no watermark detected (soft, treated as `NoWatermarkDetected` after both profiles); other non-zero = hard failure.
+- `remove.rs` strips ANSI escape codes, logs every pass with `pass=N profile=X`, dumps untruncated `binary_stdout` / `binary_stderr` per pass, and emits `multi_pass_done` with `passes_completed` / `profile_used` / `total_elapsed`.
+- **Rust module**: `src/gemini_watermark/` — `remove.rs` spawns binary via `tokio::task::spawn_blocking`.
+
+### Flow
+
+1. AI Lab → حذف واترمارک Gemini → state: `AwaitingGeminiWmImage`
+2. User sends photo or document
+3. File downloaded → `remove_watermark()` returns `Vec<PassOutput>` (1-3 passes)
+4. Each pass sent as its own `SendDocument` with a distinct caption:
+   - First image carries the multi-pass intro + ⚠️ AI-overshoot warning + pass 1 label
+   - Subsequent images get just their label (pass 2 = balanced, pass 3 = max clean)
+5. If only 1 pass completed (residual SKIP after pass 1), single image with `single_caption` is sent
+6. Temp files cleaned up per-pass
+
+### Why all passes are sent
+
+Pass 1 preserves the surrounding detail best but may leave a faint trace of
+the watermark. Pass 3 fully removes the watermark but may slightly over-blur
+the watermark region. Sending all of them lets the user pick the trade-off
+that matters for their use case rather than the bot deciding for them.
+
+### Callback prefixes
+
+```text
+ai:gwm        — enter flow
+gwm:cancel    — cancel → back to AI Lab
+```
+
+### Log grep
+
+```bash
+journalctl -u abc -f | grep '\[gwm'
 ```
 
 ## Git Server
