@@ -275,21 +275,26 @@ pub async fn handle_upscale_image(
     let file_size = std::fs::metadata(input_path.to_str().unwrap()).map(|m| m.len()).unwrap_or(0);
     eprintln!("[upscale trace={trace_id} event=download_done] size={file_size}");
 
-    // 2. Run upscale
+    // 2. Run upscale — blocking binary, offload to threadpool so async runtime stays free
     eprintln!("[upscale trace={trace_id} event=upscale_start] model={model_name} scale={scale_factor} input={} output={}", input_path.display(), output_path.display());
-    let processing_secs = match run_upscale(
-        input_path.to_str().unwrap(),
-        output_path.to_str().unwrap(),
-        model_name,
-        scale_factor,
-        trace_id,
-    ) {
-        Ok(s) => {
+    let input_str = input_path.to_str().unwrap().to_string();
+    let output_str = output_path.to_str().unwrap().to_string();
+    let model_name_owned = model_name.to_string();
+    let processing_secs = match tokio::task::spawn_blocking(move || {
+        run_upscale(&input_str, &output_str, &model_name_owned, scale_factor, trace_id)
+    }).await {
+        Ok(Ok(s)) => {
             eprintln!("[upscale trace={trace_id} event=upscale_done] elapsed={s:.1}s");
             s
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             eprintln!("[upscale trace={trace_id} event=upscale_failed] err={e}");
+            let _ = send_text(api, chat_id, &t("upscale.upscale_failed")).await;
+            clean_up(&work_dir);
+            return;
+        }
+        Err(e) => {
+            eprintln!("[upscale trace={trace_id} event=upscale_spawn_failed] err={e}");
             let _ = send_text(api, chat_id, &t("upscale.upscale_failed")).await;
             clean_up(&work_dir);
             return;
@@ -334,7 +339,7 @@ pub async fn handle_upscale_image(
     eprintln!("[upscale trace={trace_id} event=cleanup_done]");
 }
 
-fn run_upscale(input: &str, output: &str, model_name: &str, scale: u32, trace_id: u64) -> Result<f64, Box<dyn std::error::Error>> {
+fn run_upscale(input: &str, output: &str, model_name: &str, scale: u32, trace_id: u64) -> Result<f64, String> {
     use std::time::Instant;
     let start = Instant::now();
 
@@ -362,7 +367,7 @@ fn run_upscale(input: &str, output: &str, model_name: &str, scale: u32, trace_id
     }
 
     if !result.status.success() {
-        return Err(format!("realesrgan exited with status {}", result.status).into());
+        return Err(format!("realesrgan exited with status {}", result.status));
     }
 
     if !std::path::Path::new(output).exists() {
