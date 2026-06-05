@@ -727,9 +727,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         continue;
                     }
+                    // هر callback ناشناخته (مثلاً دکمه‌های قدیمی بعد از ری‌استارت) → منوی استارت
                     eprintln!(
-                        "[main event=callback_unhandled] user_id={cb_user_id} chat_id={cb_chat_id} data={cb_data:?}"
+                        "[main event=callback_unhandled] user_id={cb_user_id} chat_id={cb_chat_id} data={cb_data:?} — sending start menu"
                     );
+                    let _ = api.answer_callback_query(
+                        &AnswerCallbackQueryParams::builder()
+                            .callback_query_id(callback_query.id)
+                            .build(),
+                    ).await;
+                    if cb_chat_id != 0 {
+                        flow_manager.clear(cb_user_id as i64);
+                        let _ = send_start_menu(&api, cb_chat_id).await;
+                    }
                 }
                 _ => {}
             }
