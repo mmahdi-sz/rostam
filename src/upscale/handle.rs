@@ -23,17 +23,82 @@ fn next_trace_id() -> u64 {
 
 pub const CB_UPSCALE_CANCEL: &str = "upscale:cancel";
 pub const CB_UPSCALE_MODEL_PREFIX: &str = "upscale:model:";
+pub const CB_UPSCALE_ANIME_TOGGLE: &str = "upscale:anime_toggle";
 
-pub const UPSCALE_MODELS: &[(&str, u32, &str, &str)] = &[
-    ("realesr-animevideov3-x2", 2, "upscale.model.anime_x2", "📺"),
-    ("realesr-animevideov3-x3", 3, "upscale.model.anime_x3", "📺"),
-    ("realesr-animevideov3-x4", 4, "upscale.model.anime_x4", "📺"),
-    ("realesrgan-x4plus-anime", 4, "upscale.model.anime_pro", "🎨"),
-    ("realesrgan-x4plus", 4, "upscale.model.general", "🖼️"),
+// (model_name, scale, i18n_key) — ترتیب نمایش در submenu
+const ANIME_MODELS: &[(&str, u32, &str)] = &[
+    ("realesrgan-x4plus-anime", 4, "upscale.model.anime_pro"),
+    ("realesr-animevideov3-x4", 4, "upscale.model.anime_x4"),
+    ("realesr-animevideov3-x3", 3, "upscale.model.anime_x3"),
+    ("realesr-animevideov3-x2", 2, "upscale.model.anime_x2"),
 ];
 
+fn is_anime_model(model_name: &str) -> bool {
+    ANIME_MODELS.iter().any(|(name, ..)| *name == model_name)
+}
+
+fn scale_for_model(model_name: &str) -> u32 {
+    ANIME_MODELS.iter()
+        .find(|(name, ..)| *name == model_name)
+        .map(|(_, s, _)| *s)
+        .unwrap_or(4)
+}
+
+fn btn(text: impl Into<String>, cb: impl Into<String>, style: Option<ButtonStyle>) -> InlineKeyboardButton {
+    InlineKeyboardButton {
+        text: text.into(),
+        callback_data: Some(cb.into()),
+        style,
+        icon_custom_emoji_id: None,
+        url: None, login_url: None, web_app: None,
+        switch_inline_query: None, switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None, copy_text: None,
+        callback_game: None, pay: None,
+    }
+}
+
+fn upscale_keyboard(anime_expanded: bool, active_model: &str) -> InlineKeyboardMarkup {
+    let mut rows: Vec<Vec<InlineKeyboardButton>> = vec![];
+
+    // دکمه عمومی
+    let general_active = active_model == "realesrgan-x4plus";
+    rows.push(vec![btn(
+        if general_active { format!("✅ {}", t("upscale.model.general")) } else { format!("🖼️ {}", t("upscale.model.general")) },
+        format!("{}{}", CB_UPSCALE_MODEL_PREFIX, "realesrgan-x4plus"),
+        if general_active { Some(ButtonStyle::Primary) } else { None },
+    )]);
+
+    // دکمه انیمه و کارتون (toggle)
+    let anime_header_active = is_anime_model(active_model);
+    rows.push(vec![btn(
+        if anime_expanded {
+            format!("🎨 {} ▲", t("upscale.model.anime_group"))
+        } else {
+            format!("🎨 {} ▼", t("upscale.model.anime_group"))
+        },
+        CB_UPSCALE_ANIME_TOGGLE,
+        if anime_header_active { Some(ButtonStyle::Primary) } else { None },
+    )]);
+
+    // زیرمنوی انیمه
+    if anime_expanded {
+        for (model_name, _scale, label_key) in ANIME_MODELS {
+            let is_active = *model_name == active_model;
+            rows.push(vec![btn(
+                if is_active { format!("  ✅ {}", t(label_key)) } else { format!("  └ {}", t(label_key)) },
+                format!("{}{}", CB_UPSCALE_MODEL_PREFIX, model_name),
+                if is_active { Some(ButtonStyle::Primary) } else { None },
+            )]);
+        }
+    }
+
+    // دکمه لغو
+    rows.push(vec![btn(t("upscale.cancel_button"), CB_UPSCALE_CANCEL, Some(ButtonStyle::Danger))]);
+
+    InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
+}
+
 /// Called from main.rs when `ai:upscale` is pressed.
-/// Edits the AI Lab message to show the upscale model selection.
 pub async fn enter_upscale(
     api: &Bot,
     chat_id: i64,
@@ -42,11 +107,10 @@ pub async fn enter_upscale(
     flow_manager: &mut FlowManager,
 ) {
     let trace_id = next_trace_id();
-
-    // Default selection
+    // پیش‌فرض: عمومی x4، منوی انیمه بسته
     flow_manager.set(user_id, FlowState::AwaitingUpscaleImage {
         scale_factor: 4,
-        model_name: "realesr-animevideov3-x4".to_string(),
+        model_name: "realesrgan-x4plus".to_string(),
     });
 
     let text = t("upscale.prompt");
@@ -55,7 +119,7 @@ pub async fn enter_upscale(
         .message_id(message_id)
         .text(&text)
         .parse_mode(ParseMode::MarkdownV2)
-        .reply_markup(upscale_keyboard_by_model("realesr-animevideov3-x4"))
+        .reply_markup(upscale_keyboard(false, "realesrgan-x4plus"))
         .build();
     match api.edit_message_text(&params).await {
         Ok(_) => log_trace(trace_id, "upscale_prompt_shown", &format!("user_id={user_id} chat_id={chat_id}")),
@@ -63,46 +127,39 @@ pub async fn enter_upscale(
     }
 }
 
-fn upscale_keyboard_by_model(active_model: &str) -> InlineKeyboardMarkup {
-    let mut rows = vec![];
-
-    for (model_name, _scale, label_key, icon) in UPSCALE_MODELS {
-        let is_active = *model_name == active_model;
-        let label = if is_active {
-            format!("✅ {} {}", t(label_key), icon)
-        } else {
-            format!("{} {}", t(label_key), icon)
-        };
-        let btn_style = if is_active { Some(ButtonStyle::Primary) } else { None };
-        rows.push(vec![InlineKeyboardButton {
-            text: label,
-            callback_data: Some(format!("{}{}", CB_UPSCALE_MODEL_PREFIX, model_name)),
-            style: btn_style,
-            icon_custom_emoji_id: None,
-            url: None, login_url: None, web_app: None,
-            switch_inline_query: None, switch_inline_query_current_chat: None,
-            switch_inline_query_chosen_chat: None, copy_text: None,
-            callback_game: None, pay: None,
-        }]);
-    }
-
-    rows.push(vec![InlineKeyboardButton {
-        text: t("upscale.cancel_button"),
-        callback_data: Some(CB_UPSCALE_CANCEL.to_string()),
-        style: Some(ButtonStyle::Danger),
-        icon_custom_emoji_id: None,
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
-    }]);
-
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(rows)
-        .build()
+/// Toggle زیرمنوی انیمه (بدون تغییر مدل انتخابی).
+pub async fn handle_upscale_anime_toggle(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    user_id: i64,
+    flow_manager: &mut FlowManager,
+) {
+    let trace_id = next_trace_id();
+    let (active_model, was_expanded) = match flow_manager.get(user_id) {
+        FlowState::AwaitingUpscaleImage { model_name, .. } => {
+            let expanded = is_anime_model(&model_name);
+            (model_name, expanded)
+        }
+        _ => ("realesrgan-x4plus".to_string(), false),
+    };
+    // toggle: اگه بسته بود باز کن، اگه باز بود ببند
+    let now_expanded = !was_expanded;
+    log_trace(trace_id, "upscale_anime_toggle", &format!(
+        "user_id={user_id} expanded={now_expanded} active={active_model}"
+    ));
+    let text = t("upscale.prompt");
+    let params = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(&text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(upscale_keyboard(now_expanded, &active_model))
+        .build();
+    let _ = api.edit_message_text(&params).await;
 }
 
-/// Handles upscale model pick callback.
+/// انتخاب مدل توسط کاربر.
 pub async fn handle_upscale_model_pick(
     api: &Bot,
     model_name: &str,
@@ -112,13 +169,7 @@ pub async fn handle_upscale_model_pick(
     flow_manager: &mut FlowManager,
 ) {
     let trace_id = next_trace_id();
-
-    // Find the model info
-    let (scale_factor, _label_key) = UPSCALE_MODELS
-        .iter()
-        .find(|(name, ..)| *name == model_name)
-        .map(|(_, s, lk, _)| (*s, *lk))
-        .unwrap_or((4, ""));
+    let scale_factor = if model_name == "realesrgan-x4plus" { 4 } else { scale_for_model(model_name) };
 
     flow_manager.set(user_id, FlowState::AwaitingUpscaleImage {
         scale_factor,
@@ -127,13 +178,15 @@ pub async fn handle_upscale_model_pick(
 
     log_trace(trace_id, "upscale_model_pick", &format!("user_id={user_id} model={model_name} scale={scale_factor}"));
 
+    // بعد از انتخاب مدل، زیرمنو باز می‌مونه اگه انیمه انتخاب شده
+    let expanded = is_anime_model(model_name);
     let text = t("upscale.prompt");
     let params = EditMessageTextParams::builder()
         .chat_id(chat_id)
         .message_id(message_id)
         .text(&text)
         .parse_mode(ParseMode::MarkdownV2)
-        .reply_markup(upscale_keyboard_by_model(model_name))
+        .reply_markup(upscale_keyboard(expanded, model_name))
         .build();
     let _ = api.edit_message_text(&params).await;
 }

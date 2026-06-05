@@ -17,7 +17,7 @@ use bot::{send_text, send_start_menu, edit_to_start_menu, edit_to_ai_lab, CB_STA
 use emoji::panel::CB_START_PANEL;
 use stt::handle::{enter_stt_config, handle_stt_callback, handle_stt_audio};
 use denoise::{enter_denoise, handle_denoise_audio};
-use upscale::{enter_upscale, handle_upscale_image, handle_upscale_cancel, handle_upscale_model_pick, CB_UPSCALE_CANCEL, CB_UPSCALE_MODEL_PREFIX};
+use upscale::{enter_upscale, handle_upscale_image, handle_upscale_cancel, handle_upscale_model_pick, handle_upscale_anime_toggle, CB_UPSCALE_CANCEL, CB_UPSCALE_MODEL_PREFIX, CB_UPSCALE_ANIME_TOGGLE};
 use stt::config::CB_STT_CANCEL;
 use config::bot_token;
 use cookie_pool::{CookiePool, CookieSource};
@@ -558,6 +558,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             log_trace(trace_id, "upscale_cancel_done", &format!("user_id={cb_user_id} chat_id={}", message.chat.id));
                         } else {
                             log_trace(trace_id, "upscale_cancel_no_message", &format!("user_id={cb_user_id}"));
+                        }
+                        continue;
+                    }
+                    if callback_query.data.as_deref() == Some(CB_UPSCALE_ANIME_TOGGLE) {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "upscale_anime_toggle", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
+                        let _ = api.answer_callback_query(
+                            &AnswerCallbackQueryParams::builder()
+                                .callback_query_id(callback_query.id)
+                                .build(),
+                        ).await;
+                        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+                            handle_upscale_anime_toggle(
+                                &api, message.chat.id, message.message_id,
+                                cb_user_id as i64, &mut flow_manager,
+                            ).await;
                         }
                         continue;
                     }
