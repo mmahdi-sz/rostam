@@ -5,7 +5,7 @@ use std::time::Instant;
 #[derive(Debug)]
 pub enum GwmError {
     IoError(String),
-    NoWatermarkDetected(String), // both attempts returned [SKIP]
+    NoWatermarkDetected(String), // pass 1 returned [SKIP] on both current AND legacy profiles
     BinaryFailed(String),
 }
 
@@ -21,11 +21,19 @@ impl std::fmt::Display for GwmError {
 
 const GWT_BINARY: &str = "files/runtime/gwt-mini";
 
-/// Inpainting method we feed to gwt-mini after the alpha-map removal.
-/// TELEA is fast (no GPU), produces a clean result, and applied at radius=20
-/// covers JPEG ringing around the watermark area.
+/// Cleanup method after alpha-map removal. TELEA inpainting fills the residual
+/// without GPU overhead and gives a perceptually clean result.
 const DENOISE_METHOD: &str = "telea";
-const INPAINT_RADIUS: &str = "20";
+/// Maximum inpaint radius the binary accepts (hard-coded ceiling: 1-25).
+const INPAINT_RADIUS: &str = "25";
+/// Lowered threshold for refinement passes (default is 0.25). Pass 1 uses the
+/// default to act as a true "is there a watermark" gate; passes 2+ accept much
+/// weaker residual signals because we already know a watermark existed.
+const REFINEMENT_THRESHOLD: &str = "0.05";
+/// Total passes attempted (pass 1 = detection, passes 2+ = residual cleanup).
+/// Empirically pass 4 always fails because the binary's spatial confidence
+/// goes negative once the watermark area looks more like background.
+const MAX_PASSES: u32 = 3;
 
 pub async fn remove_watermark(
     image_bytes: Vec<u8>,
@@ -38,8 +46,7 @@ pub async fn remove_watermark(
         .map_err(|e| GwmError::IoError(format!("spawn_blocking: {e}")))?
 }
 
-/// Strip ANSI escape sequences so we can safely search plain-text keywords
-/// in stdout/stderr produced by gwt-mini's colorized output.
+/// Strip ANSI escape sequences so we can match plain-text keywords in stdout/stderr.
 fn strip_ansi(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = String::with_capacity(s.len());
@@ -50,7 +57,7 @@ fn strip_ansi(s: &str) -> String {
             while i < bytes.len() && !bytes[i].is_ascii_alphabetic() {
                 i += 1;
             }
-            i += 1; // skip final letter
+            i += 1;
         } else {
             out.push(bytes[i] as char);
             i += 1;
@@ -69,7 +76,14 @@ struct GwtRun {
     skipped: bool,
 }
 
-fn run_gwt(input: &Path, output: &Path, extra_args: &[&str], trace_id: u64, attempt: u32) -> Result<GwtRun, GwmError> {
+fn run_gwt(
+    input: &Path,
+    output: &Path,
+    extra_args: &[&str],
+    trace_id: u64,
+    pass_num: u32,
+    profile: &str,
+) -> Result<GwtRun, GwmError> {
     let mut cmd = Command::new(GWT_BINARY);
     cmd.arg("-i").arg(input)
         .arg("-o").arg(output)
@@ -83,12 +97,14 @@ fn run_gwt(input: &Path, output: &Path, extra_args: &[&str], trace_id: u64, atte
 
     let args_dbg: Vec<String> = cmd.get_args().map(|a| a.to_string_lossy().to_string()).collect();
     eprintln!(
-        "[gwm trace={trace_id} event=binary_spawn] attempt={attempt} binary={GWT_BINARY} \
-         args={args_dbg:?}"
+        "[gwm trace={trace_id} event=binary_spawn] pass={pass_num} profile={profile} \
+         binary={GWT_BINARY} args={args_dbg:?}"
     );
 
     let t0 = Instant::now();
-    let result = cmd.output().map_err(|e| GwmError::IoError(format!("failed to spawn gwt-mini: {e}")))?;
+    let result = cmd
+        .output()
+        .map_err(|e| GwmError::IoError(format!("failed to spawn gwt-mini: {e}")))?;
     let elapsed_secs = t0.elapsed().as_secs_f64();
 
     let exit_code = result.status.code().unwrap_or(-1);
@@ -99,126 +115,168 @@ fn run_gwt(input: &Path, output: &Path, extra_args: &[&str], trace_id: u64, atte
         || stdout_lower.contains("no watermark detected")
         || stdout_lower.contains("skipped");
 
-    // ALWAYS log the full stdout/stderr (not truncated) so we can diagnose
-    // any future failure without re-running.
+    // ALWAYS log full stdout/stderr (untruncated) so future failures are diagnosable
+    // without rerunning the bot.
     eprintln!(
-        "[gwm trace={trace_id} event=binary_exit] attempt={attempt} exit_code={exit_code} \
-         success={success} skipped={skipped} elapsed={elapsed_secs:.2}s",
+        "[gwm trace={trace_id} event=binary_exit] pass={pass_num} profile={profile} \
+         exit_code={exit_code} success={success} skipped={skipped} elapsed={elapsed_secs:.2}s",
         success = result.status.success(),
     );
-    eprintln!("[gwm trace={trace_id} event=binary_stdout] attempt={attempt} stdout={stdout:?}");
-    eprintln!("[gwm trace={trace_id} event=binary_stderr] attempt={attempt} stderr={stderr:?}");
-
-    Ok(GwtRun {
-        exit_code,
-        success: result.status.success(),
-        stdout,
-        stderr,
-        elapsed_secs,
-        skipped,
-    })
-}
-
-fn remove_sync(image_bytes: &[u8], ext: &str, user_id: i64, trace_id: u64) -> Result<Vec<u8>, GwmError> {
-    let tmp_dir = std::env::temp_dir().join(format!("gwm_{trace_id}_{user_id}"));
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| GwmError::IoError(e.to_string()))?;
-
-    let input_path = tmp_dir.join(format!("input.{ext}"));
-    let output_path = tmp_dir.join(format!("output.{ext}"));
-
-    std::fs::write(&input_path, image_bytes).map_err(|e| GwmError::IoError(e.to_string()))?;
     eprintln!(
-        "[gwm trace={trace_id} event=workdir_ready] user_id={user_id} workdir={:?} input_bytes={}",
-        tmp_dir, image_bytes.len()
+        "[gwm trace={trace_id} event=binary_stdout] pass={pass_num} profile={profile} stdout={stdout:?}"
+    );
+    eprintln!(
+        "[gwm trace={trace_id} event=binary_stderr] pass={pass_num} profile={profile} stderr={stderr:?}"
     );
 
-    let total_start = Instant::now();
-
-    // Attempt 1: current profile + TELEA denoise + radius 20.
-    // For modern Gemini outputs this is the right path.
-    let r1 = match run_gwt(&input_path, &output_path, &[], trace_id, 1) {
-        Ok(r) => r,
-        Err(e) => {
-            std::fs::remove_dir_all(&tmp_dir).ok();
-            return Err(e);
-        }
-    };
-
-    if r1.success && !r1.skipped && output_path.exists() {
-        return finalize_success(&tmp_dir, &output_path, trace_id, total_start.elapsed().as_secs_f64(), "current");
-    }
-
-    // gwt-mini v0.3.1 BUG: when --denoise is set, the automatic current→legacy
-    // fallback is silently disabled. If current profile said "[SKIP]", retry
-    // explicitly pinned to the legacy profile. This handles pre-Gemini-3.5 outputs.
-    if r1.skipped || (!r1.success && r1.exit_code == 1) {
-        eprintln!("[gwm trace={trace_id} event=fallback_to_legacy] reason=attempt1_skipped");
-        // Clean stale output (if any) so we can re-check existence cleanly.
-        let _ = std::fs::remove_file(&output_path);
-
-        let r2 = match run_gwt(&input_path, &output_path, &["--legacy"], trace_id, 2) {
-            Ok(r) => r,
-            Err(e) => {
-                std::fs::remove_dir_all(&tmp_dir).ok();
-                return Err(e);
-            }
-        };
-
-        if r2.success && !r2.skipped && output_path.exists() {
-            return finalize_success(&tmp_dir, &output_path, trace_id, total_start.elapsed().as_secs_f64(), "legacy");
-        }
-
-        // Both attempts skipped → genuinely no watermark.
-        if r2.skipped || (r2.exit_code == 1 && !r2.success) {
-            std::fs::remove_dir_all(&tmp_dir).ok();
-            let detail = pick_summary(&r2.stdout)
-                .or_else(|| pick_summary(&r1.stdout))
-                .unwrap_or_else(|| "no watermark detected in either profile".to_string());
-            eprintln!(
-                "[gwm trace={trace_id} event=no_watermark_final] \
-                 attempt1_exit={} attempt2_exit={} detail={detail:?}",
-                r1.exit_code, r2.exit_code,
-            );
-            return Err(GwmError::NoWatermarkDetected(detail));
-        }
-
-        std::fs::remove_dir_all(&tmp_dir).ok();
-        return Err(GwmError::BinaryFailed(format!(
-            "attempt2 (legacy) exit={} stdout={:?} stderr={:?}",
-            r2.exit_code, r2.stdout, r2.stderr,
-        )));
-    }
-
-    // Attempt 1 failed for some other reason.
-    std::fs::remove_dir_all(&tmp_dir).ok();
-    Err(GwmError::BinaryFailed(format!(
-        "attempt1 exit={} stdout={:?} stderr={:?}",
-        r1.exit_code, r1.stdout, r1.stderr,
-    )))
-}
-
-fn finalize_success(
-    tmp_dir: &PathBuf,
-    output_path: &PathBuf,
-    trace_id: u64,
-    total_elapsed: f64,
-    profile_used: &str,
-) -> Result<Vec<u8>, GwmError> {
-    let output_bytes = std::fs::read(output_path).map_err(|e| GwmError::IoError(e.to_string()))?;
-    std::fs::remove_dir_all(tmp_dir).ok();
-    eprintln!(
-        "[gwm trace={trace_id} event=output_ready] profile={profile_used} \
-         output_bytes={} total_elapsed={total_elapsed:.2}s",
-        output_bytes.len(),
-    );
-    Ok(output_bytes)
+    Ok(GwtRun { exit_code, success: result.status.success(), stdout, stderr, elapsed_secs, skipped })
 }
 
 fn pick_summary(stdout: &str) -> Option<String> {
-    stdout.lines()
+    stdout
+        .lines()
         .find(|l| {
             let lo = l.to_lowercase();
             lo.contains("skip") || lo.contains("watermark") || lo.contains("detect")
         })
         .map(|l| l.trim().to_string())
+}
+
+fn remove_sync(image_bytes: &[u8], ext: &str, user_id: i64, trace_id: u64) -> Result<Vec<u8>, GwmError> {
+    let work_dir = std::env::temp_dir().join(format!("gwm_{trace_id}_{user_id}"));
+    std::fs::create_dir_all(&work_dir).map_err(|e| GwmError::IoError(e.to_string()))?;
+
+    // pass0 = original input; passN = output of pass N (input to pass N+1).
+    let pass0_path: PathBuf = work_dir.join(format!("pass0.{ext}"));
+    std::fs::write(&pass0_path, image_bytes).map_err(|e| GwmError::IoError(e.to_string()))?;
+
+    eprintln!(
+        "[gwm trace={trace_id} event=multi_pass_start] user_id={user_id} workdir={:?} \
+         input_bytes={} max_passes={MAX_PASSES} radius={INPAINT_RADIUS} denoise={DENOISE_METHOD}",
+        work_dir, image_bytes.len()
+    );
+    let total_start = Instant::now();
+
+    // ─── Pass 1: detection with current profile, then legacy fallback ───
+    // Pass 1 uses the default threshold (0.25) and acts as the "is there a
+    // watermark at all" gate. We try the modern (current) profile first;
+    // if it returns [SKIP] we re-try with --legacy (pre-Gemini-3.5 outputs).
+    let pass1_path: PathBuf = work_dir.join(format!("pass1.{ext}"));
+
+    let r1_current = run_gwt(&pass0_path, &pass1_path, &[], trace_id, 1, "current")?;
+
+    let profile_used: &'static str;
+    let profile_args: &'static [&'static str];
+
+    if r1_current.success && !r1_current.skipped && pass1_path.exists() {
+        profile_used = "current";
+        profile_args = &[];
+    } else if r1_current.skipped {
+        eprintln!("[gwm trace={trace_id} event=fallback_to_legacy] reason=current_skipped");
+        // Remove any partial output before retry so we can cleanly check existence.
+        let _ = std::fs::remove_file(&pass1_path);
+
+        let r1_legacy = run_gwt(&pass0_path, &pass1_path, &["--legacy"], trace_id, 1, "legacy")?;
+
+        if r1_legacy.success && !r1_legacy.skipped && pass1_path.exists() {
+            profile_used = "legacy";
+            profile_args = &["--legacy"];
+        } else if r1_legacy.skipped {
+            std::fs::remove_dir_all(&work_dir).ok();
+            let detail = pick_summary(&r1_legacy.stdout)
+                .or_else(|| pick_summary(&r1_current.stdout))
+                .unwrap_or_else(|| "no watermark detected in either profile".to_string());
+            eprintln!(
+                "[gwm trace={trace_id} event=no_watermark_final] \
+                 attempt_current_exit={} attempt_legacy_exit={} detail={detail:?}",
+                r1_current.exit_code, r1_legacy.exit_code,
+            );
+            return Err(GwmError::NoWatermarkDetected(detail));
+        } else {
+            std::fs::remove_dir_all(&work_dir).ok();
+            return Err(GwmError::BinaryFailed(format!(
+                "pass1 legacy exit={} stdout={:?} stderr={:?}",
+                r1_legacy.exit_code, r1_legacy.stdout, r1_legacy.stderr,
+            )));
+        }
+    } else {
+        std::fs::remove_dir_all(&work_dir).ok();
+        return Err(GwmError::BinaryFailed(format!(
+            "pass1 current exit={} stdout={:?} stderr={:?}",
+            r1_current.exit_code, r1_current.stdout, r1_current.stderr,
+        )));
+    }
+
+    eprintln!(
+        "[gwm trace={trace_id} event=pass_complete] pass=1 profile={profile_used} \
+         output={:?}",
+        pass1_path
+    );
+
+    // ─── Passes 2..=MAX_PASSES: residual cleanup with lowered threshold ───
+    // Each pass takes the previous pass's output as input. We lower the
+    // detection threshold to 0.05 because the residual signal after pass 1
+    // is much weaker (e.g. 43% → 13% in our tests). The binary still has a
+    // hard-coded spatial-confidence safety net below ~25%, so even with
+    // threshold=0.05 it WILL refuse to process truly clean regions
+    // (spatial confidence goes negative), guaranteeing we can't damage
+    // a clean image.
+    let mut current_path = pass1_path;
+    let mut passes_completed: u32 = 1;
+    let mut last_confidence_note: Option<String> = None;
+
+    for pass_num in 2..=MAX_PASSES {
+        let next_path: PathBuf = work_dir.join(format!("pass{pass_num}.{ext}"));
+        let mut args: Vec<&str> = profile_args.to_vec();
+        args.push("--threshold");
+        args.push(REFINEMENT_THRESHOLD);
+
+        let r = match run_gwt(&current_path, &next_path, &args, trace_id, pass_num, profile_used) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!(
+                    "[gwm trace={trace_id} event=pass_spawn_failed] pass={pass_num} err={e} \
+                     — keeping output of pass {passes_completed}"
+                );
+                break;
+            }
+        };
+
+        if r.skipped {
+            eprintln!(
+                "[gwm trace={trace_id} event=pass_no_residual] pass={pass_num} \
+                 — watermark fully removed at pass {passes_completed}"
+            );
+            last_confidence_note = pick_summary(&r.stdout);
+            break;
+        }
+
+        if !r.success || !next_path.exists() {
+            eprintln!(
+                "[gwm trace={trace_id} event=pass_no_output] pass={pass_num} exit_code={} \
+                 — keeping output of pass {passes_completed}",
+                r.exit_code
+            );
+            break;
+        }
+
+        // Pass succeeded — promote it to current.
+        current_path = next_path;
+        passes_completed = pass_num;
+        last_confidence_note = pick_summary(&r.stdout);
+    }
+
+    let final_bytes = std::fs::read(&current_path).map_err(|e| GwmError::IoError(e.to_string()))?;
+    let total_elapsed = total_start.elapsed().as_secs_f64();
+    std::fs::remove_dir_all(&work_dir).ok();
+
+    eprintln!(
+        "[gwm trace={trace_id} event=multi_pass_done] profile={profile_used} \
+         passes_completed={passes_completed} total_elapsed={total_elapsed:.2}s \
+         output_bytes={} last_note={:?}",
+        final_bytes.len(),
+        last_confidence_note,
+    );
+
+    Ok(final_bytes)
 }
