@@ -8,11 +8,12 @@ use frankenstein::{
         AnswerCallbackQueryParams, DeleteMessageParams, EditMessageTextParams,
         SendAudioParams,
     },
-    types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, ButtonStyle},
+    types::{InlineKeyboardMarkup, Message},
 };
 
 use crate::bot::{send_text, edit_to_ai_lab};
 use crate::emoji::{FlowManager, FlowState};
+use crate::emoji::panel::{btn_icon_success, btn_icon, btn_icon_danger};
 use crate::i18n::t;
 use crate::youtube::log_trace;
 
@@ -28,27 +29,14 @@ fn next_trace_id() -> u64 {
 pub const CB_AI_SEP: &str = "ai:sep";
 pub const CB_SEP_PREFIX: &str = "sep:";
 
-fn btn(text: impl Into<String>, cb: impl Into<String>, style: Option<ButtonStyle>) -> InlineKeyboardButton {
-    InlineKeyboardButton {
-        text: text.into(),
-        callback_data: Some(cb.into()),
-        style,
-        icon_custom_emoji_id: None,
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
-    }
-}
-
 fn mode_keyboard(msg_id: i32) -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![
-                btn(t("separation.btn.quality"), format!("sep:quality:{msg_id}"), Some(ButtonStyle::Primary)),
-                btn(t("separation.btn.fast"), format!("sep:fast:{msg_id}"), None),
+                btn_icon_success(&t("separation.btn.quality"), &format!("sep:quality:{msg_id}"), "quality_high"),
+                btn_icon(&t("separation.btn.fast"), &format!("sep:fast:{msg_id}"), "speed_fast"),
             ],
-            vec![btn(t("separation.btn.cancel"), format!("sep:cancel:{msg_id}"), Some(ButtonStyle::Danger))],
+            vec![btn_icon_danger(&t("separation.btn.cancel"), &format!("sep:cancel:{msg_id}"), "cancel")],
         ])
         .build()
 }

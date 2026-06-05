@@ -1,6 +1,6 @@
-use frankenstein::types::{InlineKeyboardMarkup, InlineKeyboardButton, ButtonStyle};
+use frankenstein::types::InlineKeyboardMarkup;
 
-use crate::emoji::panel::btn_icon;
+use crate::emoji::panel::{btn_icon, btn_icon_success, btn_icon_danger};
 use crate::i18n::t;
 
 pub const CB_STT_FA_BIG: &str = "stt:fa_big";
@@ -20,25 +20,21 @@ pub fn config_keyboard(denoise: bool) -> InlineKeyboardMarkup {
         format!("{} ❌", t("stt.denoise_label"))
     };
 
+    let denoise_icon = if denoise { "soundwave" } else { "cancel" };
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![
-                btn_icon(&t("stt.language.fa_big"), CB_STT_FA_BIG, "star_yt"),
-                btn_icon(&t("stt.language.fa_small"), CB_STT_FA_SMALL, "signal"),
+                btn_icon_success(&t("stt.language.fa_big"), CB_STT_FA_BIG, "flag_ir"),
+                btn_icon(&t("stt.language.fa_small"), CB_STT_FA_SMALL, "speed_fast"),
             ],
             vec![
-                btn_icon(&t("stt.language.en_big"), CB_STT_EN_BIG, "star_yt"),
-                btn_icon(&t("stt.language.en_small"), CB_STT_EN_SMALL, "signal"),
+                btn_icon_success(&t("stt.language.en_big"), CB_STT_EN_BIG, "flag_us"),
+                btn_icon(&t("stt.language.en_small"), CB_STT_EN_SMALL, "speed_fast"),
             ],
-            vec![InlineKeyboardButton {
-                text: denoise_text,
-                callback_data: Some(CB_STT_TOGGLE_DENOISE.to_string()),
-                style: Some(if denoise { ButtonStyle::Primary } else { ButtonStyle::Danger }),
-                icon_custom_emoji_id: None,
-                url: None, login_url: None, web_app: None,
-                switch_inline_query: None, switch_inline_query_current_chat: None,
-                switch_inline_query_chosen_chat: None, copy_text: None,
-                callback_game: None, pay: None,
+            vec![if denoise {
+                btn_icon_success(&denoise_text, CB_STT_TOGGLE_DENOISE, denoise_icon)
+            } else {
+                btn_icon_danger(&denoise_text, CB_STT_TOGGLE_DENOISE, denoise_icon)
             }],
             vec![
                 btn_icon(&t("start.back"), CB_STT_BACK, "back"),

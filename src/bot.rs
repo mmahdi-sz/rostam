@@ -212,10 +212,10 @@ pub fn start_menu_keyboard() -> InlineKeyboardMarkup {
 pub fn ai_lab_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
-            vec![btn_success(&t("start.ai_denoise_button"), CB_AI_DENOISE)],
+            vec![btn_icon_success(&t("start.ai_denoise_button"), CB_AI_DENOISE, "soundwave")],
             vec![btn_icon_success(&t("start.ai_upscale_button"), CB_AI_UPSCALE, "sparkles")],
-            vec![btn_success(&t("start.ai_stt_button"), CB_AI_STT)],
-            vec![btn_success(&t("start.ai_sep_button"), CB_AI_SEP)],
+            vec![btn_icon_success(&t("start.ai_stt_button"), CB_AI_STT, "microphone")],
+            vec![btn_icon_success(&t("start.ai_sep_button"), CB_AI_SEP, "headphones")],
             vec![btn_icon_success(&t("start.ai_gwm_button"), CB_AI_GWM, "gemini_logo")],
             vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
         ])

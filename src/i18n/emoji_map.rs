@@ -50,4 +50,13 @@ pub static EMOJI_MAP: &[(&str, &str)] = &[
     ("💻", "laptop"),
     ("📱", "phone"),
     ("📶", "signal"),
+    ("🎙️", "microphone"),
+    ("🎙", "microphone"),
+    ("🎧", "headphones"),
+    ("🎚️", "soundwave"),
+    ("🎚", "soundwave"),
+    ("💎", "quality_high"),
+    ("⚡️", "speed_fast"),
+    ("⚡", "speed_fast"),
+    ("🔬", "model_large"),
 ];
