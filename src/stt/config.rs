@@ -38,7 +38,6 @@ pub fn config_keyboard(denoise: bool) -> InlineKeyboardMarkup {
             }],
             vec![
                 btn_icon(&t("start.back"), CB_STT_BACK, "back"),
-                btn_icon(&t("start.main_menu"), CB_STT_MAIN_MENU, "panel"),
             ],
         ])
         .build()
