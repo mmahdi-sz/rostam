@@ -268,6 +268,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         for update in updates {
+            params.offset = Some(update.update_id as i64 + 1);
 
             match update.content {
                 UpdateContent::Message(message) => {
