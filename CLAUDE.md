@@ -470,8 +470,8 @@ Selects the next Firefox cookie profile and returns the `yt-dlp` browser spec.
 /cookie_429
 ```
 
-Marks the last selected cookie as rate-limited and moves it to a 20-hour
-cooldown.
+Marks the last selected cookie as rate-limited and moves it to a 30-minute
+cooldown. After 30 minutes the profile is auto-refreshed and re-added to pool.
 
 ## Emoji Panel
 
@@ -670,15 +670,69 @@ Emoji:
 
 Schema is created automatically at startup when `DATABASE_URL` is set.
 
-## Cookie Pool Rules
+## Cookie Pool & Auto-Refresh
 
-Implemented in `src/cookie_pool.rs`.
+Implemented in `src/cookie_pool/` and `src/modules/cookie_refresher.rs`.
 
-- Pool discovered from Firefox profiles under `/home/mahdi/.mozilla/firefox`
-- Maximum pool size: 20
-- Selection excludes cookies in cooldown and `last_used_cookie`
-- Selection is random from remaining pool
-- Cooldown duration: 20 hours, triggered only by `/cookie_429`
+### معماری کلی
+
+- پروفایل‌های فایرفاکس از `/home/mahdi/.mozilla/firefox` کشف می‌شن (max 20)
+- هر پروفایل = یک اکانت Gmail لاگین‌شده در فایرفاکس
+- yt-dlp مستقیم از `cookies.sqlite` هر پروفایل می‌خونه
+- کپی کش‌شده پروفایل‌ها در `cookie_profiles_cache/` قرار داره
+- انتخاب کوکی رندوم از pool، با حذف `last_used_cookie` و کوکی‌های در cooldown
+
+### فایل لینک‌ها
+
+- مسیر: `files/youtube_links.txt`
+- هر خط یک لینک یوتیوب (خطوط خالی و `#` نادیده گرفته می‌شن)
+- `cookie_refresher` رندوم 3 لینک از فایل انتخاب می‌کنه
+
+### چرخه refresh (cookie_refresher)
+
+- هر ۶ ساعت یکبار برای همه پروفایل‌ها اجرا می‌شه (`COOKIE_REFRESH_INTERVAL_SECS`)
+- پروفایل‌ها **۳ تا ۳ تا parallel** اجرا می‌شن (`futures::future::join_all` روی chunks of 3)
+- برای هر پروفایل، ترتیب این‌هاست:
+  1. **kill_existing_firefox**: `pkill -f "firefox.*{profile_path}"` + صبر 3 ثانیه + `pkill -9 -f ...` + صبر 2 ثانیه + حذف `{profile_path}/.parentlock` و `{profile_path}/lock`
+  2. **check_login**: چک وجود و non-empty بودن `cookies.sqlite` در `profile_path`
+  3. **open_firefox**: `sudo -u mahdi firefox --profile {profile_path} {url1}` با `DISPLAY=:10` و `XDG_RUNTIME_DIR=/run/user/1002` (X11، نه Wayland)
+  4. باز کردن 2 لینک اضافی با `--new-tab` (هر کدام با تاخیر 1 ثانیه)
+  5. **firefox_wait**: هر 5 ثانیه `/proc/{pid}` چک می‌شه؛ اگه crash کنه → `firefox_crashed`
+  6. بعد از 3600 ثانیه (1 ساعت): `firefox_timeout` — `kill -TERM` + صبر 3 ثانیه + `kill -KILL` در صورت نیاز
+  7. **refresh_cache**: کپی `cookies.sqlite` + `cookies.sqlite-wal` + `cookies.sqlite-shm` از `source_profile_dir` به `cache_dir`
+
+### مدیریت 429 (auto-refresh)
+
+وقتی yt-dlp خطای 429 برگردونه:
+
+1. `mark_last_rate_limited()` → کوکی با cooldown **4 ساعت** (safety net) از pool خارج می‌شه
+2. `CookieSource` از طریق `rate_limit_tx` channel به event loop اصلی فرستاده می‌شه
+3. یک task جداگانه spawn می‌شه که **30 دقیقه** صبر می‌کنه
+4. بعد از 30 دقیقه، `cookie_refresher::run()` فقط برای همون پروفایل اجرا می‌شه
+5. بعد از اتمام refresh (موفق یا ناموفق)، `remove_from_cooldown()` صدا زده می‌شه
+6. event loop از `cooldown_done_rx` می‌خونه و کوکی دوباره به pool active اضافه می‌شه
+
+### لاگ‌ها
+
+```bash
+journalctl -u abc -f | grep cookie_refresh
+```
+
+فرمت لاگ‌ها:
+```
+[cookie_refresh profile=xyz event=<name>] key=val ...
+```
+
+eventهای اصلی: `start`, `login_check`, `kill_existing`, `firefox_open`, `firefox_tab`,
+`firefox_wait`, `firefox_timeout`, `firefox_crashed`, `firefox_kill_term`,
+`firefox_kill_force`, `cache_copy`, `done`, `cooldown_refresh_scheduled`,
+`cooldown_refresh_start`, `cooldown_refresh_done`
+
+### اضافه کردن پروفایل جدید
+
+1. یک پروفایل فایرفاکس جدید بساز و با اکانت Google لاگین کن
+2. مطمئن شو `cookies.sqlite` در پروفایل وجود داره
+3. `systemctl restart abc` — کشف خودکار انجام می‌شه
 
 ## Git Server
 
