@@ -1,16 +1,16 @@
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
-    methods::{EditMessageTextParams, SendMessageParams},
-    types::{InlineKeyboardMarkup, MessageEntity, ReplyMarkup},
+    methods::{DeleteMessageParams, EditMessageTextParams, SendMessageParams},
+    types::{InlineKeyboardMarkup, MessageEntity, ReplyKeyboardRemove, ReplyMarkup},
 };
 
 use rand::Rng;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
-use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
-use crate::i18n::{entities_for_text, t};
+use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success, btn_success};
+use crate::i18n::{entities_for_text, apply_premium_to_md, t};
 
 pub const CB_START_EMOJI: &str = "start:emoji";
 pub const CB_START_YOUTUBE: &str = "start:youtube";
@@ -154,17 +154,32 @@ pub async fn send_start_menu(
     api: &Bot,
     chat_id: i64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let text = t("start.welcome");
-    let entities = entities_for_text(&text);
-    let mut params = SendMessageParams::builder()
+    // پاک کردن هر reply keyboard باقی‌مانده — یه پیام موقت می‌فرستیم و فوری حذف می‌کنیم
+    let remove_params = SendMessageParams::builder()
         .chat_id(chat_id)
-        .text(&text)
-        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(start_menu_keyboard()))
+        .text("\u{200B}")
+        .reply_markup(ReplyMarkup::ReplyKeyboardRemove(
+            ReplyKeyboardRemove::builder().remove_keyboard(true).build(),
+        ))
         .build();
-    if !entities.is_empty() {
-        params.entities = Some(entities);
+    if let Ok(res) = api.send_message(&remove_params).await {
+        let _ = api.delete_message(
+            &DeleteMessageParams::builder()
+                .chat_id(chat_id)
+                .message_id(res.result.message_id)
+                .build(),
+        ).await;
     }
-    api.send_message(&params).await?;
+
+    let text = apply_premium_to_md(&t("start.welcome"));
+    api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(&text)
+            .parse_mode(ParseMode::MarkdownV2)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(start_menu_keyboard()))
+            .build(),
+    ).await?;
     Ok(())
 }
 
@@ -193,21 +208,13 @@ pub fn start_menu_keyboard() -> InlineKeyboardMarkup {
 }
 
 pub fn ai_lab_keyboard() -> InlineKeyboardMarkup {
-    use frankenstein::types::InlineKeyboardButton;
-    let btn = |text: &str, cb: &str| InlineKeyboardButton {
-        text: text.to_string(),
-        callback_data: Some(cb.to_string()),
-        style: None, icon_custom_emoji_id: None, url: None, login_url: None,
-        web_app: None, switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None, callback_game: None, pay: None,
-    };
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
-            vec![btn(&t("start.ai_denoise_button"), CB_AI_DENOISE)],
-            vec![btn(&t("start.ai_upscale_button"), CB_AI_UPSCALE)],
-            vec![btn(&t("start.ai_stt_button"), CB_AI_STT)],
-            vec![btn(&t("start.ai_sep_button"), CB_AI_SEP)],
-            vec![btn(&t("start.ai_gwm_button"), CB_AI_GWM)],
+            vec![btn_icon_success(&t("start.ai_denoise_button"), CB_AI_DENOISE, "soundwave")],
+            vec![btn_icon_success(&t("start.ai_upscale_button"), CB_AI_UPSCALE, "sparkles")],
+            vec![btn_icon_success(&t("start.ai_stt_button"), CB_AI_STT, "microphone")],
+            vec![btn_icon_success(&t("start.ai_sep_button"), CB_AI_SEP, "headphones")],
+            vec![btn_icon_success(&t("start.ai_gwm_button"), CB_AI_GWM, "gemini_logo")],
             vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
         ])
         .build()
@@ -218,17 +225,14 @@ pub async fn edit_to_ai_lab(
     chat_id: i64,
     message_id: i32,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let text = t("start.ai_lab_title");
-    let entities = entities_for_text(&text);
-    let mut params = EditMessageTextParams::builder()
+    let text = apply_premium_to_md(&t("start.ai_lab_title"));
+    let params = EditMessageTextParams::builder()
         .chat_id(chat_id)
         .message_id(message_id)
         .text(&text)
+        .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(ai_lab_keyboard())
         .build();
-    if !entities.is_empty() {
-        params.entities = Some(entities);
-    }
     api.edit_message_text(&params).await?;
     Ok(())
 }
@@ -238,17 +242,15 @@ pub async fn edit_to_start_menu(
     chat_id: i64,
     message_id: i32,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let text = t("start.welcome");
-    let entities = entities_for_text(&text);
-    let mut params = EditMessageTextParams::builder()
-        .chat_id(chat_id)
-        .message_id(message_id)
-        .text(&text)
-        .reply_markup(start_menu_keyboard())
-        .build();
-    if !entities.is_empty() {
-        params.entities = Some(entities);
-    }
-    api.edit_message_text(&params).await?;
+    let text = apply_premium_to_md(&t("start.welcome"));
+    api.edit_message_text(
+        &EditMessageTextParams::builder()
+            .chat_id(chat_id)
+            .message_id(message_id)
+            .text(&text)
+            .parse_mode(ParseMode::MarkdownV2)
+            .reply_markup(start_menu_keyboard())
+            .build(),
+    ).await?;
     Ok(())
 }

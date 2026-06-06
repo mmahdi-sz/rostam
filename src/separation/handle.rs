@@ -8,11 +8,12 @@ use frankenstein::{
         AnswerCallbackQueryParams, DeleteMessageParams, EditMessageTextParams,
         SendAudioParams,
     },
-    types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, ButtonStyle},
+    types::{InlineKeyboardMarkup, Message},
 };
 
 use crate::bot::{send_text, edit_to_ai_lab};
 use crate::emoji::{FlowManager, FlowState};
+use crate::emoji::panel::{btn_icon_success, btn_icon, btn_icon_danger};
 use crate::i18n::t;
 use crate::youtube::log_trace;
 
@@ -28,27 +29,24 @@ fn next_trace_id() -> u64 {
 pub const CB_AI_SEP: &str = "ai:sep";
 pub const CB_SEP_PREFIX: &str = "sep:";
 
-fn btn(text: impl Into<String>, cb: impl Into<String>, style: Option<ButtonStyle>) -> InlineKeyboardButton {
-    InlineKeyboardButton {
-        text: text.into(),
-        callback_data: Some(cb.into()),
-        style,
-        icon_custom_emoji_id: None,
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
-    }
+pub const CB_SEP_BACK: &str = "sep:back";
+
+fn prompt_keyboard(msg_id: i32) -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![
+            vec![btn_icon(&t("start.back"), &format!("{CB_SEP_BACK}:{msg_id}"), "back")],
+        ])
+        .build()
 }
 
 fn mode_keyboard(msg_id: i32) -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![
-                btn(t("separation.btn.quality"), format!("sep:quality:{msg_id}"), Some(ButtonStyle::Primary)),
-                btn(t("separation.btn.fast"), format!("sep:fast:{msg_id}"), None),
+                btn_icon_success(&t("separation.btn.quality"), &format!("sep:quality:{msg_id}"), "quality_high"),
+                btn_icon(&t("separation.btn.fast"), &format!("sep:fast:{msg_id}"), "speed_fast"),
             ],
-            vec![btn(t("separation.btn.cancel"), format!("sep:cancel:{msg_id}"), Some(ButtonStyle::Danger))],
+            vec![btn_icon_danger(&t("separation.btn.cancel"), &format!("sep:cancel:{msg_id}"), "cancel")],
         ])
         .build()
 }
@@ -70,6 +68,7 @@ pub async fn enter_separation(
         .chat_id(chat_id)
         .message_id(message_id)
         .text(&text)
+        .reply_markup(prompt_keyboard(message_id))
         .build();
     match api.edit_message_text(&params).await {
         Ok(_) => eprintln!("[separation trace={trace_id} event=prompt_shown]"),
@@ -152,11 +151,18 @@ pub async fn handle_separation_callback(
     let trace_id = next_trace_id();
     eprintln!("[separation trace={trace_id} event=callback] user_id={user_id} chat_id={chat_id} data={cb_data}");
 
+    // sep:back:{msg_id} — برگشت به AI Lab از صفحه prompt
+    if cb_data.starts_with("sep:back:") {
+        flow_manager.clear(user_id);
+        let r = edit_to_ai_lab(api, chat_id, message_id).await;
+        eprintln!("[separation trace={trace_id} event=back_done] ok={}", r.is_ok());
+        return;
+    }
+
     // sep:cancel:{msg_id}
     if let Some(rest) = cb_data.strip_prefix("sep:cancel:") {
         eprintln!("[separation trace={trace_id} event=cancel] msg_id_from_cb={rest}");
         flow_manager.clear(user_id);
-        // Edit the keyboard message back to AI Lab.
         let r = edit_to_ai_lab(api, chat_id, message_id).await;
         eprintln!("[separation trace={trace_id} event=cancel_done] ok={}", r.is_ok());
         return;

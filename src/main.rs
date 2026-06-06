@@ -281,6 +281,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for update in updates {
             params.offset = Some(update.update_id as i64 + 1);
 
+            // DEV_MODE: فقط ادمین می‌تونه استفاده کنه
+            if config::dev_mode() {
+                let admin = config::admin_user_id();
+                let sender = match &update.content {
+                    UpdateContent::Message(m) => m.from.as_ref().map(|u| u.id as i64),
+                    UpdateContent::CallbackQuery(c) => Some(c.from.id as i64),
+                    _ => None,
+                };
+                if sender.is_some() && sender != admin {
+                    eprintln!("[dev_mode] blocked user_id={:?}", sender);
+                    continue;
+                }
+            }
+
             match update.content {
                 UpdateContent::Message(message) => {
                     let user_id = message.from.as_ref().map(|u| u.id as i64);
@@ -295,6 +309,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     continue;
                                 }
                             }
+                        }
+                    }
+
+                    // /start همیشه اولویت داره — هر flow ای رو کنسل می‌کنه
+                    if let (Some(uid), Some("/start")) = (user_id, message.text.as_deref()) {
+                        flow_manager.clear(uid);
+                        send_start_menu(&api, message.chat.id).await?;
+                        continue;
+                    }
+
+                    // «لغو عملیات» از reply keyboard — فقط وقتی Idle باشه منوی استارت نشون بده
+                    // (توی flow، خود flow این متن رو handle می‌کنه)
+                    if let (Some(uid), Some(text)) = (user_id, message.text.as_deref()) {
+                        if text.contains("لغو عملیات") && matches!(flow_manager.get(uid), FlowState::Idle) {
+                            send_start_menu(&api, message.chat.id).await?;
+                            continue;
                         }
                     }
 
@@ -720,9 +750,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         continue;
                     }
+                    // هر callback ناشناخته (مثلاً دکمه‌های قدیمی بعد از ری‌استارت) → منوی استارت
                     eprintln!(
-                        "[main event=callback_unhandled] user_id={cb_user_id} chat_id={cb_chat_id} data={cb_data:?}"
+                        "[main event=callback_unhandled] user_id={cb_user_id} chat_id={cb_chat_id} data={cb_data:?} — sending start menu"
                     );
+                    let _ = api.answer_callback_query(
+                        &AnswerCallbackQueryParams::builder()
+                            .callback_query_id(callback_query.id)
+                            .build(),
+                    ).await;
+                    if cb_chat_id != 0 {
+                        flow_manager.clear(cb_user_id as i64);
+                        let _ = send_start_menu(&api, cb_chat_id).await;
+                    }
                 }
                 _ => {}
             }

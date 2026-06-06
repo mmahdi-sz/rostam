@@ -68,11 +68,13 @@ pub(super) async fn filter_duplicates(
     let mut seen_in_batch: HashSet<String> = HashSet::new();
     let mut reported_dups: HashSet<String> = HashSet::new();
     for emoji in incoming.drain(..) {
-        let is_dup = db_dupes.contains(&emoji.custom_emoji_id)
-            || pending_ids.contains(emoji.custom_emoji_id.as_str())
-            || seen_in_batch.contains(&emoji.custom_emoji_id);
-        if is_dup {
+        let true_dup = db_dupes.contains(&emoji.custom_emoji_id)
+            || pending_ids.contains(emoji.custom_emoji_id.as_str());
+        let batch_dup = seen_in_batch.contains(&emoji.custom_emoji_id);
+        if true_dup {
             if reported_dups.insert(emoji.custom_emoji_id.clone()) { duplicates.push(emoji); }
+        } else if batch_dup {
+            // silently drop within-message duplicates — original was already kept
         } else {
             seen_in_batch.insert(emoji.custom_emoji_id.clone());
             kept.push(emoji);

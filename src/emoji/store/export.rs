@@ -1,6 +1,6 @@
 use tokio_postgres::Client;
 
-pub async fn export_user_sql(client: &Client, owner: i64) -> Result<String, tokio_postgres::Error> {
+pub async fn export_user_sql(client: &Client, owner: i64) -> Result<Option<String>, tokio_postgres::Error> {
     let mut out = String::new();
     out.push_str("-- emoji export\n\n");
     out.push_str("CREATE TABLE IF NOT EXISTS emoji_packs (\n    id SERIAL PRIMARY KEY,\n    owner_user_id BIGINT NOT NULL,\n    name TEXT NOT NULL,\n    alias TEXT,\n    is_default BOOLEAN NOT NULL DEFAULT FALSE,\n    item_count INT NOT NULL DEFAULT 0\n);\n\n");
@@ -26,7 +26,10 @@ pub async fn export_user_sql(client: &Client, owner: i64) -> Result<String, toki
             name.replace('\'', "''")
         ));
     }
-    if !packs.is_empty() { out.push('\n'); }
+    if packs.is_empty() {
+        return Ok(None);
+    }
+    out.push('\n');
 
     let items = client.query(
         "SELECT id, pack_id, owner_user_id, custom_emoji_id, fallback, smart_name, alias, position FROM emoji_items WHERE owner_user_id = $1 ORDER BY id",
@@ -54,7 +57,7 @@ pub async fn export_user_sql(client: &Client, owner: i64) -> Result<String, toki
         ));
     }
 
-    Ok(out)
+    Ok(Some(out))
 }
 
 pub async fn render_template(client: &Client, owner: i64, template: &str) -> Result<String, tokio_postgres::Error> {

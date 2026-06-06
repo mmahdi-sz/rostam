@@ -4,12 +4,13 @@ use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     methods::{EditMessageTextParams, SendDocumentParams, SendPhotoParams},
-    types::{InlineKeyboardMarkup, Message, InlineKeyboardButton, ButtonStyle},
+    types::{InlineKeyboardMarkup, Message},
 };
 
-use crate::bot::{send_text, send_text_md};
+use crate::bot::send_text;
 use crate::emoji::{FlowManager, FlowState};
-use crate::i18n::{t, tf};
+use crate::emoji::panel::{btn_icon, btn_icon_plain, btn_icon_success, btn_icon_danger};
+use crate::i18n::{t, tf, apply_premium_to_md};
 use crate::youtube::log_trace;
 
 const UPSCALE_BIN: &str = "files/realesrgan/realesrgan-ncnn-vulkan";
@@ -44,52 +45,38 @@ fn scale_for_model(model_name: &str) -> u32 {
         .unwrap_or(4)
 }
 
-fn btn(text: impl Into<String>, cb: impl Into<String>, style: Option<ButtonStyle>) -> InlineKeyboardButton {
-    InlineKeyboardButton {
-        text: text.into(),
-        callback_data: Some(cb.into()),
-        style,
-        icon_custom_emoji_id: None,
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
-    }
-}
-
 fn upscale_keyboard(anime_expanded: bool, active_model: &str) -> InlineKeyboardMarkup {
+    use frankenstein::types::InlineKeyboardButton;
     let mut rows: Vec<Vec<InlineKeyboardButton>> = vec![];
 
     let general_active = active_model == "realesrgan-x4plus";
-    rows.push(vec![btn(
-        if general_active { format!("✅ {}", t("upscale.model.general")) } else { format!("🖼️ {}", t("upscale.model.general")) },
-        format!("{}{}", CB_UPSCALE_MODEL_PREFIX, "realesrgan-x4plus"),
-        if general_active { Some(ButtonStyle::Primary) } else { None },
-    )]);
+    let general_cb = format!("{}{}", CB_UPSCALE_MODEL_PREFIX, "realesrgan-x4plus");
+    rows.push(vec![if general_active {
+        btn_icon_success(&t("upscale.model.general"), &general_cb, "sparkles")
+    } else {
+        btn_icon_plain(&t("upscale.model.general"), &general_cb, "sparkles")
+    }]);
 
-    let anime_header_active = is_anime_model(active_model);
-    rows.push(vec![btn(
-        if anime_expanded {
-            format!("🎨 {} ▲", t("upscale.model.anime_group"))
-        } else {
-            format!("🎨 {} ▼", t("upscale.model.anime_group"))
-        },
-        CB_UPSCALE_ANIME_TOGGLE,
-        if anime_header_active { Some(ButtonStyle::Primary) } else { None },
-    )]);
+    let anime_label = if anime_expanded {
+        format!("{} ▲", t("upscale.model.anime_group"))
+    } else {
+        format!("{} ▼", t("upscale.model.anime_group"))
+    };
+    rows.push(vec![btn_icon_plain(&anime_label, CB_UPSCALE_ANIME_TOGGLE, "quality_high")]);
 
     if anime_expanded {
         for (model_name, _scale, label_key) in ANIME_MODELS {
             let is_active = *model_name == active_model;
-            rows.push(vec![btn(
-                if is_active { format!("  ✅ {}", t(label_key)) } else { format!("  └ {}", t(label_key)) },
-                format!("{}{}", CB_UPSCALE_MODEL_PREFIX, model_name),
-                if is_active { Some(ButtonStyle::Primary) } else { None },
-            )]);
+            let cb = format!("{}{}", CB_UPSCALE_MODEL_PREFIX, model_name);
+            rows.push(vec![if is_active {
+                btn_icon_success(&t(label_key), &cb, "")
+            } else {
+                btn_icon_plain(&t(label_key), &cb, "")
+            }]);
         }
     }
 
-    rows.push(vec![btn(t("upscale.cancel_button"), CB_UPSCALE_CANCEL, Some(ButtonStyle::Danger))]);
+    rows.push(vec![btn_icon_danger(&t("upscale.cancel_button"), CB_UPSCALE_CANCEL, "cancel")]);
 
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }
@@ -111,7 +98,7 @@ pub async fn enter_upscale(
 
     eprintln!("[upscale trace={trace_id} event=enter] user_id={user_id} chat_id={chat_id} model=realesrgan-x4plus anime_expanded=false");
 
-    let text = t("upscale.prompt");
+    let text = apply_premium_to_md(&t("upscale.prompt"));
     let params = EditMessageTextParams::builder()
         .chat_id(chat_id)
         .message_id(message_id)
@@ -156,7 +143,7 @@ pub async fn handle_upscale_anime_toggle(
         anime_expanded: now_expanded,
     });
 
-    let text = t("upscale.prompt");
+    let text = apply_premium_to_md(&t("upscale.prompt"));
     let params = EditMessageTextParams::builder()
         .chat_id(chat_id)
         .message_id(message_id)
@@ -194,7 +181,7 @@ pub async fn handle_upscale_model_pick(
         anime_expanded,
     });
 
-    let text = t("upscale.prompt");
+    let text = apply_premium_to_md(&t("upscale.prompt"));
     let params = EditMessageTextParams::builder()
         .chat_id(chat_id)
         .message_id(message_id)
@@ -283,21 +270,26 @@ pub async fn handle_upscale_image(
     let file_size = std::fs::metadata(input_path.to_str().unwrap()).map(|m| m.len()).unwrap_or(0);
     eprintln!("[upscale trace={trace_id} event=download_done] size={file_size}");
 
-    // 2. Run upscale
+    // 2. Run upscale — blocking binary, offload to threadpool so async runtime stays free
     eprintln!("[upscale trace={trace_id} event=upscale_start] model={model_name} scale={scale_factor} input={} output={}", input_path.display(), output_path.display());
-    let processing_secs = match run_upscale(
-        input_path.to_str().unwrap(),
-        output_path.to_str().unwrap(),
-        model_name,
-        scale_factor,
-        trace_id,
-    ) {
-        Ok(s) => {
+    let input_str = input_path.to_str().unwrap().to_string();
+    let output_str = output_path.to_str().unwrap().to_string();
+    let model_name_owned = model_name.to_string();
+    let processing_secs = match tokio::task::spawn_blocking(move || {
+        run_upscale(&input_str, &output_str, &model_name_owned, scale_factor, trace_id)
+    }).await {
+        Ok(Ok(s)) => {
             eprintln!("[upscale trace={trace_id} event=upscale_done] elapsed={s:.1}s");
             s
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             eprintln!("[upscale trace={trace_id} event=upscale_failed] err={e}");
+            let _ = send_text(api, chat_id, &t("upscale.upscale_failed")).await;
+            clean_up(&work_dir);
+            return;
+        }
+        Err(e) => {
+            eprintln!("[upscale trace={trace_id} event=upscale_spawn_failed] err={e}");
             let _ = send_text(api, chat_id, &t("upscale.upscale_failed")).await;
             clean_up(&work_dir);
             return;
@@ -308,19 +300,19 @@ pub async fn handle_upscale_image(
     eprintln!("[upscale trace={trace_id} event=output_ready] size={output_size} is_doc={is_doc} ext={orig_ext}");
 
     // 3. Send upscaled image
-    let caption = t("upscale.result_caption");
     let scale_str = escape_md(&format!("{}x", scale_factor));
     let processing_str = escape_md(&format!("{:.1}", processing_secs));
-    let report = tf("upscale.report", &[
-        ("scale", &scale_str),
-        ("processing", &processing_str),
-    ]);
+    let full_caption = apply_premium_to_md(&format!(
+        "{}\n\n{}",
+        t("upscale.result_caption"),
+        tf("upscale.report", &[("scale", &scale_str), ("processing", &processing_str)]),
+    ));
 
     if is_doc || orig_ext != "jpg" {
         let params = SendDocumentParams::builder()
             .chat_id(chat_id)
             .document(PathBuf::from(output_path.to_str().unwrap()))
-            .caption(&format!("{}\n\n{}", caption, report))
+            .caption(&full_caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
         let r = api.send_document(&params).await;
@@ -330,7 +322,7 @@ pub async fn handle_upscale_image(
         let params = SendPhotoParams::builder()
             .chat_id(chat_id)
             .photo(PathBuf::from(output_path.to_str().unwrap()))
-            .caption(&format!("{}\n\n{}", caption, report))
+            .caption(&full_caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
         let r = api.send_photo(&params).await;
@@ -342,7 +334,7 @@ pub async fn handle_upscale_image(
     eprintln!("[upscale trace={trace_id} event=cleanup_done]");
 }
 
-fn run_upscale(input: &str, output: &str, model_name: &str, scale: u32, trace_id: u64) -> Result<f64, Box<dyn std::error::Error>> {
+fn run_upscale(input: &str, output: &str, model_name: &str, scale: u32, trace_id: u64) -> Result<f64, String> {
     use std::time::Instant;
     let start = Instant::now();
 
@@ -370,7 +362,7 @@ fn run_upscale(input: &str, output: &str, model_name: &str, scale: u32, trace_id
     }
 
     if !result.status.success() {
-        return Err(format!("realesrgan exited with status {}", result.status).into());
+        return Err(format!("realesrgan exited with status {}", result.status));
     }
 
     if !std::path::Path::new(output).exists() {

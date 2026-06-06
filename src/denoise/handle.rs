@@ -4,12 +4,13 @@ use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     methods::{EditMessageTextParams, SendAudioParams, SendVoiceParams},
-    types::{InlineKeyboardMarkup, Message, InlineKeyboardButton, ButtonStyle},
+    types::{InlineKeyboardMarkup, Message},
 };
 
 use crate::bot::{send_text, send_text_md, CB_DENOISE_CANCEL};
 use crate::emoji::{FlowManager, FlowState};
-use crate::i18n::{t, tf};
+use crate::emoji::panel::btn_icon_danger;
+use crate::i18n::{t, tf, apply_premium_to_md};
 use crate::stt::deepfilter;
 use crate::youtube::log_trace;
 
@@ -31,7 +32,7 @@ pub async fn enter_denoise(
     let trace_id = next_trace_id();
     flow_manager.set(user_id, FlowState::AwaitingDenoiseAudio);
 
-    let text = t("denoise.prompt");
+    let text = apply_premium_to_md(&t("denoise.prompt"));
     let params = EditMessageTextParams::builder()
         .chat_id(chat_id)
         .message_id(message_id)
@@ -48,16 +49,7 @@ pub async fn enter_denoise(
 fn denoise_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
-            vec![InlineKeyboardButton {
-                text: t("denoise.cancel_button"),
-                callback_data: Some(CB_DENOISE_CANCEL.to_string()),
-                style: Some(ButtonStyle::Danger),
-                icon_custom_emoji_id: None,
-                url: None, login_url: None, web_app: None,
-                switch_inline_query: None, switch_inline_query_current_chat: None,
-                switch_inline_query_chosen_chat: None, copy_text: None,
-                callback_game: None, pay: None,
-            }],
+            vec![btn_icon_danger(&t("denoise.cancel_button"), CB_DENOISE_CANCEL, "cancel")],
         ])
         .build()
 }
@@ -177,7 +169,7 @@ pub async fn handle_denoise_audio(
     // 5. Send denoised file
     let efficiency = if processing_secs > 0.0 { audio_duration / processing_secs } else { 0.0 };
 
-    let caption = t("denoise.result_caption");
+    let caption = apply_premium_to_md(&t("denoise.result_caption"));
 
     if is_voice {
         let params = SendVoiceParams::builder()
@@ -203,11 +195,11 @@ pub async fn handle_denoise_audio(
     let duration_str = escape_md(&format!("{:.1}", audio_duration));
     let processing_str = escape_md(&format!("{:.1}", processing_secs));
     let ratio_str = escape_md(&format!("{:.1}", efficiency));
-    let report = tf("denoise.report", &[
+    let report = apply_premium_to_md(&tf("denoise.report", &[
         ("duration", &duration_str),
         ("processing", &processing_str),
         ("ratio", &ratio_str),
-    ]);
+    ]));
     let _ = send_text_md(api, chat_id, &report).await;
     log_trace(trace_id, "denoise_report_sent", &format!("duration={audio_duration:.1}s processing={processing_secs:.1}s"));
 
