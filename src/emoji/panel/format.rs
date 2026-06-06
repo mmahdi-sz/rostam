@@ -31,7 +31,17 @@ pub fn format_pending_emojis(
     if total_pages > 1 {
         lines.push(emd(&tf("emoji.pending.page_info", &[("page", &(page + 1).to_string()), ("pages", &total_pages.to_string())])));
     }
-    lines.push(emd(&t("emoji.pending.choose_pack")));
+    {
+        let choose_pack = t("emoji.pending.choose_pack");
+        let formatted = choose_pack.lines().enumerate().map(|(i, line)| {
+            if i < 2 {
+                format!("*{}*", escape_markdown_v2(line))
+            } else {
+                escape_markdown_v2(line)
+            }
+        }).collect::<Vec<_>>().join("\n");
+        lines.push(apply_premium_to_md(&formatted));
+    }
     if !duplicates.is_empty() {
         let mut rendered = String::new();
         for d in duplicates {
