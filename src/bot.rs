@@ -171,17 +171,15 @@ pub async fn send_start_menu(
         ).await;
     }
 
-    let text = t("start.welcome");
-    let entities = entities_for_text(&text);
-    let mut params = SendMessageParams::builder()
-        .chat_id(chat_id)
-        .text(&text)
-        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(start_menu_keyboard()))
-        .build();
-    if !entities.is_empty() {
-        params.entities = Some(entities);
-    }
-    api.send_message(&params).await?;
+    let text = apply_premium_to_md(&t("start.welcome"));
+    api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(&text)
+            .parse_mode(ParseMode::MarkdownV2)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(start_menu_keyboard()))
+            .build(),
+    ).await?;
     Ok(())
 }
 
@@ -244,17 +242,15 @@ pub async fn edit_to_start_menu(
     chat_id: i64,
     message_id: i32,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let text = t("start.welcome");
-    let entities = entities_for_text(&text);
-    let mut params = EditMessageTextParams::builder()
-        .chat_id(chat_id)
-        .message_id(message_id)
-        .text(&text)
-        .reply_markup(start_menu_keyboard())
-        .build();
-    if !entities.is_empty() {
-        params.entities = Some(entities);
-    }
-    api.edit_message_text(&params).await?;
+    let text = apply_premium_to_md(&t("start.welcome"));
+    api.edit_message_text(
+        &EditMessageTextParams::builder()
+            .chat_id(chat_id)
+            .message_id(message_id)
+            .text(&text)
+            .parse_mode(ParseMode::MarkdownV2)
+            .reply_markup(start_menu_keyboard())
+            .build(),
+    ).await?;
     Ok(())
 }
