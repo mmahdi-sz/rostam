@@ -2,14 +2,14 @@ use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     methods::{EditMessageTextParams, SendMessageParams},
-    types::{InlineKeyboardMarkup, LinkPreviewOptions, ReplyMarkup},
+    types::{LinkPreviewOptions, ReplyMarkup},
 };
 
 use crate::i18n::t;
 use crate::emoji::{panel as emoji_panel, store as emoji_store};
 
 pub(super) async fn send_emoji_list(
-    api: &Bot, chat_id: i64, user_id: i64,
+    api: &Bot, chat_id: i64, message_id: i32, user_id: i64,
     client: &tokio_postgres::Client, trace_id: u64,
 ) {
     eprintln!("[emoji trace={trace_id} event=send_list_start] chat_id={chat_id} user_id={user_id}");
@@ -20,16 +20,10 @@ pub(super) async fn send_emoji_list(
             return;
         }
     };
-    if packs.is_empty() {
-        eprintln!("[emoji trace={trace_id} event=list_empty]");
-        let keyboard = InlineKeyboardMarkup::builder()
-            .inline_keyboard(vec![vec![emoji_panel::btn(&t("emoji.panel.back"), emoji_panel::CB_BACK)]])
-            .build();
-        let r = api.send_message(
-            &SendMessageParams::builder().chat_id(chat_id).text(t("emoji.no_packs"))
-                .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard)).build(),
-        ).await;
-        eprintln!("[emoji trace={trace_id} event=no_packs_sent] ok={}", r.is_ok());
+    let total_items: usize = packs.iter().map(|p| p.item_count as usize).sum();
+    if packs.is_empty() || total_items == 0 {
+        eprintln!("[emoji trace={trace_id} event=list_empty] packs={} items={total_items}", packs.len());
+        super::helpers::edit_panel(api, chat_id, message_id, &emoji_panel::main_panel_text(), Some(emoji_panel::main_panel_keyboard()), trace_id).await;
         return;
     }
     let mut packs_with_items = Vec::new();

@@ -77,7 +77,7 @@ pub async fn handle_emoji_callback(
         }
         d if d == CB_LIST => {
             eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_LIST");
-            send_emoji_list(api, chat_id, user_id, client, trace_id).await;
+            send_emoji_list(api, chat_id, message_id, user_id, client, trace_id).await;
         }
         d if d == CB_PACKS || d == CB_DELETE_PACK_MENU => {
             eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_PACKS data={d:?}");
