@@ -203,16 +203,31 @@ automatically; MarkdownV2 captions need explicit Markdown premium handling.
 Fully implemented end-to-end. Source files:
 
 ```text
-src/youtube/extract.rs          — YouTube URL detection
-src/youtube/fetch.rs            — yt-dlp metadata fetch + format/codec/audio/subtitle parsing
-src/youtube/format.rs           — preview caption/description formatting
-src/youtube/handle.rs           — URL handler, analyzing reply, cookie retry, preview sending
-src/youtube/quality_keyboard.rs — quality keyboard + cancel callback routing hub
-src/youtube/selection.rs        — unified selection menu (codec/audio/subtitle/confirm)
-src/youtube/download.rs         — request store, progress tracking, yt-dlp spawn, upload, cancel
-src/youtube/lang_names.rs       — lang_name_fa(code) → Farsi language name (~130 entries)
-src/youtube/trace.rs            — trace id generation + structured logs
-src/youtube/types.rs            — VideoInfo, VideoCodec, VideoFormatOption, AudioLanguage, SubtitleLanguage
+src/youtube/extract.rs                    — YouTube URL detection
+src/youtube/fetch.rs                      — yt-dlp metadata fetch + format/codec/audio/subtitle parsing
+src/youtube/format.rs                     — preview caption/description formatting
+src/youtube/handle.rs                     — URL handler, analyzing reply, cookie retry, preview sending
+src/youtube/quality_keyboard.rs           — quality keyboard + cancel callback routing hub
+src/youtube/selection/mod.rs              — unified selection menu (public re-exports)
+src/youtube/selection/constants.rs        — CB_* callback prefix constants
+src/youtube/selection/buttons.rs          — button helpers, answer(), quality_label()
+src/youtube/selection/keyboard.rs         — build_keyboard, build_main_keyboard, build_sub_menu_keyboard
+src/youtube/selection/panel.rs            — enter_selection_menu, build_selection_text, refresh_*
+src/youtube/selection/handlers.rs         — handle_selection_callback + all handle_* callbacks
+src/youtube/download/mod.rs               — request store + public re-exports
+src/youtube/download/types.rs             — YoutubeRequest, Selection, SubtitleMode, SelectionView
+src/youtube/download/store.rs             — REQUESTS + store/get/take_request
+src/youtube/download/cancel.rs            — ACTIVE_DOWNLOADS + cancel system + UnregisterGuard
+src/youtube/download/progress.rs          — ProgressSnapshot + parse/format/build_bar
+src/youtube/download/status.rs            — edit_progress_status, edit_status, cancel_keyboard
+src/youtube/download/selection_helpers.rs — codecs_for_height, init/with_selection, find_format
+src/youtube/download/split.rs             — split_video با ffmpeg (پارت‌بندی فایل‌های بزرگ)
+src/youtube/download/upload.rs            — send_video_with_progress + build_params helpers
+src/youtube/download/runner.rs            — spawn_download + run_download (orchestrator اصلی)
+src/youtube/download/helpers.rs           — fetch_thumbnail, pick_largest_file, cleanup_dir, quality_label_for
+src/youtube/lang_names.rs                 — lang_name_fa(code) → Farsi language name (~130 entries)
+src/youtube/trace.rs                      — trace id generation + structured logs
+src/youtube/types.rs                      — VideoInfo, VideoCodec, VideoFormatOption, AudioLanguage, SubtitleLanguage
 ```
 
 ### Full flow
@@ -243,7 +258,7 @@ src/youtube/types.rs            — VideoInfo, VideoCodec, VideoFormatOption, Au
   `format_note.contains("original")` or `language_preference >= 10`.
 - Subtitle languages: `subtitles{}` keys (is_auto=false) + `automatic_captions{}` keys (is_auto=true).
 
-### Request store (`download.rs`)
+### Request store (`download/store.rs`)
 
 ```rust
 static REQUESTS: OnceLock<Mutex<HashMap<u64, YoutubeRequest>>> = OnceLock::new();
@@ -273,7 +288,7 @@ pub struct Selection {
 - `with_selection(req, |slot| …)` → locks mutex and runs closure.
 - Selection menu callbacks mutate it in-place; keyboard is rebuilt via `EditMessageReplyMarkupParams`.
 
-### Selection menu callback prefixes (`selection.rs`)
+### Selection menu callback prefixes (`selection/constants.rs`)
 
 ```text
 yt:s:nop          — header no-op button
@@ -301,7 +316,7 @@ Quality button colors: `>= 1080p` → Success (green), `720p`/`480p` → Primary
 Quality icons in `i18n.json` under `emoji.panel.icons`: `diamond` (4K/2K), `fire_yt` (1440p),
 `sparkles` (1080p), `star_yt` (720p), `phone` (480p), `signal` (360p and below).
 
-### Cancel system (`download.rs`)
+### Cancel system (`download/cancel.rs`)
 
 ```rust
 static ACTIVE_DOWNLOADS: OnceLock<Mutex<HashMap<u64, Arc<Notify>>>> = OnceLock::new();
@@ -321,6 +336,7 @@ static ACTIVE_DOWNLOADS: OnceLock<Mutex<HashMap<u64, Arc<Notify>>>> = OnceLock::
 - Format spec: `{format_id}+bestaudio/best`, merge to mp4.
 - Progress parsed from `YT_PROGRESS|percent|downloaded|total|speed|eta|elapsed` lines.
 - Progress bar: 10 cells, `●` filled / `○` empty.
+- **Large file split**: if final file > 2000MB → split into parts targeting 1700MB each via `ffmpeg -c copy` (no re-encode). Each part uploaded separately with caption «قسمت N از M». Part sizes verified after split — if any part still > 2000MB, error is shown.
 - Upload via `SendVideoParams` with `FileUpload::InputFile` (local Bot API path).
 - On upload success: status message deleted. On failure: new error message sent.
 - Directory cleaned up (`remove_dir_all`) after every outcome.
@@ -674,7 +690,11 @@ When a user deletes their last pack, both `emoji_packs_id_seq` and
 ## Source Layout
 
 ```text
-src/main.rs                          — event loop + routing
+src/main.rs                          — entry point (فقط mod declarations + app::run())
+src/app/mod.rs                       — event loop اصلی (getUpdates + cooldown processing)
+src/app/startup.rs                   — build_bot_api, init_database, emoji cache, cookie refresher, i18n watcher, bot commands
+src/app/dispatch.rs                  — handle_update: routing پیام‌ها و callback‌ها
+src/app/state.rs                     — AppState struct
 src/config.rs                        — BOT_TOKEN / DATABASE_URL / ADMIN_USER_ID reading
 src/bot.rs                           — send_text, send_text_md, send_start_button
 src/cookie_pool.rs                   — CookiePool + format helpers + save_snapshot
@@ -688,8 +708,23 @@ src/youtube/fetch.rs                 — yt-dlp metadata fetch + codec/audio/sub
 src/youtube/format.rs                — preview caption/description formatting
 src/youtube/handle.rs                — URL flow, analyzing reply, cookie retry, preview send
 src/youtube/quality_keyboard.rs      — callback routing hub (quality/selection/cancel)
-src/youtube/selection.rs             — unified selection menu (codec/audio/subtitle/confirm)
-src/youtube/download.rs              — request store, cancel system, yt-dlp, progress, upload
+src/youtube/selection/mod.rs         — unified selection menu (public re-exports)
+src/youtube/selection/constants.rs   — CB_* callback prefix constants
+src/youtube/selection/buttons.rs     — button helpers, answer(), quality_label()
+src/youtube/selection/keyboard.rs    — build_keyboard, main + submenu keyboard builders
+src/youtube/selection/panel.rs       — enter_selection_menu, build_selection_text, refresh_*
+src/youtube/selection/handlers.rs    — handle_selection_callback + all handle_* callbacks
+src/youtube/download/mod.rs          — request store + public re-exports
+src/youtube/download/types.rs        — YoutubeRequest, Selection, SubtitleMode, SelectionView
+src/youtube/download/store.rs        — REQUESTS + store/get/take_request
+src/youtube/download/cancel.rs       — ACTIVE_DOWNLOADS + cancel system + UnregisterGuard
+src/youtube/download/progress.rs     — ProgressSnapshot + parse/format/build_bar
+src/youtube/download/status.rs       — edit_progress_status, edit_status, cancel_keyboard
+src/youtube/download/selection_helpers.rs — codecs_for_height, init/with_selection, find_format
+src/youtube/download/split.rs        — split_video با ffmpeg (پارت‌بندی فایل‌های > 2GB)
+src/youtube/download/upload.rs       — send_video_with_progress + build_params helpers
+src/youtube/download/runner.rs       — spawn_download + run_download (orchestrator)
+src/youtube/download/helpers.rs      — fetch_thumbnail, pick_largest_file, cleanup_dir
 src/youtube/lang_names.rs            — lang_name_fa(code): language code → Farsi name
 src/youtube/trace.rs                 — trace id generation + structured logs
 src/youtube/types.rs                 — VideoInfo, VideoCodec, VideoFormatOption, AudioLanguage, SubtitleLanguage
