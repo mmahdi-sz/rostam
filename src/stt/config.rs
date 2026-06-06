@@ -14,13 +14,8 @@ pub const CB_STT_MAIN_MENU: &str = "stt:main_menu";
 
 /// Build the language/quality selection keyboard.
 pub fn config_keyboard(denoise: bool) -> InlineKeyboardMarkup {
-    let denoise_text = if denoise {
-        format!("{} ✅", t("stt.denoise_label"))
-    } else {
-        format!("{} ❌", t("stt.denoise_label"))
-    };
+    let denoise_text = t("stt.denoise_label");
 
-    let denoise_icon = if denoise { "soundwave" } else { "cancel" };
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![
@@ -32,9 +27,9 @@ pub fn config_keyboard(denoise: bool) -> InlineKeyboardMarkup {
                 btn_icon(&t("stt.language.en_small"), CB_STT_EN_SMALL, "speed_fast"),
             ],
             vec![if denoise {
-                btn_icon_success(&denoise_text, CB_STT_TOGGLE_DENOISE, denoise_icon)
+                btn_icon_success(&denoise_text, CB_STT_TOGGLE_DENOISE, "check")
             } else {
-                btn_icon_danger(&denoise_text, CB_STT_TOGGLE_DENOISE, denoise_icon)
+                btn_icon_danger(&denoise_text, CB_STT_TOGGLE_DENOISE, "cancel")
             }],
             vec![
                 btn_icon(&t("start.back"), CB_STT_BACK, "back"),
