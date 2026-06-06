@@ -20,9 +20,8 @@ pub(super) async fn send_emoji_list(
             return;
         }
     };
-    let total_items: usize = packs.iter().map(|p| p.item_count as usize).sum();
-    if packs.is_empty() || total_items == 0 {
-        eprintln!("[emoji trace={trace_id} event=list_empty] packs={} items={total_items}", packs.len());
+    if packs.is_empty() {
+        eprintln!("[emoji trace={trace_id} event=list_empty]");
         super::helpers::edit_panel(api, chat_id, message_id, &emoji_panel::main_panel_text(), Some(emoji_panel::main_panel_keyboard()), trace_id).await;
         return;
     }
