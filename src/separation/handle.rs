@@ -14,7 +14,7 @@ use frankenstein::{
 use crate::bot::{send_text, edit_to_ai_lab};
 use crate::emoji::{FlowManager, FlowState};
 use crate::emoji::panel::{btn_icon_success, btn_icon, btn_icon_danger};
-use crate::i18n::t;
+use crate::i18n::{t, entities_for_text};
 use crate::youtube::log_trace;
 
 use super::client::separate_audio;
@@ -64,12 +64,14 @@ pub async fn enter_separation(
     eprintln!("[separation trace={trace_id} event=enter] user_id={user_id} chat_id={chat_id}");
 
     let text = t("separation.send_audio_prompt");
-    let params = EditMessageTextParams::builder()
+    let entities = entities_for_text(&text);
+    let mut params = EditMessageTextParams::builder()
         .chat_id(chat_id)
         .message_id(message_id)
         .text(&text)
         .reply_markup(prompt_keyboard(message_id))
         .build();
+    if !entities.is_empty() { params.entities = Some(entities); }
     match api.edit_message_text(&params).await {
         Ok(_) => eprintln!("[separation trace={trace_id} event=prompt_shown]"),
         Err(e) => eprintln!("[separation trace={trace_id} event=prompt_failed] err={e}"),
