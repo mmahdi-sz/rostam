@@ -3,7 +3,7 @@ mod extract;
 mod fetch;
 mod format;
 pub mod jalali;
-mod download;
+pub mod download;
 mod lang_names;
 mod quality_keyboard;
 mod selection;
