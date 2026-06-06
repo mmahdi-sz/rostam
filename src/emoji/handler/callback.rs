@@ -10,7 +10,7 @@ use frankenstein::{
         AnswerCallbackQueryParams, EditMessageTextParams, SendDocumentParams, SendMessageParams,
     },
     types::{
-        LinkPreviewOptions, MaybeInaccessibleMessage,
+        InlineKeyboardMarkup, LinkPreviewOptions, MaybeInaccessibleMessage,
         ReplyMarkup, ReplyKeyboardRemove,
     },
 };
@@ -97,7 +97,19 @@ pub async fn handle_emoji_callback(
                     eprintln!("[emoji_cb trace={trace_id} event=export_failed] err={e}");
                     let _ = send_text(api, chat_id, &t("emoji.export_failed")).await;
                 }
-                Ok(sql) => {
+                Ok(None) => {
+                    eprintln!("[emoji_cb trace={trace_id} event=export_empty]");
+                    let kb = InlineKeyboardMarkup::builder()
+                        .inline_keyboard(vec![vec![btn_icon(&t("emoji.panel.back_to_panel"), CB_BACK, "panel")]])
+                        .build();
+                    let params = SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(t("emoji.export_empty"))
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(kb))
+                        .build();
+                    let _ = api.send_message(&params).await;
+                }
+                Ok(Some(sql)) => {
                     let now = chrono::Utc::now().with_timezone(&Tehran);
                     let (jy, jm, jd) = gregorian_to_jalali(now.year(), now.month() as i32, now.day() as i32);
                     let filename = format!("emoji_{:04}-{:02}-{:02}_{:02}-{:02}.sql", jy, jm, jd, now.hour(), now.minute());
