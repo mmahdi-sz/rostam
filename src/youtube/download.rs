@@ -658,130 +658,386 @@ async fn run_download(
         "download_complete",
         &format!("path={path} stderr_tail={stderr_tail}"),
     );
-    edit_status(
-        &api,
-        status_chat_id,
-        status_message_id,
-        t("youtube.download.uploading"),
-    )
-    .await;
 
     let codec_name = t(selection.codec.label_key());
     let bitrate_str = find_format(&req, height, codec)
         .and_then(|f| f.bitrate)
         .map(|b| format!("{:.0}", b))
         .unwrap_or_else(|| "?".to_string());
-    let caption = tf(
-        "youtube.download.caption",
-        &[
-            ("title", &req.title),
-            ("quality", &quality_label),
-            ("codec", &codec_name),
-            ("bitrate", &bitrate_str),
-        ],
-    );
-    let caption_entities = entities_for_text(&caption);
     let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
-    let mut params = SendVideoParams::builder()
-        .chat_id(req.chat_id)
-        .video(FileUpload::InputFile(InputFile {
-            path: PathBuf::from(&path),
-        }))
-        .supports_streaming(true)
-        .caption(caption)
-        .build();
-    if !caption_entities.is_empty() {
-        params.caption_entities = Some(caption_entities);
-    }
-    if let Some(ref tp) = thumb_path {
-        params.thumbnail = Some(FileUpload::InputFile(InputFile {
-            path: PathBuf::from(tp),
-        }));
-    }
-    if let Some(d) = req.duration {
-        if d > 0 && d <= u32::MAX as u64 {
-            params.duration = Some(d as u32);
-        }
-    }
-    params.height = Some(height);
-    params.width = Some(height * 16 / 9);
+
+    // Check file size — split if > 2000 MB
+    const MAX_SIZE_MB: u64 = 2000;
+    const TARGET_PART_MB: u64 = 1700;
+    let file_size_mb = tokio::fs::metadata(&path).await
+        .map(|m| m.len() / (1024 * 1024))
+        .unwrap_or(0);
 
     log_trace(
         trace_id,
-        "upload_start",
-        &format!("path={path} thumb={}", thumb_path.as_deref().unwrap_or("none")),
+        "upload_size_check",
+        &format!("size_mb={file_size_mb} max_mb={MAX_SIZE_MB}"),
     );
 
-    let api_for_send = api.clone();
-    let mut send_task = tokio::spawn(async move { api_for_send.send_video(&params).await });
+    if file_size_mb > MAX_SIZE_MB {
+        // Need to split
+        let num_parts = ((file_size_mb + TARGET_PART_MB - 1) / TARGET_PART_MB) as usize;
+        log_trace(trace_id, "split_needed", &format!("size_mb={file_size_mb} parts={num_parts}"));
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            tf("youtube.download.splitting", &[("parts", &num_parts.to_string())]),
+        )
+        .await;
 
-    let upload_start = Instant::now();
-    let mut interval = tokio::time::interval(EDIT_THROTTLE);
-    interval.tick().await; // skip immediate first tick
-
-    let send_result = loop {
-        tokio::select! {
-            result = &mut send_task => { break result; }
-            _ = interval.tick() => {
-                let elapsed = upload_start.elapsed();
-                log_trace(trace_id, "upload_progress", &format!("elapsed={}s", elapsed.as_secs()));
-                edit_progress_status(
-                    &api,
-                    status_chat_id,
-                    status_message_id,
-                    format_upload_body(&quality_label, elapsed),
-                    request_id,
-                )
-                .await;
-            }
-            _ = &mut cancel_fut => {
-                log_trace(trace_id, "upload_cancelled", "cancel signal during upload");
-                send_task.abort();
+        let part_paths = match split_video(&path, &dir, num_parts, req.duration, trace_id).await {
+            Ok(parts) => parts,
+            Err(e) => {
+                log_trace(trace_id, "split_failed", &e);
                 edit_status(
                     &api,
                     status_chat_id,
                     status_message_id,
-                    t("youtube.download.cancelled"),
+                    tf("youtube.download.split_failed", &[("error", &e)]),
                 )
                 .await;
                 cleanup_dir(&dir, trace_id).await;
                 return;
             }
-        }
-    };
+        };
 
-    match send_result {
-        Ok(Ok(_)) => {
-            log_trace(trace_id, "upload_ok", &format!("path={path} elapsed={}s", upload_start.elapsed().as_secs()));
-            let _ = api
-                .delete_message(
-                    &frankenstein::methods::DeleteMessageParams::builder()
-                        .chat_id(status_chat_id)
-                        .message_id(status_message_id)
-                        .build(),
+        let total = part_paths.len();
+        for (i, part_path) in part_paths.iter().enumerate() {
+            let part_num = i + 1;
+
+            // Verify part size
+            let part_size_mb = tokio::fs::metadata(part_path).await
+                .map(|m| m.len() / (1024 * 1024))
+                .unwrap_or(0);
+            log_trace(
+                trace_id,
+                "split_part_size",
+                &format!("part={part_num}/{total} size_mb={part_size_mb} path={part_path}"),
+            );
+            if part_size_mb > MAX_SIZE_MB {
+                log_trace(trace_id, "split_part_too_large", &format!("part={part_num} size_mb={part_size_mb}"));
+                edit_status(
+                    &api,
+                    status_chat_id,
+                    status_message_id,
+                    tf("youtube.download.split_failed", &[("error", &format!("part {part_num} still {part_size_mb}MB after split"))]),
                 )
                 .await;
+                cleanup_dir(&dir, trace_id).await;
+                return;
+            }
+
+            edit_status(
+                &api,
+                status_chat_id,
+                status_message_id,
+                tf("youtube.download.uploading_part", &[
+                    ("part", &part_num.to_string()),
+                    ("total", &total.to_string()),
+                ]),
+            )
+            .await;
+
+            let caption = tf(
+                "youtube.download.caption_part",
+                &[
+                    ("title", &req.title),
+                    ("quality", &quality_label),
+                    ("codec", &codec_name),
+                    ("bitrate", &bitrate_str),
+                    ("part", &part_num.to_string()),
+                    ("total", &total.to_string()),
+                ],
+            );
+            let caption_entities = entities_for_text(&caption);
+            let mut params = SendVideoParams::builder()
+                .chat_id(req.chat_id)
+                .video(FileUpload::InputFile(InputFile { path: PathBuf::from(part_path) }))
+                .supports_streaming(true)
+                .caption(caption)
+                .build();
+            if !caption_entities.is_empty() {
+                params.caption_entities = Some(caption_entities);
+            }
+            if part_num == 1 {
+                if let Some(ref tp) = thumb_path {
+                    params.thumbnail = Some(FileUpload::InputFile(InputFile { path: PathBuf::from(tp) }));
+                }
+            }
+            params.height = Some(height);
+            params.width = Some(height * 16 / 9);
+
+            log_trace(trace_id, "upload_part_start", &format!("part={part_num}/{total} path={part_path}"));
+
+            let api_for_send = api.clone();
+            let mut send_task = tokio::spawn(async move { api_for_send.send_video(&params).await });
+            let upload_start = Instant::now();
+            let mut interval = tokio::time::interval(EDIT_THROTTLE);
+            interval.tick().await;
+
+            let send_result = loop {
+                tokio::select! {
+                    result = &mut send_task => { break result; }
+                    _ = interval.tick() => {
+                        let elapsed = upload_start.elapsed();
+                        log_trace(trace_id, "upload_part_progress", &format!("part={part_num} elapsed={}s", elapsed.as_secs()));
+                        edit_progress_status(
+                            &api,
+                            status_chat_id,
+                            status_message_id,
+                            format_upload_body(&quality_label, elapsed),
+                            request_id,
+                        )
+                        .await;
+                    }
+                    _ = &mut cancel_fut => {
+                        log_trace(trace_id, "upload_part_cancelled", &format!("part={part_num}"));
+                        send_task.abort();
+                        edit_status(&api, status_chat_id, status_message_id, t("youtube.download.cancelled")).await;
+                        cleanup_dir(&dir, trace_id).await;
+                        return;
+                    }
+                }
+            };
+
+            match send_result {
+                Ok(Ok(_)) => {
+                    log_trace(trace_id, "upload_part_ok", &format!("part={part_num}/{total} elapsed={}s", upload_start.elapsed().as_secs()));
+                }
+                Ok(Err(e)) => {
+                    log_trace(trace_id, "upload_part_failed", &format!("part={part_num} err={e}"));
+                    let _ = api.send_message(
+                        &SendMessageParams::builder()
+                            .chat_id(req.chat_id)
+                            .text(tf("youtube.download.upload_part_failed", &[
+                                ("part", &part_num.to_string()),
+                                ("error", &e.to_string()),
+                            ]))
+                            .build(),
+                    ).await;
+                    cleanup_dir(&dir, trace_id).await;
+                    return;
+                }
+                Err(e) => {
+                    log_trace(trace_id, "upload_part_join_failed", &e.to_string());
+                }
+            }
         }
-        Ok(Err(e)) => {
-            log_trace(trace_id, "upload_failed", &e.to_string());
-            let _ = api
-                .send_message(
-                    &SendMessageParams::builder()
-                        .chat_id(req.chat_id)
-                        .text(tf(
-                            "youtube.download.upload_failed",
-                            &[("error", &e.to_string())],
-                        ))
-                        .build(),
-                )
-                .await;
+
+        // All parts uploaded
+        let _ = api
+            .delete_message(
+                &frankenstein::methods::DeleteMessageParams::builder()
+                    .chat_id(status_chat_id)
+                    .message_id(status_message_id)
+                    .build(),
+            )
+            .await;
+    } else {
+        // Normal single-file upload
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            t("youtube.download.uploading"),
+        )
+        .await;
+
+        let caption = tf(
+            "youtube.download.caption",
+            &[
+                ("title", &req.title),
+                ("quality", &quality_label),
+                ("codec", &codec_name),
+                ("bitrate", &bitrate_str),
+            ],
+        );
+        let caption_entities = entities_for_text(&caption);
+        let mut params = SendVideoParams::builder()
+            .chat_id(req.chat_id)
+            .video(FileUpload::InputFile(InputFile {
+                path: PathBuf::from(&path),
+            }))
+            .supports_streaming(true)
+            .caption(caption)
+            .build();
+        if !caption_entities.is_empty() {
+            params.caption_entities = Some(caption_entities);
         }
-        Err(e) => {
-            log_trace(trace_id, "upload_join_failed", &e.to_string());
+        if let Some(ref tp) = thumb_path {
+            params.thumbnail = Some(FileUpload::InputFile(InputFile {
+                path: PathBuf::from(tp),
+            }));
+        }
+        if let Some(d) = req.duration {
+            if d > 0 && d <= u32::MAX as u64 {
+                params.duration = Some(d as u32);
+            }
+        }
+        params.height = Some(height);
+        params.width = Some(height * 16 / 9);
+
+        log_trace(
+            trace_id,
+            "upload_start",
+            &format!("path={path} thumb={}", thumb_path.as_deref().unwrap_or("none")),
+        );
+
+        let api_for_send = api.clone();
+        let mut send_task = tokio::spawn(async move { api_for_send.send_video(&params).await });
+
+        let upload_start = Instant::now();
+        let mut interval = tokio::time::interval(EDIT_THROTTLE);
+        interval.tick().await;
+
+        let send_result = loop {
+            tokio::select! {
+                result = &mut send_task => { break result; }
+                _ = interval.tick() => {
+                    let elapsed = upload_start.elapsed();
+                    log_trace(trace_id, "upload_progress", &format!("elapsed={}s", elapsed.as_secs()));
+                    edit_progress_status(
+                        &api,
+                        status_chat_id,
+                        status_message_id,
+                        format_upload_body(&quality_label, elapsed),
+                        request_id,
+                    )
+                    .await;
+                }
+                _ = &mut cancel_fut => {
+                    log_trace(trace_id, "upload_cancelled", "cancel signal during upload");
+                    send_task.abort();
+                    edit_status(
+                        &api,
+                        status_chat_id,
+                        status_message_id,
+                        t("youtube.download.cancelled"),
+                    )
+                    .await;
+                    cleanup_dir(&dir, trace_id).await;
+                    return;
+                }
+            }
+        };
+
+        match send_result {
+            Ok(Ok(_)) => {
+                log_trace(trace_id, "upload_ok", &format!("path={path} elapsed={}s", upload_start.elapsed().as_secs()));
+                let _ = api
+                    .delete_message(
+                        &frankenstein::methods::DeleteMessageParams::builder()
+                            .chat_id(status_chat_id)
+                            .message_id(status_message_id)
+                            .build(),
+                    )
+                    .await;
+            }
+            Ok(Err(e)) => {
+                log_trace(trace_id, "upload_failed", &e.to_string());
+                let _ = api
+                    .send_message(
+                        &SendMessageParams::builder()
+                            .chat_id(req.chat_id)
+                            .text(tf(
+                                "youtube.download.upload_failed",
+                                &[("error", &e.to_string())],
+                            ))
+                            .build(),
+                    )
+                    .await;
+            }
+            Err(e) => {
+                log_trace(trace_id, "upload_join_failed", &e.to_string());
+            }
         }
     }
 
     cleanup_dir(&dir, trace_id).await;
+}
+
+async fn split_video(
+    input: &str,
+    dir: &std::path::Path,
+    num_parts: usize,
+    duration_secs: Option<u64>,
+    trace_id: u64,
+) -> Result<Vec<String>, String> {
+    // Get duration via ffprobe if not available from metadata
+    let total_secs = match duration_secs.filter(|&d| d > 0) {
+        Some(d) => d,
+        None => {
+            let out = tokio::process::Command::new("ffprobe")
+                .args(["-v", "error", "-show_entries", "format=duration",
+                       "-of", "default=noprint_wrappers=1:nokey=1", input])
+                .output()
+                .await
+                .map_err(|e| format!("ffprobe spawn: {e}"))?;
+            String::from_utf8_lossy(&out.stdout)
+                .trim()
+                .parse::<f64>()
+                .map(|f| f.round() as u64)
+                .map_err(|_| "ffprobe: could not parse duration".to_string())?
+        }
+    };
+
+    if total_secs == 0 {
+        return Err("video duration is zero".to_string());
+    }
+
+    let part_secs = (total_secs + num_parts as u64 - 1) / num_parts as u64;
+    log_trace(
+        trace_id,
+        "split_plan",
+        &format!("total_secs={total_secs} parts={num_parts} part_secs={part_secs}"),
+    );
+
+    let mut parts = Vec::new();
+    for i in 0..num_parts {
+        let start = i as u64 * part_secs;
+        if start >= total_secs {
+            break;
+        }
+        let out_path = dir.join(format!("part{:02}.mp4", i + 1));
+        let out_str = out_path.to_string_lossy().into_owned();
+
+        log_trace(
+            trace_id,
+            "split_part_start",
+            &format!("part={} start={start}s duration={part_secs}s out={out_str}", i + 1),
+        );
+
+        let status = tokio::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-ss", &start.to_string(),
+                "-i", input,
+                "-t", &part_secs.to_string(),
+                "-c", "copy",
+                "-avoid_negative_ts", "make_zero",
+                &out_str,
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .map_err(|e| format!("ffmpeg spawn part {}: {e}", i + 1))?;
+
+        if !status.success() {
+            return Err(format!("ffmpeg exit {} on part {}", status, i + 1));
+        }
+
+        log_trace(trace_id, "split_part_done", &format!("part={} path={out_str}", i + 1));
+        parts.push(out_str);
+    }
+
+    Ok(parts)
 }
 
 async fn fetch_thumbnail(
