@@ -127,7 +127,7 @@ async fn handle_message(
             }
 
             if matches!(flow_manager.get(uid), FlowState::AwaitingSeparation) {
-                if message.audio.is_some() || message.voice.is_some() || message.document.is_some() {
+                if message.audio.is_some() || message.voice.is_some() || message.document.is_some() || message.video.is_some() {
                     let trace_id = next_trace_id();
                     log_trace(trace_id, "separation_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
                     handle_separation_audio(api, &message, uid, flow_manager).await;

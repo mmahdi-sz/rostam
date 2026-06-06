@@ -29,7 +29,7 @@ pub enum FlowState {
     AwaitingDenoiseAudio,
     AwaitingUpscaleImage { scale_factor: u32, model_name: String, anime_expanded: bool },
     AwaitingSeparation,
-    AwaitingSeparationMode { file_id: String, filename: String, prompt_msg_id: Option<i32> },
+    AwaitingSeparationMode { file_id: String, filename: String, prompt_msg_id: Option<i32>, is_video: bool },
     AwaitingGeminiWmImage,
 }
 

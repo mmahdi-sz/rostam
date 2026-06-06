@@ -92,8 +92,10 @@ pub async fn handle_separation_audio(
 
     // Keep flow alive — mode hasn't been selected yet.
     // We store the file_id so we can download after mode selection.
+    let is_video = message.video.is_some();
     let file_id = message.audio.as_ref().map(|a| a.file_id.clone())
         .or_else(|| message.voice.as_ref().map(|v| v.file_id.clone()))
+        .or_else(|| message.video.as_ref().map(|v| v.file_id.clone()))
         .or_else(|| message.document.as_ref().map(|d| d.file_id.clone()));
 
     let Some(file_id) = file_id else {
@@ -104,16 +106,17 @@ pub async fn handle_separation_audio(
 
     let orig_filename = message.audio.as_ref().and_then(|a| a.file_name.as_deref())
         .or_else(|| message.document.as_ref().and_then(|d| d.file_name.as_deref()))
-        .unwrap_or("audio.mp3")
+        .unwrap_or(if is_video { "video.mp4" } else { "audio.mp3" })
         .to_string();
 
-    eprintln!("[separation trace={trace_id} event=file_stored] file_id={file_id} filename={orig_filename}");
+    eprintln!("[separation trace={trace_id} event=file_stored] file_id={file_id} filename={orig_filename} is_video={is_video}");
 
     // Update flow to store file info, waiting for mode selection.
     flow_manager.set(user_id, FlowState::AwaitingSeparationMode {
         file_id: file_id.clone(),
         filename: orig_filename.clone(),
         prompt_msg_id: None,
+        is_video,
     });
 
     // Send mode selection keyboard as a new message.
@@ -133,6 +136,7 @@ pub async fn handle_separation_audio(
                 file_id,
                 filename: orig_filename,
                 prompt_msg_id: Some(prompt_id),
+                is_video,
             });
         }
         Err(e) => eprintln!("[separation trace={trace_id} event=mode_keyboard_failed] err={e}"),
@@ -185,8 +189,8 @@ pub async fn handle_separation_callback(
     eprintln!("[separation trace={trace_id} event=mode_selected] user_id={user_id} mode={mode_label}");
 
     // Read stored file info from flow state.
-    let (file_id, filename) = match flow_manager.get(user_id) {
-        FlowState::AwaitingSeparationMode { file_id, filename, .. } => (file_id, filename),
+    let (file_id, filename, is_video) = match flow_manager.get(user_id) {
+        FlowState::AwaitingSeparationMode { file_id, filename, is_video, .. } => (file_id, filename, is_video),
         other => {
             eprintln!("[separation trace={trace_id} event=wrong_state] state={other:?}");
             let _ = send_text(api, chat_id, &t("separation.error.service_unavailable")).await;
@@ -198,20 +202,24 @@ pub async fn handle_separation_callback(
     flow_manager.clear(user_id);
 
     // Edit keyboard message to "processing…"
-    let processing_text = t("separation.processing");
+    let processing_text = if is_video {
+        t("separation.extracting_audio")
+    } else {
+        t("separation.processing")
+    };
     let edit_params = EditMessageTextParams::builder()
         .chat_id(chat_id)
         .message_id(message_id)
         .text(&processing_text)
         .build();
     match api.edit_message_text(&edit_params).await {
-        Ok(_) => eprintln!("[separation trace={trace_id} event=processing_msg_shown]"),
+        Ok(_) => eprintln!("[separation trace={trace_id} event=processing_msg_shown] is_video={is_video}"),
         Err(e) => eprintln!("[separation trace={trace_id} event=processing_msg_failed] err={e}"),
     }
 
-    // Download audio from Telegram.
-    eprintln!("[separation trace={trace_id} event=download_start] file_id={file_id} filename={filename}");
-    let audio_bytes = match download_file(api, &file_id, trace_id).await {
+    // Download file from Telegram.
+    eprintln!("[separation trace={trace_id} event=download_start] file_id={file_id} filename={filename} is_video={is_video}");
+    let file_bytes = match download_file(api, &file_id, trace_id).await {
         Ok(b) => b,
         Err(e) => {
             eprintln!("[separation trace={trace_id} event=download_failed] err={e}");
@@ -220,11 +228,42 @@ pub async fn handle_separation_callback(
             return;
         }
     };
-    eprintln!("[separation trace={trace_id} event=download_done] bytes={}", audio_bytes.len());
+    eprintln!("[separation trace={trace_id} event=download_done] bytes={}", file_bytes.len());
+
+    // If video: extract audio with ffmpeg, then compress if needed.
+    let tmp_dir = std::env::temp_dir().join(format!("sep_{trace_id}"));
+    std::fs::create_dir_all(&tmp_dir).ok();
+
+    let audio_bytes = if is_video {
+        match extract_and_prepare_audio(&file_bytes, &tmp_dir, message_id, chat_id, api, trace_id).await {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("[separation trace={trace_id} event=extract_failed] err={e}");
+                let _ = send_text(api, chat_id, &t("separation.error.audio_extraction_failed")).await;
+                let _ = delete_message(api, chat_id, message_id).await;
+                std::fs::remove_dir_all(&tmp_dir).ok();
+                return;
+            }
+        }
+    } else {
+        file_bytes
+    };
+    eprintln!("[separation trace={trace_id} event=audio_ready] bytes={}", audio_bytes.len());
+
+    // Update status to processing.
+    if is_video {
+        let edit_params = EditMessageTextParams::builder()
+            .chat_id(chat_id)
+            .message_id(message_id)
+            .text(t("separation.processing"))
+            .build();
+        let _ = api.edit_message_text(&edit_params).await;
+    }
 
     // Call separation service.
     eprintln!("[separation trace={trace_id} event=separate_start] mode={mode_label}");
-    match separate_audio(audio_bytes, &filename, mode, user_id).await {
+    let audio_filename = if is_video { "audio.mp3" } else { &filename };
+    match separate_audio(audio_bytes, audio_filename, mode, user_id).await {
         Ok(result) => {
             eprintln!("[separation trace={trace_id} event=separate_done] duration={:.1}s vocals_wav={} instrumental_wav={} vocals_compressed={} instrumental_compressed={} ext={}",
                 result.duration_seconds, result.vocals_wav.len(), result.instrumental_wav.len(),
@@ -232,9 +271,6 @@ pub async fn handle_separation_callback(
 
             // Delete processing message.
             let _ = delete_message(api, chat_id, message_id).await;
-
-            let tmp_dir = std::env::temp_dir().join(format!("sep_{trace_id}"));
-            std::fs::create_dir_all(&tmp_dir).ok();
 
             let vocals_wav_path = tmp_dir.join("vocals.wav");
             let instrumental_wav_path = tmp_dir.join("instrumental.wav");
@@ -308,6 +344,91 @@ pub async fn handle_separation_callback(
                 SeparationError::ProcessingFailed(_) => "separation.error.processing_failed",
             };
             let _ = send_text(api, chat_id, &t(key)).await;
+        }
+    }
+}
+
+async fn extract_and_prepare_audio(
+    video_bytes: &[u8],
+    tmp_dir: &std::path::Path,
+    message_id: i32,
+    chat_id: i64,
+    api: &Bot,
+    trace_id: u64,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    const MAX_AUDIO_BYTES: u64 = 50 * 1024 * 1024;
+
+    let video_path = tmp_dir.join("input_video");
+    std::fs::write(&video_path, video_bytes)?;
+
+    // Extract audio as MP3 at 320kbps.
+    let audio_path = tmp_dir.join("extracted.mp3");
+    let status = tokio::process::Command::new("ffmpeg")
+        .args(["-y", "-i", video_path.to_str().unwrap(),
+               "-vn", "-acodec", "libmp3lame", "-b:a", "320k",
+               audio_path.to_str().unwrap()])
+        .output().await?;
+    if !status.status.success() {
+        let stderr = String::from_utf8_lossy(&status.stderr);
+        return Err(format!("ffmpeg extract failed: {stderr}").into());
+    }
+
+    let audio_size = std::fs::metadata(&audio_path)?.len();
+    eprintln!("[separation trace={trace_id} event=audio_extracted] size={audio_size}");
+
+    if audio_size <= MAX_AUDIO_BYTES {
+        return Ok(std::fs::read(&audio_path)?);
+    }
+
+    // Iteratively compress: reduce bitrate by 10% each attempt until < 50MB.
+    // Probe current bitrate then step down.
+    let probe = tokio::process::Command::new("ffprobe")
+        .args(["-v", "error", "-select_streams", "a:0",
+               "-show_entries", "stream=bit_rate",
+               "-of", "default=noprint_wrappers=1:nokey=1",
+               audio_path.to_str().unwrap()])
+        .output().await?;
+    let initial_bitrate: u32 = String::from_utf8_lossy(&probe.stdout)
+        .trim().parse().unwrap_or(320_000);
+
+    let mut bitrate_bps = initial_bitrate;
+    let mut attempt = 0u32;
+    const MAX_ATTEMPTS: u32 = 20;
+
+    loop {
+        attempt += 1;
+        bitrate_bps = (bitrate_bps as f64 * 0.9) as u32;
+        let bitrate_kbps = (bitrate_bps / 1000).max(32);
+        eprintln!("[separation trace={trace_id} event=compress_attempt] attempt={attempt} bitrate={bitrate_kbps}k");
+
+        let edit_text = crate::i18n::tf("separation.compressing_audio",
+            &[("attempt", &attempt.to_string()), ("max", &MAX_ATTEMPTS.to_string())]);
+        let _ = api.edit_message_text(&EditMessageTextParams::builder()
+            .chat_id(chat_id)
+            .message_id(message_id)
+            .text(edit_text)
+            .build()).await;
+
+        let out_path = tmp_dir.join(format!("compressed_{attempt}.mp3"));
+        let status = tokio::process::Command::new("ffmpeg")
+            .args(["-y", "-i", audio_path.to_str().unwrap(),
+                   "-acodec", "libmp3lame", "-b:a", &format!("{bitrate_kbps}k"),
+                   out_path.to_str().unwrap()])
+            .output().await?;
+        if !status.status.success() {
+            let stderr = String::from_utf8_lossy(&status.stderr);
+            return Err(format!("ffmpeg compress failed: {stderr}").into());
+        }
+
+        let size = std::fs::metadata(&out_path)?.len();
+        eprintln!("[separation trace={trace_id} event=compressed] attempt={attempt} size={size}");
+
+        if size <= MAX_AUDIO_BYTES {
+            return Ok(std::fs::read(&out_path)?);
+        }
+
+        if attempt >= MAX_ATTEMPTS || bitrate_kbps <= 32 {
+            return Err("audio still too large after max compression attempts".into());
         }
     }
 }
