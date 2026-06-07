@@ -918,6 +918,87 @@ journalctl -u abc -f | grep separation        # Rust side
 journalctl -u separation -f                   # Python side
 ```
 
+## CPU Broker — سیستم رزرو هسته (MUST USE for heavy AI tasks)
+
+هر پردازشی که چند ثانیه یا بیشتر CPU می‌گیره باید از این سیستم استفاده کنه تا هسته‌ها تداخل نداشته باشن.
+
+### فایل‌ها
+
+```text
+separation-service/cpu_monitor.py  — مانیتور /proc/stat با sliding window 5 دقیقه‌ای
+separation-service/cpu_broker.py   — رزرو هسته با Redis، صف VIP/عادی، TTL، pub/sub notify
+```
+
+### نحوه استفاده در Python
+
+```python
+from cpu_broker import acquire, release
+
+# قبل از پردازش
+cores = await acquire(user_id=user_id, is_vip=False)
+# cores = [2, 5, 9, 13]  ← شماره واقعی هسته‌های خالی
+
+try:
+    # pin کردن process به همون هسته‌ها
+    os.sched_setaffinity(0, set(cores))
+    os.environ["OMP_NUM_THREADS"] = str(len(cores))
+
+    # پردازش سنگین اینجا...
+
+finally:
+    await release(cores)
+```
+
+### منطق تصمیم‌گیری (cpu_monitor)
+
+| وضعیت سیستم | هسته‌های قابل قرض |
+|---|---|
+| میانگین ۲ دقیقه > 80% یا میانگین ۵ دقیقه > 50% | ۰ (صف) |
+| idle فعلی > 50% | ۴ هسته |
+| idle فعلی > 25% | ۲ هسته |
+| idle فعلی > 6% | ۱ هسته |
+| بقیه موارد | ۰ (صف) |
+
+### صف VIP/عادی (Redis Sorted Set)
+
+- **score = priority × 10¹² + timestamp_ms**
+- VIP: priority=1، عادی: priority=2
+- بین هم‌رده‌ها: هر کی زودتر اومده جلوتره
+- TTL رزرو: ۱۵ دقیقه — اگه سرویس crash کرد خودکار آزاد میشه
+- برای فعال کردن VIP: `is_vip=True` در `acquire()`
+
+### منطق صف در Rust (separation/handle.rs)
+
+وقتی broker می‌گه صف:
+1. **مرحله ۱ — ۵ دقیقه بی‌صدا**: پیام "در صف هستید" + دکمه لغو
+2. **مرحله ۲ — ۳۰ دقیقه**: پیام edit میشه به "سرور تحت فشار، زمان نامعلوم"
+3. **timeout**: پیام خطا + تموم
+4. **لغو**: `FlowState::AwaitingSeparationQueued { cancel: Arc<AtomicBool> }` — cancel flag true میشه
+
+### Redis keys
+
+```
+cpu:reserved    Hash   {core_idx → "user_id:expire_ts"}
+cpu:queue       Sorted Set  {ticket_json → score}
+cpu:notify      Pub/Sub channel — هر release یه notify میفرسته
+```
+
+### اضافه کردن به سرویس جدید
+
+1. `from cpu_broker import acquire, release` در Python
+2. `cores = await acquire(user_id, is_vip)` قبل از پردازش
+3. `os.sched_setaffinity(0, set(cores))` + `OMP_NUM_THREADS = len(cores)`
+4. `await release(cores)` در `finally`
+5. در Rust: timeout مناسب روی HTTP call بذار (پردازش + زمان صف)
+
+### لاگ grep
+
+```bash
+journalctl -u separation -f | grep "acquire\|release\|affinity\|queue"
+redis-cli hgetall cpu:reserved   # رزروهای فعال
+redis-cli zrange cpu:queue 0 -1  # صف فعلی
+```
+
 ## Gemini Watermark Removal
 
 Removes the Gemini AI watermark from images using the `gwt-mini` binary (v0.3.1).

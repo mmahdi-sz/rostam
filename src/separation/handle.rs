@@ -1,5 +1,6 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::atomic::AtomicU64;
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
@@ -28,8 +29,16 @@ fn next_trace_id() -> u64 {
 
 pub const CB_AI_SEP: &str = "ai:sep";
 pub const CB_SEP_PREFIX: &str = "sep:";
-
 pub const CB_SEP_BACK: &str = "sep:back";
+pub const CB_SEP_QUEUE_CANCEL: &str = "sep:qcancel";
+
+fn queue_cancel_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![
+            btn_icon_danger(&t("separation.queue.cancel_btn"), CB_SEP_QUEUE_CANCEL, "cancel"),
+        ]])
+        .build()
+}
 
 fn prompt_keyboard(msg_id: i32) -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
@@ -157,6 +166,18 @@ pub async fn handle_separation_callback(
     let trace_id = next_trace_id();
     eprintln!("[separation trace={trace_id} event=callback] user_id={user_id} chat_id={chat_id} data={cb_data}");
 
+    // sep:qcancel — user cancelled while in queue
+    if cb_data == CB_SEP_QUEUE_CANCEL {
+        eprintln!("[separation trace={trace_id} event=queue_cancel] user_id={user_id}");
+        if let FlowState::AwaitingSeparationQueued { cancel } = flow_manager.get(user_id) {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        flow_manager.clear(user_id);
+        let r = edit_to_ai_lab(api, chat_id, message_id).await;
+        eprintln!("[separation trace={trace_id} event=queue_cancel_done] ok={}", r.is_ok());
+        return;
+    }
+
     // sep:back:{msg_id} — برگشت به AI Lab از صفحه prompt
     if cb_data.starts_with("sep:back:") {
         flow_manager.clear(user_id);
@@ -263,9 +284,81 @@ pub async fn handle_separation_callback(
     }
 
     // Call separation service.
+    // Before sending to service, show queue message and manage 5min + 30min timeout.
     eprintln!("[separation trace={trace_id} event=separate_start] mode={mode_label}");
     let audio_filename = if is_video { "audio.mp3" } else { &filename };
-    match separate_audio(audio_bytes, audio_filename, mode, user_id).await {
+
+    // Cancel token: set to true if user presses cancel while in queue.
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    flow_manager.set(user_id, FlowState::AwaitingSeparationQueued { cancel: cancel_flag.clone() });
+
+    // Spawn queue-status manager task.
+    {
+        let api2 = api.clone();
+        let cancel2 = cancel_flag.clone();
+        tokio::spawn(async move {
+            // Phase 1 — wait 5 minutes silently (processing msg already shows).
+            tokio::time::sleep(tokio::time::Duration::from_secs(300)).await;
+            if cancel2.load(Ordering::Relaxed) { return; }
+            // Phase 2 — update message to "server busy" warning.
+            let text = t("separation.queue.still_busy");
+            let entities = entities_for_text(&text);
+            let kb = queue_cancel_keyboard();
+            let mut params = EditMessageTextParams::builder()
+                .chat_id(chat_id)
+                .message_id(message_id)
+                .text(&text)
+                .reply_markup(kb)
+                .build();
+            if !entities.is_empty() { params.entities = Some(entities); }
+            let _ = api2.edit_message_text(&params).await;
+        });
+    }
+
+    // Show initial "در صف" message (edit current processing msg).
+    {
+        let text = t("separation.queue.waiting");
+        let entities = entities_for_text(&text);
+        let kb = queue_cancel_keyboard();
+        let mut params = EditMessageTextParams::builder()
+            .chat_id(chat_id)
+            .message_id(message_id)
+            .text(&text)
+            .reply_markup(kb)
+            .build();
+        if !entities.is_empty() { params.entities = Some(entities); }
+        let _ = api.edit_message_text(&params).await;
+        eprintln!("[separation trace={trace_id} event=queue_msg_shown]");
+    }
+
+    // Total timeout: 35 minutes (5 silent + 30 with warning).
+    let sep_future = separate_audio(audio_bytes, audio_filename, mode, user_id, false);
+    let result = match tokio::time::timeout(
+        tokio::time::Duration::from_secs(35 * 60),
+        sep_future,
+    ).await {
+        Ok(r) => r,
+        Err(_) => {
+            eprintln!("[separation trace={trace_id} event=queue_timeout]");
+            cancel_flag.store(true, Ordering::Relaxed);
+            flow_manager.clear(user_id);
+            let _ = send_text(api, chat_id, &t("separation.error.queue_timeout")).await;
+            let _ = delete_message(api, chat_id, message_id).await;
+            std::fs::remove_dir_all(&tmp_dir).ok();
+            return;
+        }
+    };
+
+    // Check if cancelled while waiting.
+    if cancel_flag.load(Ordering::Relaxed) {
+        eprintln!("[separation trace={trace_id} event=cancelled_in_queue]");
+        std::fs::remove_dir_all(&tmp_dir).ok();
+        return;
+    }
+
+    flow_manager.clear(user_id);
+
+    match result {
         Ok(result) => {
             eprintln!("[separation trace={trace_id} event=separate_done] duration={:.1}s vocals_wav={} instrumental_wav={} vocals_compressed={} instrumental_compressed={} ext={}",
                 result.duration_seconds, result.vocals_wav.len(), result.instrumental_wav.len(),

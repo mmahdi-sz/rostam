@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Arc, atomic::AtomicBool};
 
 use crate::stt::types::SttConfig;
 
@@ -30,6 +31,7 @@ pub enum FlowState {
     AwaitingUpscaleImage { scale_factor: u32, model_name: String, anime_expanded: bool },
     AwaitingSeparation,
     AwaitingSeparationMode { file_id: String, filename: String, prompt_msg_id: Option<i32>, is_video: bool },
+    AwaitingSeparationQueued { cancel: Arc<AtomicBool> },
     AwaitingGeminiWmImage,
 }
 

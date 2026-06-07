@@ -11,13 +11,14 @@ fn next_trace_id() -> u64 {
 }
 
 const SERVICE_URL: &str = "http://127.0.0.1:6589/separate";
-const TIMEOUT: Duration = Duration::from_secs(600); // 10 minutes
+const TIMEOUT: Duration = Duration::from_secs(2400); // 40 minutes (queue + processing)
 
 pub async fn separate_audio(
     audio_bytes: Vec<u8>,
     filename: &str,
     mode: SeparationMode,
     user_id: i64,
+    is_vip: bool,
 ) -> Result<SeparationResult, SeparationError> {
     let trace_id = next_trace_id();
     let file_size = audio_bytes.len();
@@ -39,7 +40,9 @@ pub async fn separate_audio(
         .unwrap();
     let form = reqwest::multipart::Form::new()
         .part("file", part)
-        .text("mode", mode_str.to_string());
+        .text("mode", mode_str.to_string())
+        .text("user_id", user_id.to_string())
+        .text("is_vip", is_vip.to_string());
 
     eprintln!("[separation trace={trace_id} event=service_post] url={SERVICE_URL} timeout=600s");
 
