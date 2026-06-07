@@ -2,3 +2,4 @@ fastapi
 uvicorn
 audio-separator[cpu]
 python-multipart
+redis

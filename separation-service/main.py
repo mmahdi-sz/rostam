@@ -12,7 +12,8 @@ import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-os.environ.setdefault("OMP_NUM_THREADS", "16")
+from cpu_monitor import start_monitor, available_cores, pick_cores
+from cpu_broker import start_broker, acquire, release
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +29,6 @@ MAX_FILE_BYTES = 50 * 1024 * 1024  # 50MB
 _separator_quality = None
 _separator_fast = None
 _model_loaded = False
-_request_lock = asyncio.Lock()
 _trace_counter = 0
 
 
@@ -69,6 +69,9 @@ def load_models():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    log.info("[separation event=startup] starting cpu monitor and broker")
+    await start_monitor()
+    await start_broker()
     log.info("[separation event=startup] pre-loading model in background thread")
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, load_models)
@@ -82,11 +85,17 @@ app = FastAPI(lifespan=lifespan)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model_loaded": _model_loaded}
+    cores = await available_cores()
+    return {"status": "ok", "model_loaded": _model_loaded, "available_cores": cores}
 
 
 @app.post("/separate")
-async def separate(file: UploadFile = File(...), mode: str = Form("quality")):
+async def separate(
+    file: UploadFile = File(...),
+    mode: str = Form("quality"),
+    user_id: int = Form(0),
+    is_vip: bool = Form(False),
+):
     trace_id = next_trace_id()
 
     if mode not in ("quality", "fast"):
@@ -94,7 +103,7 @@ async def separate(file: UploadFile = File(...), mode: str = Form("quality")):
 
     content = await file.read()
     file_size = len(content)
-    log.info(f"[separation trace={trace_id} event=request_start] mode={mode} file_size={file_size} filename={file.filename}")
+    log.info(f"[separation trace={trace_id} event=request_start] mode={mode} file_size={file_size} filename={file.filename} user_id={user_id} is_vip={is_vip}")
 
     if file_size > MAX_FILE_BYTES:
         log.warning(f"[separation trace={trace_id} event=file_too_large] size={file_size}")
@@ -104,29 +113,48 @@ async def separate(file: UploadFile = File(...), mode: str = Form("quality")):
         log.error(f"[separation trace={trace_id} event=model_not_loaded]")
         raise HTTPException(status_code=503, detail="Model not loaded yet. Try again in a few seconds.")
 
-    async with _request_lock:
-        log.info(f"[separation trace={trace_id} event=processing_start] mode={mode}")
+    # Acquire CPU cores from broker (blocks until available or caller cancels).
+    log.info(f"[separation trace={trace_id} event=acquire_start] user_id={user_id} is_vip={is_vip}")
+    cores = await acquire(user_id=user_id, is_vip=is_vip)
+    log.info(f"[separation trace={trace_id} event=acquire_done] cores={cores}")
+
+    try:
+        log.info(f"[separation trace={trace_id} event=processing_start] mode={mode} cores={cores}")
         t_start = time.monotonic()
 
-        try:
-            result = await asyncio.get_event_loop().run_in_executor(
-                None, _run_separation, trace_id, content, file.filename or "audio.mp3", mode
-            )
-        except ValueError as e:
-            log.error(f"[separation trace={trace_id} event=invalid_audio] err={e}")
-            raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-            log.error(f"[separation trace={trace_id} event=processing_failed] err={e}")
-            raise HTTPException(status_code=500, detail=str(e))
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, _run_separation, trace_id, content, file.filename or "audio.mp3", mode, cores
+        )
 
         elapsed = time.monotonic() - t_start
-        log.info(f"[separation trace={trace_id} event=processing_done] elapsed={elapsed:.1f}s vocals_wav={len(result['vocals_wav'])} instrumental_wav={len(result['instrumental_wav'])} ext={result['compressed_ext']}")
+        log.info(f"[separation trace={trace_id} event=processing_done] elapsed={elapsed:.1f}s cores={cores}")
+    except ValueError as e:
+        log.error(f"[separation trace={trace_id} event=invalid_audio] err={e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        log.error(f"[separation trace={trace_id} event=processing_failed] err={e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await release(cores)
+        log.info(f"[separation trace={trace_id} event=cores_released] cores={cores}")
 
     return JSONResponse(content=result)
 
 
-def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str) -> dict:
+def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str, cores: list) -> dict:
     import subprocess
+
+    # Pin this thread to the assigned cores.
+    if cores:
+        try:
+            os.sched_setaffinity(0, set(cores))
+            log.info(f"[separation trace={trace_id} event=affinity_set] cores={cores}")
+        except Exception as e:
+            log.warning(f"[separation trace={trace_id} event=affinity_failed] err={e}")
+
+    # Set OMP threads to match core count.
+    core_count = max(1, len(cores))
+    os.environ["OMP_NUM_THREADS"] = str(core_count)
 
     with tempfile.TemporaryDirectory(prefix=f"sep_{trace_id}_") as work_dir:
         ext = os.path.splitext(filename)[1] or ".mp3"
@@ -134,7 +162,7 @@ def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str)
         with open(input_path, "wb") as f:
             f.write(audio_bytes)
 
-        # Validate audio with ffprobe
+        # Validate audio with ffprobe.
         probe = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration",
              "-of", "csv=p=0", input_path],
@@ -154,15 +182,11 @@ def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str)
         overlap = 0.50 if mode == "quality" else 0.25
         separator.arch_specific_params = {"overlap": overlap}
 
-        log.info(f"[separation trace={trace_id} event=separator_run] mode={mode} overlap={overlap}")
+        log.info(f"[separation trace={trace_id} event=separator_run] mode={mode} overlap={overlap} threads={core_count}")
         output_files = separator.separate(input_path)
 
         log.info(f"[separation trace={trace_id} event=separator_output] files={output_files}")
 
-        # Find vocals and instrumental output files.
-        # Check instrumental FIRST — output filenames contain model name (Kim_Vocal_2)
-        # so both files have "vocal" in their path. We identify instrumental by its
-        # stem tag, then treat the remaining file as vocals.
         vocals_path = None
         instrumental_path = None
         for path in output_files:
@@ -172,8 +196,6 @@ def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str)
             elif "(vocals)" in lower or "(vocal)" in lower:
                 vocals_path = path
 
-        # Fallback: if stem tags not found, use file index order from audio-separator
-        # (index 0 = vocals stem, index 1 = instrumental stem for Kim_Vocal_2)
         if not vocals_path or not instrumental_path:
             log.warning(f"[separation trace={trace_id} event=stem_tag_fallback] files={output_files}")
             if len(output_files) >= 2:
@@ -187,8 +209,6 @@ def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str)
         with open(instrumental_path, "rb") as f:
             instrumental_wav_b64 = base64.b64encode(f.read()).decode()
 
-        # Convert WAV → compressed format matching original input extension.
-        # Supported: mp3, ogg, m4a, aac, flac. Fallback: mp3 320k.
         compressed_ext = ext.lstrip(".").lower()
         if compressed_ext not in ("mp3", "ogg", "m4a", "aac", "flac"):
             compressed_ext = "mp3"
