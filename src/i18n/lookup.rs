@@ -8,15 +8,27 @@ fn load_from_file() -> serde_json::Value {
     serde_json::from_str(&json).expect("i18n.json must be valid JSON")
 }
 
+fn try_load_from_file() -> Result<serde_json::Value, String> {
+    let json = std::fs::read_to_string("i18n.json")
+        .map_err(|e| format!("read i18n.json: {e}"))?;
+    serde_json::from_str(&json)
+        .map_err(|e| format!("parse i18n.json: {e}"))
+}
+
 fn cache() -> &'static Arc<RwLock<serde_json::Value>> {
     I18N.get_or_init(|| Arc::new(RwLock::new(load_from_file())))
 }
 
 /// Reload i18n.json from disk without restarting.
+/// On parse/IO error keeps existing values and logs — does NOT panic.
 pub fn reload() {
-    let fresh = load_from_file();
-    *cache().write().unwrap() = fresh;
-    eprintln!("[i18n] reloaded i18n.json from disk");
+    match try_load_from_file() {
+        Ok(fresh) => {
+            *cache().write().unwrap() = fresh;
+            eprintln!("[i18n] reloaded i18n.json from disk");
+        }
+        Err(e) => eprintln!("[i18n] reload failed, keeping previous values: {e}"),
+    }
 }
 
 pub fn t(key: &str) -> String {

@@ -31,14 +31,14 @@ pub fn transcribe(
         ).into());
     }
 
-    let data_len = u32::from_le_bytes([header[40], header[41], header[42], header[43]]);
-    let total_frames = data_len as usize / 2;
+    let data_len = u32::from_le_bytes([header[40], header[41], header[42], header[43]]) as usize;
 
-    let mut raw = Vec::with_capacity(total_frames);
-    wav.read_to_end(&mut raw)?;
-    let samples: Vec<i16> = unsafe {
-        std::slice::from_raw_parts(raw.as_ptr() as *const i16, raw.len() / 2)
-    }.to_vec();
+    let mut raw = vec![0u8; data_len.min(usize::MAX - 1)];
+    let n = wav.read(&mut raw)?;
+    raw.truncate(n);
+    let samples: Vec<i16> = raw.chunks_exact(2)
+        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+        .collect();
 
     recognizer.set_words(true);
 

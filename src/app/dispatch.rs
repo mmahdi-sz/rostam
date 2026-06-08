@@ -60,7 +60,7 @@ async fn handle_message(
     state: &mut AppState,
     message: frankenstein::types::Message,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let AppState { api, cookie_pool, database, flow_manager, rate_limit_tx } = state;
+    let AppState { api, cookie_pool, database, flow_manager, rate_limit_tx, flow_clear_tx } = state;
     let user_id = message.from.as_ref().map(|u| u.id as i64);
 
     // Step 1: addemoji link detection
@@ -101,9 +101,19 @@ async fn handle_message(
 
             if let FlowState::AwaitingSttAudio { config } = flow_manager.get(uid) {
                 if message.voice.is_some() || message.audio.is_some() || message.document.is_some() {
-                    let trace_id = next_trace_id();
-                    log_trace(trace_id, "stt_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
-                    handle_stt_audio(api, &message, uid, &config).await;
+                    let file_id = message.voice.as_ref().map(|v| v.file_id.clone())
+                        .or_else(|| message.audio.as_ref().map(|a| a.file_id.clone()))
+                        .or_else(|| message.document.as_ref().map(|d| d.file_id.clone()));
+                    if let Some(fid) = file_id {
+                        let trace_id = next_trace_id();
+                        log_trace(trace_id, "stt_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
+                        let api2 = api.clone();
+                        let chat_id2 = message.chat.id;
+                        // Spawn so the event loop stays free during STT (minutes-long operation)
+                        tokio::spawn(async move {
+                            handle_stt_audio(&api2, chat_id2, &fid, uid, &config).await;
+                        });
+                    }
                     return Ok(());
                 }
             }
@@ -187,7 +197,7 @@ async fn handle_callback(
     state: &mut AppState,
     callback_query: frankenstein::types::CallbackQuery,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let AppState { api, flow_manager, database, .. } = state;
+    let AppState { api, flow_manager, database, flow_clear_tx, .. } = state;
     let cb_user_id = callback_query.from.id;
     let cb_data = callback_query.data.as_deref().unwrap_or("");
     let cb_chat_id = callback_query.message.as_ref().and_then(|m| match m {
@@ -407,7 +417,7 @@ async fn handle_callback(
             &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
         ).await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_separation_callback(api, cb_data, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_separation_callback(api, cb_data, message.chat.id, message.message_id, cb_user_id as i64, flow_manager, flow_clear_tx.clone()).await;
         }
         return Ok(());
     }

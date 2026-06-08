@@ -425,7 +425,7 @@ async fn download_file(api: &Bot, file_id: &str, dest: &str) -> Result<(), Box<d
 
 fn escape_md(s: &str) -> String {
     s.chars().map(|c| match c {
-        '_' | '[' | ']' | '(' | ')' | '~' | '`' | '>' | '#' | '+' | '-' | '=' | '|' | '{' | '}' | '.' | '!' => {
+        '*' | '\\' | '_' | '[' | ']' | '(' | ')' | '~' | '`' | '>' | '#' | '+' | '-' | '=' | '|' | '{' | '}' | '.' | '!' => {
             format!("\\{c}")
         }
         other => other.to_string(),

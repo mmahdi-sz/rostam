@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::sync::atomic::AtomicU64;
+use std::time::Duration;
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
@@ -11,6 +12,7 @@ use frankenstein::{
     },
     types::{InlineKeyboardMarkup, Message},
 };
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::bot::{send_text, edit_to_ai_lab};
 use crate::emoji::{FlowManager, FlowState};
@@ -162,6 +164,7 @@ pub async fn handle_separation_callback(
     message_id: i32,
     user_id: i64,
     flow_manager: &mut FlowManager,
+    flow_clear_tx: UnboundedSender<i64>,
 ) {
     let trace_id = next_trace_id();
     eprintln!("[separation trace={trace_id} event=callback] user_id={user_id} chat_id={chat_id} data={cb_data}");
@@ -286,36 +289,13 @@ pub async fn handle_separation_callback(
     // Call separation service.
     // Before sending to service, show queue message and manage 5min + 30min timeout.
     eprintln!("[separation trace={trace_id} event=separate_start] mode={mode_label}");
-    let audio_filename = if is_video { "audio.mp3" } else { &filename };
+    let audio_filename: String = if is_video { "audio.mp3".to_string() } else { filename.clone() };
 
     // Cancel token: set to true if user presses cancel while in queue.
     let cancel_flag = Arc::new(AtomicBool::new(false));
     flow_manager.set(user_id, FlowState::AwaitingSeparationQueued { cancel: cancel_flag.clone() });
 
-    // Spawn queue-status manager task.
-    {
-        let api2 = api.clone();
-        let cancel2 = cancel_flag.clone();
-        tokio::spawn(async move {
-            // Phase 1 — wait 5 minutes silently (processing msg already shows).
-            tokio::time::sleep(tokio::time::Duration::from_secs(300)).await;
-            if cancel2.load(Ordering::Relaxed) { return; }
-            // Phase 2 — update message to "server busy" warning.
-            let text = t("separation.queue.still_busy");
-            let entities = entities_for_text(&text);
-            let kb = queue_cancel_keyboard();
-            let mut params = EditMessageTextParams::builder()
-                .chat_id(chat_id)
-                .message_id(message_id)
-                .text(&text)
-                .reply_markup(kb)
-                .build();
-            if !entities.is_empty() { params.entities = Some(entities); }
-            let _ = api2.edit_message_text(&params).await;
-        });
-    }
-
-    // Show initial "در صف" message (edit current processing msg).
+    // Show initial "در صف" message.
     {
         let text = t("separation.queue.waiting");
         let entities = entities_for_text(&text);
@@ -331,116 +311,156 @@ pub async fn handle_separation_callback(
         eprintln!("[separation trace={trace_id} event=queue_msg_shown]");
     }
 
-    // Total timeout: 35 minutes (5 silent + 30 with warning).
-    let sep_future = separate_audio(audio_bytes, audio_filename, mode, user_id, false);
-    let result = match tokio::time::timeout(
-        tokio::time::Duration::from_secs(35 * 60),
-        sep_future,
-    ).await {
-        Ok(r) => r,
-        Err(_) => {
-            eprintln!("[separation trace={trace_id} event=queue_timeout]");
-            cancel_flag.store(true, Ordering::Relaxed);
-            flow_manager.clear(user_id);
-            let _ = send_text(api, chat_id, &t("separation.error.queue_timeout")).await;
-            let _ = delete_message(api, chat_id, message_id).await;
+    // Spawn all heavy work so the event loop stays free — this makes the cancel button work.
+    let api_task = api.clone();
+    let cancel_task = cancel_flag.clone();
+    tokio::spawn(async move {
+        // Status-update task: after 5 min (if not done) edit to "still busy".
+        // Keep the handle so we can abort it when separation finishes.
+        let api_status = api_task.clone();
+        let cancel_status = cancel_task.clone();
+        let status_task = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(300)).await;
+            if cancel_status.load(Ordering::Relaxed) { return; }
+            let text = t("separation.queue.still_busy");
+            let entities = entities_for_text(&text);
+            let kb = queue_cancel_keyboard();
+            let mut params = EditMessageTextParams::builder()
+                .chat_id(chat_id)
+                .message_id(message_id)
+                .text(&text)
+                .reply_markup(kb)
+                .build();
+            if !entities.is_empty() { params.entities = Some(entities); }
+            let _ = api_status.edit_message_text(&params).await;
+        });
+
+        // Race separation against cancel signal (cancel aborts the HTTP request via drop).
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let cancelled2 = cancelled.clone();
+        let sep_result = tokio::select! {
+            r = tokio::time::timeout(
+                Duration::from_secs(35 * 60),
+                separate_audio(audio_bytes, &audio_filename, mode, user_id, false),
+            ) => {
+                match r {
+                    Ok(r) => Some(r),
+                    Err(_) => None, // 35-min timeout
+                }
+            }
+            _ = async move {
+                loop {
+                    tokio::time::sleep(Duration::from_millis(300)).await;
+                    if cancel_task.load(Ordering::Relaxed) { break; }
+                }
+                cancelled2.store(true, Ordering::Relaxed);
+            } => { None }
+        };
+
+        // Abort orphan status-update task now that we have a result.
+        status_task.abort();
+
+        // Signal main loop to clear FlowState (AwaitingSeparationQueued → Idle).
+        let _ = flow_clear_tx.send(user_id);
+
+        if cancelled.load(Ordering::Relaxed) {
+            eprintln!("[separation trace={trace_id} event=cancelled_in_queue]");
             std::fs::remove_dir_all(&tmp_dir).ok();
             return;
         }
-    };
 
-    // Check if cancelled while waiting.
-    if cancel_flag.load(Ordering::Relaxed) {
-        eprintln!("[separation trace={trace_id} event=cancelled_in_queue]");
-        std::fs::remove_dir_all(&tmp_dir).ok();
-        return;
-    }
-
-    flow_manager.clear(user_id);
-
-    match result {
-        Ok(result) => {
-            eprintln!("[separation trace={trace_id} event=separate_done] duration={:.1}s vocals_wav={} instrumental_wav={} vocals_compressed={} instrumental_compressed={} ext={}",
-                result.duration_seconds, result.vocals_wav.len(), result.instrumental_wav.len(),
-                result.vocals_compressed.len(), result.instrumental_compressed.len(), result.compressed_ext);
-
-            // Delete processing message.
-            let _ = delete_message(api, chat_id, message_id).await;
-
-            let vocals_wav_path = tmp_dir.join("vocals.wav");
-            let instrumental_wav_path = tmp_dir.join("instrumental.wav");
-            let vocals_compressed_path = tmp_dir.join(format!("vocals.{}", result.compressed_ext));
-            let instrumental_compressed_path = tmp_dir.join(format!("instrumental.{}", result.compressed_ext));
-
-            std::fs::write(&vocals_wav_path, &result.vocals_wav).ok();
-            std::fs::write(&instrumental_wav_path, &result.instrumental_wav).ok();
-            std::fs::write(&vocals_compressed_path, &result.vocals_compressed).ok();
-            std::fs::write(&instrumental_compressed_path, &result.instrumental_compressed).ok();
-
-            // 1. vocals compressed (audio — inline playback)
-            eprintln!("[separation trace={trace_id} event=send_vocals_compressed]");
-            let p = SendAudioParams::builder()
-                .chat_id(chat_id)
-                .audio(PathBuf::from(&vocals_compressed_path))
-                .caption(t("separation.result.vocals_compressed_caption"))
-                .build();
-            match api.send_audio(&p).await {
-                Ok(_) => eprintln!("[separation trace={trace_id} event=vocals_compressed_sent]"),
-                Err(e) => eprintln!("[separation trace={trace_id} event=vocals_compressed_failed] err={e}"),
+        let result = match sep_result {
+            None => {
+                eprintln!("[separation trace={trace_id} event=queue_timeout]");
+                let _ = send_text(&api_task, chat_id, &t("separation.error.queue_timeout")).await;
+                let _ = delete_message(&api_task, chat_id, message_id).await;
+                std::fs::remove_dir_all(&tmp_dir).ok();
+                return;
             }
+            Some(r) => r,
+        };
 
-            // 2. vocals WAV (document — for editing)
-            eprintln!("[separation trace={trace_id} event=send_vocals_wav]");
-            let p = frankenstein::methods::SendDocumentParams::builder()
-                .chat_id(chat_id)
-                .document(PathBuf::from(&vocals_wav_path))
-                .caption(t("separation.result.vocals_wav_caption"))
-                .build();
-            match api.send_document(&p).await {
-                Ok(_) => eprintln!("[separation trace={trace_id} event=vocals_wav_sent]"),
-                Err(e) => eprintln!("[separation trace={trace_id} event=vocals_wav_failed] err={e}"),
+        match result {
+            Ok(result) => {
+                eprintln!("[separation trace={trace_id} event=separate_done] duration={:.1}s vocals_wav={} instrumental_wav={} vocals_compressed={} instrumental_compressed={} ext={}",
+                    result.duration_seconds, result.vocals_wav.len(), result.instrumental_wav.len(),
+                    result.vocals_compressed.len(), result.instrumental_compressed.len(), result.compressed_ext);
+
+                let _ = delete_message(&api_task, chat_id, message_id).await;
+
+                let vocals_wav_path = tmp_dir.join("vocals.wav");
+                let instrumental_wav_path = tmp_dir.join("instrumental.wav");
+                let vocals_compressed_path = tmp_dir.join(format!("vocals.{}", result.compressed_ext));
+                let instrumental_compressed_path = tmp_dir.join(format!("instrumental.{}", result.compressed_ext));
+
+                std::fs::write(&vocals_wav_path, &result.vocals_wav).ok();
+                std::fs::write(&instrumental_wav_path, &result.instrumental_wav).ok();
+                std::fs::write(&vocals_compressed_path, &result.vocals_compressed).ok();
+                std::fs::write(&instrumental_compressed_path, &result.instrumental_compressed).ok();
+
+                eprintln!("[separation trace={trace_id} event=send_vocals_compressed]");
+                let p = SendAudioParams::builder()
+                    .chat_id(chat_id)
+                    .audio(PathBuf::from(&vocals_compressed_path))
+                    .caption(t("separation.result.vocals_compressed_caption"))
+                    .build();
+                match api_task.send_audio(&p).await {
+                    Ok(_) => eprintln!("[separation trace={trace_id} event=vocals_compressed_sent]"),
+                    Err(e) => eprintln!("[separation trace={trace_id} event=vocals_compressed_failed] err={e}"),
+                }
+
+                eprintln!("[separation trace={trace_id} event=send_vocals_wav]");
+                let p = frankenstein::methods::SendDocumentParams::builder()
+                    .chat_id(chat_id)
+                    .document(PathBuf::from(&vocals_wav_path))
+                    .caption(t("separation.result.vocals_wav_caption"))
+                    .build();
+                match api_task.send_document(&p).await {
+                    Ok(_) => eprintln!("[separation trace={trace_id} event=vocals_wav_sent]"),
+                    Err(e) => eprintln!("[separation trace={trace_id} event=vocals_wav_failed] err={e}"),
+                }
+
+                eprintln!("[separation trace={trace_id} event=send_instrumental_compressed]");
+                let p = SendAudioParams::builder()
+                    .chat_id(chat_id)
+                    .audio(PathBuf::from(&instrumental_compressed_path))
+                    .caption(t("separation.result.instrumental_compressed_caption"))
+                    .build();
+                match api_task.send_audio(&p).await {
+                    Ok(_) => eprintln!("[separation trace={trace_id} event=instrumental_compressed_sent]"),
+                    Err(e) => eprintln!("[separation trace={trace_id} event=instrumental_compressed_failed] err={e}"),
+                }
+
+                eprintln!("[separation trace={trace_id} event=send_instrumental_wav]");
+                let p = frankenstein::methods::SendDocumentParams::builder()
+                    .chat_id(chat_id)
+                    .document(PathBuf::from(&instrumental_wav_path))
+                    .caption(t("separation.result.instrumental_wav_caption"))
+                    .build();
+                match api_task.send_document(&p).await {
+                    Ok(_) => eprintln!("[separation trace={trace_id} event=instrumental_wav_sent]"),
+                    Err(e) => eprintln!("[separation trace={trace_id} event=instrumental_wav_failed] err={e}"),
+                }
+
+                std::fs::remove_dir_all(&tmp_dir).ok();
+                eprintln!("[separation trace={trace_id} event=cleanup_done]");
             }
-
-            // 3. instrumental compressed (audio — inline playback)
-            eprintln!("[separation trace={trace_id} event=send_instrumental_compressed]");
-            let p = SendAudioParams::builder()
-                .chat_id(chat_id)
-                .audio(PathBuf::from(&instrumental_compressed_path))
-                .caption(t("separation.result.instrumental_compressed_caption"))
-                .build();
-            match api.send_audio(&p).await {
-                Ok(_) => eprintln!("[separation trace={trace_id} event=instrumental_compressed_sent]"),
-                Err(e) => eprintln!("[separation trace={trace_id} event=instrumental_compressed_failed] err={e}"),
+            Err(e) => {
+                eprintln!("[separation trace={trace_id} event=separate_error] err={e}");
+                let _ = delete_message(&api_task, chat_id, message_id).await;
+                use super::error::SeparationError;
+                let key = match &e {
+                    SeparationError::ServiceUnavailable => "separation.error.service_unavailable",
+                    SeparationError::InvalidAudio => "separation.error.invalid_audio",
+                    SeparationError::Timeout => "separation.error.timeout",
+                    SeparationError::ProcessingFailed(_) => "separation.error.processing_failed",
+                };
+                let _ = send_text(&api_task, chat_id, &t(key)).await;
+                std::fs::remove_dir_all(&tmp_dir).ok();
             }
-
-            // 4. instrumental WAV (document — for editing)
-            eprintln!("[separation trace={trace_id} event=send_instrumental_wav]");
-            let p = frankenstein::methods::SendDocumentParams::builder()
-                .chat_id(chat_id)
-                .document(PathBuf::from(&instrumental_wav_path))
-                .caption(t("separation.result.instrumental_wav_caption"))
-                .build();
-            match api.send_document(&p).await {
-                Ok(_) => eprintln!("[separation trace={trace_id} event=instrumental_wav_sent]"),
-                Err(e) => eprintln!("[separation trace={trace_id} event=instrumental_wav_failed] err={e}"),
-            }
-
-            std::fs::remove_dir_all(&tmp_dir).ok();
-            eprintln!("[separation trace={trace_id} event=cleanup_done]");
         }
-        Err(e) => {
-            eprintln!("[separation trace={trace_id} event=separate_error] err={e}");
-            let _ = delete_message(api, chat_id, message_id).await;
-            use super::error::SeparationError;
-            let key = match &e {
-                SeparationError::ServiceUnavailable => "separation.error.service_unavailable",
-                SeparationError::InvalidAudio => "separation.error.invalid_audio",
-                SeparationError::Timeout => "separation.error.timeout",
-                SeparationError::ProcessingFailed(_) => "separation.error.processing_failed",
-            };
-            let _ = send_text(api, chat_id, &t(key)).await;
-        }
-    }
+    });
+    // handle_separation_callback returns immediately; the spawned task does all heavy work.
 }
 
 async fn extract_and_prepare_audio(

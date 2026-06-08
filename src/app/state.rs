@@ -10,4 +10,7 @@ pub struct AppState {
     pub database: Option<PostgresDatabase>,
     pub flow_manager: FlowManager,
     pub rate_limit_tx: UnboundedSender<CookieSource>,
+    /// Spawned separation/STT tasks send the user_id here when finished
+    /// so the main loop can clear their FlowState.
+    pub flow_clear_tx: UnboundedSender<i64>,
 }

@@ -35,6 +35,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cookie_status = cookie_pool.status();
 
     let (rate_limit_tx, mut rate_limit_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (flow_clear_tx, mut flow_clear_rx) = tokio::sync::mpsc::unbounded_channel::<i64>();
     let (cooldown_done_tx, mut cooldown_done_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
     spawn_cookie_refresher(&api, &mut cookie_pool);
@@ -53,6 +54,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         database,
         flow_manager: FlowManager::new(),
         rate_limit_tx,
+        flow_clear_tx,
     };
 
     let mut params = GetUpdatesParams::builder().timeout(30u32).build();
@@ -70,6 +72,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         while let Ok(cookie_id) = cooldown_done_rx.try_recv() {
             println!("[cookie_refresher] cooldown refresh done, re-adding cookie_id={cookie_id} to pool");
             state.cookie_pool.remove_from_cooldown(&cookie_id);
+        }
+
+        while let Ok(user_id) = flow_clear_rx.try_recv() {
+            state.flow_manager.clear(user_id);
         }
 
         while let Ok(source) = rate_limit_rx.try_recv() {

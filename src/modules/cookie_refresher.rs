@@ -55,11 +55,11 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> Result<(), String>
     println!("[cookie_refresh profile={p} event=firefox_starting] link_count={}", links.len());
 
     kill_existing_firefox(&config.profile_path, p).await;
-    let pid = open_firefox(&config.profile_path, p, &links).await?;
+    open_firefox(&config.profile_path, p, &links).await?;
 
-    let crashed = wait_or_crash(pid, config.duration_secs, p).await;
+    let crashed = wait_or_crash(&config.profile_path, config.duration_secs, p).await;
 
-    kill_firefox(pid, p).await;
+    kill_firefox(&config.profile_path, p).await;
 
     if crashed {
         println!("[cookie_refresh profile={p} event=done] success=false reason=crashed");
@@ -147,13 +147,15 @@ async fn kill_existing_firefox(profile_path: &str, profile_name: &str) {
     println!("[cookie_refresh profile={p} event=kill_existing] done");
 }
 
-async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) -> Result<u32, String> {
+async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) -> Result<(), String> {
     if links.is_empty() {
         return Err("no links to open".to_string());
     }
 
     let p = profile_name;
-    let child = Command::new("sudo")
+    // Spawn firefox via sudo. We don't track its pid — we use pgrep/pkill by profile path
+    // because child.id() gives the sudo wrapper pid, not the actual firefox pid.
+    let mut child = Command::new("sudo")
         .arg("-u")
         .arg("mahdi")
         .arg("firefox")
@@ -168,8 +170,9 @@ async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) 
         .spawn()
         .map_err(|e| format!("failed to spawn firefox: {e}"))?;
 
-    let pid = child.id().ok_or("firefox has no pid")?;
-    println!("[cookie_refresh profile={p} event=firefox_open] pid={pid} url={}", links[0]);
+    // Detach: we don't wait on this child; we track firefox by profile path via pgrep.
+    drop(child);
+    println!("[cookie_refresh profile={p} event=firefox_open] url={}", links[0]);
 
     for (i, url) in links[1..].iter().enumerate() {
         sleep(Duration::from_secs(1)).await;
@@ -190,10 +193,10 @@ async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) 
         println!("[cookie_refresh profile={p} event=firefox_tab] tab={} url={url}", i + 2);
     }
 
-    Ok(pid)
+    Ok(())
 }
 
-async fn wait_or_crash(pid: u32, duration_secs: u64, profile_name: &str) -> bool {
+async fn wait_or_crash(profile_path: &str, duration_secs: u64, profile_name: &str) -> bool {
     let p = profile_name;
     let deadline = sleep(Duration::from_secs(duration_secs));
     tokio::pin!(deadline);
@@ -202,39 +205,42 @@ async fn wait_or_crash(pid: u32, duration_secs: u64, profile_name: &str) -> bool
     loop {
         tokio::select! {
             _ = &mut deadline => {
-                println!("[cookie_refresh profile={p} event=firefox_timeout] elapsed={duration_secs}s pid={pid}");
+                println!("[cookie_refresh profile={p} event=firefox_timeout] elapsed={duration_secs}s");
                 return false;
             }
             _ = sleep(Duration::from_secs(5)) => {
                 elapsed_checks += 5;
-                if !is_running(pid) {
-                    println!("[cookie_refresh profile={p} event=firefox_crashed] elapsed={elapsed_checks}s pid={pid}");
+                if !is_firefox_running(profile_path).await {
+                    println!("[cookie_refresh profile={p} event=firefox_crashed] elapsed={elapsed_checks}s");
                     return true;
                 }
-                println!("[cookie_refresh profile={p} event=firefox_wait] elapsed={elapsed_checks}s pid={pid} alive=true");
+                println!("[cookie_refresh profile={p} event=firefox_wait] elapsed={elapsed_checks}s alive=true");
             }
         }
     }
 }
 
-fn is_running(pid: u32) -> bool {
-    std::path::Path::new(&format!("/proc/{pid}")).exists()
+async fn is_firefox_running(profile_path: &str) -> bool {
+    Command::new("pgrep")
+        .args(["-f", &format!("firefox.*{}", profile_path)])
+        .output()
+        .await
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
-async fn kill_firefox(pid: u32, profile_name: &str) {
+async fn kill_firefox(profile_path: &str, profile_name: &str) {
     let p = profile_name;
-    println!("[cookie_refresh profile={p} event=firefox_kill_term] pid={pid}");
-    let _ = Command::new("kill")
-        .arg("-TERM")
-        .arg(pid.to_string())
+    println!("[cookie_refresh profile={p} event=firefox_kill_term]");
+    let _ = Command::new("pkill")
+        .args(["-TERM", "-f", &format!("firefox.*{}", profile_path)])
         .output()
         .await;
     sleep(Duration::from_secs(3)).await;
-    if is_running(pid) {
-        println!("[cookie_refresh profile={p} event=firefox_kill_force] pid={pid}");
-        let _ = Command::new("kill")
-            .arg("-KILL")
-            .arg(pid.to_string())
+    if is_firefox_running(profile_path).await {
+        println!("[cookie_refresh profile={p} event=firefox_kill_force]");
+        let _ = Command::new("pkill")
+            .args(["-9", "-f", &format!("firefox.*{}", profile_path)])
             .output()
             .await;
     }
