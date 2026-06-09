@@ -1,7 +1,35 @@
 # CLAUDE.md
 
-Rust Telegram bot `ros-telegram-bot` (crate `frankenstein`), runs as systemd service `abc`.
+Rust Telegram bot `ros-telegram-bot` (crate `frankenstein`), runs as systemd service `abc` (dev/test).
 Single-language Farsi UI. Uses yt-dlp, local Bot API, optional PostgreSQL + Redis.
+
+## Environments
+
+| | Dev | Production |
+|---|---|---|
+| Dir | `/mnt/data/mahdidev/ros/dev` | `/mnt/data/mahdidev/ros/production` |
+| Service | `abc.service` | `rostam.service` |
+| Database | `ros_telegram_bot` | `ros_telegram_bot_production` |
+| Binary | `target/debug/ros-telegram-bot` | `ros-telegram-bot` (copied from prod build) |
+| Git branch | `dev` | — (receives deployed binary) |
+
+Build repo for production: `/mnt/data/mahdidev/ros/prod` (tracks `github/master`)
+
+## Deploy
+
+```bash
+sudo bash /mnt/data/mahdidev/ros/deploy.sh
+```
+
+مراحل داخل deploy.sh:
+1. commit تغییرات uncommit در `dev`
+2. merge `dev` → `master` در dev repo
+3. push `master` به GitHub (`github` remote)
+4. در `prod` repo: `git fetch github master && git reset --hard`
+5. `cargo build --release` در `prod`
+6. کپی binary به `/mnt/data/mahdidev/ros/production/ros-telegram-bot`
+7. کپی `i18n.json` به `/mnt/data/mahdidev/ros/production/i18n.json`
+8. `systemctl restart rostam`
 
 ## Hard Rules (MUST FOLLOW)
 
