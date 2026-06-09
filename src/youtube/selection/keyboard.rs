@@ -6,7 +6,7 @@ use super::super::download::{Selection, SelectionView, SubtitleMode, YoutubeRequ
 use super::super::lang_names::lang_name_fa;
 use super::super::types::VideoCodec;
 use super::buttons::{
-    choice_button, confirm_button, header_button, main_menu_button, plain_button, primary_button,
+    choice_button, confirm_button, header_button, icon_button, main_menu_button, plain_button, primary_button,
 };
 use super::constants::*;
 
@@ -150,13 +150,15 @@ fn build_sub_menu_keyboard(req: &YoutubeRequest, request_id: u64, sel: &Selectio
 
     let mut nav: Vec<InlineKeyboardButton> = Vec::new();
     if page > 0 {
-        nav.push(plain_button(&t("youtube.selection.page_prev"), format!("{CB_SUB_PAGE}{request_id}:{}", page - 1)));
+        nav.push(icon_button(&t("youtube.selection.page_prev"), "emoji.panel.icons.prev", format!("{CB_SUB_PAGE}{request_id}:{}", page - 1), None));
     }
-    nav.push(plain_button(&t("youtube.selection.subtitle_back"), format!("{CB_SUB_BACK}{request_id}")));
     if page + 1 < total_pages {
-        nav.push(plain_button(&t("youtube.selection.page_next"), format!("{CB_SUB_PAGE}{request_id}:{}", page + 1)));
+        nav.push(icon_button(&t("youtube.selection.page_next"), "emoji.panel.icons.next", format!("{CB_SUB_PAGE}{request_id}:{}", page + 1), None));
     }
-    rows.push(nav);
+    if !nav.is_empty() {
+        rows.push(nav);
+    }
+    rows.push(vec![icon_button(&t("youtube.selection.subtitle_back"), "emoji.panel.icons.back", format!("{CB_SUB_BACK}{request_id}"), None)]);
     rows.push(vec![main_menu_button()]);
 
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()

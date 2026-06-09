@@ -65,4 +65,6 @@ pub static EMOJI_MAP: &[(&str, &str)] = &[
     ("🖼", "frame"),
     ("🧪", "lab"),
     ("✨", "sparkles"),
+    ("📺", "tv"),
+    ("🤖", "bot_premium_emoji"),
 ];

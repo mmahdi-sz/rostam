@@ -15,7 +15,7 @@ use crate::i18n::{entities_for_text, t, tf};
 
 use super::super::trace::log_trace;
 use super::cancel::{register_cancel, unregister_cancel, UnregisterGuard};
-use super::helpers::{cleanup_dir, fetch_thumbnail, pick_largest_file, quality_label_for};
+use super::helpers::{cleanup_dir, fetch_thumbnail, pick_largest_file, quality_label_for, send_subtitle_files};
 use super::progress::{format_progress_body, parse_progress_line, ProgressSnapshot};
 use super::selection_helpers::find_format;
 use super::split::split_video;
@@ -24,7 +24,7 @@ use super::store::take_request;
 use super::types::{Selection, SubtitleMode};
 use super::upload::{build_part_params, build_single_params, send_video_with_progress};
 
-pub const EDIT_THROTTLE: Duration = Duration::from_secs(3);
+pub const EDIT_THROTTLE: Duration = Duration::from_secs(1);
 const DOWNLOAD_ROOT: &str = "/mnt/data/mahdidev/ros/dev/downloads/yt";
 const MAX_SIZE_MB: u64 = 2000;
 const TARGET_PART_MB: u64 = 1700;
@@ -109,12 +109,24 @@ async fn run_download(
 
     if !selection.subtitle_langs.is_empty() {
         let sub_langs = selection.subtitle_langs.join(",");
-        cmd.arg("--write-subs").arg("--sub-langs").arg(&sub_langs);
-        if selection.subtitle_mode == SubtitleMode::Embedded {
-            cmd.arg("--embed-subs");
+        // Most YouTube subtitle languages (e.g. fa) exist ONLY as auto-generated
+        // captions, so both --write-subs and --write-auto-subs are required —
+        // otherwise yt-dlp reports "no subtitles for the requested languages"
+        // and produces no subtitle output at all.
+        cmd.arg("--write-subs").arg("--write-auto-subs")
+            .arg("--sub-langs").arg(&sub_langs);
+        match selection.subtitle_mode {
+            SubtitleMode::Embedded => {
+                // Embed into mp4 (yt-dlp converts vtt -> mov_text automatically).
+                cmd.arg("--embed-subs");
+            }
+            SubtitleMode::File => {
+                // Deliver as standalone file(s); convert to srt for broad player support.
+                cmd.arg("--convert-subs").arg("srt");
+            }
         }
         log_trace(trace_id, "download_subtitle_args", &format!(
-            "sub_langs={sub_langs} mode={:?}", selection.subtitle_mode
+            "sub_langs={sub_langs} mode={:?} write_auto=true", selection.subtitle_mode
         ));
     }
 
@@ -172,7 +184,8 @@ async fn run_download(
                 }
                 let trimmed = line.trim().to_string();
                 if trimmed.is_empty() { continue; }
-                if source == "stdout" && trimmed.starts_with('/') && tokio::fs::metadata(&trimmed).await.is_ok() {
+                let is_subtitle = trimmed.ends_with(".srt") || trimmed.ends_with(".vtt");
+                if source == "stdout" && trimmed.starts_with('/') && !is_subtitle && tokio::fs::metadata(&trimmed).await.is_ok() {
                     filepath = Some(trimmed.clone());
                     log_trace(trace_id, "download_filepath", &trimmed);
                 } else if source == "stderr" {
@@ -275,10 +288,12 @@ async fn run_download(
                     ("part", &part_num.to_string()), ("total", &total.to_string()),
                 ])).await;
 
+            let bot_username = crate::config::bot_username().to_string();
             let caption = tf("youtube.download.caption_part", &[
                 ("title", &req.title), ("quality", &quality_label),
                 ("codec", &codec_name), ("bitrate", &bitrate_str),
                 ("part", &part_num.to_string()), ("total", &total.to_string()),
+                ("username", &bot_username),
             ]);
             let caption_entities = entities_for_text(&caption);
             let params = build_part_params(part_path, req.chat_id, &thumb_path,
@@ -293,9 +308,11 @@ async fn run_download(
         all_ok
     } else {
         edit_status(&api, status_chat_id, status_message_id, t("youtube.download.uploading")).await;
+        let bot_username = crate::config::bot_username().to_string();
         let caption = tf("youtube.download.caption", &[
             ("title", &req.title), ("quality", &quality_label),
             ("codec", &codec_name), ("bitrate", &bitrate_str),
+            ("username", &bot_username),
         ]);
         let caption_entities = entities_for_text(&caption);
         let params = build_single_params(&path, req.chat_id, &thumb_path,
@@ -304,6 +321,13 @@ async fn run_download(
         send_video_with_progress(&api, params, req.chat_id, status_chat_id,
             status_message_id, request_id, &quality_label, &mut cancel_fut, trace_id).await
     };
+
+    // In File mode, deliver the standalone subtitle file(s) as documents.
+    // (Embedded mode bakes them into the mp4 and needs no separate upload.)
+    if upload_ok && selection.subtitle_mode == SubtitleMode::File && !selection.subtitle_langs.is_empty() {
+        let count = send_subtitle_files(&api, &dir, req.chat_id, &req.title, trace_id).await;
+        log_trace(trace_id, "subtitle_upload_done", &format!("files_sent={count}"));
+    }
 
     if upload_ok {
         let _ = api.delete_message(

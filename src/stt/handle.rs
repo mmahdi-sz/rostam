@@ -6,11 +6,11 @@ use frankenstein::{
     methods::{AnswerCallbackQueryParams, EditMessageTextParams, SendMessageParams},
     types::{
         ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions,
-        MaybeInaccessibleMessage, Message, ReplyMarkup,
+        MaybeInaccessibleMessage, ReplyMarkup,
     },
 };
 
-use crate::bot::{edit_to_start_menu, send_text, CB_START_PANEL};
+use crate::bot::{edit_to_start_menu, send_text, send_long_text, CB_START_PANEL};
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{entities_for_text, t, tf};
 use crate::stt::config::*;
@@ -198,26 +198,17 @@ async fn download_file(api: &Bot, file_id: &str, dest: &str) -> Result<(), Box<d
 }
 
 /// Processes an audio message (voice or audio file) when the user is in AwaitingSttAudio.
+/// Processes an audio message when user is in AwaitingSttAudio.
+/// Takes chat_id and file_id directly (already extracted in dispatch)
+/// so this function can be spawned as a tokio task without cloning Message.
 pub async fn handle_stt_audio(
     api: &Bot,
-    message: &Message,
+    chat_id: i64,
+    file_id: &str,
     user_id: i64,
     config: &SttConfig,
 ) {
     let trace_id = next_trace_id();
-    let chat_id = message.chat.id;
-    let file_id = message
-        .voice
-        .as_ref()
-        .map(|v| &v.file_id)
-        .or_else(|| message.audio.as_ref().map(|a| &a.file_id))
-        .or_else(|| message.document.as_ref().map(|d| &d.file_id));
-
-    let Some(file_id) = file_id else {
-        let _ = send_text(api, chat_id, &t("stt.unsupported_format")).await;
-        return;
-    };
-
     log_trace(trace_id, "stt_audio_received", &format!("user_id={user_id} chat_id={chat_id}"));
 
     let _ = send_text(api, chat_id, &t("stt.preparing")).await;
@@ -232,7 +223,7 @@ pub async fn handle_stt_audio(
     let overall_start = Instant::now();
 
     // 1. Download
-    if let Err(e) = download_file(api, file_id, input_path.to_str().unwrap()).await {
+    if let Err(e) = download_file(api, file_id, input_path.to_str().unwrap()).await.map_err(|e| e.to_string()) {
         log_trace(trace_id, "stt_download_failed", &format!("err={e}"));
         let _ = send_text(api, chat_id, &t("stt.download_failed")).await;
         clean_up(&work_dir);
@@ -240,8 +231,12 @@ pub async fn handle_stt_audio(
     }
     log_trace(trace_id, "stt_downloaded", "");
 
-    // 2. Convert to WAV
-    if let Err(e) = convert_to_wav(input_path.to_str().unwrap(), wav_path.to_str().unwrap()) {
+    // 2. Convert to WAV — blocking (std::process::Command), run on thread pool
+    let input_str = input_path.to_str().unwrap().to_string();
+    let wav_str = wav_path.to_str().unwrap().to_string();
+    if let Err(e) = tokio::task::spawn_blocking(move || {
+        convert_to_wav(&input_str, &wav_str).map_err(|e| e.to_string())
+    }).await.unwrap_or_else(|e| Err(e.to_string())) {
         log_trace(trace_id, "stt_convert_failed", &format!("err={e}"));
         let _ = send_text(api, chat_id, &t("stt.convert_failed")).await;
         clean_up(&work_dir);
@@ -249,19 +244,21 @@ pub async fn handle_stt_audio(
     }
     log_trace(trace_id, "stt_converted", "");
 
-    // Determine audio duration from WAV header
     let audio_duration = wav_duration(wav_path.to_str().unwrap()).unwrap_or(0.0);
 
-    // 3. Optional denoise
+    // 3. Optional denoise — blocking (std::process::Command), run on thread pool
     let denoise_secs = if config.denoise {
-        match deepfilter::denoise(wav_path.to_str().unwrap(), denoised_path.to_str().unwrap()) {
+        let wav_in = wav_path.to_str().unwrap().to_string();
+        let wav_out = denoised_path.to_str().unwrap().to_string();
+        match tokio::task::spawn_blocking(move || {
+            deepfilter::denoise(&wav_in, &wav_out).map_err(|e| e.to_string())
+        }).await.unwrap_or_else(|e| Err(e.to_string())) {
             Ok(s) => {
                 log_trace(trace_id, "stt_denoised", &format!("elapsed={s:.1}s"));
                 s
             }
             Err(e) => {
                 log_trace(trace_id, "stt_denoise_failed", &format!("err={e}, falling back to raw"));
-                // Fall back to raw audio
                 let _ = std::fs::copy(&wav_path, &denoised_path);
                 0.0
             }
@@ -271,9 +268,16 @@ pub async fn handle_stt_audio(
         0.0
     };
 
-    // 4. Transcribe
-    let audio_source = if config.denoise { denoised_path.to_str().unwrap() } else { wav_path.to_str().unwrap() };
-    let (text, processing_secs) = match vosk::transcribe(config, audio_source) {
+    // 4. Transcribe — CPU-heavy blocking, run on thread pool
+    let audio_source = if config.denoise {
+        denoised_path.to_str().unwrap().to_string()
+    } else {
+        wav_path.to_str().unwrap().to_string()
+    };
+    let config_clone = config.clone();
+    let (text, processing_secs) = match tokio::task::spawn_blocking(move || {
+        vosk::transcribe(&config_clone, &audio_source).map_err(|e| e.to_string())
+    }).await.unwrap_or_else(|e| Err(e.to_string())) {
         Ok(r) => r,
         Err(e) => {
             log_trace(trace_id, "stt_transcribe_failed", &format!("err={e}"));
@@ -283,9 +287,8 @@ pub async fn handle_stt_audio(
         }
     };
 
-    log_trace(trace_id, "stt_transcribed", &format!("text={text:?} elapsed={processing_secs:.1}s"));
+    log_trace(trace_id, "stt_transcribed", &format!("text_len={} elapsed={processing_secs:.1}s", text.len()));
 
-    // 5. Build result message
     let lang_label = config.lang_label_fa();
     let model_label = config.model_label_fa();
     let denoise_label = if config.denoise { "فعال" } else { "غیرفعال" };
@@ -302,7 +305,8 @@ pub async fn handle_stt_audio(
         text = text,
     );
 
-    let _ = send_text(api, chat_id, &result_text).await;
+    // Use send_long_text — transcription can exceed Telegram's 4096-char limit for long audio
+    let _ = send_long_text(api, chat_id, &result_text).await;
     log_trace(trace_id, "stt_result_sent", &format!("text_len={}", text.len()));
 
     clean_up(&work_dir);

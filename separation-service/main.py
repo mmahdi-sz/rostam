@@ -255,5 +255,24 @@ def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str,
         }
 
 
+@app.post("/cpu/acquire")
+async def cpu_acquire_endpoint(user_id: int = Form(0), is_vip: bool = Form(False)):
+    trace_id = next_trace_id()
+    log.info(f"[cpu_acquire trace={trace_id} event=request] user_id={user_id} is_vip={is_vip}")
+    cores = await acquire(user_id=user_id, is_vip=is_vip)
+    log.info(f"[cpu_acquire trace={trace_id} event=acquired] cores={cores}")
+    return {"cores": cores}
+
+
+@app.post("/cpu/release")
+async def cpu_release_endpoint(request: Request):
+    body = await request.json()
+    cores = body.get("cores", [])
+    trace_id = next_trace_id()
+    log.info(f"[cpu_release trace={trace_id} event=request] cores={cores}")
+    await release(cores)
+    return {"ok": True}
+
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=6589, log_level="info")

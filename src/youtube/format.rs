@@ -76,7 +76,7 @@ pub fn build_caption(info: &VideoInfo) -> String {
 }
 
 pub fn build_description_blockquotes(description: &str) -> Vec<String> {
-    const MAX_RAW_PER_CHUNK: usize = 3800;
+    const MAX_RAW_PER_CHUNK: usize = 1800;  // post-escape can be 2×; keep total <4096
     let mut chunks: Vec<String> = Vec::new();
     let mut current = String::new();
 

@@ -149,11 +149,12 @@ async fn handle_sub_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
         return;
     };
     let trace_id = req.trace_id;
+    // Quick buttons (fa/en in main menu) are add-only: clicking an already-selected lang
+    // does nothing. To deselect, user must use the full subtitle submenu.
     let (added, total) = with_selection(&req, |slot| {
         if let Some(sel) = slot.as_mut() {
-            if let Some(pos) = sel.subtitle_langs.iter().position(|l| l == &lang) {
-                sel.subtitle_langs.remove(pos);
-                (false, sel.subtitle_langs.len())
+            if sel.subtitle_langs.iter().any(|l| l == &lang) {
+                (false, sel.subtitle_langs.len()) // already selected — no-op
             } else {
                 sel.subtitle_langs.push(lang.clone());
                 (true, sel.subtitle_langs.len())
@@ -161,8 +162,10 @@ async fn handle_sub_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
         } else { (false, 0) }
     });
     log_trace(trace_id, "selection_sub_toggle", &format!("request_id={request_id} lang={lang} added={added} total_selected={total}"));
-    if let Some(msg) = extract_message(cq) {
-        refresh_keyboard(api, msg, &req, request_id).await;
+    if added {
+        if let Some(msg) = extract_message(cq) {
+            refresh_keyboard(api, msg, &req, request_id).await;
+        }
     }
     answer(api, cq, "").await;
 }

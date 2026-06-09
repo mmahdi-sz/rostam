@@ -17,9 +17,16 @@ pub fn main_panel_keyboard() -> InlineKeyboardMarkup {
     let packs = btn_icon(&t("emoji.panel.packs"), CB_PACKS, "packs");
     let import = btn_icon(&t("emoji.panel.import"), CB_IMPORT, "import");
     let export = btn_icon(&t("emoji.panel.export"), CB_EXPORT, "export");
+    let guide = btn_icon(&t("emoji.panel.guide"), CB_GUIDE, "guide");
     let main_menu = btn_icon(&t("start.back"), CB_START_PANEL, "back");
     InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![add], vec![test, list], vec![del, packs], vec![import, export], vec![main_menu]])
+        .inline_keyboard(vec![vec![add], vec![test, list], vec![del, packs], vec![import, export], vec![guide], vec![main_menu]])
+        .build()
+}
+
+pub fn guide_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn_icon(&t("emoji.panel.back_to_panel"), CB_BACK, "back")]])
         .build()
 }
 

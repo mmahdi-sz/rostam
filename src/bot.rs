@@ -92,7 +92,12 @@ async fn expand_and_entify(text: &str, chat_id: i64) -> (String, Vec<MessageEnti
                     rl = rendered.chars().count(),
                     rp = cache::preview(&rendered, 200),
                 );
-                cache_ents.extend(ui_ents);
+                // Filter out ui entities whose offset already has a cache entity
+                // (fallback chars from the cache can appear in EMOJI_MAP → avoid overlapping entities)
+                let ui_filtered: Vec<_> = ui_ents.into_iter()
+                    .filter(|ue| !cache_ents.iter().any(|ce| ce.offset == ue.offset))
+                    .collect();
+                cache_ents.extend(ui_filtered);
                 cache_ents.sort_by_key(|e| e.offset);
                 return (rendered, cache_ents, Some(trace_id));
             }
@@ -132,6 +137,28 @@ fn log_lookups(trace_id: u64, lookups: &[RenderLookup]) {
             }
         }
     }
+}
+
+/// Like send_text but splits text longer than 4096 chars into multiple messages.
+/// Used for potentially long output such as STT transcription results.
+pub async fn send_long_text(
+    api: &Bot,
+    chat_id: i64,
+    text: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    const MAX: usize = 4000;
+    if text.chars().count() <= MAX {
+        return send_text(api, chat_id, text).await;
+    }
+    let mut start = 0;
+    let chars: Vec<char> = text.chars().collect();
+    while start < chars.len() {
+        let end = (start + MAX).min(chars.len());
+        let chunk: String = chars[start..end].iter().collect();
+        send_text(api, chat_id, &chunk).await?;
+        start = end;
+    }
+    Ok(())
 }
 
 pub async fn send_text_md(

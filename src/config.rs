@@ -1,4 +1,15 @@
+use std::sync::OnceLock;
 use std::{env, fs};
+
+static BOT_USERNAME: OnceLock<String> = OnceLock::new();
+
+pub fn set_bot_username(username: String) {
+    let _ = BOT_USERNAME.set(username);
+}
+
+pub fn bot_username() -> &'static str {
+    BOT_USERNAME.get().map(|s| s.as_str()).unwrap_or("")
+}
 
 pub fn bot_token() -> Result<String, Box<dyn std::error::Error>> {
     config_value("BOT_TOKEN")

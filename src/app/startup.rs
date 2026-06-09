@@ -142,8 +142,8 @@ pub fn spawn_cookie_refresher(api: &Bot, cookie_pool: &mut CookiePool) {
                         profile_name: profile_name.clone(),
                         cache_dir: cache_dir.clone(),
                         links_file: "files/youtube_links.txt".to_string(),
-                        duration_secs: 3600,
-                        link_count: 3,
+                        duration_secs: 600,
+                        link_count: 1,
                         admin_chat_id,
                     };
                     let api = refresh_api.clone();
@@ -183,8 +183,8 @@ pub fn spawn_cooldown_refresh(
             profile_name: source.profile_name.clone(),
             cache_dir: source.profile_dir.to_string_lossy().into_owned(),
             links_file: "files/youtube_links.txt".to_string(),
-            duration_secs: 3600,
-            link_count: 3,
+            duration_secs: 600,
+            link_count: 1,
             admin_chat_id,
         };
         if let Err(e) = modules::cookie_refresher::run(&api_clone, cfg).await {
@@ -215,6 +215,17 @@ pub fn spawn_i18n_watcher() {
             }
         }
     });
+}
+
+pub async fn fetch_bot_username(api: &Bot) {
+    match api.get_me().await {
+        Ok(resp) => {
+            let username = resp.result.username.unwrap_or_default();
+            println!("Bot username: @{username}");
+            crate::config::set_bot_username(username);
+        }
+        Err(e) => eprintln!("Failed to fetch bot username: {e}"),
+    }
 }
 
 pub async fn set_bot_commands(api: &Bot) {
