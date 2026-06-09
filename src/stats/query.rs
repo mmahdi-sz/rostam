@@ -59,20 +59,20 @@ pub async fn get_download_stats(client: &Client) -> Result<DownloadStats, tokio_
             COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')  AS req_7d,
             COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS req_30d,
 
-            COALESCE(SUM(bytes_downloaded) FILTER (WHERE created_at >= NOW() - INTERVAL '1 day'),   0) AS dl_1d,
-            COALESCE(SUM(bytes_downloaded) FILTER (WHERE created_at >= NOW() - INTERVAL '3 days'),  0) AS dl_3d,
-            COALESCE(SUM(bytes_downloaded) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days'),  0) AS dl_7d,
-            COALESCE(SUM(bytes_downloaded) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days'), 0) AS dl_30d,
+            COALESCE(SUM(bytes_downloaded) FILTER (WHERE created_at >= NOW() - INTERVAL '1 day'),   0)::BIGINT AS dl_1d,
+            COALESCE(SUM(bytes_downloaded) FILTER (WHERE created_at >= NOW() - INTERVAL '3 days'),  0)::BIGINT AS dl_3d,
+            COALESCE(SUM(bytes_downloaded) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days'),  0)::BIGINT AS dl_7d,
+            COALESCE(SUM(bytes_downloaded) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days'), 0)::BIGINT AS dl_30d,
 
             COUNT(*) FILTER (WHERE upload_ok AND created_at >= NOW() - INTERVAL '1 day')   AS up_ok_1d,
             COUNT(*) FILTER (WHERE upload_ok AND created_at >= NOW() - INTERVAL '3 days')  AS up_ok_3d,
             COUNT(*) FILTER (WHERE upload_ok AND created_at >= NOW() - INTERVAL '7 days')  AS up_ok_7d,
             COUNT(*) FILTER (WHERE upload_ok AND created_at >= NOW() - INTERVAL '30 days') AS up_ok_30d,
 
-            COALESCE(SUM(bytes_uploaded) FILTER (WHERE created_at >= NOW() - INTERVAL '1 day'),   0) AS up_1d,
-            COALESCE(SUM(bytes_uploaded) FILTER (WHERE created_at >= NOW() - INTERVAL '3 days'),  0) AS up_3d,
-            COALESCE(SUM(bytes_uploaded) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days'),  0) AS up_7d,
-            COALESCE(SUM(bytes_uploaded) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days'), 0) AS up_30d
+            COALESCE(SUM(bytes_uploaded) FILTER (WHERE created_at >= NOW() - INTERVAL '1 day'),   0)::BIGINT AS up_1d,
+            COALESCE(SUM(bytes_uploaded) FILTER (WHERE created_at >= NOW() - INTERVAL '3 days'),  0)::BIGINT AS up_3d,
+            COALESCE(SUM(bytes_uploaded) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days'),  0)::BIGINT AS up_7d,
+            COALESCE(SUM(bytes_uploaded) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days'), 0)::BIGINT AS up_30d
          FROM stats_downloads",
         &[],
     ).await?;
