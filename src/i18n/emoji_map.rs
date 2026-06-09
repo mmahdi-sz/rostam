@@ -24,7 +24,7 @@ pub static EMOJI_MAP: &[(&str, &str)] = &[
     ("📄", "page"),
     ("📊", "stats"),
     ("📋", "list"),
-    ("📥", "download_icon"),
+    ("📥", "import"),
     ("📤", "upload_icon"),
     ("📦", "export"),
     ("💾", "floppy"),
