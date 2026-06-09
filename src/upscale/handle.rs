@@ -267,7 +267,7 @@ pub async fn handle_upscale_cancel(
     }
     // Model-selection screen — go back to AI Lab.
     eprintln!("[upscale trace={trace_id} event=cancel_prompt] user_id={user_id}");
-    flow_manager.clear(user_id);
+
     let r = crate::bot::edit_to_ai_lab(api, chat_id, message_id).await;
     eprintln!("[upscale trace={trace_id} event=cancel_done] ok={}", r.is_ok());
 }
@@ -275,12 +275,13 @@ pub async fn handle_upscale_cancel(
 // ── main processing ───────────────────────────────────────────────────────────
 
 pub async fn handle_upscale_image(
-    api: &Bot, message: &Message, user_id: i64, scale_factor: u32,
-    model_name: &str, flow_manager: &mut FlowManager,
+    api: Bot, message: frankenstein::types::Message, user_id: i64, scale_factor: u32,
+    model_name: String,
 ) {
-    flow_manager.clear(user_id);
+
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
+    let api = &api;
     eprintln!("[upscale trace={trace_id} event=image_received] user_id={user_id} model={model_name} scale={scale_factor}");
 
     let file_id = message
@@ -291,7 +292,7 @@ pub async fn handle_upscale_image(
         return;
     };
     let is_doc  = message.document.is_some();
-    let orig_ext = if is_doc { detect_doc_ext(message) } else { "jpg".to_string() };
+    let orig_ext = if is_doc { detect_doc_ext(&message) } else { "jpg".to_string() };
 
     // ── status message with cancel button ─────────────────────────────────────
     let status_msg_id: Option<i32> = {
@@ -336,7 +337,8 @@ pub async fn handle_upscale_image(
     let input_path  = work_dir.join(format!("input.{orig_ext}"));
     let output_path = work_dir.join(format!("output.{orig_ext}"));
 
-    if let Err(e) = download_file(api, file_id, input_path.to_str().unwrap()).await {
+    let dl_result = download_file(api, file_id, input_path.to_str().unwrap()).await;
+    if let Err(e) = dl_result.map_err(|e| e.to_string()) {
         eprintln!("[upscale trace={trace_id} event=download_failed] err={e}");
         done_flag.store(true, Ordering::Relaxed);
         unregister_upscale(user_id);

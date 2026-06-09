@@ -138,7 +138,12 @@ async fn handle_message(
                 if message.photo.is_some() || message.document.is_some() {
                     let trace_id = next_trace_id();
                     log_trace(trace_id, "upscale_route_dispatched", &format!("user_id={uid} model={model_name}"));
-                    handle_upscale_image(api, &message, uid, scale_factor, &model_name, flow_manager).await;
+                    flow_manager.clear(uid);
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    tokio::spawn(async move {
+                        handle_upscale_image(api2, msg2, uid, scale_factor, model_name).await;
+                    });
                     return Ok(());
                 }
             }
