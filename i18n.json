@@ -291,7 +291,8 @@
       "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps",
       "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 قسمت {part} از {total}",
       "cancel_button": "لغو دانلود",
-      "cancelled": "❌ دانلود لغو شد."
+      "cancelled": "❌ دانلود لغو شد.",
+      "subtitle_caption": "📄 زیرنویس {lang}\n{title}"
     }
   },
   "gemini_wm": {
