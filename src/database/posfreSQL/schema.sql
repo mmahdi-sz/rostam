@@ -54,3 +54,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS emoji_items_alias_unique
 
 CREATE INDEX IF NOT EXISTS emoji_items_pack_idx
     ON emoji_items (pack_id, position);
+
+-- ── stats ────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS stats_users (
+    user_id    BIGINT      PRIMARY KEY,
+    first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS stats_downloads (
+    id              BIGSERIAL   PRIMARY KEY,
+    user_id         BIGINT      NOT NULL,
+    bytes_downloaded BIGINT     NOT NULL DEFAULT 0,
+    bytes_uploaded   BIGINT     NOT NULL DEFAULT 0,
+    upload_ok        BOOLEAN    NOT NULL DEFAULT FALSE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS stats_downloads_created_idx
+    ON stats_downloads (created_at);
+
+CREATE INDEX IF NOT EXISTS stats_downloads_user_idx
+    ON stats_downloads (user_id);

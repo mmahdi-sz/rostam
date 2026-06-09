@@ -15,6 +15,7 @@ use crate::database::postgresql::PostgresDatabase;
 use crate::emoji;
 use crate::i18n::reload_i18n;
 use crate::modules;
+use crate::stats;
 
 pub async fn build_bot_api(token: &str) -> Result<Bot, Box<dyn std::error::Error>> {
     let Some(base_url) = config::bot_api_base_url() else {
@@ -58,6 +59,10 @@ pub async fn init_database(
             if let Err(e) = database.save_snapshot(&cookie_pool.snapshot()).await {
                 eprintln!("failed to save cookie pool snapshot: {e}");
             }
+            // init stats با همین client
+            let client_ref: &'static tokio_postgres::Client =
+                unsafe { &*(database.client() as *const _) };
+            stats::init(client_ref);
             println!("PostgreSQL cookie pool storage is enabled.");
             Some(database)
         }

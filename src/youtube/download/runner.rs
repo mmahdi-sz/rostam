@@ -12,6 +12,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Notify;
 
 use crate::i18n::{entities_for_text, t, tf};
+use crate::stats;
 
 use super::super::trace::log_trace;
 use super::cancel::{register_cancel, unregister_cancel, UnregisterGuard};
@@ -60,6 +61,11 @@ async fn run_download(
     let _cancel_guard = UnregisterGuard(request_id);
     let mut cancel_fut = std::pin::pin!(cancel.notified());
     let trace_id = req.trace_id;
+    let user_id = req.user_id.unwrap_or(0);
+
+    // ثبت شروع دانلود
+    let stats_job_id = stats::record_download_start(user_id).await;
+
     let quality_label = quality_label_for(height);
     log_trace(trace_id, "download_begin", &format!(
         "request_id={request_id} height={height} codec={} url={}", codec.key(), req.webpage_url
@@ -239,6 +245,11 @@ async fn run_download(
 
     log_trace(trace_id, "download_complete", &format!("path={path}"));
 
+    let file_size_bytes = tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0);
+    if let Some(jid) = stats_job_id {
+        stats::record_download_done(jid, file_size_bytes as i64).await;
+    }
+
     let codec_name = t(selection.codec.label_key());
     let bitrate_str = find_format(&req, height, codec)
         .and_then(|f| f.bitrate)
@@ -246,9 +257,7 @@ async fn run_download(
         .unwrap_or_else(|| "?".to_string());
     let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
 
-    let file_size_mb = tokio::fs::metadata(&path).await
-        .map(|m| m.len() / (1024 * 1024))
-        .unwrap_or(0);
+    let file_size_mb = file_size_bytes / (1024 * 1024);
     log_trace(trace_id, "upload_size_check", &format!("size_mb={file_size_mb} max_mb={MAX_SIZE_MB}"));
 
     let upload_ok = if file_size_mb > MAX_SIZE_MB {
@@ -330,6 +339,9 @@ async fn run_download(
     }
 
     if upload_ok {
+        if let Some(jid) = stats_job_id {
+            stats::record_upload_done(jid, file_size_bytes as i64).await;
+        }
         let _ = api.delete_message(
             &DeleteMessageParams::builder()
                 .chat_id(status_chat_id)

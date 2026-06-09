@@ -23,6 +23,7 @@ use crate::upscale::{
     CB_UPSCALE_CANCEL, CB_UPSCALE_MODEL_PREFIX, CB_UPSCALE_ANIME_TOGGLE,
 };
 use crate::youtube::{extract_youtube_urls, handle_youtube_url, log_trace, next_trace_id};
+use crate::stats;
 use frankenstein::{
     methods::SendMessageParams,
     types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, ReplyMarkup},
@@ -62,6 +63,11 @@ async fn handle_message(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let AppState { api, cookie_pool, database, flow_manager, rate_limit_tx, flow_clear_tx } = state;
     let user_id = message.from.as_ref().map(|u| u.id as i64);
+
+    // ثبت کاربر در stats (fire-and-forget)
+    if let Some(uid) = user_id {
+        stats::record_user_global(uid).await;
+    }
 
     // Step 1: addemoji link detection
     if let Some(uid) = user_id {

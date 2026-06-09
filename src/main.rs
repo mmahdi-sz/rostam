@@ -9,6 +9,7 @@ mod gemini_watermark;
 mod i18n;
 mod modules;
 mod separation;
+mod stats;
 mod stt;
 mod upscale;
 mod youtube;
