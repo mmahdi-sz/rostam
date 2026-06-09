@@ -104,6 +104,30 @@ async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
     eprintln!("[upscale trace={trace_id} event=cpu_released] cores={cores:?} ok={}", r.is_ok());
 }
 
+// Pin a subprocess (by PID) to the given CPU core list via sched_setaffinity.
+fn pin_pid_to_cores(pid: Option<u32>, cores: &[i32], trace_id: u64) {
+    let Some(pid) = pid else { return; };
+    #[cfg(target_os = "linux")]
+    unsafe {
+        let mut set: libc::cpu_set_t = std::mem::zeroed();
+        for &c in cores {
+            if c >= 0 && (c as usize) < libc::CPU_SETSIZE as usize {
+                libc::CPU_SET(c as usize, &mut set);
+            }
+        }
+        let ret = libc::sched_setaffinity(
+            pid as libc::pid_t,
+            std::mem::size_of::<libc::cpu_set_t>(),
+            &set,
+        );
+        eprintln!("[upscale trace={trace_id} event=pin_affinity] pid={pid} cores={cores:?} ret={ret}");
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (pid, cores, trace_id);
+    }
+}
+
 // ── keyboards ─────────────────────────────────────────────────────────────────
 
 fn is_anime_model(model_name: &str) -> bool {
@@ -327,9 +351,10 @@ pub async fn handle_upscale_image(
     let output_str     = output_path.to_str().unwrap().to_string();
     let model_owned    = model_name.to_string();
     let cancel_for_run = cancel_flag.clone();
+    let cores_for_run  = cores.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        run_upscale(&input_str, &output_str, &model_owned, scale_factor, trace_id, cancel_for_run)
+        run_upscale(&input_str, &output_str, &model_owned, scale_factor, trace_id, cancel_for_run, &cores_for_run)
     }).await;
 
     done_flag.store(true, Ordering::Relaxed);
@@ -411,7 +436,7 @@ async fn edit_or_send(api: &Bot, chat_id: i64, msg_id: Option<i32>, text: &str) 
 
 fn run_upscale(
     input: &str, output: &str, model_name: &str,
-    scale: u32, trace_id: u64, cancel: Arc<AtomicBool>,
+    scale: u32, trace_id: u64, cancel: Arc<AtomicBool>, cores: &[i32],
 ) -> Result<f64, String> {
     use std::time::Instant;
     let start = Instant::now();
@@ -421,6 +446,11 @@ fn run_upscale(
         .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("spawn: {e}"))?;
+
+    if !cores.is_empty() {
+        pin_pid_to_cores(Some(child.id()), cores, trace_id);
+    }
+
     loop {
         if cancel.load(Ordering::Relaxed) {
             child.kill().ok();
@@ -441,6 +471,7 @@ fn run_upscale(
         }
     }
 }
+
 
 fn detect_doc_ext(message: &Message) -> String {
     if let Some(doc) = &message.document {
