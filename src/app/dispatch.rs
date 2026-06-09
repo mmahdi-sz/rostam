@@ -9,6 +9,7 @@ use crate::bot::{send_start_menu, edit_to_start_menu, edit_to_ai_lab};
 use crate::bot::{
     CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB,
     CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_AI_SEP, CB_AI_GWM, CB_DENOISE_CANCEL,
+    CB_ADMIN_PANEL, CB_ADMIN_STATS,
 };
 use crate::config;
 use crate::denoise;
@@ -448,6 +449,58 @@ async fn handle_callback(
         ).await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             handle_gwm_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+        }
+        return Ok(());
+    }
+
+    let is_admin = config::admin_user_id().map(|id| id == cb_user_id as i64).unwrap_or(false);
+
+    if cb_data == CB_ADMIN_PANEL && is_admin {
+        let _ = api.answer_callback_query(
+            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
+        ).await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            use frankenstein::methods::EditMessageTextParams;
+            use crate::emoji::panel::btn_icon;
+            use crate::i18n::t;
+            let kb = frankenstein::types::InlineKeyboardMarkup::builder()
+                .inline_keyboard(vec![
+                    vec![btn_icon(&t("admin.stats_button"), CB_ADMIN_STATS, "stats")],
+                    vec![btn_icon(&t("admin.back"), crate::bot::CB_START_PANEL, "back")],
+                ])
+                .build();
+            let _ = api.edit_message_text(
+                &EditMessageTextParams::builder()
+                    .chat_id(message.chat.id).message_id(message.message_id)
+                    .text(t("admin.panel_title")).reply_markup(kb).build(),
+            ).await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_ADMIN_STATS && is_admin {
+        let _ = api.answer_callback_query(
+            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
+        ).await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            use frankenstein::methods::EditMessageTextParams;
+            use crate::emoji::panel::btn_icon;
+            use crate::i18n::t;
+            let text = if let Some(db) = database {
+                crate::admin::render_stats(db.client()).await
+            } else {
+                "دیتابیس متصل نیست.".to_string()
+            };
+            let kb = frankenstein::types::InlineKeyboardMarkup::builder()
+                .inline_keyboard(vec![vec![
+                    btn_icon(&t("admin.back"), CB_ADMIN_PANEL, "back"),
+                ]])
+                .build();
+            let _ = api.edit_message_text(
+                &EditMessageTextParams::builder()
+                    .chat_id(message.chat.id).message_id(message.message_id)
+                    .text(&text).reply_markup(kb).build(),
+            ).await;
         }
         return Ok(());
     }
