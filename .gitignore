@@ -8,3 +8,4 @@ separation-service/models/
 separation-service/__pycache__/
 *.pyc
 *.wav
+downloads/
