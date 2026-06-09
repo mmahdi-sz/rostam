@@ -363,6 +363,6 @@
     "panel_title": "پنل ادمین",
     "stats_button": "آمار",
     "back": "برگشت",
-    "stats_title": "📊 آمار کاربران\n👥 کل کاربران: {total}\n{new_icon} کاربران جدید (1 روز): {new_1d}\n{new_icon} کاربران جدید (3 روز): {new_3d}\n{new_icon} کاربران جدید (7 روز): {new_7d}\n{new_icon} کاربران جدید (30 روز): {new_30d}\n\n━━ یوتیوب دانلودر ━━\n{download_icon} درخواست‌ها:\n  1 روز: {req_1d}  |  3 روز: {req_3d}  |  7 روز: {req_7d}  |  30 روز: {req_30d}\n{floppy} حجم دانلود موفق:\n  1 روز: {dl_1d}  |  3 روز: {dl_3d}  |  7 روز: {dl_7d}  |  30 روز: {dl_30d}\n{upload_icon} آپلود موفق:\n  1 روز: {up_1d}  |  3 روز: {up_3d}  |  7 روز: {up_7d}  |  30 روز: {up_30d}\n{google_drive} حجم آپلود موفق:\n  1 روز: {upb_1d}  |  3 روز: {upb_3d}  |  7 روز: {upb_7d}  |  30 روز: {upb_30d}"
+    "stats_title": "📊 آمار کاربران\n👥 کل کاربران: {total}\n🆕 کاربران جدید (1 day): {new_1d}\n🆕 کاربران جدید (3 days): {new_3d}\n🆕 کاربران جدید (7 days): {new_7d}\n🆕 کاربران جدید (30 days): {new_30d}\n\n━━ یوتیوب دانلودر ━━\n📥 درخواست‌ها:\n  1d: {req_1d}  |  3d: {req_3d}  |  7d: {req_7d}  |  30d: {req_30d}\n💾 حجم دانلود موفق:\n  1d: {dl_1d}  |  3d: {dl_3d}  |  7d: {dl_7d}  |  30d: {dl_30d}\n📤 آپلود موفق:\n  1d: {up_1d}  |  3d: {up_3d}  |  7d: {up_7d}  |  30d: {up_30d}\n☁️ حجم آپلود موفق:\n  1d: {upb_1d}  |  3d: {upb_3d}  |  7d: {upb_7d}  |  30d: {upb_30d}"
   }
 }
