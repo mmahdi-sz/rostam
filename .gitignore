@@ -3,3 +3,8 @@ target/
 git-server/
 cookie_profiles_cache/
 
+files/models/
+separation-service/models/
+separation-service/__pycache__/
+*.pyc
+*.wav
