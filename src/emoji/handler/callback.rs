@@ -136,6 +136,11 @@ pub async fn handle_emoji_callback(
             flow_manager.clear(user_id);
             edit_panel(api, chat_id, message_id, &emoji_panel::main_panel_text(), Some(emoji_panel::main_panel_keyboard()), trace_id).await;
         }
+        d if d == CB_GUIDE => {
+            eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_GUIDE");
+            let guide = t("emoji.guide_text");
+            edit_panel(api, chat_id, message_id, &guide, Some(emoji_panel::guide_keyboard()), trace_id).await;
+        }
         d if d.starts_with(CB_LIST_PAGE_PREFIX) => {
             if let Some(page) = d.strip_prefix(CB_LIST_PAGE_PREFIX).and_then(|s| s.parse::<usize>().ok()) {
                 eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_LIST_PAGE page={page}");

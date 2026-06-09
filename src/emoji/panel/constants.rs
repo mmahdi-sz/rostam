@@ -21,6 +21,7 @@ pub const CB_SHOW_PACK_LINKS: &str = "emoji:packlinks";
 pub const CB_BACK_TO_PACK_CHOICE: &str = "emoji:backpick";
 pub const CB_PENDING_PAGE_PREFIX: &str = "emoji:pendpg:";
 
+pub const CB_GUIDE: &str = "emoji:guide";
 pub const CB_START_PANEL: &str = "start:panel";
 
 pub const LIST_PAGE_SIZE: usize = 15;
