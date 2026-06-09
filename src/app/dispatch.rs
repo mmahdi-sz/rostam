@@ -483,7 +483,6 @@ async fn handle_callback(
             &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
         ).await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            use frankenstein::methods::EditMessageTextParams;
             use crate::emoji::panel::btn_icon;
             use crate::i18n::t;
             let text = if let Some(db) = database {
@@ -496,10 +495,8 @@ async fn handle_callback(
                     btn_icon(&t("admin.back"), CB_ADMIN_PANEL, "back"),
                 ]])
                 .build();
-            let _ = api.edit_message_text(
-                &EditMessageTextParams::builder()
-                    .chat_id(message.chat.id).message_id(message.message_id)
-                    .text(&text).reply_markup(kb).build(),
+            let _ = crate::bot::edit_text(
+                api, message.chat.id, message.message_id, &text, Some(kb),
             ).await;
         }
         return Ok(());

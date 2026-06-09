@@ -141,7 +141,44 @@ fn log_lookups(trace_id: u64, lookups: &[RenderLookup]) {
     }
 }
 
-/// Like send_text but splits text longer than 4096 chars into multiple messages.
+/// Expand `{key}` templates + collect entities, then edit an existing message.
+pub async fn edit_text(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    text: &str,
+    reply_markup: Option<InlineKeyboardMarkup>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (rendered, entities, _) = expand_and_entify(text, chat_id).await;
+    match (entities.is_empty(), reply_markup) {
+        (true, None) => {
+            api.edit_message_text(
+                &EditMessageTextParams::builder()
+                    .chat_id(chat_id).message_id(message_id).text(&rendered).build(),
+            ).await?;
+        }
+        (true, Some(kb)) => {
+            api.edit_message_text(
+                &EditMessageTextParams::builder()
+                    .chat_id(chat_id).message_id(message_id).text(&rendered).reply_markup(kb).build(),
+            ).await?;
+        }
+        (false, None) => {
+            api.edit_message_text(
+                &EditMessageTextParams::builder()
+                    .chat_id(chat_id).message_id(message_id).text(&rendered).entities(entities).build(),
+            ).await?;
+        }
+        (false, Some(kb)) => {
+            api.edit_message_text(
+                &EditMessageTextParams::builder()
+                    .chat_id(chat_id).message_id(message_id).text(&rendered).entities(entities).reply_markup(kb).build(),
+            ).await?;
+        }
+    }
+    Ok(())
+}
+
 /// Used for potentially long output such as STT transcription results.
 pub async fn send_long_text(
     api: &Bot,
