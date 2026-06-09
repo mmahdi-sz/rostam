@@ -288,10 +288,12 @@ async fn run_download(
                     ("part", &part_num.to_string()), ("total", &total.to_string()),
                 ])).await;
 
+            let bot_username = crate::config::bot_username().to_string();
             let caption = tf("youtube.download.caption_part", &[
                 ("title", &req.title), ("quality", &quality_label),
                 ("codec", &codec_name), ("bitrate", &bitrate_str),
                 ("part", &part_num.to_string()), ("total", &total.to_string()),
+                ("username", &bot_username),
             ]);
             let caption_entities = entities_for_text(&caption);
             let params = build_part_params(part_path, req.chat_id, &thumb_path,
@@ -306,9 +308,11 @@ async fn run_download(
         all_ok
     } else {
         edit_status(&api, status_chat_id, status_message_id, t("youtube.download.uploading")).await;
+        let bot_username = crate::config::bot_username().to_string();
         let caption = tf("youtube.download.caption", &[
             ("title", &req.title), ("quality", &quality_label),
             ("codec", &codec_name), ("bitrate", &bitrate_str),
+            ("username", &bot_username),
         ]);
         let caption_entities = entities_for_text(&caption);
         let params = build_single_params(&path, req.chat_id, &thumb_path,

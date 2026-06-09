@@ -55,6 +55,15 @@ pub fn build_bar(percent: f32) -> String {
     s
 }
 
+fn clean_val<'a>(s: &'a str, fallback: &'a str) -> &'a str {
+    let s = s.trim();
+    if s.is_empty() || s == "N/A" || s == "?" || s.starts_with("Unknown") {
+        fallback
+    } else {
+        s
+    }
+}
+
 pub fn format_progress_body(snap: &ProgressSnapshot, quality_label: &str) -> String {
     let percent_f = snap
         .percent
@@ -63,17 +72,23 @@ pub fn format_progress_body(snap: &ProgressSnapshot, quality_label: &str) -> Str
         .parse::<f32>()
         .unwrap_or(0.0);
     let bar = build_bar(percent_f);
+    let percent = clean_val(&snap.percent, "۰٪");
+    let downloaded = clean_val(&snap.downloaded, "-");
+    let total = clean_val(&snap.total, "-");
+    let speed = clean_val(&snap.speed, "...");
+    let eta = clean_val(&snap.eta, "...");
+    let elapsed = clean_val(&snap.elapsed, "۰۰:۰۰");
     tf(
         "youtube.download.progress.body",
         &[
             ("quality", quality_label),
-            ("percent", &snap.percent),
+            ("percent", percent),
             ("bar", &bar),
-            ("downloaded", &snap.downloaded),
-            ("total", &snap.total),
-            ("speed", &snap.speed),
-            ("elapsed", &snap.elapsed),
-            ("eta", &snap.eta),
+            ("downloaded", downloaded),
+            ("total", total),
+            ("speed", speed),
+            ("elapsed", elapsed),
+            ("eta", eta),
         ],
     )
 }

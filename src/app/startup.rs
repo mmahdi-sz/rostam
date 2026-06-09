@@ -217,6 +217,17 @@ pub fn spawn_i18n_watcher() {
     });
 }
 
+pub async fn fetch_bot_username(api: &Bot) {
+    match api.get_me().await {
+        Ok(resp) => {
+            let username = resp.result.username.unwrap_or_default();
+            println!("Bot username: @{username}");
+            crate::config::set_bot_username(username);
+        }
+        Err(e) => eprintln!("Failed to fetch bot username: {e}"),
+    }
+}
+
 pub async fn set_bot_commands(api: &Bot) {
     let menu_params = SetChatMenuButtonParams::builder()
         .menu_button(MenuButton::Commands)

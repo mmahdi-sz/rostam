@@ -11,7 +11,7 @@ use crate::cookie_pool::CookiePool;
 use crate::emoji::FlowManager;
 
 use startup::{
-    build_bot_api, init_database, init_emoji_cache,
+    build_bot_api, fetch_bot_username, init_database, init_emoji_cache,
     set_bot_commands, spawn_cookie_refresher, spawn_cooldown_refresh, spawn_i18n_watcher,
 };
 use state::AppState;
@@ -38,6 +38,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (flow_clear_tx, mut flow_clear_rx) = tokio::sync::mpsc::unbounded_channel::<i64>();
     let (cooldown_done_tx, mut cooldown_done_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
+    fetch_bot_username(&api).await;
     spawn_cookie_refresher(&api, &mut cookie_pool);
     spawn_i18n_watcher();
     set_bot_commands(&api).await;

@@ -40,28 +40,43 @@ pub async fn fetch_thumbnail(
     trace_id: u64,
 ) -> Option<String> {
     let url = url.as_deref()?;
-    let path = dir.join("thumb.jpg");
-    match reqwest::get(url).await {
-        Ok(resp) if resp.status().is_success() => {
-            match resp.bytes().await {
-                Ok(bytes) => {
-                    if tokio::fs::write(&path, &bytes).await.is_ok() {
-                        log_trace(
-                            trace_id,
-                            "thumb_fetched",
-                            &format!("bytes={} path={}", bytes.len(), path.display()),
-                        );
-                        Some(path.to_string_lossy().into_owned())
-                    } else {
-                        log_trace(trace_id, "thumb_write_failed", url);
-                        None
-                    }
-                }
-                Err(e) => { log_trace(trace_id, "thumb_bytes_failed", &e.to_string()); None }
-            }
+    let raw_path = dir.join("thumb_raw");
+    let jpg_path = dir.join("thumb.jpg");
+
+    let resp = match reqwest::get(url).await {
+        Ok(r) if r.status().is_success() => r,
+        Ok(r) => { log_trace(trace_id, "thumb_http_error", &format!("status={}", r.status())); return None; }
+        Err(e) => { log_trace(trace_id, "thumb_fetch_failed", &e.to_string()); return None; }
+    };
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => { log_trace(trace_id, "thumb_bytes_failed", &e.to_string()); return None; }
+    };
+    if tokio::fs::write(&raw_path, &bytes).await.is_err() {
+        log_trace(trace_id, "thumb_write_failed", url);
+        return None;
+    }
+    log_trace(trace_id, "thumb_fetched", &format!("bytes={} raw={}", bytes.len(), raw_path.display()));
+
+    // YouTube often returns WebP; convert to JPEG so Telegram accepts it as a thumbnail.
+    let ffmpeg_out = tokio::process::Command::new("ffmpeg")
+        .args(["-y", "-i", &raw_path.to_string_lossy(),
+               "-vf", "scale=320:-1", "-q:v", "2",
+               &jpg_path.to_string_lossy()])
+        .output()
+        .await;
+
+    match ffmpeg_out {
+        Ok(out) if out.status.success() => {
+            log_trace(trace_id, "thumb_converted", &jpg_path.display().to_string());
+            Some(jpg_path.to_string_lossy().into_owned())
         }
-        Ok(resp) => { log_trace(trace_id, "thumb_http_error", &format!("status={}", resp.status())); None }
-        Err(e) => { log_trace(trace_id, "thumb_fetch_failed", &e.to_string()); None }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            log_trace(trace_id, "thumb_convert_failed", &format!("ffmpeg: {stderr}"));
+            None
+        }
+        Err(e) => { log_trace(trace_id, "thumb_convert_spawn_failed", &e.to_string()); None }
     }
 }
 

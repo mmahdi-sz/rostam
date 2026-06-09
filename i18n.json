@@ -157,7 +157,9 @@
         "music_note": "5188621441926438751",
         "mute": "6289689939512658079",
         "frame": "5418328048242035166",
-        "lab": "5411512278740640309"
+        "lab": "5411512278740640309",
+        "tv": "5255917927277804944",
+        "bot_premium_emoji": "5310170944843579391"
       }
     },
     "pack_detail": "📁 مدیریت مجموعه\n\nشناسه: {id}\nنام: {name}\nلقب: {alias}\nتعداد: {count}\nپیش‌فرض: {default}",
@@ -277,8 +279,8 @@
     "download": {
       "starting": "⏳ شروع دانلود ویدیو ({quality})...",
       "progress": {
-        "body": "⏳ در حال دانلود از یوتیوب...\n🛰️ وضعیت: در حال دانلود از یوتیوب\n🎬 کیفیت انتخابی: {quality}\n📊 پیشرفت: {percent}\n🔘 نوار پیشرفت: {bar}\n📥 حجم: {downloaded} از {total}\n🚀 سرعت: {speed}\n⏱️ سپری‌شده: {elapsed}\n⌛ باقی‌مانده: {eta}",
-        "upload_body": "⏳ در حال آپلود به تلگرام...\n🛰️ وضعیت: در حال آپلود به تلگرام\n🎬 کیفیت انتخابی: {quality}\n🔘 نوار پیشرفت: ●●●●●●●●●●\n⏱️ سپری‌شده: {elapsed}"
+        "body": "⏳ در حال دانلود...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} از {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
+        "upload_body": "📤 در حال آپلود به تلگرام...\n🎬 {quality}\n🔘 ●●●●●●●●●●  ۱۰۰%\n⏱️ {elapsed}"
       },
       "uploading": "✅ دانلود کامل شد. در حال آپلود به تلگرام...",
       "splitting": "✂️ فایل بزرگ‌تر از ۲ گیگابایت است. در حال تقسیم به {parts} قسمت...",
@@ -288,8 +290,8 @@
       "failed": "❌ دانلود ناموفق بود: {error}",
       "upload_failed": "❌ ارسال فایل ناموفق بود: {error}",
       "request_expired": "این درخواست منقضی شده. لطفاً لینک را دوباره بفرستید.",
-      "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps",
-      "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 قسمت {part} از {total}",
+      "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n🤖 @{username}",
+      "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 قسمت {part} از {total}\n🤖 @{username}",
       "cancel_button": "لغو دانلود",
       "cancelled": "❌ دانلود لغو شد.",
       "subtitle_caption": "📄 زیرنویس {lang}\n{title}"
