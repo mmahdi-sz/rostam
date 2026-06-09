@@ -306,7 +306,7 @@ async fn run_download(
             ]);
             let caption_entities = entities_for_text(&caption);
             let params = build_part_params(part_path, req.chat_id, &thumb_path,
-                part_num == 1, caption, caption_entities, height);
+                caption, caption_entities, height);
 
             log_trace(trace_id, "upload_part_start", &format!("part={part_num}/{total} path={part_path}"));
             let ok = send_video_with_progress(&api, params, req.chat_id, status_chat_id,

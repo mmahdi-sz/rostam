@@ -105,7 +105,6 @@ pub fn build_part_params(
     part_path: &str,
     chat_id: i64,
     thumb_path: &Option<String>,
-    is_first: bool,
     caption: String,
     caption_entities: Vec<frankenstein::types::MessageEntity>,
     height: u32,
@@ -117,10 +116,8 @@ pub fn build_part_params(
         .caption(caption)
         .build();
     if !caption_entities.is_empty() { params.caption_entities = Some(caption_entities); }
-    if is_first {
-        if let Some(tp) = thumb_path {
-            params.thumbnail = Some(FileUpload::InputFile(InputFile { path: PathBuf::from(tp) }));
-        }
+    if let Some(tp) = thumb_path {
+        params.thumbnail = Some(FileUpload::InputFile(InputFile { path: PathBuf::from(tp) }));
     }
     params.height = Some(height);
     params.width = Some(height * 16 / 9);
