@@ -22,6 +22,8 @@ pub const CB_AI_STT: &str = "ai:stt";
 pub const CB_AI_SEP: &str = "ai:sep";
 pub const CB_AI_GWM: &str = "ai:gwm";
 pub const CB_DENOISE_CANCEL: &str = "denoise:cancel";
+pub const CB_ADMIN_PANEL: &str = "admin:panel";
+pub const CB_ADMIN_STATS: &str = "admin:stats";
 
 pub async fn send_text(
     api: &Bot,
@@ -139,7 +141,44 @@ fn log_lookups(trace_id: u64, lookups: &[RenderLookup]) {
     }
 }
 
-/// Like send_text but splits text longer than 4096 chars into multiple messages.
+/// Expand `{key}` templates + collect entities, then edit an existing message.
+pub async fn edit_text(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    text: &str,
+    reply_markup: Option<InlineKeyboardMarkup>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (rendered, entities, _) = expand_and_entify(text, chat_id).await;
+    match (entities.is_empty(), reply_markup) {
+        (true, None) => {
+            api.edit_message_text(
+                &EditMessageTextParams::builder()
+                    .chat_id(chat_id).message_id(message_id).text(&rendered).build(),
+            ).await?;
+        }
+        (true, Some(kb)) => {
+            api.edit_message_text(
+                &EditMessageTextParams::builder()
+                    .chat_id(chat_id).message_id(message_id).text(&rendered).reply_markup(kb).build(),
+            ).await?;
+        }
+        (false, None) => {
+            api.edit_message_text(
+                &EditMessageTextParams::builder()
+                    .chat_id(chat_id).message_id(message_id).text(&rendered).entities(entities).build(),
+            ).await?;
+        }
+        (false, Some(kb)) => {
+            api.edit_message_text(
+                &EditMessageTextParams::builder()
+                    .chat_id(chat_id).message_id(message_id).text(&rendered).entities(entities).reply_markup(kb).build(),
+            ).await?;
+        }
+    }
+    Ok(())
+}
+
 /// Used for potentially long output such as STT transcription results.
 pub async fn send_long_text(
     api: &Bot,
@@ -181,6 +220,7 @@ pub async fn send_start_menu(
     api: &Bot,
     chat_id: i64,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let is_admin = crate::config::admin_user_id().map(|id| id == chat_id).unwrap_or(false);
     // پاک کردن هر reply keyboard باقی‌مانده — یه پیام موقت می‌فرستیم و فوری حذف می‌کنیم
     let remove_params = SendMessageParams::builder()
         .chat_id(chat_id)
@@ -204,7 +244,7 @@ pub async fn send_start_menu(
             .chat_id(chat_id)
             .text(&text)
             .parse_mode(ParseMode::MarkdownV2)
-            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(start_menu_keyboard()))
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(start_menu_keyboard(is_admin)))
             .build(),
     ).await?;
     Ok(())
@@ -212,7 +252,7 @@ pub async fn send_start_menu(
 
 static LAST_AI_ICON_IDX: AtomicUsize = AtomicUsize::new(usize::MAX);
 
-pub fn start_menu_keyboard() -> InlineKeyboardMarkup {
+pub fn start_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup {
     const AI_ICONS: &[&str] = &["gemini_logo", "chatgpt_logo", "claude_logo", "animated_bot_emoji"];
     let last = LAST_AI_ICON_IDX.load(Ordering::Relaxed);
     let idx = {
@@ -225,13 +265,15 @@ pub fn start_menu_keyboard() -> InlineKeyboardMarkup {
     };
     LAST_AI_ICON_IDX.store(idx, Ordering::Relaxed);
     let icon = AI_ICONS[idx];
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![
-            vec![btn_icon_success(&t("start.ai_lab_button"), CB_START_AI_LAB, icon)],
-            vec![btn_icon_danger(&t("start.youtube_button"), CB_START_YOUTUBE, "clapper")],
-            vec![btn_icon(&t("start.emoji_button"), CB_START_EMOJI, "panel")],
-        ])
-        .build()
+    let mut rows = vec![
+        vec![btn_icon_success(&t("start.ai_lab_button"), CB_START_AI_LAB, icon)],
+        vec![btn_icon_danger(&t("start.youtube_button"), CB_START_YOUTUBE, "clapper")],
+        vec![btn_icon(&t("start.emoji_button"), CB_START_EMOJI, "panel")],
+    ];
+    if is_admin {
+        rows.push(vec![btn_icon(&t("start.admin_button"), CB_ADMIN_PANEL, "stats")]);
+    }
+    InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }
 
 pub fn ai_lab_keyboard() -> InlineKeyboardMarkup {
@@ -269,6 +311,7 @@ pub async fn edit_to_start_menu(
     chat_id: i64,
     message_id: i32,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let is_admin = crate::config::admin_user_id().map(|id| id == chat_id).unwrap_or(false);
     let text = apply_premium_to_md(&t("start.welcome"));
     api.edit_message_text(
         &EditMessageTextParams::builder()
@@ -276,7 +319,7 @@ pub async fn edit_to_start_menu(
             .message_id(message_id)
             .text(&text)
             .parse_mode(ParseMode::MarkdownV2)
-            .reply_markup(start_menu_keyboard())
+            .reply_markup(start_menu_keyboard(is_admin))
             .build(),
     ).await?;
     Ok(())

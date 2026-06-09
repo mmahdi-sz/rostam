@@ -8,7 +8,7 @@ use tokio_postgres::{Client, NoTls};
 use crate::cookie_pool::{CookiePoolSnapshot, CookieSource, CooldownEntry};
 
 pub struct PostgresDatabase {
-    client: Client,
+    client: Box<Client>,
 }
 
 impl PostgresDatabase {
@@ -21,7 +21,7 @@ impl PostgresDatabase {
             }
         });
 
-        let database = Self { client };
+        let database = Self { client: Box::new(client) };
         database.init_schema().await?;
         Ok(database)
     }
