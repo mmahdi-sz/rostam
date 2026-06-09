@@ -86,6 +86,13 @@ pub(super) async fn handle(
 
     if text.is_empty() { return true; }
 
+    // URL sent while waiting for pack name — abort and let dispatch handle it as a link
+    if text.starts_with("http") {
+        eprintln!("[emoji_msg trace={trace_id} event=pack_choice_url_abort] url_preview={:?}", &text[..text.len().min(60)]);
+        flow_manager.clear(user_id);
+        return false;
+    }
+
     // Pack name typed — find or create pack
     eprintln!("[emoji_msg trace={trace_id} event=pack_name_typed] name={text:?}");
     let pack = match emoji_store::find_pack_by_name(client, user_id, text).await {
