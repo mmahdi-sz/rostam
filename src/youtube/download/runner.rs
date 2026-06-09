@@ -24,7 +24,7 @@ use super::store::take_request;
 use super::types::{Selection, SubtitleMode};
 use super::upload::{build_part_params, build_single_params, send_video_with_progress};
 
-pub const EDIT_THROTTLE: Duration = Duration::from_secs(3);
+pub const EDIT_THROTTLE: Duration = Duration::from_secs(1);
 const DOWNLOAD_ROOT: &str = "/mnt/data/mahdidev/ros/dev/downloads/yt";
 const MAX_SIZE_MB: u64 = 2000;
 const TARGET_PART_MB: u64 = 1700;

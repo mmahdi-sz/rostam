@@ -35,6 +35,20 @@ pub fn plain_button(text: &str, callback_data: String) -> InlineKeyboardButton {
     button(text, callback_data, None)
 }
 
+pub fn icon_button(text: &str, icon_key: &str, callback_data: String, style: Option<ButtonStyle>) -> InlineKeyboardButton {
+    let icon_id = t(icon_key);
+    InlineKeyboardButton {
+        text: text.to_string(),
+        icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') { None } else { Some(icon_id) },
+        callback_data: Some(callback_data),
+        style,
+        url: None, login_url: None, web_app: None,
+        switch_inline_query: None, switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None, copy_text: None,
+        callback_game: None, pay: None,
+    }
+}
+
 pub fn choice_button(text: &str, callback_data: String, selected: bool) -> InlineKeyboardButton {
     let style = if selected { Some(ButtonStyle::Success) } else { None };
     button(text, callback_data, style)
