@@ -251,6 +251,7 @@ pub async fn handle_upscale_model_pick(
         .build();
     match api.edit_message_text(&params).await {
         Ok(_) => eprintln!("[upscale trace={trace_id} event=model_pick_done]"),
+        Err(e) if e.to_string().contains("message is not modified") => {},
         Err(e) => eprintln!("[upscale trace={trace_id} event=model_pick_failed] err={e}"),
     }
 }
