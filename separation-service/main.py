@@ -14,7 +14,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from cpu_monitor import start_monitor, available_cores, pick_cores
-from cpu_broker import start_broker, acquire, release
+from cpu_broker import start_broker, acquire, release, is_overloaded, get_redis, RESERVED_KEY, QUEUE_KEY
 
 logging.basicConfig(
     level=logging.INFO,
@@ -94,6 +94,21 @@ app = FastAPI(lifespan=lifespan)
 async def health():
     cores = await available_cores()
     return {"status": "ok", "model_loaded": _model_loaded, "available_cores": cores}
+
+
+@app.get("/cpu/status")
+async def cpu_status():
+    r = await get_redis()
+    reserved = len(await r.hgetall(RESERVED_KEY))
+    overloaded = await is_overloaded()
+    queue_len = await r.zcard(QUEUE_KEY)
+    cores = await available_cores()
+    return {
+        "available_cores": cores,
+        "reserved_count": reserved,
+        "overloaded": overloaded,
+        "queue_length": queue_len,
+    }
 
 
 @app.post("/separate")

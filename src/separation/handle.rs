@@ -20,7 +20,7 @@ use crate::emoji::panel::{btn_icon_success, btn_icon, btn_icon_danger};
 use crate::i18n::{t, entities_for_text};
 use crate::youtube::log_trace;
 
-use super::client::separate_audio;
+use super::client::{separate_audio, fetch_cpu_status};
 use super::types::SeparationMode;
 
 static NEXT_TRACE: AtomicU64 = AtomicU64::new(1);
@@ -287,17 +287,26 @@ pub async fn handle_separation_callback(
     }
 
     // Call separation service.
-    // Before sending to service, show queue message and manage 5min + 30min timeout.
     eprintln!("[separation trace={trace_id} event=separate_start] mode={mode_label}");
     let audio_filename: String = if is_video { "audio.mp3".to_string() } else { filename.clone() };
+
+    // Check server load before showing any message.
+    let cpu_status = fetch_cpu_status().await;
+    let server_free = cpu_status.available_cores > 0 && !cpu_status.overloaded;
+    eprintln!("[separation trace={trace_id} event=cpu_status_check] available={} overloaded={} queue={} server_free={server_free}",
+        cpu_status.available_cores, cpu_status.overloaded, cpu_status.queue_length);
 
     // Cancel token: set to true if user presses cancel while in queue.
     let cancel_flag = Arc::new(AtomicBool::new(false));
     flow_manager.set(user_id, FlowState::AwaitingSeparationQueued { cancel: cancel_flag.clone() });
 
-    // Show initial "در صف" message.
+    // Show initial message: "در حال پردازش" if server is free, "در صف" if busy.
     {
-        let text = t("separation.queue.waiting");
+        let text = if server_free {
+            t("separation.processing_queued")
+        } else {
+            t("separation.queue.waiting")
+        };
         let entities = entities_for_text(&text);
         let kb = queue_cancel_keyboard();
         let mut params = EditMessageTextParams::builder()
@@ -308,15 +317,36 @@ pub async fn handle_separation_callback(
             .build();
         if !entities.is_empty() { params.entities = Some(entities); }
         let _ = api.edit_message_text(&params).await;
-        eprintln!("[separation trace={trace_id} event=queue_msg_shown]");
+        eprintln!("[separation trace={trace_id} event=initial_msg_shown] server_free={server_free}");
     }
 
     // Spawn all heavy work so the event loop stays free — this makes the cancel button work.
     let api_task = api.clone();
     let cancel_task = cancel_flag.clone();
     tokio::spawn(async move {
+        // If server looked free but job hasn't finished in 8s → we're actually queued.
+        // Show the "در صف" message then.
+        let api_queue = api_task.clone();
+        let cancel_queue = cancel_task.clone();
+        let queue_msg_task = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(8)).await;
+            if cancel_queue.load(Ordering::Relaxed) { return; }
+            if !server_free { return; } // already showing queue msg
+            let text = t("separation.queue.waiting");
+            let entities = entities_for_text(&text);
+            let kb = queue_cancel_keyboard();
+            let mut params = EditMessageTextParams::builder()
+                .chat_id(chat_id)
+                .message_id(message_id)
+                .text(&text)
+                .reply_markup(kb)
+                .build();
+            if !entities.is_empty() { params.entities = Some(entities); }
+            let _ = api_queue.edit_message_text(&params).await;
+            eprintln!("[separation trace={trace_id} event=queue_msg_shown_delayed]");
+        });
+
         // Status-update task: after 5 min (if not done) edit to "still busy".
-        // Keep the handle so we can abort it when separation finishes.
         let api_status = api_task.clone();
         let cancel_status = cancel_task.clone();
         let status_task = tokio::spawn(async move {
@@ -357,6 +387,7 @@ pub async fn handle_separation_callback(
             } => { None }
         };
 
+        queue_msg_task.abort();
         // Abort orphan status-update task now that we have a result.
         status_task.abort();
 

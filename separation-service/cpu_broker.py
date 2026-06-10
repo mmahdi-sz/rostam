@@ -6,16 +6,19 @@ Redis keys used:
   cpu:queue             Sorted Set  {ticket_json → score}
                         score = priority * 1e12 + timestamp_ms
                         priority: 1=VIP, 2=normal
-  cpu:notify            Pub/Sub channel — broker publishes "" on each release
+  cpu:notify            Pub/Sub channel — broker publishes "release" on each release
+  cpu:overloaded        String  exists → server overloaded, TTL=300s
 
 Ticket JSON: {"ticket_id": str, "user_id": int, "is_vip": bool, "ts": float}
 
-acquire(user_id, is_vip) → List[int] of core indices, or raises QueueFull
+acquire(user_id, is_vip) → List[int] of core indices
 release(cores)           → frees cores, notifies queue
+is_overloaded()          → bool  (checks cpu:overloaded key)
 """
 
 import asyncio
 import json
+import logging
 import os
 import time
 import uuid
@@ -23,13 +26,17 @@ from typing import List, Optional
 
 import redis.asyncio as aioredis
 
-from cpu_monitor import available_cores, pick_cores
+from cpu_monitor import available_cores, pick_cores, set_overload_callback
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379")
-RESERVE_TTL = 900           # 15 min: max reservation lifetime (seconds)
+RESERVE_TTL = 900               # 15 min: max reservation lifetime (seconds)
+OVERLOAD_TTL = 300              # 5 min: how long overloaded flag persists
 NOTIFY_CHANNEL = "cpu:notify"
 RESERVED_KEY = "cpu:reserved"
 QUEUE_KEY = "cpu:queue"
+OVERLOADED_KEY = "cpu:overloaded"
+
+log = logging.getLogger("separation")
 
 _redis: Optional[aioredis.Redis] = None
 
@@ -41,22 +48,31 @@ async def get_redis() -> aioredis.Redis:
     return _redis
 
 
-class QueuedRequest:
-    """Awaitable handle returned when cores aren't available."""
-    def __init__(self, ticket_id: str, event: asyncio.Event):
-        self.ticket_id = ticket_id
-        self.event = event
-
-
 # In-process waiters: ticket_id → asyncio.Event
 _waiters: dict[str, asyncio.Event] = {}
 _listener_task: Optional[asyncio.Task] = None
 
 
 async def start_broker():
-    """Start the Redis pub/sub listener. Call once at service startup."""
+    """Start the Redis pub/sub listener and wire the overload callback. Call once at startup."""
     global _listener_task
     _listener_task = asyncio.create_task(_listen_releases())
+    set_overload_callback(_on_overload_detected)
+
+
+async def _on_overload_detected():
+    """Called by cpu_monitor when 3-min > 50% and 1-min > 80%."""
+    r = await get_redis()
+    # Only log the first time (when key doesn't exist yet).
+    already = await r.exists(OVERLOADED_KEY)
+    await r.set(OVERLOADED_KEY, "1", ex=OVERLOAD_TTL)
+    if not already:
+        log.warning(f"[cpu_broker event=overload_detected] ttl={OVERLOAD_TTL}s")
+
+
+async def is_overloaded() -> bool:
+    r = await get_redis()
+    return await r.exists(OVERLOADED_KEY) > 0
 
 
 async def _listen_releases():
@@ -66,7 +82,6 @@ async def _listen_releases():
     async for message in pubsub.listen():
         if message["type"] != "message":
             continue
-        # Wake all local waiters — they'll re-check availability themselves.
         for event in list(_waiters.values()):
             event.set()
 
@@ -75,7 +90,11 @@ async def _try_acquire_now(user_id: int) -> Optional[List[int]]:
     """Attempt to grab cores right now. Returns core list or None."""
     r = await get_redis()
 
-    # Purge stale reservations first.
+    # Respect the overload flag first.
+    if await is_overloaded():
+        return None
+
+    # Purge stale reservations.
     now_ts = time.time()
     all_reserved = await r.hgetall(RESERVED_KEY)
     for core_str, val in all_reserved.items():
@@ -88,7 +107,7 @@ async def _try_acquire_now(user_id: int) -> Optional[List[int]]:
         return None
 
     reserved_cores = set(int(k) for k in (await r.hgetall(RESERVED_KEY)).keys())
-    candidates = await pick_cores(count * 2)   # get extra candidates in case some reserved
+    candidates = await pick_cores(count * 2)
     free = [c for c in candidates if c not in reserved_cores][:count]
 
     if not free:
@@ -106,14 +125,11 @@ async def acquire(user_id: int, is_vip: bool = False) -> List[int]:
     """
     Get core indices for this user.
     Blocks until cores are available (no timeout — caller manages timeout).
-    Raises RuntimeError if enqueue fails.
     """
-    # Fast path — try immediately.
     cores = await _try_acquire_now(user_id)
     if cores is not None:
         return cores
 
-    # Slow path — enqueue and wait for a release notification.
     ticket_id = str(uuid.uuid4())
     event = asyncio.Event()
     _waiters[ticket_id] = event
@@ -141,7 +157,6 @@ async def cancel_ticket(ticket_id: str):
     """Remove a queued ticket (user cancelled)."""
     _waiters.pop(ticket_id, None)
     r = await get_redis()
-    # Find and remove the matching ticket in the sorted set.
     members = await r.zrange(QUEUE_KEY, 0, -1)
     for m in members:
         try:
