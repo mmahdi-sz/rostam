@@ -165,11 +165,12 @@ Messages starting with `/` skip step 1, so commands always reach dispatch.
 
 ### Vocal separation
 - Python FastAPI on port 6589 (`separation-service/`), model `Kim_Vocal_2.onnx`, one request at a
-  time via asyncio.Lock, max 50MB. systemd unit `separation.service`.
+  time via `asyncio.Lock` (`_sep_lock`), max 50MB. systemd unit `separation.service`.
 - Setup: `bash separation-service/install.sh` then enable+start separation.
 - Flow: audio → mode keyboard (quality/fast) → download → POST → returns base64 vocals +
   instrumental → two .wav sent. Callbacks: `sep:quality:{id}`, `sep:fast:{id}`, `sep:cancel:{id}`.
-- Health: `curl http://127.0.0.1:6589/health`. Logs: `journalctl -u separation -f`.
+- Health: `curl http://127.0.0.1:6589/health`. Status: `curl http://127.0.0.1:6589/cpu/status`.
+  Logs: `journalctl -u separation -f`.
 
 ### Gemini watermark removal
 - Binary `files/runtime/gwt-mini` (v0.3.1). Base args:
@@ -181,10 +182,17 @@ Messages starting with `/` skip step 1, so commands always reach dispatch.
 
 ### CPU Broker (use for any multi-second CPU task)
 - `separation-service/cpu_broker.py` (`acquire(user_id, is_vip)` → real core list,
-  `release(cores)`), `cpu_monitor.py` (sliding-window /proc/stat). Pin with
-  `os.sched_setaffinity(0, set(cores))` + `OMP_NUM_THREADS`. Release in `finally`.
-- Redis: `cpu:reserved` (Hash), `cpu:queue` (Sorted Set, VIP priority), `cpu:notify` (pub/sub).
-  Reservation TTL 15 min. Rust queue UX: 5-min silent wait msg → 30-min "under pressure" → timeout.
+  `release(cores)`), `cpu_monitor.py` (sliding-window /proc/stat). Pin with process-level
+  `sched_setaffinity(pid, cores)` + background pinner thread (polls `/proc/self/task` every 200ms
+  to re-pin lazily-spawned ONNX/OMP threads) + `OMP_NUM_THREADS`/`OPENBLAS_NUM_THREADS`. Release
+  in `finally`; pinner stopped + affinity restored to all cores after job.
+- Redis keys: `cpu:reserved` (Hash), `cpu:queue` (Sorted Set, VIP priority), `cpu:notify`
+  (pub/sub), `cpu:overloaded` (String, TTL=300s — set when 3-min avg >50% AND 1-min avg >80%).
+- Core allocation by current CPU usage%: `<50%→4`, `<75%→2`, `<94%→1`, `>=94%→0 (queue)`.
+  If `cpu:overloaded` key exists → always 0 (queue).
+- Rust queue UX (`handle.rs`): calls `GET /cpu/status` first; if server free → shows
+  "در حال پردازش", switches to queue msg after 8s if still running; if busy → shows queue msg
+  immediately. After 5 min still running → "سرور تحت فشار" msg. 35-min hard timeout.
 
 ## PostgreSQL tables (auto-created when `DATABASE_URL` set)
 
