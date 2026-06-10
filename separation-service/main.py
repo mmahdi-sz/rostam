@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import tempfile
+import threading
 import time
 from contextlib import asynccontextmanager
 
@@ -148,37 +149,74 @@ async def separate(
     return JSONResponse(content=result)
 
 
-def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str, cores: list) -> dict:
-    import subprocess
-
-    # Pin the whole process to the assigned cores so ONNX internal threads
-    # are also restricted (sched_setaffinity(0) only pins the calling thread;
-    # the process-level call via pid pins all threads including ONNX pools).
-    pid = os.getpid()
-    if cores:
+def _pin_all_threads(cores: set, trace_id: int, log_event: str | None = None) -> int:
+    """Pin every thread (TID) currently in this process to `cores`. Returns count pinned."""
+    pinned = 0
+    for tid_str in os.listdir("/proc/self/task"):
         try:
-            os.sched_setaffinity(pid, set(cores))
-            log.info(f"[separation trace={trace_id} event=affinity_set] pid={pid} cores={cores}")
-        except Exception as e:
-            log.warning(f"[separation trace={trace_id} event=affinity_failed] err={e}")
+            tid = int(tid_str)
+            os.sched_setaffinity(tid, cores)
+            pinned += 1
+        except (ValueError, ProcessLookupError, PermissionError):
+            continue
+    if log_event:
+        log.info(f"[separation trace={trace_id} event={log_event}] cores={sorted(cores)} threads_pinned={pinned}")
+    return pinned
 
-    # Set OMP threads to match core count.
+
+def _pinner_loop(cores: set, trace_id: int, stop_event: threading.Event, seen: set):
+    """
+    Continuously re-pin newly spawned threads to `cores`. ONNX/OpenMP/PyTorch
+    spawn their internal worker thread pools lazily during the first inference
+    call, so a one-shot pin at the start misses them. Poll until separation is done.
+    """
+    while not stop_event.wait(timeout=0.2):
+        try:
+            current = set(int(t) for t in os.listdir("/proc/self/task"))
+        except OSError:
+            continue
+        new = current - seen
+        if new:
+            for tid in new:
+                try:
+                    os.sched_setaffinity(tid, cores)
+                except (ProcessLookupError, PermissionError):
+                    continue
+            log.info(f"[separation trace={trace_id} event=affinity_repin] cores={sorted(cores)} new_threads={len(new)}")
+            seen |= new
+
+
+def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str, cores: list) -> dict:
+    # Set OMP/BLAS thread counts before any inference runs.
     core_count = max(1, len(cores))
     os.environ["OMP_NUM_THREADS"] = str(core_count)
     os.environ["OPENBLAS_NUM_THREADS"] = str(core_count)
     os.environ["MKL_NUM_THREADS"] = str(core_count)
 
+    pinner_thread = None
+    stop_event = threading.Event()
+    if cores:
+        core_set = set(cores)
+        try:
+            seen = set(int(t) for t in os.listdir("/proc/self/task"))
+        except OSError:
+            seen = set()
+        _pin_all_threads(core_set, trace_id, "affinity_set")
+        pinner_thread = threading.Thread(
+            target=_pinner_loop, args=(core_set, trace_id, stop_event, seen), daemon=True
+        )
+        pinner_thread.start()
+
     try:
         return _do_separation(trace_id, audio_bytes, filename, mode, core_count)
     finally:
+        if pinner_thread:
+            stop_event.set()
+            pinner_thread.join(timeout=2)
         # Restore affinity to all cores so the service process isn't stuck
         # on broker-assigned cores after the job completes.
         if cores and _all_cpu_cores:
-            try:
-                os.sched_setaffinity(pid, _all_cpu_cores)
-                log.info(f"[separation trace={trace_id} event=affinity_restored] pid={pid} cores={sorted(_all_cpu_cores)}")
-            except Exception as e:
-                log.warning(f"[separation trace={trace_id} event=affinity_restore_failed] err={e}")
+            _pin_all_threads(_all_cpu_cores, trace_id, "affinity_restored")
 
 
 def _do_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str, core_count: int) -> dict:
