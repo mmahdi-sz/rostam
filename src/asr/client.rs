@@ -6,6 +6,12 @@ pub struct AsrResult {
     pub text: String,
     pub language: String,
     pub duration_seconds: f64,
+    pub srt: String,
+}
+
+#[derive(Debug)]
+pub struct AsrCpuStatus {
+    pub available_cores: u32,
 }
 
 #[derive(Debug)]
@@ -28,9 +34,10 @@ impl std::fmt::Display for AsrError {
 }
 
 const SERVICE_URL: &str = "http://127.0.0.1:8765/transcribe";
+const CPU_STATUS_URL: &str = "http://127.0.0.1:8765/cpu/status";
 const TIMEOUT: Duration = Duration::from_secs(60);
 
-pub async fn transcribe_voice(file_path: &Path) -> Result<AsrResult, AsrError> {
+pub async fn transcribe_voice(file_path: &Path, user_id: i64) -> Result<AsrResult, AsrError> {
     let audio_bytes = tokio::fs::read(file_path).await.map_err(|e| {
         AsrError::Network(format!("read file: {e}"))
     })?;
@@ -45,7 +52,9 @@ pub async fn transcribe_voice(file_path: &Path) -> Result<AsrResult, AsrError> {
         .file_name(filename)
         .mime_str("application/octet-stream")
         .unwrap();
-    let form = reqwest::multipart::Form::new().part("audio", part);
+    let form = reqwest::multipart::Form::new()
+        .part("audio", part)
+        .text("user_id", user_id.to_string());
 
     let client = reqwest::Client::builder()
         .timeout(TIMEOUT)
@@ -96,5 +105,36 @@ pub async fn transcribe_voice(file_path: &Path) -> Result<AsrResult, AsrError> {
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0);
 
-    Ok(AsrResult { text, language, duration_seconds })
+    let srt = json
+        .get("srt")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    Ok(AsrResult { text, language, duration_seconds, srt })
+}
+
+pub async fn get_cpu_status() -> Result<AsrCpuStatus, AsrError> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| AsrError::Network(e.to_string()))?;
+
+    let response = client
+        .get(CPU_STATUS_URL)
+        .send()
+        .await
+        .map_err(|e| AsrError::Network(e.to_string()))?;
+
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| AsrError::InvalidResponse(e.to_string()))?;
+
+    let available_cores = json
+        .get("available_cores")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+
+    Ok(AsrCpuStatus { available_cores })
 }

@@ -34,6 +34,8 @@ pub enum FlowState {
     AwaitingSeparationQueued { cancel: Arc<AtomicBool> },
     AwaitingGeminiWmImage,
     AwaitingAsrAudio,
+    AwaitingAsrConfirm { file_id: String, filename: String, duration_secs: f64 },
+    AwaitingAsrQueued { file_id: String, filename: String, duration_secs: f64 },
 }
 
 #[derive(Debug, Default)]

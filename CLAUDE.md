@@ -79,7 +79,7 @@ Binary: `target/debug/ros-telegram-bot`. Unit: `systemd/abc.service` → `/etc/s
   emoji template system.
 - **AI Lab**: STT (Vosk + DeepFilterNet3), noise removal (DeepFilterNet3), image upscale
   (Real-ESRGAN NCNN Vulkan), vocal separation (Python FastAPI + Kim_Vocal_2.onnx), Gemini
-  watermark removal (gwt-mini binary).
+  watermark removal (gwt-mini binary), ASR (Nemotron RNNT ONNX int4).
 - **Cookie Pool**: Firefox profile rotation for yt-dlp, auto-refresh every 6h, 429 handling.
 - **CPU Broker**: Redis-based core reservation for heavy AI tasks.
 
@@ -179,6 +179,32 @@ Messages starting with `/` skip step 1, so commands always reach dispatch.
   skip → NoWatermarkDetected); passes 2-3 residual cleanup (threshold 0.05, chained). All passes
   sent to user (trade-off: pass 1 preserves detail, pass 3 cleanest). Impl `src/gemini_watermark/`.
 - Callbacks: `ai:gwm`, `gwm:cancel`. Logs: `journalctl -u abc -f | grep '\[gwm'`.
+
+### ASR — Nemotron streaming RNNT + Silero VAD
+- Python FastAPI on port 8765 (`asr-service/`). Model: `nvidia/nemotron-3.5-asr-streaming-0.6b`
+  ONNX int4, CPU-only, **8 هسته** (`OMP_NUM_THREADS=8`). systemd unit `asr.service`.
+- Setup: create venv, `pip install -r requirements.txt`, `python download_model.py`
+  (~1.5GB to `/opt/asr_model`), دانلود VAD:
+  `wget https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx -O /opt/asr_model/silero_vad.onnx`
+  سپس `asr.service` نصب شود.
+- **Pipeline**:
+  1. ffmpeg: تبدیل هر فرمت صوتی به WAV 16kHz mono
+  2. Silero VAD (`silero_vad.onnx`، ~2.3MB، MIT): اسکن کامل صدا → لیست segment‌های گفتاری
+     با timestamp دقیق. فریم ۳۲ms، threshold=0.5، padding=100ms، merge gap<300ms.
+  3. ASR: هر segment جداگانه decode می‌شه. encoder cache برای هر segment reset می‌شه.
+     timestamp هر token = زمان شروع segment + offset داخلی (دقت ±80ms).
+  4. SRT: token‌ها با timestamp مطلق جمع‌بندی می‌شن → SRT با تقسیم روی punctuation.
+- **سرعت**: ~7.5x real-time روی CPU (30 دقیقه در ~4 دقیقه، 8 هسته).
+  VAD سکوت‌ها را حذف می‌کند → ~2.4x سریع‌تر از بدون VAD (قبلاً ~9.3 دقیقه).
+- ONNX models: `encoder.onnx`, `decoder.onnx`, `joint.onnx`, `silero_vad.onnx`.
+  Cache shapes: `cache_last_channel (1,24,56,1024)`, `cache_last_time (1,24,1024,8)`.
+  mel input: `(1, T, 128)` — (batch, time, n_mels).
+- `POST /transcribe` → `{text, language, duration_seconds, srt}`.
+  `POST /transcribe/srt` → فایل SRT مستقیم (Content-Disposition attachment).
+  `GET /health` → `{status, model_loaded}`.
+- Rust client: `asr-service/asr_client.rs` — `transcribe_voice(path) → Result<AsrResult, AsrError>`.
+  60s timeout.
+- Logs: `journalctl -u asr -f | grep 'event='`.
 
 ### CPU Broker (use for any multi-second CPU task)
 - `separation-service/cpu_broker.py` (`acquire(user_id, is_vip)` → real core list,
