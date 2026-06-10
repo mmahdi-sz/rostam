@@ -81,6 +81,10 @@ pub async fn handle_emoji_flow_message(
             eprintln!("[emoji_msg trace={trace_id} event=gwm_skip] — handled in main");
             false
         }
+        FlowState::AwaitingAsrAudio => {
+            eprintln!("[emoji_msg trace={trace_id} event=asr_skip] — handled in main");
+            false
+        }
     }
 }
 
@@ -101,5 +105,6 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingSeparationMode { .. } => "AwaitingSeparationMode",
         FlowState::AwaitingSeparationQueued { .. } => "AwaitingSeparationQueued",
         FlowState::AwaitingGeminiWmImage => "AwaitingGeminiWmImage",
+        FlowState::AwaitingAsrAudio => "AwaitingAsrAudio",
     }
 }

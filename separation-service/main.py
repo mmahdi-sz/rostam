@@ -5,6 +5,7 @@ import logging
 import os
 import sys
 import tempfile
+import threading
 import time
 from contextlib import asynccontextmanager
 
@@ -13,7 +14,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from cpu_monitor import start_monitor, available_cores, pick_cores
-from cpu_broker import start_broker, acquire, release
+from cpu_broker import start_broker, acquire, release, is_overloaded, get_redis, RESERVED_KEY, QUEUE_KEY
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +31,8 @@ _separator_quality = None
 _separator_fast = None
 _model_loaded = False
 _trace_counter = 0
+_sep_lock = asyncio.Lock()
+_all_cpu_cores: set = set()
 
 
 def next_trace_id() -> int:
@@ -39,12 +42,16 @@ def next_trace_id() -> int:
 
 
 def load_models():
-    global _separator_quality, _separator_fast, _model_loaded
+    global _separator_quality, _separator_fast, _model_loaded, _all_cpu_cores
     try:
+        import multiprocessing
         from audio_separator.separator import Separator
 
         log.info(f"[separation event=model_load_start] model={MODEL_NAME} model_dir={MODEL_DIR}")
         os.makedirs(MODEL_DIR, exist_ok=True)
+
+        # Record all available cores so we can restore affinity after separation.
+        _all_cpu_cores = set(range(multiprocessing.cpu_count()))
 
         _separator_quality = Separator(
             model_file_dir=MODEL_DIR,
@@ -89,6 +96,21 @@ async def health():
     return {"status": "ok", "model_loaded": _model_loaded, "available_cores": cores}
 
 
+@app.get("/cpu/status")
+async def cpu_status():
+    r = await get_redis()
+    reserved = len(await r.hgetall(RESERVED_KEY))
+    overloaded = await is_overloaded()
+    queue_len = await r.zcard(QUEUE_KEY)
+    cores = await available_cores()
+    return {
+        "available_cores": cores,
+        "reserved_count": reserved,
+        "overloaded": overloaded,
+        "queue_length": queue_len,
+    }
+
+
 @app.post("/separate")
 async def separate(
     file: UploadFile = File(...),
@@ -118,43 +140,102 @@ async def separate(
     cores = await acquire(user_id=user_id, is_vip=is_vip)
     log.info(f"[separation trace={trace_id} event=acquire_done] cores={cores}")
 
-    try:
-        log.info(f"[separation trace={trace_id} event=processing_start] mode={mode} cores={cores}")
-        t_start = time.monotonic()
+    async with _sep_lock:
+        try:
+            log.info(f"[separation trace={trace_id} event=processing_start] mode={mode} cores={cores}")
+            t_start = time.monotonic()
 
-        result = await asyncio.get_event_loop().run_in_executor(
-            None, _run_separation, trace_id, content, file.filename or "audio.mp3", mode, cores
-        )
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, _run_separation, trace_id, content, file.filename or "audio.mp3", mode, cores
+            )
 
-        elapsed = time.monotonic() - t_start
-        log.info(f"[separation trace={trace_id} event=processing_done] elapsed={elapsed:.1f}s cores={cores}")
-    except ValueError as e:
-        log.error(f"[separation trace={trace_id} event=invalid_audio] err={e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        log.error(f"[separation trace={trace_id} event=processing_failed] err={e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        await release(cores)
-        log.info(f"[separation trace={trace_id} event=cores_released] cores={cores}")
+            elapsed = time.monotonic() - t_start
+            log.info(f"[separation trace={trace_id} event=processing_done] elapsed={elapsed:.1f}s cores={cores}")
+        except ValueError as e:
+            log.error(f"[separation trace={trace_id} event=invalid_audio] err={e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            log.error(f"[separation trace={trace_id} event=processing_failed] err={e}")
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            await release(cores)
+            log.info(f"[separation trace={trace_id} event=cores_released] cores={cores}")
 
     return JSONResponse(content=result)
 
 
-def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str, cores: list) -> dict:
-    import subprocess
-
-    # Pin this thread to the assigned cores.
-    if cores:
+def _pin_all_threads(cores: set, trace_id: int, log_event: str | None = None) -> int:
+    """Pin every thread (TID) currently in this process to `cores`. Returns count pinned."""
+    pinned = 0
+    for tid_str in os.listdir("/proc/self/task"):
         try:
-            os.sched_setaffinity(0, set(cores))
-            log.info(f"[separation trace={trace_id} event=affinity_set] cores={cores}")
-        except Exception as e:
-            log.warning(f"[separation trace={trace_id} event=affinity_failed] err={e}")
+            tid = int(tid_str)
+            os.sched_setaffinity(tid, cores)
+            pinned += 1
+        except (ValueError, ProcessLookupError, PermissionError):
+            continue
+    if log_event:
+        log.info(f"[separation trace={trace_id} event={log_event}] cores={sorted(cores)} threads_pinned={pinned}")
+    return pinned
 
-    # Set OMP threads to match core count.
+
+def _pinner_loop(cores: set, trace_id: int, stop_event: threading.Event, seen: set):
+    """
+    Continuously re-pin newly spawned threads to `cores`. ONNX/OpenMP/PyTorch
+    spawn their internal worker thread pools lazily during the first inference
+    call, so a one-shot pin at the start misses them. Poll until separation is done.
+    """
+    while not stop_event.wait(timeout=0.2):
+        try:
+            current = set(int(t) for t in os.listdir("/proc/self/task"))
+        except OSError:
+            continue
+        new = current - seen
+        if new:
+            for tid in new:
+                try:
+                    os.sched_setaffinity(tid, cores)
+                except (ProcessLookupError, PermissionError):
+                    continue
+            log.info(f"[separation trace={trace_id} event=affinity_repin] cores={sorted(cores)} new_threads={len(new)}")
+            seen |= new
+
+
+def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str, cores: list) -> dict:
+    # Set OMP/BLAS thread counts before any inference runs.
     core_count = max(1, len(cores))
     os.environ["OMP_NUM_THREADS"] = str(core_count)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(core_count)
+    os.environ["MKL_NUM_THREADS"] = str(core_count)
+
+    pinner_thread = None
+    stop_event = threading.Event()
+    if cores:
+        core_set = set(cores)
+        try:
+            seen = set(int(t) for t in os.listdir("/proc/self/task"))
+        except OSError:
+            seen = set()
+        _pin_all_threads(core_set, trace_id, "affinity_set")
+        pinner_thread = threading.Thread(
+            target=_pinner_loop, args=(core_set, trace_id, stop_event, seen), daemon=True
+        )
+        pinner_thread.start()
+
+    try:
+        return _do_separation(trace_id, audio_bytes, filename, mode, core_count)
+    finally:
+        if pinner_thread:
+            stop_event.set()
+            pinner_thread.join(timeout=2)
+        # Restore affinity to all cores so the service process isn't stuck
+        # on broker-assigned cores after the job completes.
+        if cores and _all_cpu_cores:
+            _pin_all_threads(_all_cpu_cores, trace_id, "affinity_restored")
+
+
+def _do_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str, core_count: int) -> dict:
+    import subprocess
 
     with tempfile.TemporaryDirectory(prefix=f"sep_{trace_id}_") as work_dir:
         ext = os.path.splitext(filename)[1] or ".mp3"

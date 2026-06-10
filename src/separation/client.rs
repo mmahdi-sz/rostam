@@ -11,7 +11,45 @@ fn next_trace_id() -> u64 {
 }
 
 const SERVICE_URL: &str = "http://127.0.0.1:6589/separate";
+const STATUS_URL: &str = "http://127.0.0.1:6589/cpu/status";
 const TIMEOUT: Duration = Duration::from_secs(2400); // 40 minutes (queue + processing)
+
+pub struct CpuStatus {
+    pub available_cores: u32,
+    pub overloaded: bool,
+    pub queue_length: u32,
+}
+
+impl CpuStatus {
+    fn busy() -> Self {
+        Self { available_cores: 0, overloaded: true, queue_length: 0 }
+    }
+}
+
+pub async fn fetch_cpu_status() -> CpuStatus {
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return CpuStatus::busy(),
+    };
+    let resp = match client.get(STATUS_URL).send().await {
+        Ok(r) => r,
+        Err(_) => return CpuStatus::busy(),
+    };
+    let json: serde_json::Value = match resp.json().await {
+        Ok(v) => v,
+        Err(_) => return CpuStatus::busy(),
+    };
+    CpuStatus {
+        available_cores: json.get("available_cores").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        overloaded: json.get("overloaded").and_then(|v| v.as_bool()).unwrap_or(true),
+        queue_length: json.get("queue_length").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+    }
+}
+
+
 
 pub async fn separate_audio(
     audio_bytes: Vec<u8>,

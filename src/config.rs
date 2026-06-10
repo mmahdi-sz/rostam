@@ -30,6 +30,12 @@ pub fn dev_mode() -> bool {
         .unwrap_or(false)
 }
 
+pub fn cookie_refresh_enabled() -> bool {
+    config_value("COOKIE_REFRESH_ENABLED")
+        .map(|v| !matches!(v.to_lowercase().as_str(), "0" | "false" | "no"))
+        .unwrap_or(true)
+}
+
 pub fn config_value(key: &str) -> Option<String> {
     value_from_env_file(".env", key)
         .or_else(|| value_from_env_file("/etc/default/abc", key))

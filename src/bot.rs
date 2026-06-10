@@ -21,6 +21,7 @@ pub const CB_AI_UPSCALE: &str = "ai:upscale";
 pub const CB_AI_STT: &str = "ai:stt";
 pub const CB_AI_SEP: &str = "ai:sep";
 pub const CB_AI_GWM: &str = "ai:gwm";
+pub const CB_AI_ASR: &str = "ai:asr";
 pub const CB_DENOISE_CANCEL: &str = "denoise:cancel";
 pub const CB_ADMIN_PANEL: &str = "admin:panel";
 pub const CB_ADMIN_STATS: &str = "admin:stats";
@@ -284,6 +285,7 @@ pub fn ai_lab_keyboard() -> InlineKeyboardMarkup {
             vec![btn_icon_success(&t("start.ai_stt_button"), CB_AI_STT, "microphone")],
             vec![btn_icon_success(&t("start.ai_sep_button"), CB_AI_SEP, "headphones")],
             vec![btn_icon_success(&t("start.ai_gwm_button"), CB_AI_GWM, "gemini_logo")],
+            vec![btn_icon_success(&t("start.ai_asr_button"), CB_AI_ASR, "magic")],
             vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
         ])
         .build()

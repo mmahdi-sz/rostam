@@ -8,9 +8,10 @@ use frankenstein::{
 use crate::bot::{send_start_menu, edit_to_start_menu, edit_to_ai_lab};
 use crate::bot::{
     CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB,
-    CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_AI_SEP, CB_AI_GWM, CB_DENOISE_CANCEL,
+    CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_AI_SEP, CB_AI_GWM, CB_AI_ASR, CB_DENOISE_CANCEL,
     CB_ADMIN_PANEL, CB_ADMIN_STATS,
 };
+use crate::asr::{enter_asr, handle_asr_audio, handle_asr_cancel, CB_ASR_CANCEL};
 use crate::config;
 use crate::denoise;
 use crate::emoji::{FlowState, handler as emoji_handler, panel::CB_START_PANEL};
@@ -138,7 +139,12 @@ async fn handle_message(
                 if message.photo.is_some() || message.document.is_some() {
                     let trace_id = next_trace_id();
                     log_trace(trace_id, "upscale_route_dispatched", &format!("user_id={uid} model={model_name}"));
-                    handle_upscale_image(api, &message, uid, scale_factor, &model_name, flow_manager).await;
+                    flow_manager.clear(uid);
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    tokio::spawn(async move {
+                        handle_upscale_image(api2, msg2, uid, scale_factor, model_name).await;
+                    });
                     return Ok(());
                 }
             }
@@ -157,6 +163,24 @@ async fn handle_message(
                     let trace_id = next_trace_id();
                     log_trace(trace_id, "gwm_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
                     handle_gwm_image(api, &message, uid, flow_manager).await;
+                    return Ok(());
+                }
+            }
+
+            if matches!(flow_manager.get(uid), FlowState::AwaitingAsrAudio) {
+                if message.voice.is_some() || message.audio.is_some() || message.document.is_some() {
+                    let trace_id = next_trace_id();
+                    log_trace(trace_id, "asr_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    // clear flow before spawn so a second file doesn't re-enter
+                    flow_manager.clear(uid);
+                    tokio::spawn(async move {
+                        // Pass a dummy flow_manager since we already cleared; handle_asr_audio
+                        // clears flow at the start anyway.
+                        let mut fm = crate::emoji::FlowManager::new();
+                        handle_asr_audio(&api2, &msg2, uid, &mut fm).await;
+                    });
                     return Ok(());
                 }
             }
@@ -449,6 +473,30 @@ async fn handle_callback(
         ).await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             handle_gwm_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_AI_ASR {
+        let trace_id = next_trace_id();
+        log_trace(trace_id, "cb_ai_asr_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
+        let _ = api.answer_callback_query(
+            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
+        ).await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            enter_asr(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_ASR_CANCEL {
+        let trace_id = next_trace_id();
+        log_trace(trace_id, "asr_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
+        let _ = api.answer_callback_query(
+            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
+        ).await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            handle_asr_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
         }
         return Ok(());
     }

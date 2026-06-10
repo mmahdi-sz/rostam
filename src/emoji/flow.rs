@@ -33,6 +33,7 @@ pub enum FlowState {
     AwaitingSeparationMode { file_id: String, filename: String, prompt_msg_id: Option<i32>, is_video: bool },
     AwaitingSeparationQueued { cancel: Arc<AtomicBool> },
     AwaitingGeminiWmImage,
+    AwaitingAsrAudio,
 }
 
 #[derive(Debug, Default)]

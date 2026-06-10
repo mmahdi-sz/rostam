@@ -2,19 +2,23 @@
 CPU usage monitor — reads /proc/stat, keeps 5-minute sliding window,
 computes per-core idle percentages and decides how many cores to lend.
 
-Decision logic:
-  - If 2-min avg > 80% OR 5-min avg > 50%  → 0 cores (queue)
-  - current idle > 50%  → 4 cores
-  - current idle > 25%  → 2 cores
-  - current idle > 6%   → 1 core
-  - else                → 0 cores (queue)
+Decision logic (based on current 30s avg usage %):
+  < 50%  → 4 cores
+  < 75%  → 2 cores
+  < 94%  → 1 core
+  >= 94% → 0 cores (queue)
+
+Overload detection (written to Redis by cpu_broker):
+  3-min avg usage > 50% AND 1-min avg usage > 80%
+  → cpu:overloaded key set in Redis with TTL=300s
+  → available_cores() returns 0 until key expires
 """
 
 import time
 import asyncio
 from collections import deque
 from dataclasses import dataclass, field
-from typing import List, Deque
+from typing import List, Deque, Optional, Callable, Awaitable
 
 
 @dataclass
@@ -30,11 +34,13 @@ class CpuMonitor:
     _prev_stats: List[dict] = field(default_factory=list)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _running: bool = False
+    # Injected by cpu_broker after startup so we can write to Redis.
+    _overload_callback: Optional[Callable[[], Awaitable[None]]] = None
 
     WINDOW_SECS = 300          # 5 minutes
     SAMPLE_INTERVAL = 2        # seconds between reads
-    TWO_MIN = 120
-    FIVE_MIN = 300
+    ONE_MIN = 60
+    THREE_MIN = 180
 
     def _read_proc_stat(self):
         cores = []
@@ -43,12 +49,11 @@ class CpuMonitor:
                 if not line.startswith("cpu") or line.startswith("cpu "):
                     continue
                 parts = line.split()
-                name = parts[0]
                 vals = list(map(int, parts[1:]))
                 # user nice system idle iowait irq softirq steal guest guest_nice
                 idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
                 total = sum(vals)
-                cores.append({"name": name, "idle": idle, "total": total})
+                cores.append({"name": parts[0], "idle": idle, "total": total})
         return cores
 
     async def start(self):
@@ -59,6 +64,9 @@ class CpuMonitor:
         self._history = [deque() for _ in range(self.num_cores)]
         self._running = True
         asyncio.create_task(self._loop())
+
+    def set_overload_callback(self, cb: Callable[[], Awaitable[None]]):
+        self._overload_callback = cb
 
     async def _loop(self):
         while self._running:
@@ -76,10 +84,17 @@ class CpuMonitor:
                 d_total = curr[i]["total"] - prev["total"]
                 idle_pct = (d_idle / d_total * 100) if d_total > 0 else 100.0
                 self._history[i].append(CoreSample(now, idle_pct))
-                # purge old samples
                 while self._history[i] and self._history[i][0].timestamp < cutoff:
                     self._history[i].popleft()
             self._prev_stats = curr
+
+        # Check overload after every sample (outside lock).
+        if self._overload_callback is not None:
+            now2 = time.monotonic()
+            usage_1min = 100 - self._avg_idle(self.ONE_MIN, now2)
+            usage_3min = 100 - self._avg_idle(self.THREE_MIN, now2)
+            if usage_3min > 50 and usage_1min > 80:
+                asyncio.create_task(self._overload_callback())
 
     def _avg_idle(self, window_secs: float, now: float) -> float:
         """Average idle % across all cores for the given window."""
@@ -94,7 +109,7 @@ class CpuMonitor:
         return (total_idle / count) if count > 0 else 100.0
 
     def _current_idle(self) -> float:
-        """Most recent idle sample averaged across all cores."""
+        """Most recent sample averaged across all cores."""
         total = 0.0
         count = 0
         for dq in self._history:
@@ -104,29 +119,23 @@ class CpuMonitor:
         return (total / count) if count > 0 else 100.0
 
     async def available_cores(self) -> int:
-        """Return how many cores can be lent right now (0 = queue)."""
+        """
+        Return how many cores to lend right now.
+        0 means queue. Does NOT check cpu:overloaded — caller does that.
+        """
         async with self._lock:
-            now = time.monotonic()
-            avg_2min = 100 - self._avg_idle(self.TWO_MIN, now)   # → usage %
-            avg_5min = 100 - self._avg_idle(self.FIVE_MIN, now)
-            current_idle = self._current_idle()
+            current_usage = 100 - self._current_idle()
 
-        if avg_2min > 80 or avg_5min > 50:
-            return 0
-
-        if current_idle > 50:
+        if current_usage < 50:
             return 4
-        if current_idle > 25:
+        if current_usage < 75:
             return 2
-        if current_idle > 6:
+        if current_usage < 94:
             return 1
         return 0
 
     async def pick_cores(self, count: int) -> List[int]:
-        """
-        Pick `count` specific core indices that are most idle right now.
-        Returns list of core indices (0-based).
-        """
+        """Pick `count` most-idle core indices (0-based)."""
         async with self._lock:
             idleness = []
             for i, dq in enumerate(self._history):
@@ -153,3 +162,7 @@ async def available_cores() -> int:
 
 async def pick_cores(count: int) -> List[int]:
     return await _monitor.pick_cores(count)
+
+
+def set_overload_callback(cb: Callable[[], Awaitable[None]]):
+    _monitor.set_overload_callback(cb)

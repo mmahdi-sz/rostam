@@ -1,5 +1,6 @@
 mod admin;
 mod app;
+mod asr;
 mod bot;
 mod config;
 mod cookie_pool;

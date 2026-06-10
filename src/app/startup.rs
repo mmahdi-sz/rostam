@@ -122,6 +122,11 @@ pub fn spawn_cookie_refresher(api: &Bot, cookie_pool: &mut CookiePool) {
         return;
     }
 
+    if !config::cookie_refresh_enabled() {
+        println!("[cookie_refresher] disabled via COOKIE_REFRESH_ENABLED=false, skipping.");
+        return;
+    }
+
     let admin_chat_id = config::admin_user_id().unwrap_or(0);
     let refresh_interval_secs: u64 = config::config_value("COOKIE_REFRESH_INTERVAL_SECS")
         .and_then(|v| v.parse().ok())

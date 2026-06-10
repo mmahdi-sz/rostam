@@ -17,6 +17,7 @@ futures = "0.3"
 rand = "0.8"
 hound = "3.5"
 vosk = "0.3"
+libc = "0.2"
 
 [profile.dev]
 opt-level = 0
