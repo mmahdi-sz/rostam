@@ -1,5 +1,6 @@
 use std::{
     path::PathBuf,
+    sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -7,8 +8,9 @@ use tokio_postgres::{Client, NoTls};
 
 use crate::cookie_pool::{CookiePoolSnapshot, CookieSource, CooldownEntry};
 
+#[derive(Clone)]
 pub struct PostgresDatabase {
-    client: Box<Client>,
+    client: Arc<Client>,
 }
 
 impl PostgresDatabase {
@@ -21,7 +23,7 @@ impl PostgresDatabase {
             }
         });
 
-        let database = Self { client: Box::new(client) };
+        let database = Self { client: Arc::new(client) };
         database.init_schema().await?;
         Ok(database)
     }

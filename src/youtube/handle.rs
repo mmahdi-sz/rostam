@@ -12,6 +12,7 @@ use crate::bot::send_text;
 use crate::cookie_pool::{CookiePool, CookieSource, format_no_cookie_available, save_snapshot};
 use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::{t, tf};
+use crate::rank;
 
 use super::format::{build_caption, build_description_blockquotes};
 use super::fetch::fetch_video_info;

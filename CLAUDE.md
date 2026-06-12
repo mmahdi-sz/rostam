@@ -220,6 +220,117 @@ Messages starting with `/` skip step 1, so commands always reach dispatch.
   "در حال پردازش", switches to queue msg after 8s if still running; if busy → shows queue msg
   immediately. After 5 min still running → "سرور تحت فشار" msg. 35-min hard timeout.
 
+## Rank & Paywall system
+
+### Ranks (`src/rank/types.rs`)
+پنج مقام: `Dalavar` (رایگان/پیش‌فرض) → `Sepahbod` → `Esfandyar` → `Sohrab` → `Rostam`.
+مقام کاربر از جدول `user_ranks` خونده میشه؛ اگه منقضی شده یا نبود → `Dalavar`.
+`rank::effective_rank(db.client(), user_id).await` — همیشه live از db بخون.
+
+### Quota (`src/rank/quota.rs`)
+جدول `user_quotas (user_id, quota_type, used, window_start)`.
+`get_usage(client, uid, kind, window_secs)` / `add_usage(...)` — window sliding بر اساس now.
+انواع: `traffic_daily`, `traffic_monthly`, `denoise_daily`, `denoise_weekly`, `stt_weekly`,
+`upscale_2x_weekly`, `upscale_4x_weekly`, `ai_chat_monthly`.
+
+### Paywall (`src/rank/paywall.rs`)
+دو تابع برای بلاک کردن + نمایش منوی ارتقا:
+- `block_feature(api, chat_id, feature, min_rank)` — قابلیت اصلاً مجاز نیست
+- `block_limit(api, chat_id, limit_label, min_rank)` — محدودیت عددی (مدت، حجم)
+
+هر دو پیام HTML + دکمه «مشاهده پلن‌ها ↗» (`rank:menu` callback) می‌فرستن.
+متن‌ها از i18n: `rank.paywall_feature`, `rank.paywall_limit`, `rank.paywall_button`.
+
+### محدودیت‌های پیاده‌شده
+| قابلیت | نقطه چک | نوع |
+|---|---|---|
+| کیفیت YouTube | `handle_resolution_callback` — کلیک روی دکمه کیفیت | `block_limit` (Xp) |
+| زیرنویس YouTube | `handle_sub_toggle` — کلیک روی زبان | `block_feature` |
+| فایل جداگانه زیرنویس | `handle_sub_mode_toggle` — سوئیچ به File | `block_feature` |
+| حذف نویز روزانه | `handle_denoise_audio` — بعد از گرفتن duration | `block_limit` |
+| حذف نویز هفتگی | `handle_denoise_audio` — بعد از گرفتن duration | `block_limit` |
+| بهبود خودکار صدا (STT) | `CB_STT_TOGGLE_DENOISE` — کلیک روی دکمه فعال‌سازی | `block_feature` |
+| رونویسی دقیق (Large) | `CB_STT_FA_BIG` / `CB_STT_EN_BIG` — کلیک روی دکمه مدل | `block_feature` |
+| سقف روزانه/هفتگی رونویسی | `handle_stt_audio` — بعد از گرفتن duration | `block_limit` |
+| جداسازی موزیک روزانه/هفتگی | `handle_separation_callback` — بعد از ffprobe duration | `block_limit` |
+| ترافیک دانلود روزانه/ماهانه | `handle_go` — قبل از `spawn_download`، حجم تخمینی از bitrate×duration | `block_limit` |
+| افزایش کیفیت تصویر هفتگی | `handle_upscale_image` — اول تابع، بر اساس scale factor | `block_limit` |
+
+**قانون:** دکمه‌ها همیشه نشون داده میشن — paywall فقط موقع کلیک میاد.
+
+### عمداً بدون paywall
+- **ASR / جادو (Nemotron):** مرحله‌ی تست، عمومی نیست؛ ضمناً از CPU Broker (صف + رزرو هسته) استفاده
+  می‌کنه پس منابعش خودکنترله. وقتی عمومی شد سقفش تعریف می‌شه.
+- **حذف واترمارک Gemini:** سریع و سبک — محدودیت توجیه نداره.
+
+### rank methodهای تعریف‌شده ولی هنوز wire نشده (فیچرش وجود نداره)
+`can_subtitle_hardcode` (در حال ساخت)، `ai_chat_monthly_toomar`، `yt_search_per_12h`،
+`gemini_pro_access`، `playlist_limit`. منسوخ: `stt_per_week` (با fast/accurate جایگزین شد).
+
+### سقف‌های حذف نویز
+| مقام | روزانه | هفتگی |
+|---|---|---|
+| دلاور / سپهبد / اسفندیار | ۳۰ دقیقه | ۲ ساعت |
+| سهراب | ۲ ساعت | ۱۰ ساعت |
+| رستم | ۱۰ ساعت | ۹۹ ساعت |
+
+### راهنمای پلن‌ها
+متن کامل در `i18n.json` کلید `rank.guide` — ارسال با `ParseMode::Html`.
+`/rank` و دکمه «مشاهده پلن‌ها» هر دو `rank::menu::send_rank_menu()` رو صدا می‌زنن.
+
+### STT denoise (`src/stt/handle.rs`)
+- سهراب و رستم: دیفالت فعال (`stt_denoise_default() -> bool`)
+- بقیه: دیفالت غیرفعال
+- paywall در `CB_STT_TOGGLE_DENOISE`: وقتی کاربر می‌خواد روشن کنه (`!config.denoise`) rank چک می‌شه؛
+  اگه `can_stt_denoise()` برنگشت → `block_feature(api, chat_id, t("stt.denoise_feature_name"), Rank::Sohrab)`
+- `enter_stt_config` و `handle_stt_callback` هر دو `database: &Option<PostgresDatabase>` می‌گیرن
+
+### افزایش کیفیت تصویر (`src/upscale/handle.rs` → `handle_upscale_image`)
+- چک **اول تابع** (قبل از ارسال status و گرفتن CPU) — quota شمارشی per-image، نیاز به انتظار نداره.
+- سقف بر اساس scale factor: `upscale_weekly_quota(scale)`. مدل‌ها: عمومی x4، انیمه pro x4،
+  انیمه‌ویدیو x4/x3/x2. سه نوع quota: `Upscale2x/3x/4xWeekly` (هفتگی، تعداد عکس).
+- `handle_upscale_image` الان `database: Option<PostgresDatabase>` می‌گیره (Clone از طریق Arc).
+- مصرف بعد از ارسال موفق: `add_usage(..., 1, 7*86400)`. next_rank: `upscale_next_rank()`.
+
+| مقام | ×۲ | ×۳ | ×۴ |
+|---|---|---|---|
+| دلاور / سپهبد / اسفندیار | ۵ | ۳ | ۲ |
+| سهراب | ۵۰ | ۳۰ | ۲۰ |
+| رستم | ۵۰۰ | ۳۰۰ | ۲۰۰ |
+
+(رستم = ۱۰ برابر سهراب. شمارش هفتگی per-image.)
+
+### ترافیک دانلود یوتیوب (`src/youtube/selection/handlers.rs` → `handle_go`)
+- چک قبل از `spawn_download` (تنها نقطه‌ی شروع دانلود).
+- حجم تخمینی = `bitrate(kbps) × 1000/8 × duration` (فقط ویدیو، همسان با عددی که در پنل نشون داده می‌شه).
+  اگه bitrate یا duration نبود → estimate=0 و چک «فایل بزرگ» اعمال نمی‌شه (ولی سقف صفر بازم بلاک می‌کنه).
+- سه حالت: سقف روزانه تموم (`daily_traffic_bytes`)، سقف ماهانه تموم (`monthly_traffic_bytes`)،
+  یا حجم فایل > باقی‌مانده. هر سه → `block_limit`.
+- پنجره: روزانه ۰۰:۰۰ تهران، ماهانه هر ۳۰ روز از `first_upload_at` (از `stats_users`).
+  مصرف بعد از آپلود موفق در `stats::record_upload_done` → `add_traffic` ثبت می‌شه (از قبل بود).
+- next_rank: `traffic_daily_next_rank()` (۵گ→اسفندیار ۴۰گ)، `traffic_monthly_next_rank()` (۱۵گ→سپهبد، ۶۰گ→اسفندیار).
+- helperها در همون فایل: `estimate_bytes`, `fmt_traffic_fa` (رقم فارسی), `to_fa_digits`.
+
+| مقام | ترافیک روزانه | ترافیک ماهانه |
+|---|---|---|
+| دلاور | ۵ گیگ | ۱۵ گیگ |
+| سپهبد | ۵ گیگ | ۶۰ گیگ |
+| اسفندیار | ۴۰ گیگ | ۴۰۰ گیگ |
+| سهراب | ۵ گیگ | ۱۵ گیگ |
+| رستم | ۴۰ گیگ | ۴۰۰ گیگ |
+
+### سقف‌های رونویسی صدا به متن (STT)
+| مقام | سریع — روزانه | سریع — هفتگی | دقیق — روزانه | دقیق — هفتگی |
+|---|---|---|---|---|
+| دلاور / سپهبد / اسفندیار | ۳۰ دقیقه | ۲ ساعت | ❌ | ❌ |
+| سهراب | ۳ ساعت | ۱۵ ساعت | ۱ ساعت | ۵ ساعت |
+| رستم | ۳۰ ساعت | ۱۵۰ ساعت | ۱۰ ساعت | ۵۰ ساعت |
+
+- مدل دقیق (Large): paywall روی کلیک دکمه انتخاب مدل (`CB_STT_FA_BIG`, `CB_STT_EN_BIG`) → `block_feature(..., Rank::Sohrab)`
+- quota چک بعد از دانلود + convert (duration مشخص می‌شه)، ثبت usage بعد از موفقیت
+- `handle_stt_audio` الان `database: Option<PostgresDatabase>` می‌گیره (Clone‌پذیره چون `Arc<Client>` داخلشه)
+- `PostgresDatabase` به `Arc<Client>` تغییر یافت تا Clone‌پذیر بشه (`src/database/posfreSQL/postgresql.rs`)
+
 ## PostgreSQL tables (auto-created when `DATABASE_URL` set)
 
 Cookie pool: `cookie_pool_cookies`, `cookie_pool_state`, `cookie_pool_cooldowns`.

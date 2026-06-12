@@ -58,10 +58,13 @@ CREATE INDEX IF NOT EXISTS emoji_items_pack_idx
 -- ── stats ────────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS stats_users (
-    user_id    BIGINT      PRIMARY KEY,
-    first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_seen  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    user_id         BIGINT      PRIMARY KEY,
+    first_seen      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    first_upload_at BIGINT      -- Unix epoch اولین آپلود موفق
 );
+
+ALTER TABLE stats_users ADD COLUMN IF NOT EXISTS first_upload_at BIGINT;
 
 CREATE TABLE IF NOT EXISTS stats_downloads (
     id              BIGSERIAL   PRIMARY KEY,
@@ -77,3 +80,22 @@ CREATE INDEX IF NOT EXISTS stats_downloads_created_idx
 
 CREATE INDEX IF NOT EXISTS stats_downloads_user_idx
     ON stats_downloads (user_id);
+
+-- ── ranks ────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS user_ranks (
+    user_id      BIGINT  PRIMARY KEY,
+    rank         TEXT    NOT NULL DEFAULT 'dalavar',
+    expires_at   BIGINT,          -- Unix timestamp, NULL = نامحدود
+    activated_at BIGINT  NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT
+);
+
+-- ── quotas ───────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS user_quotas (
+    user_id      BIGINT NOT NULL,
+    quota_type   TEXT   NOT NULL,
+    used         BIGINT NOT NULL DEFAULT 0,
+    window_start BIGINT NOT NULL,
+    PRIMARY KEY (user_id, quota_type)
+);

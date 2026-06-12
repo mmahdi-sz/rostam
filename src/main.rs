@@ -1,5 +1,6 @@
 mod admin;
 mod app;
+mod rank;
 mod asr;
 mod bot;
 mod config;

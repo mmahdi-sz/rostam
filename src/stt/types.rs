@@ -37,17 +37,17 @@ impl SttConfig {
         }
     }
 
-    pub fn lang_label_fa(&self) -> &'static str {
+    pub fn lang_label_fa(&self) -> String {
         match self.lang {
-            SttLang::Fa => "فارسی",
-            SttLang::En => "انگلیسی",
+            SttLang::Fa => crate::i18n::t("stt.lang_fa"),
+            SttLang::En => crate::i18n::t("stt.lang_en"),
         }
     }
 
-    pub fn model_label_fa(&self) -> &'static str {
+    pub fn model_label_fa(&self) -> String {
         match self.model_size {
-            SttModelSize::Large => "دقیق",
-            SttModelSize::Small => "سریع",
+            SttModelSize::Large => crate::i18n::t("stt.model_large"),
+            SttModelSize::Small => crate::i18n::t("stt.model_small"),
         }
     }
 }

@@ -340,7 +340,7 @@ async fn run_download(
 
     if upload_ok {
         if let Some(jid) = stats_job_id {
-            stats::record_upload_done(jid, file_size_bytes as i64).await;
+            stats::record_upload_done(jid, user_id, file_size_bytes as i64).await;
         }
         let _ = api.delete_message(
             &DeleteMessageParams::builder()

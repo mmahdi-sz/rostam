@@ -4,8 +4,9 @@ pub use query::{UserStats, DownloadStats, get_user_stats, get_download_stats, fm
 use std::sync::OnceLock;
 use tokio_postgres::Client;
 
+use crate::rank::quota::add_traffic;
+
 // ── global client ─────────────────────────────────────────────────────────────
-// یه بار در startup ست میشه — همه ماژول‌ها بدون پاس دادن client می‌تونن ثبت کنن.
 static DB: OnceLock<&'static Client> = OnceLock::new();
 
 pub fn init(client: &'static Client) {
@@ -62,13 +63,36 @@ pub async fn record_download_done(job_id: i64, bytes_downloaded: i64) {
     }
 }
 
-pub async fn record_upload_done(job_id: i64, bytes_uploaded: i64) {
+pub async fn record_upload_done(job_id: i64, user_id: i64, bytes_uploaded: i64) {
     let Some(client) = db() else { return };
+
     let r = client.execute(
         "UPDATE stats_downloads SET upload_ok = TRUE, bytes_uploaded = $1 WHERE id = $2",
         &[&bytes_uploaded, &job_id],
     ).await;
     if let Err(e) = r {
         eprintln!("[stats event=record_upload_done_failed] job_id={job_id} err={e}");
+        return;
+    }
+
+    // first_upload_at رو ست کن اگه هنوز نداره — و مقدار رو بگیر
+    let now_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    let first_upload_at = match client.query_opt(
+        "UPDATE stats_users
+         SET first_upload_at = COALESCE(first_upload_at, $2)
+         WHERE user_id = $1
+         RETURNING first_upload_at",
+        &[&user_id, &now_epoch],
+    ).await {
+        Ok(Some(row)) => row.get::<_, Option<i64>>(0).unwrap_or(now_epoch),
+        _ => now_epoch,
+    };
+
+    if let Err(e) = add_traffic(client, user_id, bytes_uploaded, first_upload_at).await {
+        eprintln!("[stats event=add_traffic_failed] user_id={user_id} err={e}");
     }
 }

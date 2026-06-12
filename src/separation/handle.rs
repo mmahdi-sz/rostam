@@ -15,9 +15,11 @@ use frankenstein::{
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::bot::{send_text, edit_to_ai_lab};
+use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::emoji::panel::{btn_icon_success, btn_icon, btn_icon_danger};
-use crate::i18n::{t, entities_for_text};
+use crate::i18n::{t, tf, entities_for_text};
+use crate::rank::{self, quota::{QuotaKind, get_usage, add_usage}};
 use crate::youtube::log_trace;
 
 use super::client::{separate_audio, fetch_cpu_status};
@@ -165,6 +167,7 @@ pub async fn handle_separation_callback(
     user_id: i64,
     flow_manager: &mut FlowManager,
     flow_clear_tx: UnboundedSender<i64>,
+    database: &Option<PostgresDatabase>,
 ) {
     let trace_id = next_trace_id();
     eprintln!("[separation trace={trace_id} event=callback] user_id={user_id} chat_id={chat_id} data={cb_data}");
@@ -276,6 +279,60 @@ pub async fn handle_separation_callback(
     };
     eprintln!("[separation trace={trace_id} event=audio_ready] bytes={}", audio_bytes.len());
 
+    // Quota check — duration از ffprobe روی audio bytes
+    {
+        let tmp_probe = tmp_dir.join("probe_audio");
+        std::fs::write(&tmp_probe, &audio_bytes).unwrap_or(());
+        let probe = tokio::process::Command::new("ffprobe")
+            .args(["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                   tmp_probe.to_str().unwrap()])
+            .output().await;
+        std::fs::remove_file(&tmp_probe).ok();
+        let audio_duration_secs = probe.ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse::<f64>().ok())
+            .map(|d| d.ceil() as u64)
+            .unwrap_or(0);
+        eprintln!("[separation trace={trace_id} event=duration_probed] secs={audio_duration_secs}");
+
+        if let Some(db) = database.as_ref() {
+            let user_rank = rank::effective_rank(db.client(), user_id).await;
+            let daily_limit = user_rank.separation_daily_secs();
+            let weekly_limit = user_rank.separation_weekly_secs();
+            let daily_used = get_usage(db.client(), user_id, QuotaKind::SeparationDaily, 86400).await.unwrap_or(0) as u64;
+            let weekly_used = get_usage(db.client(), user_id, QuotaKind::SeparationWeekly, 7 * 86400).await.unwrap_or(0) as u64;
+            let daily_remaining = daily_limit.saturating_sub(daily_used);
+            let weekly_remaining = weekly_limit.saturating_sub(weekly_used);
+
+            let block = if daily_remaining == 0 {
+                let label = tf("separation.quota_daily_limit", &[("limit", &format_duration_fa(daily_limit))]);
+                Some((label, user_rank.separation_next_rank()))
+            } else if weekly_remaining == 0 {
+                let label = tf("separation.quota_weekly_limit", &[("limit", &format_duration_fa(weekly_limit))]);
+                Some((label, user_rank.separation_next_rank()))
+            } else if audio_duration_secs > 0 && (audio_duration_secs > daily_remaining || audio_duration_secs > weekly_remaining) {
+                let remaining = daily_remaining.min(weekly_remaining);
+                let label = tf("separation.quota_file_too_long", &[("remaining", &format_duration_fa(remaining))]);
+                Some((label, user_rank.separation_next_rank()))
+            } else {
+                None
+            };
+
+            if let Some((label, next_rank)) = block {
+                eprintln!("[separation trace={trace_id} event=quota_blocked] user_id={user_id}");
+                let _ = delete_message(api, chat_id, message_id).await;
+                std::fs::remove_dir_all(&tmp_dir).ok();
+                flow_manager.clear(user_id);
+                if let Some(min_rank) = next_rank {
+                    crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
+                } else {
+                    let _ = send_text(api, chat_id, &label).await;
+                }
+                return;
+            }
+        }
+    }
+
     // Update status to processing.
     if is_video {
         let edit_params = EditMessageTextParams::builder()
@@ -323,6 +380,7 @@ pub async fn handle_separation_callback(
     // Spawn all heavy work so the event loop stays free — this makes the cancel button work.
     let api_task = api.clone();
     let cancel_task = cancel_flag.clone();
+    let db_task = database.clone();
     tokio::spawn(async move {
         // If server looked free but job hasn't finished in 8s → we're actually queued.
         // Show the "در صف" message then.
@@ -473,6 +531,14 @@ pub async fn handle_separation_callback(
                     Err(e) => eprintln!("[separation trace={trace_id} event=instrumental_wav_failed] err={e}"),
                 }
 
+                // ثبت مصرف quota
+                if let Some(db) = db_task.as_ref() {
+                    let dur = result.duration_seconds.ceil() as i64;
+                    let _ = add_usage(db.client(), user_id, QuotaKind::SeparationDaily, dur, 86400).await;
+                    let _ = add_usage(db.client(), user_id, QuotaKind::SeparationWeekly, dur, 7 * 86400).await;
+                    eprintln!("[separation trace={trace_id} event=quota_added] user_id={user_id} secs={dur}");
+                }
+
                 std::fs::remove_dir_all(&tmp_dir).ok();
                 eprintln!("[separation trace={trace_id} event=cleanup_done]");
             }
@@ -606,6 +672,21 @@ async fn download_file(api: &Bot, file_id: &str, trace_id: u64) -> Result<Vec<u8
     let bytes = response.bytes().await?.to_vec();
     eprintln!("[separation trace={trace_id} event=http_done] status={status} bytes={}", bytes.len());
     Ok(bytes)
+}
+
+fn format_duration_fa(secs: u64) -> String {
+    if secs < 3600 {
+        let mins = secs / 60;
+        tf("rank.duration_minutes", &[("mins", &mins.to_string())])
+    } else {
+        let hours = secs / 3600;
+        let rem_mins = (secs % 3600) / 60;
+        if rem_mins == 0 {
+            tf("rank.duration_hours", &[("hours", &hours.to_string())])
+        } else {
+            tf("rank.duration_hours_minutes", &[("hours", &hours.to_string()), ("mins", &rem_mins.to_string())])
+        }
+    }
 }
 
 async fn delete_message(api: &Bot, chat_id: i64, message_id: i32) -> Result<(), Box<dyn std::error::Error>> {

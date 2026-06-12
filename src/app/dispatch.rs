@@ -65,6 +65,8 @@ async fn handle_message(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let AppState { api, cookie_pool, database, flow_manager, rate_limit_tx, flow_clear_tx } = state;
     let user_id = message.from.as_ref().map(|u| u.id as i64);
+    let msg_text = message.text.as_deref().unwrap_or("");
+    eprintln!("[dispatch event=message] user_id={user_id:?} chat_id={} text={msg_text:?}", message.chat.id);
 
     // ثبت کاربر در stats (fire-and-forget)
     if let Some(uid) = user_id {
@@ -117,9 +119,10 @@ async fn handle_message(
                         log_trace(trace_id, "stt_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
                         let api2 = api.clone();
                         let chat_id2 = message.chat.id;
+                        let db2 = database.clone();
                         // Spawn so the event loop stays free during STT (minutes-long operation)
                         tokio::spawn(async move {
-                            handle_stt_audio(&api2, chat_id2, &fid, uid, &config).await;
+                            handle_stt_audio(&api2, chat_id2, &fid, uid, &config, db2).await;
                         });
                     }
                     return Ok(());
@@ -130,7 +133,7 @@ async fn handle_message(
                 if message.voice.is_some() || message.audio.is_some() || message.document.is_some() {
                     let trace_id = next_trace_id();
                     log_trace(trace_id, "denoise_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
-                    denoise::handle_denoise_audio(api, &message, uid, flow_manager).await;
+                    denoise::handle_denoise_audio(api, &message, uid, flow_manager, database).await;
                     return Ok(());
                 }
             }
@@ -142,8 +145,9 @@ async fn handle_message(
                     flow_manager.clear(uid);
                     let api2 = api.clone();
                     let msg2 = message.clone();
+                    let db2 = database.clone();
                     tokio::spawn(async move {
-                        handle_upscale_image(api2, msg2, uid, scale_factor, model_name).await;
+                        handle_upscale_image(api2, msg2, uid, scale_factor, model_name, db2).await;
                     });
                     return Ok(());
                 }
@@ -183,8 +187,15 @@ async fn handle_message(
 
     // Step 5: command dispatch
     if let Some(text) = message.text.as_deref() {
-        if text == "/emoji" {
+        let cmd = text.split('@').next().unwrap_or(text);
+        eprintln!("[dispatch event=cmd] user_id={user_id:?} cmd={cmd:?}");
+        if cmd == "/emoji" {
             emoji_handler::handle_emoji_command(api, &message, flow_manager, database).await;
+            return Ok(());
+        }
+        if cmd == "/rank" {
+            eprintln!("[dispatch event=rank_menu] user_id={user_id:?} chat_id={}", message.chat.id);
+            crate::rank::menu::send_rank_menu(api, message.chat.id).await;
             return Ok(());
         }
         if let Some(rest) = text.strip_prefix("/se") {
@@ -200,6 +211,7 @@ async fn handle_message(
                 }
             }
             "/start" => send_start_menu(api, message.chat.id).await?,
+
             _ => {
                 let urls = extract_youtube_urls(text);
                 for url in urls {
@@ -247,12 +259,20 @@ async fn handle_callback(
         }};
     }
 
+    if cb_data == crate::rank::paywall::CB_RANK_SHOW_MENU {
+        let _ = api.answer_callback_query(
+            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
+        ).await;
+        crate::rank::menu::send_rank_menu(api, cb_chat_id).await;
+        return Ok(());
+    }
+
     if cb_data.starts_with("emoji:") {
         emoji_handler::handle_emoji_callback(api, &callback_query, flow_manager, database).await;
         return Ok(());
     }
 
-    if crate::youtube::handle_quality_callback(api, &callback_query).await {
+    if crate::youtube::handle_quality_callback(api, &callback_query, database).await {
         return Ok(());
     }
 
@@ -335,7 +355,7 @@ async fn handle_callback(
             &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
         ).await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            enter_stt_config(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            enter_stt_config(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager, database).await;
         }
         return Ok(());
     }
@@ -347,7 +367,7 @@ async fn handle_callback(
             &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
         ).await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_stt_callback(api, cb_data, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_stt_callback(api, cb_data, message.chat.id, message.message_id, cb_user_id as i64, flow_manager, database).await;
         }
         return Ok(());
     }
@@ -442,7 +462,7 @@ async fn handle_callback(
             &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
         ).await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_separation_callback(api, cb_data, message.chat.id, message.message_id, cb_user_id as i64, flow_manager, flow_clear_tx.clone()).await;
+            handle_separation_callback(api, cb_data, message.chat.id, message.message_id, cb_user_id as i64, flow_manager, flow_clear_tx.clone(), database).await;
         }
         return Ok(());
     }

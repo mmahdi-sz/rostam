@@ -10,7 +10,9 @@ use frankenstein::{
     },
 };
 
+use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::{apply_premium_to_md, t};
+use crate::rank;
 
 use super::download::{YoutubeRequest, cancel_download, get_request, store_request};
 use super::selection::{enter_selection_menu, handle_selection_callback, CB_BACK_TO_QUALITY_PREFIX, CB_SELECTION_PREFIX};
@@ -113,15 +115,15 @@ pub async fn send_quality_prompt(
     Ok(())
 }
 
-pub async fn handle_quality_callback(api: &Bot, callback_query: &CallbackQuery) -> bool {
+pub async fn handle_quality_callback(api: &Bot, callback_query: &CallbackQuery, database: &Option<PostgresDatabase>) -> bool {
     let Some(data) = callback_query.data.as_deref() else {
         return false;
     };
     if data.starts_with(CB_SELECTION_PREFIX) {
-        return handle_selection_callback(api, callback_query).await;
+        return handle_selection_callback(api, callback_query, database).await;
     }
     if data.starts_with(CB_QUALITY_PREFIX) {
-        return handle_resolution_callback(api, callback_query, data).await;
+        return handle_resolution_callback(api, callback_query, data, database).await;
     }
     if data.starts_with(CB_CODEC_PREFIX) {
         // legacy stale callback (no longer issued); just ack
@@ -137,7 +139,7 @@ pub async fn handle_quality_callback(api: &Bot, callback_query: &CallbackQuery) 
     false
 }
 
-async fn handle_resolution_callback(api: &Bot, callback_query: &CallbackQuery, data: &str) -> bool {
+async fn handle_resolution_callback(api: &Bot, callback_query: &CallbackQuery, data: &str, database: &Option<PostgresDatabase>) -> bool {
     let Some((request_id, height)) = parse_quality_callback(data) else {
         eprintln!(
             "[youtube callback event=quality_malformed user_id={} data={data}]",
@@ -171,6 +173,25 @@ async fn handle_resolution_callback(api: &Bot, callback_query: &CallbackQuery, d
         answer_callback(api, callback_query, "youtube.download.request_expired").await;
         return true;
     };
+
+    // rank check — live از db
+    if let (Some(uid), Some(db)) = (request.user_id, database.as_ref()) {
+        let user_rank = rank::effective_rank(db.client(), uid).await;
+        if let Some(max) = user_rank.max_yt_quality() {
+            if height > max {
+                log_trace(
+                    trace_id,
+                    "quality_paywall",
+                    &format!("user_id={uid} height={height} max={max} rank={}", user_rank.as_str()),
+                );
+                answer_callback(api, callback_query, "").await;
+                let limit = format!("{}p", max);
+                let min_rank = rank::types::Rank::min_for_quality(height);
+                crate::rank::paywall::block_limit(api, message.chat.id, &limit, min_rank).await;
+                return true;
+            }
+        }
+    }
 
     enter_selection_menu(api, request_id, height, message.chat.id, message.message_id).await;
     answer_callback(api, callback_query, "").await;
@@ -307,6 +328,7 @@ async fn handle_back_to_quality_callback(api: &Bot, cq: &CallbackQuery, data: &s
     let options: Vec<QualityOption> = QUALITY_OPTIONS
         .iter()
         .filter_map(|(height, label_key, icon_key)| {
+            // back-to-quality: max_quality نداریم، همون که اول نشون داده شد کافیه
             let codecs: Vec<super::types::VideoCodec> = CODEC_ORDER
                 .iter()
                 .copied()

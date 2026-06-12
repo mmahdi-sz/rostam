@@ -12,9 +12,11 @@ use frankenstein::{
 };
 
 use crate::bot::send_text;
+use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::emoji::panel::{btn_icon, btn_icon_plain, btn_icon_success, btn_icon_danger};
-use crate::i18n::{t, tf, apply_premium_to_md};
+use crate::i18n::{t, tf, to_fa_digits, apply_premium_to_md};
+use crate::rank::{self, quota::{QuotaKind, get_usage, add_usage}};
 use crate::youtube::log_trace;
 
 const UPSCALE_BIN: &str = "files/realesrgan/realesrgan-ncnn-vulkan";
@@ -275,9 +277,17 @@ pub async fn handle_upscale_cancel(
 
 // ── main processing ───────────────────────────────────────────────────────────
 
+const fn upscale_quota_kind(scale: u32) -> QuotaKind {
+    match scale {
+        2 => QuotaKind::Upscale2xWeekly,
+        3 => QuotaKind::Upscale3xWeekly,
+        _ => QuotaKind::Upscale4xWeekly,
+    }
+}
+
 pub async fn handle_upscale_image(
     api: Bot, message: frankenstein::types::Message, user_id: i64, scale_factor: u32,
-    model_name: String,
+    model_name: String, database: Option<PostgresDatabase>,
 ) {
 
     let trace_id = next_trace_id();
@@ -292,6 +302,27 @@ pub async fn handle_upscale_image(
         let _ = send_text(api, chat_id, &t("upscale.unsupported_format")).await;
         return;
     };
+
+    // ── چک سقف هفتگی بر اساس scale factor ──
+    let quota_kind = upscale_quota_kind(scale_factor);
+    if let Some(db) = database.as_ref() {
+        let user_rank = rank::effective_rank(db.client(), user_id).await;
+        let limit = user_rank.upscale_weekly_quota(scale_factor);
+        let used = get_usage(db.client(), user_id, quota_kind, 7 * 86400).await.unwrap_or(0) as u32;
+        if used >= limit {
+            eprintln!("[upscale trace={trace_id} event=quota_blocked] user_id={user_id} scale={scale_factor} used={used} limit={limit}");
+            let label = tf("upscale.quota_weekly_limit", &[
+                ("scale", &format!("×{}", to_fa_digits(&scale_factor.to_string()))),
+                ("limit", &to_fa_digits(&limit.to_string())),
+            ]);
+            if let Some(min_rank) = user_rank.upscale_next_rank() {
+                crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
+            } else {
+                let _ = send_text(api, chat_id, &label).await;
+            }
+            return;
+        }
+    }
     let is_doc  = message.document.is_some();
     let orig_ext = if is_doc { detect_doc_ext(&message) } else { "jpg".to_string() };
 
@@ -419,6 +450,12 @@ pub async fn handle_upscale_image(
             .caption(&full_caption).parse_mode(ParseMode::MarkdownV2).build();
         let r = api.send_photo(&params).await;
         eprintln!("[upscale trace={trace_id} event=send_photo] ok={}", r.is_ok());
+    }
+
+    // ── ثبت مصرف quota ──
+    if let Some(db) = database.as_ref() {
+        let _ = add_usage(db.client(), user_id, quota_kind, 1, 7 * 86400).await;
+        eprintln!("[upscale trace={trace_id} event=quota_added] user_id={user_id} scale={scale_factor}");
     }
 
     clean_up(&work_dir);

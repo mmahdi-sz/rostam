@@ -1,0 +1,292 @@
+/// مقام‌های بات
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rank {
+    Dalavar,    // دلاور — رایگان
+    Sepahbod,   // سپهبد
+    Esfandyar,  // اسفندیار
+    Sohrab,     // سهراب
+    Rostam,     // رستم
+}
+
+impl Rank {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "dalavar" => Some(Self::Dalavar),
+            "sepahbod" => Some(Self::Sepahbod),
+            "esfandyar" => Some(Self::Esfandyar),
+            "sohrab" => Some(Self::Sohrab),
+            "rostam" => Some(Self::Rostam),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Dalavar => "dalavar",
+            Self::Sepahbod => "sepahbod",
+            Self::Esfandyar => "esfandyar",
+            Self::Sohrab => "sohrab",
+            Self::Rostam => "rostam",
+        }
+    }
+
+    /// حداقل رتبه لازم برای دانلود یه کیفیت خاص
+    pub fn min_for_quality(height: u32) -> Self {
+        if height <= 360 {
+            Self::Dalavar
+        } else if height <= 720 {
+            Self::Sepahbod
+        } else {
+            Self::Esfandyar
+        }
+    }
+
+    /// سقف حذف نویز روزانه (ثانیه)
+    pub fn denoise_daily_secs(&self) -> u64 {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 30 * 60,
+            Self::Sohrab => 2 * 3600,
+            Self::Rostam => 10 * 3600,
+        }
+    }
+
+    /// سقف حذف نویز هفتگی (ثانیه)
+    pub fn denoise_weekly_secs(&self) -> u64 {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 2 * 3600,
+            Self::Sohrab => 10 * 3600,
+            Self::Rostam => 99 * 3600,
+        }
+    }
+
+    /// رتبه بعدی که سقف denoise بیشتری داره
+    pub fn denoise_next_rank(&self) -> Option<Self> {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => Some(Self::Sohrab),
+            Self::Sohrab => Some(Self::Rostam),
+            Self::Rostam => None,
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Dalavar => "دلاور",
+            Self::Sepahbod => "سپهبد",
+            Self::Esfandyar => "اسفندیار",
+            Self::Sohrab => "سهراب",
+            Self::Rostam => "رستم",
+        }
+    }
+
+    /// محدودیت کیفیت YouTube (None = بدون محدودیت)
+    pub fn max_yt_quality(&self) -> Option<u32> {
+        match self {
+            Self::Dalavar => Some(360),
+            Self::Sepahbod => Some(720),
+            Self::Esfandyar | Self::Rostam => None,
+            Self::Sohrab => Some(360), // AI-only plan, same as free for YT
+        }
+    }
+
+    /// ترافیک روزانه (bytes)
+    pub fn daily_traffic_bytes(&self) -> u64 {
+        match self {
+            Self::Dalavar | Self::Sepahbod => 5 * 1024 * 1024 * 1024,
+            Self::Esfandyar | Self::Rostam => 40 * 1024 * 1024 * 1024,
+            Self::Sohrab => 5 * 1024 * 1024 * 1024,
+        }
+    }
+
+    /// ترافیک ماهانه (bytes)
+    pub fn monthly_traffic_bytes(&self) -> u64 {
+        match self {
+            Self::Dalavar => 15 * 1024 * 1024 * 1024,
+            Self::Sepahbod => 60 * 1024 * 1024 * 1024,
+            Self::Esfandyar | Self::Rostam => 400 * 1024 * 1024 * 1024,
+            Self::Sohrab => 15 * 1024 * 1024 * 1024,
+        }
+    }
+
+    /// رتبه‌ی بعدی با ترافیک روزانه‌ی بیشتر (۵گ → ۴۰گ در اسفندیار)
+    pub fn traffic_daily_next_rank(&self) -> Option<Self> {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Sohrab => Some(Self::Esfandyar),
+            Self::Esfandyar | Self::Rostam => None,
+        }
+    }
+
+    /// رتبه‌ی بعدی با ترافیک ماهانه‌ی بیشتر
+    pub fn traffic_monthly_next_rank(&self) -> Option<Self> {
+        match self {
+            Self::Dalavar | Self::Sohrab => Some(Self::Sepahbod),
+            Self::Sepahbod => Some(Self::Esfandyar),
+            Self::Esfandyar | Self::Rostam => None,
+        }
+    }
+
+    /// پلی‌لیست YouTube (None = نامحدود)
+    pub fn playlist_limit(&self) -> Option<u32> {
+        match self {
+            Self::Dalavar | Self::Sohrab => Some(0), // ممنوع
+            Self::Sepahbod => Some(10),
+            Self::Esfandyar | Self::Rostam => None,
+        }
+    }
+
+    /// زیرنویس فایل جداگانه
+    pub fn can_subtitle_file(&self) -> bool {
+        matches!(self, Self::Sepahbod | Self::Esfandyar | Self::Rostam)
+    }
+
+    /// چسباندن زیرنویس به ویدیو
+    pub fn can_subtitle_mux(&self) -> bool {
+        matches!(self, Self::Sepahbod | Self::Esfandyar | Self::Rostam)
+    }
+
+    /// حک زیرنویس روی ویدیو (hardcode)
+    pub fn can_subtitle_hardcode(&self) -> bool {
+        matches!(self, Self::Esfandyar | Self::Rostam)
+    }
+
+    /// جستجوی YouTube (None = ممنوع)
+    pub fn yt_search_per_12h(&self) -> Option<u32> {
+        match self {
+            Self::Esfandyar | Self::Rostam => Some(50),
+            _ => None,
+        }
+    }
+
+    /// تبدیل صدا به متن در هفته (None = ممنوع)
+    pub fn stt_per_week(&self) -> Option<u32> {
+        match self {
+            Self::Sohrab => Some(30),
+            Self::Rostam => Some(200),
+            _ => None,
+        }
+    }
+
+    /// سقف افزایش کیفیت تصویر در هفته (تعداد عکس) بر اساس scale factor.
+    /// رستم = ۱۰ برابر سهراب. هرچی scale بزرگ‌تر، سقف کمتر (پردازش سنگین‌تر).
+    pub fn upscale_weekly_quota(&self, scale: u32) -> u32 {
+        match scale {
+            2 => match self {
+                Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 5,
+                Self::Sohrab => 50,
+                Self::Rostam => 500,
+            },
+            3 => match self {
+                Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 3,
+                Self::Sohrab => 30,
+                Self::Rostam => 300,
+            },
+            // x4 و هر چیز دیگه
+            _ => match self {
+                Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 2,
+                Self::Sohrab => 20,
+                Self::Rostam => 200,
+            },
+        }
+    }
+
+    /// رتبه‌ی بعدی با سقف upscale بیشتر
+    pub fn upscale_next_rank(&self) -> Option<Self> {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => Some(Self::Sohrab),
+            Self::Sohrab => Some(Self::Rostam),
+            Self::Rostam => None,
+        }
+    }
+
+    /// اعتبار چت هوش مصنوعی در ماه — تومار (None = ممنوع)
+    pub fn ai_chat_monthly_toomar(&self) -> Option<u32> {
+        match self {
+            Self::Esfandyar => Some(100),
+            Self::Sohrab => Some(350),
+            Self::Rostam => Some(1000),
+            _ => None,
+        }
+    }
+
+    /// دسترسی به مدل‌های جدید Gemini
+    pub fn gemini_pro_access(&self) -> bool {
+        matches!(self, Self::Rostam)
+    }
+
+    /// denoise قبل از رونویسی — سهراب و رستم دیفالت فعال
+    pub fn stt_denoise_default(&self) -> bool {
+        matches!(self, Self::Sohrab | Self::Rostam)
+    }
+
+    /// آیا کاربر مجاز به فعال کردن denoise در STT هست؟
+    pub fn can_stt_denoise(&self) -> bool {
+        matches!(self, Self::Sohrab | Self::Rostam)
+    }
+
+    /// سقف جداسازی موزیک روزانه (ثانیه)
+    pub fn separation_daily_secs(&self) -> u64 {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 6 * 60,
+            Self::Sohrab => 20 * 60,
+            Self::Rostam => 200 * 60,
+        }
+    }
+
+    /// سقف جداسازی موزیک هفتگی (ثانیه)
+    pub fn separation_weekly_secs(&self) -> u64 {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 20 * 60,
+            Self::Sohrab => 90 * 60,
+            Self::Rostam => 999 * 60,
+        }
+    }
+
+    /// رتبه بعدی که سقف جداسازی بیشتری داره
+    pub fn separation_next_rank(&self) -> Option<Self> {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => Some(Self::Sohrab),
+            Self::Sohrab => Some(Self::Rostam),
+            Self::Rostam => None,
+        }
+    }
+
+    /// مدل دقیق (Large) فقط سهراب و رستم
+    pub fn can_stt_accurate(&self) -> bool {
+        matches!(self, Self::Sohrab | Self::Rostam)
+    }
+
+    /// سقف رونویسی سریع روزانه (ثانیه) — None یعنی ممنوع
+    pub fn stt_fast_daily_secs(&self) -> Option<u64> {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => Some(30 * 60),
+            Self::Sohrab => Some(3 * 3600),
+            Self::Rostam => Some(30 * 3600),
+        }
+    }
+
+    /// سقف رونویسی سریع هفتگی (ثانیه)
+    pub fn stt_fast_weekly_secs(&self) -> Option<u64> {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => Some(2 * 3600),
+            Self::Sohrab => Some(15 * 3600),
+            Self::Rostam => Some(150 * 3600),
+        }
+    }
+
+    /// سقف رونویسی دقیق روزانه (ثانیه) — None یعنی ممنوع
+    pub fn stt_accurate_daily_secs(&self) -> Option<u64> {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => None,
+            Self::Sohrab => Some(1 * 3600),
+            Self::Rostam => Some(10 * 3600),
+        }
+    }
+
+    /// سقف رونویسی دقیق هفتگی (ثانیه)
+    pub fn stt_accurate_weekly_secs(&self) -> Option<u64> {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => None,
+            Self::Sohrab => Some(5 * 3600),
+            Self::Rostam => Some(50 * 3600),
+        }
+    }
+}

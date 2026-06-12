@@ -8,9 +8,11 @@ use frankenstein::{
 };
 
 use crate::bot::{send_text, send_text_md, CB_DENOISE_CANCEL};
+use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::emoji::panel::btn_icon_danger;
 use crate::i18n::{t, tf, apply_premium_to_md};
+use crate::rank::{self, quota::{QuotaKind, get_usage, add_usage}};
 use crate::stt::deepfilter;
 use crate::youtube::log_trace;
 
@@ -73,6 +75,7 @@ pub async fn handle_denoise_audio(
     message: &Message,
     user_id: i64,
     flow_manager: &mut FlowManager,
+    database: &Option<PostgresDatabase>,
 ) {
     // Clear denoise flow state — user sent audio, processing begins
     flow_manager.clear(user_id);
@@ -142,6 +145,60 @@ pub async fn handle_denoise_audio(
 
     // Determine audio duration from WAV header
     let audio_duration = wav_duration(wav_path.to_str().unwrap()).unwrap_or(0.0);
+    let duration_secs = audio_duration.ceil() as u64;
+
+    // quota check
+    if let Some(db) = database.as_ref() {
+        let user_rank = rank::effective_rank(db.client(), user_id).await;
+        let daily_limit = user_rank.denoise_daily_secs();
+        let weekly_limit = user_rank.denoise_weekly_secs();
+        let daily_used = get_usage(db.client(), user_id, QuotaKind::DenoiseDaily, 86400).await.unwrap_or(0) as u64;
+        let weekly_used = get_usage(db.client(), user_id, QuotaKind::DenoiseWeekly, 7 * 86400).await.unwrap_or(0) as u64;
+
+        let daily_remaining = daily_limit.saturating_sub(daily_used);
+        let weekly_remaining = weekly_limit.saturating_sub(weekly_used);
+
+        if daily_remaining == 0 {
+            log_trace(trace_id, "denoise_quota_daily", &format!("user_id={user_id} used={daily_used} limit={daily_limit}"));
+            let limit_str = format_duration_fa(daily_limit);
+            let limit_label = tf("rank.denoise_daily_limit", &[("limit", &limit_str)]);
+            let next = user_rank.denoise_next_rank();
+            clean_up(&work_dir);
+            if let Some(min_rank) = next {
+                crate::rank::paywall::block_limit(api, chat_id, &limit_label, min_rank).await;
+            } else {
+                let _ = send_text(api, chat_id, &tf("denoise.quota_daily_exceeded", &[("limit", &limit_str)])).await;
+            }
+            return;
+        }
+        if weekly_remaining == 0 {
+            log_trace(trace_id, "denoise_quota_weekly", &format!("user_id={user_id} used={weekly_used} limit={weekly_limit}"));
+            let limit_str = format_duration_fa(weekly_limit);
+            let limit_label = tf("rank.denoise_weekly_limit", &[("limit", &limit_str)]);
+            let next = user_rank.denoise_next_rank();
+            clean_up(&work_dir);
+            if let Some(min_rank) = next {
+                crate::rank::paywall::block_limit(api, chat_id, &limit_label, min_rank).await;
+            } else {
+                let _ = send_text(api, chat_id, &tf("denoise.quota_weekly_exceeded", &[("limit", &limit_str)])).await;
+            }
+            return;
+        }
+        if duration_secs > daily_remaining || duration_secs > weekly_remaining {
+            let remaining = daily_remaining.min(weekly_remaining);
+            log_trace(trace_id, "denoise_quota_file_too_long", &format!("user_id={user_id} duration={duration_secs} remaining={remaining}"));
+            let remaining_str = format_duration_fa(remaining);
+            let remaining_label = tf("rank.denoise_remaining", &[("remaining", &remaining_str)]);
+            let next = user_rank.denoise_next_rank();
+            clean_up(&work_dir);
+            if let Some(min_rank) = next {
+                crate::rank::paywall::block_limit(api, chat_id, &remaining_label, min_rank).await;
+            } else {
+                let _ = send_text(api, chat_id, &tf("denoise.quota_file_too_long", &[("remaining", &remaining_str)])).await;
+            }
+            return;
+        }
+    }
 
     // 3. Denoise via DeepFilterNet
     let processing_secs = match deepfilter::denoise(wav_path.to_str().unwrap(), denoised_path.to_str().unwrap()) {
@@ -191,7 +248,14 @@ pub async fn handle_denoise_audio(
         log_trace(trace_id, "denoise_audio_sent", &format!("ok={}", r.is_ok()));
     }
 
-    // 6. Send report
+    // 6. ثبت مصرف quota
+    if let Some(db) = database.as_ref() {
+        let _ = add_usage(db.client(), user_id, QuotaKind::DenoiseDaily, duration_secs as i64, 86400).await;
+        let _ = add_usage(db.client(), user_id, QuotaKind::DenoiseWeekly, duration_secs as i64, 7 * 86400).await;
+        log_trace(trace_id, "denoise_quota_added", &format!("user_id={user_id} secs={duration_secs}"));
+    }
+
+    // 7. Send report
     let duration_str = escape_md(&format!("{:.1}", audio_duration));
     let processing_str = escape_md(&format!("{:.1}", processing_secs));
     let ratio_str = escape_md(&format!("{:.1}", efficiency));
@@ -353,4 +417,19 @@ fn escape_md(s: &str) -> String {
 
 fn clean_up(dir: &std::path::Path) {
     std::fs::remove_dir_all(dir).ok();
+}
+
+fn format_duration_fa(secs: u64) -> String {
+    if secs < 3600 {
+        let mins = secs / 60;
+        tf("rank.duration_minutes", &[("mins", &mins.to_string())])
+    } else {
+        let hours = secs / 3600;
+        let rem_mins = (secs % 3600) / 60;
+        if rem_mins == 0 {
+            tf("rank.duration_hours", &[("hours", &hours.to_string())])
+        } else {
+            tf("rank.duration_hours_minutes", &[("hours", &hours.to_string()), ("mins", &rem_mins.to_string())])
+        }
+    }
 }

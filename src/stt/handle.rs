@@ -1,18 +1,16 @@
 use std::time::Instant;
 
 use frankenstein::{
-    AsyncTelegramApi, ParseMode,
+    AsyncTelegramApi,
     client_reqwest::Bot,
-    methods::{AnswerCallbackQueryParams, EditMessageTextParams, SendMessageParams},
-    types::{
-        ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions,
-        MaybeInaccessibleMessage, ReplyMarkup,
-    },
+    methods::EditMessageTextParams,
 };
 
-use crate::bot::{edit_to_start_menu, send_text, send_long_text, CB_START_PANEL};
+use crate::bot::{edit_to_start_menu, send_text, send_long_text};
+use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
-use crate::i18n::{entities_for_text, t, tf};
+use crate::i18n::{t, tf};
+use crate::rank::{self, quota::{QuotaKind, get_usage, add_usage}};
 use crate::stt::config::*;
 use crate::stt::deepfilter;
 use crate::stt::types::{SttConfig, SttLang, SttModelSize};
@@ -33,12 +31,21 @@ pub async fn enter_stt_config(
     message_id: i32,
     user_id: i64,
     flow_manager: &mut FlowManager,
+    database: &Option<PostgresDatabase>,
 ) {
     let trace_id = next_trace_id();
+
+    let denoise_default = if let Some(db) = database.as_ref() {
+        let user_rank = rank::effective_rank(db.client(), user_id).await;
+        user_rank.stt_denoise_default()
+    } else {
+        false
+    };
+
     let config = SttConfig {
         lang: SttLang::Fa,
         model_size: SttModelSize::Large,
-        denoise: true,
+        denoise: denoise_default,
     };
     flow_manager.set(user_id, FlowState::AwaitingSttConfig { config: config.clone() });
 
@@ -47,10 +54,10 @@ pub async fn enter_stt_config(
         .chat_id(chat_id)
         .message_id(message_id)
         .text(&text)
-        .reply_markup(config_keyboard(true))
+        .reply_markup(config_keyboard(denoise_default))
         .build();
     match api.edit_message_text(&params).await {
-        Ok(_) => log_trace(trace_id, "stt_config_shown", &format!("user_id={user_id} chat_id={chat_id}")),
+        Ok(_) => log_trace(trace_id, "stt_config_shown", &format!("user_id={user_id} denoise_default={denoise_default}")),
         Err(e) => log_trace(trace_id, "stt_config_failed", &e.to_string()),
     }
 }
@@ -63,6 +70,7 @@ pub async fn handle_stt_callback(
     message_id: i32,
     user_id: i64,
     flow_manager: &mut FlowManager,
+    database: &Option<PostgresDatabase>,
 ) -> bool {
     let trace_id = next_trace_id();
 
@@ -75,6 +83,22 @@ pub async fn handle_stt_callback(
                 CB_STT_EN_SMALL => (SttLang::En, SttModelSize::Small),
                 _ => unreachable!(),
             };
+
+            // paywall — مدل دقیق فقط سهراب به بالا
+            if size == SttModelSize::Large {
+                if let Some(db) = database.as_ref() {
+                    let user_rank = rank::effective_rank(db.client(), user_id).await;
+                    if !user_rank.can_stt_accurate() {
+                        log_trace(trace_id, "stt_accurate_paywall", &format!("user_id={user_id} rank={}", user_rank.as_str()));
+                        crate::rank::paywall::block_feature(
+                            api, chat_id,
+                            &t("stt.accurate_feature_name"),
+                            rank::types::Rank::Sohrab,
+                        ).await;
+                        return true;
+                    }
+                }
+            }
 
             let state = flow_manager.get(user_id);
             let denoise = match &state {
@@ -105,6 +129,23 @@ pub async fn handle_stt_callback(
                 FlowState::AwaitingSttAudio { config } => config.clone(),
                 _ => return false,
             };
+
+            // paywall — فعال کردن denoise فقط سهراب به بالا
+            if !config.denoise {
+                if let Some(db) = database.as_ref() {
+                    let user_rank = rank::effective_rank(db.client(), user_id).await;
+                    if !user_rank.can_stt_denoise() {
+                        log_trace(trace_id, "stt_denoise_paywall", &format!("user_id={user_id} rank={}", user_rank.as_str()));
+                        crate::rank::paywall::block_feature(
+                            api, chat_id,
+                            &crate::i18n::t("stt.denoise_feature_name"),
+                            rank::types::Rank::Sohrab,
+                        ).await;
+                        return true;
+                    }
+                }
+            }
+
             config.denoise = !config.denoise;
 
             let new_state = match &state {
@@ -198,7 +239,6 @@ async fn download_file(api: &Bot, file_id: &str, dest: &str) -> Result<(), Box<d
 }
 
 /// Processes an audio message (voice or audio file) when the user is in AwaitingSttAudio.
-/// Processes an audio message when user is in AwaitingSttAudio.
 /// Takes chat_id and file_id directly (already extracted in dispatch)
 /// so this function can be spawned as a tokio task without cloning Message.
 pub async fn handle_stt_audio(
@@ -207,6 +247,7 @@ pub async fn handle_stt_audio(
     file_id: &str,
     user_id: i64,
     config: &SttConfig,
+    database: Option<PostgresDatabase>,
 ) {
     let trace_id = next_trace_id();
     log_trace(trace_id, "stt_audio_received", &format!("user_id={user_id} chat_id={chat_id}"));
@@ -245,6 +286,84 @@ pub async fn handle_stt_audio(
     log_trace(trace_id, "stt_converted", "");
 
     let audio_duration = wav_duration(wav_path.to_str().unwrap()).unwrap_or(0.0);
+    let duration_secs = audio_duration.ceil() as u64;
+
+    // 3. Quota check — بعد از دونستن طول فایل
+    let (daily_kind, weekly_kind) = match config.model_size {
+        SttModelSize::Large => (QuotaKind::SttAccurateDaily, QuotaKind::SttAccurateWeekly),
+        SttModelSize::Small => (QuotaKind::SttFastDaily, QuotaKind::SttFastWeekly),
+    };
+    if let Some(db) = database.as_ref() {
+        let user_rank = rank::effective_rank(db.client(), user_id).await;
+        let (daily_limit_opt, weekly_limit_opt) = match config.model_size {
+            SttModelSize::Large => (user_rank.stt_accurate_daily_secs(), user_rank.stt_accurate_weekly_secs()),
+            SttModelSize::Small => (user_rank.stt_fast_daily_secs(), user_rank.stt_fast_weekly_secs()),
+        };
+        let (daily_key, weekly_key, daily_limit_key, weekly_limit_key, file_key) = match config.model_size {
+            SttModelSize::Large => (
+                "stt.quota_accurate_daily_limit",
+                "stt.quota_accurate_weekly_limit",
+                "stt.quota_accurate_daily_limit",
+                "stt.quota_accurate_weekly_limit",
+                "stt.quota_accurate_file_too_long",
+            ),
+            SttModelSize::Small => (
+                "stt.quota_fast_daily_limit",
+                "stt.quota_fast_weekly_limit",
+                "stt.quota_fast_daily_limit",
+                "stt.quota_fast_weekly_limit",
+                "stt.quota_fast_file_too_long",
+            ),
+        };
+
+        if let Some(daily_limit) = daily_limit_opt {
+            let daily_used = get_usage(db.client(), user_id, daily_kind, 86400).await.unwrap_or(0) as u64;
+            let daily_remaining = daily_limit.saturating_sub(daily_used);
+            if daily_remaining == 0 {
+                log_trace(trace_id, "stt_quota_daily", &format!("user_id={user_id} kind={daily_key} used={daily_used} limit={daily_limit}"));
+                let limit_str = format_duration_fa(daily_limit);
+                let label = tf(daily_limit_key, &[("limit", &limit_str)]);
+                clean_up(&work_dir);
+                let next = stt_next_rank(&user_rank);
+                if let Some(min_rank) = next {
+                    crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
+                } else {
+                    let _ = send_text(api, chat_id, &label).await;
+                }
+                return;
+            }
+            let weekly_limit = weekly_limit_opt.unwrap_or(u64::MAX);
+            let weekly_used = get_usage(db.client(), user_id, weekly_kind, 7 * 86400).await.unwrap_or(0) as u64;
+            let weekly_remaining = weekly_limit.saturating_sub(weekly_used);
+            if weekly_remaining == 0 {
+                log_trace(trace_id, "stt_quota_weekly", &format!("user_id={user_id} kind={weekly_key} used={weekly_used} limit={weekly_limit}"));
+                let limit_str = format_duration_fa(weekly_limit);
+                let label = tf(weekly_limit_key, &[("limit", &limit_str)]);
+                clean_up(&work_dir);
+                let next = stt_next_rank(&user_rank);
+                if let Some(min_rank) = next {
+                    crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
+                } else {
+                    let _ = send_text(api, chat_id, &label).await;
+                }
+                return;
+            }
+            let remaining = daily_remaining.min(weekly_remaining);
+            if duration_secs > remaining {
+                log_trace(trace_id, "stt_quota_file_too_long", &format!("user_id={user_id} duration={duration_secs} remaining={remaining}"));
+                let rem_str = format_duration_fa(remaining);
+                let label = tf(file_key, &[("remaining", &rem_str)]);
+                clean_up(&work_dir);
+                let next = stt_next_rank(&user_rank);
+                if let Some(min_rank) = next {
+                    crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
+                } else {
+                    let _ = send_text(api, chat_id, &label).await;
+                }
+                return;
+            }
+        }
+    }
 
     // 3. Optional denoise — blocking (std::process::Command), run on thread pool
     let denoise_secs = if config.denoise {
@@ -291,23 +410,29 @@ pub async fn handle_stt_audio(
 
     let lang_label = config.lang_label_fa();
     let model_label = config.model_label_fa();
-    let denoise_label = if config.denoise { "فعال" } else { "غیرفعال" };
+    let denoise_label = if config.denoise { t("stt.denoise_on") } else { t("stt.denoise_off") };
     let total_secs = overall_start.elapsed().as_secs_f64();
 
-    let result_text = format!(
-        "مشخصات رونویسی:\n\nزبان: {lang}\nمدل: {model}\nبهبود خودکار صدا: {denoise}\nمدت صدا: {dur:.1} ثانیه\nزمان پردازش: {total:.1} ثانیه\nزمان نویزگیری: {denoise_time:.1} ثانیه\n\nرونویسی {lang} ({model}) — انجام شد.\n\n{text}",
-        lang = lang_label,
-        model = model_label,
-        denoise = denoise_label,
-        dur = audio_duration,
-        total = total_secs,
-        denoise_time = denoise_secs,
-        text = text,
-    );
+    let result_text = tf("stt.result_report", &[
+        ("lang", &lang_label),
+        ("model", &model_label),
+        ("denoise", &denoise_label),
+        ("dur", &format!("{audio_duration:.1}")),
+        ("total", &format!("{total_secs:.1}")),
+        ("denoise_time", &format!("{denoise_secs:.1}")),
+        ("text", &text),
+    ]);
 
     // Use send_long_text — transcription can exceed Telegram's 4096-char limit for long audio
     let _ = send_long_text(api, chat_id, &result_text).await;
     log_trace(trace_id, "stt_result_sent", &format!("text_len={}", text.len()));
+
+    // ثبت مصرف quota
+    if let Some(db) = database.as_ref() {
+        let _ = add_usage(db.client(), user_id, daily_kind, duration_secs as i64, 86400).await;
+        let _ = add_usage(db.client(), user_id, weekly_kind, duration_secs as i64, 7 * 86400).await;
+        log_trace(trace_id, "stt_quota_added", &format!("user_id={user_id} secs={duration_secs}"));
+    }
 
     clean_up(&work_dir);
 }
@@ -325,4 +450,27 @@ fn wav_duration(path: &str) -> Result<f64, Box<dyn std::error::Error>> {
 
 fn clean_up(dir: &std::path::Path) {
     std::fs::remove_dir_all(dir).ok();
+}
+
+fn format_duration_fa(secs: u64) -> String {
+    if secs < 3600 {
+        let mins = secs / 60;
+        tf("rank.duration_minutes", &[("mins", &mins.to_string())])
+    } else {
+        let hours = secs / 3600;
+        let rem_mins = (secs % 3600) / 60;
+        if rem_mins == 0 {
+            tf("rank.duration_hours", &[("hours", &hours.to_string())])
+        } else {
+            tf("rank.duration_hours_minutes", &[("hours", &hours.to_string()), ("mins", &rem_mins.to_string())])
+        }
+    }
+}
+
+fn stt_next_rank(rank: &rank::types::Rank) -> Option<rank::types::Rank> {
+    match rank {
+        rank::types::Rank::Dalavar | rank::types::Rank::Sepahbod | rank::types::Rank::Esfandyar => Some(rank::types::Rank::Sohrab),
+        rank::types::Rank::Sohrab => Some(rank::types::Rank::Rostam),
+        rank::types::Rank::Rostam => None,
+    }
 }

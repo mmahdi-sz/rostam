@@ -1,6 +1,8 @@
 use frankenstein::{client_reqwest::Bot, types::CallbackQuery};
 
+use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::{entities_for_text, t, tf};
+use crate::rank;
 
 use super::super::download::{
     Selection, SelectionView, SubtitleMode, YoutubeRequest, get_request, spawn_download, with_selection,
@@ -12,7 +14,7 @@ use super::constants::*;
 use super::panel::{extract_message, refresh_full_panel, refresh_keyboard};
 use frankenstein::{AsyncTelegramApi, methods::EditMessageTextParams};
 
-pub async fn handle_selection_callback(api: &Bot, callback_query: &CallbackQuery) -> bool {
+pub async fn handle_selection_callback(api: &Bot, callback_query: &CallbackQuery, database: &Option<PostgresDatabase>) -> bool {
     let Some(data) = callback_query.data.as_deref() else { return false; };
     if !data.starts_with(CB_SELECTION_PREFIX) { return false; }
 
@@ -29,7 +31,7 @@ pub async fn handle_selection_callback(api: &Bot, callback_query: &CallbackQuery
         return true;
     }
     if let Some(rest) = data.strip_prefix(CB_SUB_TOGGLE) {
-        handle_sub_toggle(api, callback_query, rest).await;
+        handle_sub_toggle(api, callback_query, rest, database).await;
         return true;
     }
     if let Some(rest) = data.strip_prefix(CB_SUB_MENU) {
@@ -45,11 +47,11 @@ pub async fn handle_selection_callback(api: &Bot, callback_query: &CallbackQuery
         return true;
     }
     if let Some(rest) = data.strip_prefix(CB_SUB_MODE) {
-        handle_sub_mode_toggle(api, callback_query, rest).await;
+        handle_sub_mode_toggle(api, callback_query, rest, database).await;
         return true;
     }
     if let Some(rest) = data.strip_prefix(CB_GO) {
-        handle_go(api, callback_query, rest).await;
+        handle_go(api, callback_query, rest, database).await;
         return true;
     }
     answer(api, callback_query, "").await;
@@ -131,7 +133,7 @@ async fn handle_audio_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
     answer(api, cq, "").await;
 }
 
-async fn handle_sub_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
+async fn handle_sub_toggle(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<PostgresDatabase>) {
     let Some((request_id, idx_str)) = rest.split_once(':') else {
         answer(api, cq, "").await;
         return;
@@ -149,6 +151,20 @@ async fn handle_sub_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
         return;
     };
     let trace_id = req.trace_id;
+
+    // rank check — زیرنویس فقط سپهبد به بالا
+    if let (Some(uid), Some(db)) = (req.user_id, database.as_ref()) {
+        let user_rank = rank::effective_rank(db.client(), uid).await;
+        if !user_rank.can_subtitle_mux() {
+            log_trace(trace_id, "sub_paywall", &format!("user_id={uid} rank={}", user_rank.as_str()));
+            answer(api, cq, "").await;
+            if let Some(msg) = extract_message(cq) {
+                crate::rank::paywall::block_feature(api, msg.chat.id, &crate::i18n::t("youtube.subtitle_feature"), rank::types::Rank::Sepahbod).await;
+            }
+            return;
+        }
+    }
+
     // Quick buttons (fa/en in main menu) are add-only: clicking an already-selected lang
     // does nothing. To deselect, user must use the full subtitle submenu.
     let (added, total) = with_selection(&req, |slot| {
@@ -170,7 +186,7 @@ async fn handle_sub_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
     answer(api, cq, "").await;
 }
 
-async fn handle_sub_mode_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
+async fn handle_sub_mode_toggle(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<PostgresDatabase>) {
     let Some((request_id, mode_str)) = rest.split_once(':') else {
         answer(api, cq, "").await;
         return;
@@ -189,6 +205,22 @@ async fn handle_sub_mode_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
         _ => { answer(api, cq, "").await; return; }
     };
     let trace_id = req.trace_id;
+
+    // rank check — فایل جداگانه فقط سپهبد به بالا
+    if new_mode == SubtitleMode::File {
+        if let (Some(uid), Some(db)) = (req.user_id, database.as_ref()) {
+            let user_rank = rank::effective_rank(db.client(), uid).await;
+            if !user_rank.can_subtitle_file() {
+                log_trace(trace_id, "sub_file_paywall", &format!("user_id={uid} rank={}", user_rank.as_str()));
+                answer(api, cq, "").await;
+                if let Some(msg) = extract_message(cq) {
+                    crate::rank::paywall::block_feature(api, msg.chat.id, &crate::i18n::t("youtube.subtitle_file_feature"), rank::types::Rank::Sepahbod).await;
+                }
+                return;
+            }
+        }
+    }
+
     let changed = with_selection(&req, |slot| {
         if let Some(sel) = slot.as_mut() {
             if sel.subtitle_mode != new_mode { sel.subtitle_mode = new_mode; return true; }
@@ -248,7 +280,7 @@ async fn handle_sub_page(api: &Bot, cq: &CallbackQuery, rest: &str) {
     answer(api, cq, "").await;
 }
 
-async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str) {
+async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<PostgresDatabase>) {
     let Ok(request_id) = rest.parse::<u64>() else {
         answer(api, cq, "").await;
         return;
@@ -277,6 +309,57 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str) {
         "request_id={request_id} height={} codec={} audio={:?} subs={:?}",
         selection.height, selection.codec.key(), selection.audio_lang, selection.subtitle_langs
     ));
+
+    // ── چک ترافیک (روزانه + ماهانه) قبل از شروع دانلود ──
+    if let (Some(uid), Some(db)) = (req.user_id, database.as_ref()) {
+        let estimated = estimate_bytes(&req, &selection);
+        let user_rank = rank::effective_rank(db.client(), uid).await;
+        let daily_limit = user_rank.daily_traffic_bytes();
+        let monthly_limit = user_rank.monthly_traffic_bytes();
+        let first_upload_at = rank::quota::get_first_upload_at(db.client(), uid).await
+            .unwrap_or_else(now_epoch);
+        let daily_used = rank::quota::get_daily_traffic(db.client(), uid).await.unwrap_or(0) as u64;
+        let monthly_used = rank::quota::get_monthly_traffic(db.client(), uid, first_upload_at).await.unwrap_or(0) as u64;
+        let daily_remaining = daily_limit.saturating_sub(daily_used);
+        let monthly_remaining = monthly_limit.saturating_sub(monthly_used);
+
+        let block = if daily_remaining == 0 {
+            let label = tf("youtube.traffic_daily_limit", &[("limit", &fmt_traffic_fa(daily_limit))]);
+            Some((label, user_rank.traffic_daily_next_rank()))
+        } else if monthly_remaining == 0 {
+            let label = tf("youtube.traffic_monthly_limit", &[("limit", &fmt_traffic_fa(monthly_limit))]);
+            Some((label, user_rank.traffic_monthly_next_rank()))
+        } else if estimated > 0 && (estimated > daily_remaining || estimated > monthly_remaining) {
+            let remaining = daily_remaining.min(monthly_remaining);
+            let next = if daily_remaining <= monthly_remaining {
+                user_rank.traffic_daily_next_rank()
+            } else {
+                user_rank.traffic_monthly_next_rank()
+            };
+            let label = tf("youtube.traffic_file_too_big", &[
+                ("size", &fmt_traffic_fa(estimated)),
+                ("remaining", &fmt_traffic_fa(remaining)),
+            ]);
+            Some((label, next))
+        } else {
+            None
+        };
+
+        if let Some((label, next_rank)) = block {
+            log_trace(trace_id, "traffic_paywall", &format!(
+                "user_id={uid} rank={} est={estimated} daily_rem={daily_remaining} monthly_rem={monthly_remaining}",
+                user_rank.as_str()
+            ));
+            answer(api, cq, "").await;
+            if let Some(min_rank) = next_rank {
+                crate::rank::paywall::block_limit(api, message.chat.id, &label, min_rank).await;
+            } else {
+                crate::bot::send_text(api, message.chat.id, &label).await;
+            }
+            return;
+        }
+    }
+
     answer(api, cq, "").await;
     let quality_lbl = quality_label(selection.height);
     let text = tf("youtube.download.starting", &[("quality", &quality_lbl)]);
@@ -291,4 +374,39 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str) {
         log_trace(trace_id, "selection_start_edit_failed", &e.to_string());
     }
     spawn_download(api.clone(), request_id, selection, message.chat.id, message.message_id);
+}
+
+fn now_epoch() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// تخمین حجم فایل ویدیو از bitrate × duration (همسان با نمایش پنل — فقط ویدیو).
+/// اگه bitrate یا duration نبود → 0 (یعنی نامشخص، چک «فایل بزرگ» اعمال نمی‌شه).
+fn estimate_bytes(req: &YoutubeRequest, sel: &Selection) -> u64 {
+    let Some(dur) = req.duration.filter(|&d| d > 0) else { return 0 };
+    let Some(fmt) = req.formats.iter().find(|f| f.height == sel.height && f.codec == sel.codec) else { return 0 };
+    let Some(kbps) = fmt.bitrate.filter(|&b| b > 0.0) else { return 0 };
+    (kbps * 1000.0 / 8.0 * dur as f64) as u64
+}
+
+/// قالب‌بندی حجم به فارسی: «۵ گیگابایت» / «۷۵۰ مگابایت».
+fn fmt_traffic_fa(bytes: u64) -> String {
+    const GB: f64 = (1u64 << 30) as f64;
+    const MB: f64 = (1u64 << 20) as f64;
+    let b = bytes as f64;
+    let (num, unit) = if b >= GB {
+        let g = b / GB;
+        // عدد صحیح اگه گرد، وگرنه یک رقم اعشار
+        if (g.round() - g).abs() < 0.05 {
+            (format!("{:.0}", g.round()), "گیگابایت")
+        } else {
+            (format!("{:.1}", g), "گیگابایت")
+        }
+    } else {
+        (format!("{:.0}", (b / MB).round()), "مگابایت")
+    };
+    format!("{} {}", crate::i18n::to_fa_digits(&num), unit)
 }
