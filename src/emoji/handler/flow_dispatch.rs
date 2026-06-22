@@ -87,6 +87,10 @@ pub async fn handle_emoji_flow_message(
             eprintln!("[emoji_msg trace={trace_id} event=asr_skip] — handled in main");
             false
         }
+        FlowState::AwaitingRedeemGenArgs => {
+            eprintln!("[emoji_msg trace={trace_id} event=redeem_gen_skip] — handled in main");
+            false
+        }
     }
 }
 
@@ -110,5 +114,6 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingAsrAudio => "AwaitingAsrAudio",
         FlowState::AwaitingAsrConfirm { .. } => "AwaitingAsrConfirm",
         FlowState::AwaitingAsrQueued { .. } => "AwaitingAsrQueued",
+        FlowState::AwaitingRedeemGenArgs => "AwaitingRedeemGenArgs",
     }
 }

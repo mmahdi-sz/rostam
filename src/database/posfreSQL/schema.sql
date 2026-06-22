@@ -81,6 +81,35 @@ CREATE INDEX IF NOT EXISTS stats_downloads_created_idx
 CREATE INDEX IF NOT EXISTS stats_downloads_user_idx
     ON stats_downloads (user_id);
 
+-- رویداد عمومی هر فیچر (stt/denoise/upscale/separation/gwm/asr/...).
+-- amount = ثانیه‌ی صدا یا تعداد، بسته به فیچر.
+CREATE TABLE IF NOT EXISTS stats_events (
+    id         BIGSERIAL   PRIMARY KEY,
+    user_id    BIGINT      NOT NULL DEFAULT 0,
+    feature    TEXT        NOT NULL,
+    action     TEXT        NOT NULL DEFAULT '',
+    status     TEXT        NOT NULL DEFAULT 'ok',
+    amount     BIGINT      NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS stats_events_created_idx
+    ON stats_events (created_at);
+
+CREATE INDEX IF NOT EXISTS stats_events_feature_idx
+    ON stats_events (feature, created_at);
+
+-- خطاهای ثبت‌شده‌ی فیچرها برای دکمه «خطاهای ۱ روز گذشته».
+CREATE TABLE IF NOT EXISTS stats_errors (
+    id         BIGSERIAL   PRIMARY KEY,
+    feature    TEXT        NOT NULL,
+    message    TEXT        NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS stats_errors_created_idx
+    ON stats_errors (created_at);
+
 -- ── ranks ────────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS user_ranks (
@@ -99,3 +128,25 @@ CREATE TABLE IF NOT EXISTS user_quotas (
     window_start BIGINT NOT NULL,
     PRIMARY KEY (user_id, quota_type)
 );
+
+-- ── redeem codes ─────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS redeem_codes (
+    code          TEXT    PRIMARY KEY,
+    rank          TEXT    NOT NULL,
+    duration_days INT     NOT NULL,
+    max_uses      INT     NOT NULL DEFAULT 1,
+    used_count    INT     NOT NULL DEFAULT 0,
+    created_by    BIGINT,
+    created_at    BIGINT  NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT
+);
+
+CREATE TABLE IF NOT EXISTS redeem_redemptions (
+    code        TEXT   NOT NULL,
+    user_id     BIGINT NOT NULL,
+    redeemed_at BIGINT NOT NULL,
+    PRIMARY KEY (code, user_id)   -- یک کاربر هر کد را فقط یک‌بار
+);
+
+-- عمر کشویی ۷ روزه: موقع ساخت now+7d، هر مصرف ریست می‌شود، بعد از انقضا پاک می‌شود.
+ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS expires_at BIGINT;

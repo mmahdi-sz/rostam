@@ -22,6 +22,7 @@ fn show_plans_keyboard() -> InlineKeyboardMarkup {
 /// feature: نام فارسی قابلیت، مثلاً «تبدیل صدا به متن»
 /// min_rank: حداقل رتبه لازم
 pub async fn block_feature(api: &Bot, chat_id: i64, feature: &str, min_rank: Rank) {
+    crate::stats::record_event_global("paywall", "feature", min_rank.as_str(), 0).await;
     let text = tf("rank.paywall_feature", &[
         ("feature", feature),
         ("min_rank", min_rank.display_name()),
@@ -41,6 +42,7 @@ pub async fn block_feature(api: &Bot, chat_id: i64, feature: &str, min_rank: Ran
 /// limit: توضیح محدودیت، مثلاً «۳۰ دقیقه» یا «۵ گیگابایت روزانه»
 /// min_rank: حداقل رتبه برای بیشتر
 pub async fn block_limit(api: &Bot, chat_id: i64, limit: &str, min_rank: Rank) {
+    crate::stats::record_event_global("paywall", "limit", min_rank.as_str(), 0).await;
     let text = tf("rank.paywall_limit", &[
         ("limit", limit),
         ("min_rank", min_rank.display_name()),

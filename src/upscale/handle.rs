@@ -375,6 +375,8 @@ pub async fn handle_upscale_image(
         done_flag.store(true, Ordering::Relaxed);
         unregister_upscale(user_id);
         release_cpu(cores, trace_id).await;
+        crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "fail", 0).await;
+        crate::stats::record_error_global("upscale", &format!("download failed: {e}")).await;
         edit_or_send(api, chat_id, status_msg_id, &t("upscale.download_failed")).await;
         clean_up(&work_dir);
         return;
@@ -402,18 +404,23 @@ pub async fn handle_upscale_image(
         }
         Ok(Err(ref e)) if e == "cancelled" => {
             eprintln!("[upscale trace={trace_id} event=upscale_cancelled]");
+            crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "cancel", 0).await;
             edit_or_send(api, chat_id, status_msg_id, &t("upscale.cancelled")).await;
             clean_up(&work_dir);
             return;
         }
         Ok(Err(e)) => {
             eprintln!("[upscale trace={trace_id} event=upscale_failed] err={e}");
+            crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "fail", 0).await;
+            crate::stats::record_error_global("upscale", &format!("upscale failed: {e}")).await;
             edit_or_send(api, chat_id, status_msg_id, &t("upscale.upscale_failed")).await;
             clean_up(&work_dir);
             return;
         }
         Err(e) => {
             eprintln!("[upscale trace={trace_id} event=spawn_failed] err={e}");
+            crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "fail", 0).await;
+            crate::stats::record_error_global("upscale", &format!("spawn failed: {e}")).await;
             edit_or_send(api, chat_id, status_msg_id, &t("upscale.upscale_failed")).await;
             clean_up(&work_dir);
             return;
@@ -457,6 +464,8 @@ pub async fn handle_upscale_image(
         let _ = add_usage(db.client(), user_id, quota_kind, 1, 7 * 86400).await;
         eprintln!("[upscale trace={trace_id} event=quota_added] user_id={user_id} scale={scale_factor}");
     }
+
+    crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "ok", 1).await;
 
     clean_up(&work_dir);
     eprintln!("[upscale trace={trace_id} event=done]");

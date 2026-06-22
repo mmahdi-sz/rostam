@@ -1,5 +1,9 @@
 mod query;
-pub use query::{UserStats, DownloadStats, get_user_stats, get_download_stats, fmt_bytes};
+pub use query::{
+    UserStats, DownloadStats, get_user_stats, get_download_stats, fmt_bytes,
+    Periods, FeatureStats, get_feature_stats, ActiveUsers, get_active_users, fmt_secs,
+    ActionCount, get_action_breakdown, ErrorRow, get_recent_errors, count_recent_errors,
+};
 
 use std::sync::OnceLock;
 use tokio_postgres::Client;
@@ -22,6 +26,49 @@ fn db() -> Option<&'static Client> {
 pub async fn record_user_global(user_id: i64) {
     let Some(client) = db() else { return };
     record_user(client, user_id).await;
+}
+
+// ── generic feature event ───────────────────────────────────────────────────────
+// هر فیچر (stt/denoise/upscale/separation/gwm/asr/...) بدون تغییر امضاش با این تابع
+// آمار ثبت می‌کنه. amount = ثانیه‌ی صدا یا تعداد، بسته به فیچر.
+pub async fn record_event_global(feature: &str, action: &str, status: &str, amount: i64) {
+    let Some(client) = db() else { return };
+    let r = client.execute(
+        "INSERT INTO stats_events (user_id, feature, action, status, amount)
+         VALUES ($1, $2, $3, $4, $5)",
+        &[&0i64, &feature, &action, &status, &amount],
+    ).await;
+    if let Err(e) = r {
+        eprintln!("[stats event=record_event_failed] feature={feature} action={action} err={e}");
+    }
+}
+
+// همون record_event_global ولی با user_id مشخص (وقتی در دسترسه).
+pub async fn record_event_user(user_id: i64, feature: &str, action: &str, status: &str, amount: i64) {
+    let Some(client) = db() else { return };
+    let r = client.execute(
+        "INSERT INTO stats_events (user_id, feature, action, status, amount)
+         VALUES ($1, $2, $3, $4, $5)",
+        &[&user_id, &feature, &action, &status, &amount],
+    ).await;
+    if let Err(e) = r {
+        eprintln!("[stats event=record_event_failed] feature={feature} action={action} err={e}");
+    }
+}
+
+// ── error log ───────────────────────────────────────────────────────────────────
+// خطاهای مهم فیچرها برای دکمه «خطاهای ۱ روز گذشته».
+pub async fn record_error_global(feature: &str, message: &str) {
+    let Some(client) = db() else { return };
+    // پیام رو کوتاه نگه می‌داریم که جدول و پیام تلگرام منفجر نشه.
+    let trimmed: String = message.chars().take(500).collect();
+    let r = client.execute(
+        "INSERT INTO stats_errors (feature, message) VALUES ($1, $2)",
+        &[&feature, &trimmed],
+    ).await;
+    if let Err(e) = r {
+        eprintln!("[stats event=record_error_failed] feature={feature} err={e}");
+    }
 }
 
 pub async fn record_user(client: &Client, user_id: i64) {

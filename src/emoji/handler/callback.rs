@@ -301,6 +301,7 @@ pub async fn handle_emoji_callback(
                          packs={} items={} skipped={}",
                         r.packs_added, r.items_added, r.items_skipped
                     );
+                    crate::stats::record_event_user(user_id, "emoji", "import", "ok", r.items_added as i64).await;
                     let _ = send_text(api, chat_id, &tf("emoji.import_result", &[
                         ("packs", &r.packs_added.to_string()),
                         ("items", &r.items_added.to_string()),
@@ -309,6 +310,8 @@ pub async fn handle_emoji_callback(
                 }
                 Err(e) => {
                     eprintln!("[emoji_cb trace={trace_id} event=import_failed] mode={mode} err={e}");
+                    crate::stats::record_event_user(user_id, "emoji", "import", "fail", 0).await;
+                    crate::stats::record_error_global("emoji", &format!("import failed: {e}")).await;
                     let _ = send_text(api, chat_id, &t("emoji.import_failed")).await;
                 }
             }

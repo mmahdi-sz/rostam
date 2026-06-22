@@ -113,6 +113,7 @@ pub(super) async fn handle_test_text(
     match send_result {
         Ok(_) => {
             eprintln!("[emoji_test trace={trace_id} event=send_ok]");
+            crate::stats::record_event_user(user_id, "emoji", "test", "ok", 1).await;
         }
         Err(e) => {
             eprintln!(

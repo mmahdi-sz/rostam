@@ -142,6 +142,7 @@ pub async fn handle_youtube_url(
                     println!("[cookie_refresh profile={p} event=cooldown_refresh_scheduled] cookie_id={} waiting 30min then refresh", source.id);
                     let _ = rate_limit_tx.send(source);
                 }
+                crate::stats::record_event_global("cookie", "429", "rate_limit", 0).await;
                 eprintln!("yt-dlp 429 with cookie {}; retrying", cookie.id);
                 log_trace(trace_id, "fetch_rate_limited", &format!("cookie_id={}", cookie.id));
                 continue;

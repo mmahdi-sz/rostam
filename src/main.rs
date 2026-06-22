@@ -11,6 +11,7 @@ mod emoji;
 mod gemini_watermark;
 mod i18n;
 mod modules;
+mod redeem;
 mod separation;
 mod stats;
 mod stt;

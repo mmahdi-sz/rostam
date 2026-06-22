@@ -105,6 +105,26 @@ pub async fn init_emoji_cache(database_url: &str) {
     });
 }
 
+/// پاک‌سازی دوره‌ای کدهای هدیه‌ی منقضی‌شده (عمر کشویی ۷ روزه). هر ساعت اجرا می‌شود.
+pub fn spawn_redeem_sweeper(database_url: &str) {
+    let db_url = database_url.to_string();
+    tokio::spawn(async move {
+        let Ok((client, conn)) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await else {
+            eprintln!("[redeem event=sweeper_connect_failed]");
+            return;
+        };
+        tokio::spawn(conn);
+        loop {
+            match crate::redeem::store::sweep_expired(&client).await {
+                Ok(n) if n > 0 => eprintln!("[redeem event=sweep_done removed={n}]"),
+                Ok(_) => {}
+                Err(e) => eprintln!("[redeem event=sweep_failed err={e}]"),
+            }
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+        }
+    });
+}
+
 /// Cookie refresh worker (Redis-coordinated, shared dev+prod).
 ///
 /// Every `COOKIE_WORKER_INTERVAL_SECS` (default 10 min) it scans all profiles

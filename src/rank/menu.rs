@@ -2,6 +2,7 @@ use frankenstein::{AsyncTelegramApi, ParseMode, client_reqwest::Bot, methods::Se
 use crate::i18n::{t, apply_premium_to_html};
 
 pub async fn send_rank_menu(api: &Bot, chat_id: i64) {
+    crate::stats::record_event_global("paywall", "menu", "ok", 0).await;
     let params = SendMessageParams::builder()
         .chat_id(chat_id)
         .text(apply_premium_to_html(&t("rank.guide")))

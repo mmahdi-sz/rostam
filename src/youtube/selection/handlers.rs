@@ -373,6 +373,13 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<
     if let Err(e) = api.edit_message_text(&params).await {
         log_trace(trace_id, "selection_start_edit_failed", &e.to_string());
     }
+    crate::stats::record_event_user(
+        req.user_id.unwrap_or(0),
+        "youtube",
+        &format!("q{}_{}", selection.height, selection.codec.key()),
+        "go",
+        0,
+    ).await;
     spawn_download(api.clone(), request_id, selection, message.chat.id, message.message_id);
 }
 

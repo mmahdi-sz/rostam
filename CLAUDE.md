@@ -1,5 +1,25 @@
 # CLAUDE.md
 
+> ## ⚡ Code analysis: use CodeGraph FIRST (saves tokens)
+>
+> This repo is indexed by the **codegraph** MCP server (SQLite knowledge graph of every
+> symbol/edge/file). For understanding code, finding callers/callees, tracing impact, or
+> locating where to edit — **prefer codegraph over reading/grepping whole files**. One call
+> returns the verbatim source PLUS who calls it and what it affects → far fewer tokens and
+> round-trips than reading files yourself.
+>
+> - **Before relying on it, sync the index** so it reflects the latest code:
+>   `codegraph sync` (or `codegraph init` for the first build — `-i` flag is deprecated/no-op).
+>   Run sync after you make edits, then query.
+> - **Tools:** `codegraph_explore` (PRIMARY — natural-language question or a bag of symbol/file
+>   names → verbatim source grouped by file; usually the only call you need),
+>   `codegraph_search`, `codegraph_node` (one symbol's source + caller/callee trail),
+>   `codegraph_callers`.
+> - Fall back to raw Read/Grep only to confirm a specific detail codegraph didn't cover.
+> - Index lives at `/mnt/data/mahdidev/ros/.codegraph`. If MCP shows "no tools", reconnect via
+>   `/mcp` (startup-timing issue; the server is fine). Project is on `/mnt` so the file watcher
+>   can be flaky — `--no-watch` in the MCP args + manual `codegraph sync` is the reliable combo.
+
 Rust Telegram bot `ros-telegram-bot` (crate `frankenstein`), runs as systemd service `abc` (dev/test).
 Single-language Farsi UI. Uses yt-dlp, local Bot API, optional PostgreSQL + Redis.
 
@@ -121,6 +141,8 @@ src/youtube/                 — extract, fetch, format, handle, quality_keyboar
                                lang_names; selection/ (menu); download/ (runner, store, cancel,
                                progress, status, split, upload, helpers, etc.)
 src/database/                — mod, posfreSQL/{postgresql.rs, schema.sql}
+src/admin/                   — mod (render_stats / render_stats_more / render_errors_1d)
+src/stats/                   — mod (record_* functions), query (data model + queries)
 src/stt/                     — vosk, deepfilter, config, handle, types
 src/emoji/                   — cache/, flow, handler/, panel/, store/, smart_name, import/
 src/upscale/                 — handle
@@ -376,10 +398,53 @@ Messages starting with `/` skip step 1, so commands always reach dispatch.
 - `handle_stt_audio` الان `database: Option<PostgresDatabase>` می‌گیره (Clone‌پذیره چون `Arc<Client>` داخلشه)
 - `PostgresDatabase` به `Arc<Client>` تغییر یافت تا Clone‌پذیر بشه (`src/database/posfreSQL/postgresql.rs`)
 
+## آمار و پنل ادمین (`src/stats/` + `src/admin/`)
+
+دسترسی: `/start` → دکمه «پنل ادمین» (فقط برای `ADMIN_USER_ID`) → «آمار». ثبت آمار فقط وقتی
+`DATABASE_URL` ست باشه کار می‌کنه.
+
+### مدل ثبت
+- جدول عمومی رویداد `stats_events(user_id, feature, action, status, amount, created_at)` —
+  هر فیچر بدون تغییر امضای هندلرش باهاش ثبت می‌کنه. `amount` = ثانیه‌ی صدا یا تعداد، بسته به فیچر.
+- جدول خطا `stats_errors(feature, message, created_at)` — برای دکمه «خطاهای ۱ روز گذشته».
+- توابع ثبت در `src/stats/mod.rs` (روی `OnceLock` کلاینت سراسری، از هر جای کد قابل صدا زدن):
+  - `record_event_user(user_id, feature, action, status, amount)` / `record_event_global(...)` (بدون user_id)
+  - `record_error_global(feature, message)` (پیام به ۵۰۰ کاراکتر کوتاه می‌شه)
+  - یوتیوب دانلود از قبل `stats_downloads` + `record_upload_done` رو داره (جدا از stats_events).
+- `feature` ها: `stt`, `denoise`, `upscale`, `separation`, `gwm`, `asr` (آمار اصلی) و
+  `youtube`, `emoji`, `cookie`, `paywall`, `cpu` (آمار بیشتر).
+
+### نقاط ثبت (success/fail در هر هندلر)
+STT `src/stt/handle.rs` (action=big/fast_fa/en[_dn])، Denoise `src/denoise/handle.rs`،
+Upscale `src/upscale/handle.rs` (action=x2/x3/x4)، Separation `src/separation/handle.rs`
+(action=quality/fast)، GWM `src/gemini_watermark/handle.rs` (status ok/no_watermark/fail،
+amount=pass)، ASR `src/asr/handle.rs`. یوتیوب: `selection/handlers.rs` handle_go (action=q{h}_{codec})
++ `quality_keyboard.rs` cancel. ایموجی: `emoji/handler/{flow_pack_choice,flow_misc,callback}.rs`
+(add/test/import/pack_create). کوکی: `youtube/handle.rs` 429 + `modules/cookie_refresher.rs`
+refresh ok/fail. پی‌وال: `rank/paywall.rs` (block_feature/block_limit، status=رتبه‌ی لازم) +
+`rank/menu.rs` (menu). CPU: separation/asr موقع `cores==0`/`!server_free` (queue) و timeout.
+
+### نمایش (`src/admin/mod.rs`)
+- `render_stats(client)` → پنل اصلی: کاربران → کاربران فعال (DAU/WAU/بازگشتی/پرمصرف‌ترین) →
+  یوتیوب → ۶ بلوک AI. هر بلوک ✅ موفق + ❌ ناموفق (و ⏱ مدت برای فیچرهای صوتی). همه با
+  بازه‌های `1d|3d|7d|30d`. **کل خروجی با `to_fa_digits` رقم‌فارسی می‌شه.**
+- `render_stats_more(client)` → دکمه «آمار بیشتر»: تفکیک action/status هر فیچر (یوتیوب/ایموجی/
+  کوکی/پی‌وال/CPU) با سقف ۱۴ ردیف.
+- `render_errors_1d(client)` → دکمه «خطاهای ۱ روز گذشته»: HTML با `<blockquote expandable>`
+  (نقل‌قول جمع‌شو)، آخرین ۴۰ خطای ۲۴ ساعت اخیر. **پیام جدید با `ParseMode::Html`** می‌فرسته
+  (پنل دست‌نخورده می‌مونه).
+- کوئری‌ها در `src/stats/query.rs`: `get_feature_stats`, `get_active_users`,
+  `get_action_breakdown`, `get_recent_errors`, `count_recent_errors`. helperها: `fmt_secs`, `fmt_bytes`.
+- Callbackها (`src/bot.rs`): `admin:panel`, `admin:stats`, `admin:stats_more`, `admin:errors_1d`.
+  Wiring در `src/app/dispatch.rs`. دکمه‌ها با `btn_icon` (آیکون‌های `stats`/`warning`/`back`).
+- **داده تاریخی نداریم** — آمار از زمان افزوده‌شدن ثبت به بعد جمع می‌شه.
+
 ## PostgreSQL tables (auto-created when `DATABASE_URL` set)
 
 Cookie pool: `cookie_pool_cookies`, `cookie_pool_state`, `cookie_pool_cooldowns`.
-Emoji: `emoji_packs`, `emoji_items`. Schema: `src/database/posfreSQL/schema.sql`.
+Emoji: `emoji_packs`, `emoji_items`.
+Stats: `stats_users`, `stats_downloads` (یوتیوب)، `stats_events` (عمومی)، `stats_errors`.
+Schema: `src/database/posfreSQL/schema.sql`.
 
 ## Runtime deps (tracked under `files/`)
 

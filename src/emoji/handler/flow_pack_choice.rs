@@ -105,6 +105,7 @@ pub(super) async fn handle(
             match emoji_store::create_pack(client, user_id, text).await {
                 Ok(p) => {
                     eprintln!("[emoji_msg trace={trace_id} event=pack_created] id={} name={:?}", p.id, p.name);
+                    crate::stats::record_event_user(user_id, "emoji", "pack_create", "ok", 1).await;
                     p
                 }
                 Err(e) => {
@@ -147,6 +148,7 @@ pub(super) async fn handle(
         }
     }
     eprintln!("[emoji_msg trace={trace_id} event=pack_choice_done] added={added} total={}", collected.len());
+    crate::stats::record_event_user(user_id, "emoji", "add", if added > 0 { "ok" } else { "fail" }, added as i64).await;
 
     send_with_ents(api, chat_id,
         crate::i18n::tf("emoji.added_summary", &[("count", &added.to_string()), ("pack", &pack.name)]),

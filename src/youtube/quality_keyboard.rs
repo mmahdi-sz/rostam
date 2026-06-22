@@ -376,6 +376,13 @@ async fn handle_cancel_callback(api: &Bot, callback_query: &CallbackQuery, data:
             callback_query.from.id
         ),
     );
+    crate::stats::record_event_user(
+        callback_query.from.id as i64,
+        "youtube",
+        "cancel",
+        if cancelled { "ok" } else { "not_found" },
+        0,
+    ).await;
     answer_callback(api, callback_query, "").await;
     true
 }

@@ -23,6 +23,19 @@ fn next_trace_id() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
+// action قابل‌گرپ برای آمار: big/fast + fa/en + پسوند denoise.
+fn stt_action(config: &SttConfig) -> String {
+    let model = match config.model_size {
+        SttModelSize::Large => "big",
+        SttModelSize::Small => "fast",
+    };
+    let lang = match config.lang {
+        SttLang::Fa => "fa",
+        SttLang::En => "en",
+    };
+    if config.denoise { format!("{model}_{lang}_dn") } else { format!("{model}_{lang}") }
+}
+
 /// Called from main.rs when `ai:stt` is pressed.
 /// Edits the AI Lab submenu message to show the STT config menu.
 pub async fn enter_stt_config(
@@ -266,6 +279,8 @@ pub async fn handle_stt_audio(
     // 1. Download
     if let Err(e) = download_file(api, file_id, input_path.to_str().unwrap()).await.map_err(|e| e.to_string()) {
         log_trace(trace_id, "stt_download_failed", &format!("err={e}"));
+        crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
+        crate::stats::record_error_global("stt", &format!("download failed: {e}")).await;
         let _ = send_text(api, chat_id, &t("stt.download_failed")).await;
         clean_up(&work_dir);
         return;
@@ -279,6 +294,8 @@ pub async fn handle_stt_audio(
         convert_to_wav(&input_str, &wav_str).map_err(|e| e.to_string())
     }).await.unwrap_or_else(|e| Err(e.to_string())) {
         log_trace(trace_id, "stt_convert_failed", &format!("err={e}"));
+        crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
+        crate::stats::record_error_global("stt", &format!("convert failed: {e}")).await;
         let _ = send_text(api, chat_id, &t("stt.convert_failed")).await;
         clean_up(&work_dir);
         return;
@@ -400,6 +417,8 @@ pub async fn handle_stt_audio(
         Ok(r) => r,
         Err(e) => {
             log_trace(trace_id, "stt_transcribe_failed", &format!("err={e}"));
+            crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", duration_secs as i64).await;
+            crate::stats::record_error_global("stt", &format!("transcribe failed: {e}")).await;
             let _ = send_text(api, chat_id, &t("stt.transcribe_failed")).await;
             clean_up(&work_dir);
             return;
@@ -426,6 +445,7 @@ pub async fn handle_stt_audio(
     // Use send_long_text — transcription can exceed Telegram's 4096-char limit for long audio
     let _ = send_long_text(api, chat_id, &result_text).await;
     log_trace(trace_id, "stt_result_sent", &format!("text_len={}", text.len()));
+    crate::stats::record_event_user(user_id, "stt", &stt_action(config), "ok", duration_secs as i64).await;
 
     // ثبت مصرف quota
     if let Some(db) = database.as_ref() {

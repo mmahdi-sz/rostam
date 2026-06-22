@@ -127,6 +127,8 @@ pub async fn handle_denoise_audio(
     // 1. Download
     if let Err(e) = download_file(api, file_id, input_path.to_str().unwrap()).await {
         log_trace(trace_id, "denoise_download_failed", &format!("err={e}"));
+        crate::stats::record_event_user(user_id, "denoise", "", "fail", 0).await;
+        crate::stats::record_error_global("denoise", &format!("download failed: {e}")).await;
         let _ = send_text(api, chat_id, &t("denoise.download_failed")).await;
         clean_up(&work_dir);
         return;
@@ -137,6 +139,8 @@ pub async fn handle_denoise_audio(
     // 2. Convert to 48kHz mono 16-bit PCM WAV (DeepFilterNet optimal sample rate)
     if let Err(e) = convert_to_wav(input_path.to_str().unwrap(), wav_path.to_str().unwrap(), 48000) {
         log_trace(trace_id, "denoise_convert_failed", &format!("err={e}"));
+        crate::stats::record_event_user(user_id, "denoise", "", "fail", 0).await;
+        crate::stats::record_error_global("denoise", &format!("convert failed: {e}")).await;
         let _ = send_text(api, chat_id, &t("denoise.convert_failed")).await;
         clean_up(&work_dir);
         return;
@@ -208,6 +212,8 @@ pub async fn handle_denoise_audio(
         }
         Err(e) => {
             log_trace(trace_id, "denoise_failed", &format!("err={e}"));
+            crate::stats::record_event_user(user_id, "denoise", "", "fail", duration_secs as i64).await;
+            crate::stats::record_error_global("denoise", &format!("denoise failed: {e}")).await;
             let _ = send_text(api, chat_id, &t("denoise.denoise_failed")).await;
             clean_up(&work_dir);
             return;
@@ -217,6 +223,8 @@ pub async fn handle_denoise_audio(
     // 4. Convert back to original format
     if let Err(e) = convert_from_wav(denoised_path.to_str().unwrap(), output_path.to_str().unwrap(), &orig_ext) {
         log_trace(trace_id, "denoise_reconvert_failed", &format!("err={e}"));
+        crate::stats::record_event_user(user_id, "denoise", "", "fail", duration_secs as i64).await;
+        crate::stats::record_error_global("denoise", &format!("reconvert failed: {e}")).await;
         let _ = send_text(api, chat_id, &t("denoise.convert_failed")).await;
         clean_up(&work_dir);
         return;
@@ -266,6 +274,7 @@ pub async fn handle_denoise_audio(
     ]));
     let _ = send_text_md(api, chat_id, &report).await;
     log_trace(trace_id, "denoise_report_sent", &format!("duration={audio_duration:.1}s processing={processing_secs:.1}s"));
+    crate::stats::record_event_user(user_id, "denoise", "", "ok", duration_secs as i64).await;
 
     clean_up(&work_dir);
 }

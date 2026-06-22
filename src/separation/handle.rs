@@ -252,6 +252,8 @@ pub async fn handle_separation_callback(
         Ok(b) => b,
         Err(e) => {
             eprintln!("[separation trace={trace_id} event=download_failed] err={e}");
+            crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
+            crate::stats::record_error_global("separation", &format!("download failed: {e}")).await;
             let _ = send_text(api, chat_id, &t("separation.error.service_unavailable")).await;
             let _ = delete_message(api, chat_id, message_id).await;
             return;
@@ -268,6 +270,8 @@ pub async fn handle_separation_callback(
             Ok(b) => b,
             Err(e) => {
                 eprintln!("[separation trace={trace_id} event=extract_failed] err={e}");
+                crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
+                crate::stats::record_error_global("separation", &format!("audio extraction failed: {e}")).await;
                 let _ = send_text(api, chat_id, &t("separation.error.audio_extraction_failed")).await;
                 let _ = delete_message(api, chat_id, message_id).await;
                 std::fs::remove_dir_all(&tmp_dir).ok();
@@ -352,6 +356,9 @@ pub async fn handle_separation_callback(
     let server_free = cpu_status.available_cores > 0 && !cpu_status.overloaded;
     eprintln!("[separation trace={trace_id} event=cpu_status_check] available={} overloaded={} queue={} server_free={server_free}",
         cpu_status.available_cores, cpu_status.overloaded, cpu_status.queue_length);
+    if !server_free {
+        crate::stats::record_event_user(user_id, "cpu", "queue", "separation", 0).await;
+    }
 
     // Cancel token: set to true if user presses cancel while in queue.
     let cancel_flag = Arc::new(AtomicBool::new(false));
@@ -461,6 +468,9 @@ pub async fn handle_separation_callback(
         let result = match sep_result {
             None => {
                 eprintln!("[separation trace={trace_id} event=queue_timeout]");
+                crate::stats::record_event_user(user_id, "cpu", "timeout", "separation", 0).await;
+                crate::stats::record_event_user(user_id, "separation", mode_label, "timeout", 0).await;
+                crate::stats::record_error_global("separation", "queue timeout (35min)").await;
                 let _ = send_text(&api_task, chat_id, &t("separation.error.queue_timeout")).await;
                 let _ = delete_message(&api_task, chat_id, message_id).await;
                 std::fs::remove_dir_all(&tmp_dir).ok();
@@ -539,11 +549,15 @@ pub async fn handle_separation_callback(
                     eprintln!("[separation trace={trace_id} event=quota_added] user_id={user_id} secs={dur}");
                 }
 
+                crate::stats::record_event_user(user_id, "separation", mode_label, "ok", result.duration_seconds.ceil() as i64).await;
+
                 std::fs::remove_dir_all(&tmp_dir).ok();
                 eprintln!("[separation trace={trace_id} event=cleanup_done]");
             }
             Err(e) => {
                 eprintln!("[separation trace={trace_id} event=separate_error] err={e}");
+                crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
+                crate::stats::record_error_global("separation", &format!("processing error: {e:?}")).await;
                 let _ = delete_message(&api_task, chat_id, message_id).await;
                 use super::error::SeparationError;
                 let key = match &e {

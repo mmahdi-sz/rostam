@@ -9,7 +9,7 @@ use crate::bot::{send_start_menu, edit_to_start_menu, edit_to_ai_lab};
 use crate::bot::{
     CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB,
     CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_AI_SEP, CB_AI_GWM, CB_AI_ASR, CB_DENOISE_CANCEL,
-    CB_ADMIN_PANEL, CB_ADMIN_STATS,
+    CB_ADMIN_PANEL, CB_ADMIN_STATS, CB_ADMIN_STATS_MORE, CB_ADMIN_ERRORS, CB_ADMIN_GEN_CODE,
 };
 use crate::asr::{enter_asr, handle_asr_audio, handle_asr_cancel, handle_asr_confirm, CB_ASR_CANCEL, CB_ASR_CONFIRM, CB_ASR_QUEUE};
 use crate::config;
@@ -87,11 +87,18 @@ async fn handle_message(
         }
     }
 
-    // Step 2: /start always clears flow
-    if let (Some(uid), Some("/start")) = (user_id, message.text.as_deref()) {
-        flow_manager.clear(uid);
-        send_start_menu(api, message.chat.id).await?;
-        return Ok(());
+    // Step 2: /start always clears flow (+ deep-link payload: redeem<CODE>)
+    if let (Some(uid), Some(text)) = (user_id, message.text.as_deref()) {
+        if let Some(rest) = text.strip_prefix("/start") {
+            flow_manager.clear(uid);
+            let payload = rest.trim();
+            if let Some(code) = payload.strip_prefix("redeem") {
+                crate::redeem::handle::handle_redeem(api, message.chat.id, uid, code, database).await;
+            } else {
+                send_start_menu(api, message.chat.id).await?;
+            }
+            return Ok(());
+        }
     }
 
     // Step 3: «لغو عملیات» reply keyboard when Idle
@@ -105,6 +112,18 @@ async fn handle_message(
     // Step 4: active flow dispatch
     if let Some(uid) = user_id {
         if !matches!(flow_manager.get(uid), FlowState::Idle) {
+            // ادمین آرگومان‌های ساخت کد را فرستاده (مثل `30d es 1u`)
+            if matches!(flow_manager.get(uid), FlowState::AwaitingRedeemGenArgs) {
+                if let Some(text) = message.text.as_deref() {
+                    flow_manager.clear(uid);
+                    let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
+                    if is_admin {
+                        crate::redeem::handle::handle_generate(api, message.chat.id, uid, text, database).await;
+                    }
+                    return Ok(());
+                }
+            }
+
             if emoji_handler::handle_emoji_flow_message(api, &message, uid, flow_manager, database).await {
                 return Ok(());
             }
@@ -196,6 +215,16 @@ async fn handle_message(
         if cmd == "/rank" {
             eprintln!("[dispatch event=rank_menu] user_id={user_id:?} chat_id={}", message.chat.id);
             crate::rank::menu::send_rank_menu(api, message.chat.id).await;
+            return Ok(());
+        }
+        // ساخت کد هدیه (فقط ادمین): /re 30d es 1u
+        if let Some(rest) = text.strip_prefix("/re ") {
+            let is_admin = config::admin_user_id().map(|id| Some(id) == user_id).unwrap_or(false);
+            if is_admin {
+                if let Some(uid) = user_id {
+                    crate::redeem::handle::handle_generate(api, message.chat.id, uid, rest, database).await;
+                }
+            }
             return Ok(());
         }
         if let Some(rest) = text.strip_prefix("/se") {
@@ -552,6 +581,7 @@ async fn handle_callback(
             let kb = frankenstein::types::InlineKeyboardMarkup::builder()
                 .inline_keyboard(vec![
                     vec![btn_icon(&t("admin.stats_button"), CB_ADMIN_STATS, "stats")],
+                    vec![btn_icon(&t("admin.gencode_button"), CB_ADMIN_GEN_CODE, "panel")],
                     vec![btn_icon(&t("admin.back"), crate::bot::CB_START_PANEL, "back")],
                 ])
                 .build();
@@ -577,13 +607,96 @@ async fn handle_callback(
                 "دیتابیس متصل نیست.".to_string()
             };
             let kb = frankenstein::types::InlineKeyboardMarkup::builder()
+                .inline_keyboard(vec![
+                    vec![btn_icon(&t("admin.stats_more_button"), CB_ADMIN_STATS_MORE, "stats")],
+                    vec![btn_icon(&t("admin.errors_button"), CB_ADMIN_ERRORS, "warning")],
+                    vec![btn_icon(&t("admin.back"), CB_ADMIN_PANEL, "back")],
+                ])
+                .build();
+            let _ = crate::bot::edit_text(
+                api, message.chat.id, message.message_id, &text, Some(kb),
+            ).await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_ADMIN_STATS_MORE && is_admin {
+        let _ = api.answer_callback_query(
+            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
+        ).await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            use crate::emoji::panel::btn_icon;
+            use crate::i18n::t;
+            let text = if let Some(db) = database {
+                crate::admin::render_stats_more(db.client()).await
+            } else {
+                "دیتابیس متصل نیست.".to_string()
+            };
+            let kb = frankenstein::types::InlineKeyboardMarkup::builder()
                 .inline_keyboard(vec![vec![
-                    btn_icon(&t("admin.back"), CB_ADMIN_PANEL, "back"),
+                    btn_icon(&t("admin.back"), CB_ADMIN_STATS, "back"),
                 ]])
                 .build();
             let _ = crate::bot::edit_text(
                 api, message.chat.id, message.message_id, &text, Some(kb),
             ).await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_ADMIN_GEN_CODE && is_admin {
+        let _ = api.answer_callback_query(
+            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
+        ).await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            crate::redeem::handle::open_panel(api, message.chat.id, cb_user_id as i64).await;
+        }
+        return Ok(());
+    }
+
+    // دکمه‌های پنل گرافیکی ساخت کد (gc:*) — فقط ادمین
+    if cb_data.starts_with(crate::redeem::panel::CB_GC_PREFIX) && is_admin {
+        let _ = api.answer_callback_query(
+            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
+        ).await;
+        if cb_data != crate::redeem::panel::CB_GC_NOP {
+            if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+                crate::redeem::handle::handle_panel_callback(
+                    api, message.chat.id, message.message_id, cb_user_id as i64, cb_data, database,
+                ).await;
+            }
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_ADMIN_ERRORS && is_admin {
+        let _ = api.answer_callback_query(
+            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
+        ).await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            let text = if let Some(db) = database {
+                crate::admin::render_errors_1d(db.client()).await
+            } else {
+                "دیتابیس متصل نیست.".to_string()
+            };
+            // HTML چون blockquote جمع‌شو داره — پیام جدید می‌فرستیم تا پنل دست‌نخورده بمونه.
+            use frankenstein::{methods::SendMessageParams, ParseMode};
+            use crate::emoji::panel::btn_icon;
+            use crate::i18n::t;
+            let kb = frankenstein::types::InlineKeyboardMarkup::builder()
+                .inline_keyboard(vec![vec![
+                    btn_icon(&t("admin.back"), CB_ADMIN_PANEL, "back"),
+                ]])
+                .build();
+            let params = SendMessageParams::builder()
+                .chat_id(message.chat.id)
+                .text(&text)
+                .parse_mode(ParseMode::Html)
+                .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(kb))
+                .build();
+            if let Err(e) = api.send_message(&params).await {
+                eprintln!("[admin event=errors_send_failed] err={e}");
+            }
         }
         return Ok(());
     }

@@ -41,12 +41,16 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> Result<(), String>
     let links = load_links(&config)?;
     if links.is_empty() {
         println!("[cookie_refresh profile={p} event=no_links] links_file={}", config.links_file);
+        crate::stats::record_event_global("cookie", "refresh", "fail", 0).await;
+        crate::stats::record_error_global("cookie", &format!("no links for profile {p}")).await;
         let msg = format!("⚠️ فایل لینک‌های {} خالیه یا پیدا نشد!", p);
         notify(api, config.admin_chat_id, &msg).await;
         return Err("no links available".to_string());
     }
 
     if !check_login(&config)? {
+        crate::stats::record_event_global("cookie", "refresh", "fail", 0).await;
+        crate::stats::record_error_global("cookie", &format!("profile {p} not logged in")).await;
         let msg = format!("⚠️ اکانت {} لاگین نشده!", p);
         notify(api, config.admin_chat_id, &msg).await;
         return Err(format!("profile {} is not logged in", p));
@@ -69,6 +73,8 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> Result<(), String>
 
     if crashed {
         println!("[cookie_refresh profile={p} event=done] success=false reason=crashed");
+        crate::stats::record_event_global("cookie", "refresh", "fail", 0).await;
+        crate::stats::record_error_global("cookie", &format!("firefox crashed for profile {p}")).await;
         let msg = format!("⚠️ فایرفاکس اکانت {} قبل از اتمام زمان crash کرد!", p);
         notify(api, config.admin_chat_id, &msg).await;
         return Err(format!("firefox crashed for profile {}", p));
@@ -79,6 +85,7 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> Result<(), String>
     }
 
     println!("[cookie_refresh profile={p} event=done] success=true");
+    crate::stats::record_event_global("cookie", "refresh", "ok", 0).await;
     let msg = format!("✅ کوکی‌های {} با موفقیت آپدیت شدن", p);
     notify(api, config.admin_chat_id, &msg).await;
     Ok(())

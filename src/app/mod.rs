@@ -13,6 +13,7 @@ use crate::emoji::FlowManager;
 use startup::{
     build_bot_api, fetch_bot_username, init_database, init_emoji_cache,
     set_bot_commands, spawn_cookie_refresher, spawn_cooldown_refresh, spawn_i18n_watcher,
+    spawn_redeem_sweeper,
 };
 use state::AppState;
 
@@ -25,6 +26,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let db = init_database(&mut cookie_pool, &database_url).await;
         if db.is_some() {
             init_emoji_cache(&database_url).await;
+            spawn_redeem_sweeper(&database_url);
         }
         db
     } else {

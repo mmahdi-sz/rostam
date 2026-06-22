@@ -157,6 +157,7 @@ pub async fn handle_asr_audio(
 
     if cores == 0 {
         // Server busy — ask if user wants to queue
+        crate::stats::record_event_user(user_id, "cpu", "queue", "asr", 0).await;
         flow_manager.set(user_id, FlowState::AwaitingAsrQueued {
             file_id,
             filename,
@@ -254,6 +255,8 @@ async fn run_asr_inference(
     if let Err(e) = download_file(&api, &file_id, audio_path.to_str().unwrap(), trace_id).await {
         eprintln!("[asr trace={trace_id} event=download_failed] err={e}");
         std::fs::remove_dir_all(&work_dir).ok();
+        crate::stats::record_event_user(user_id, "asr", "", "fail", 0).await;
+        crate::stats::record_error_global("asr", &format!("download failed: {e}")).await;
         let _ = edit_status(&api, chat_id, message_id, &t("asr.error.download_failed")).await;
         return;
     }
@@ -311,17 +314,26 @@ async fn run_asr_inference(
                     std::fs::remove_file(&srt_path).ok();
                 }
             }
+
+            crate::stats::record_event_user(user_id, "asr", "", "ok", asr.duration_seconds.ceil() as i64).await;
         }
         Err(AsrError::ServiceUnavailable) => {
             eprintln!("[asr trace={trace_id} event=service_unavailable]");
+            crate::stats::record_event_user(user_id, "asr", "", "fail", 0).await;
+            crate::stats::record_error_global("asr", "service unavailable").await;
             let _ = edit_status(&api, chat_id, message_id, &t("asr.error.service_unavailable")).await;
         }
         Err(AsrError::Timeout) => {
             eprintln!("[asr trace={trace_id} event=timeout] elapsed={:.1}s", elapsed.as_secs_f64());
+            crate::stats::record_event_user(user_id, "cpu", "timeout", "asr", 0).await;
+            crate::stats::record_event_user(user_id, "asr", "", "timeout", 0).await;
+            crate::stats::record_error_global("asr", "timeout").await;
             let _ = edit_status(&api, chat_id, message_id, &t("asr.error.timeout")).await;
         }
         Err(e) => {
             eprintln!("[asr trace={trace_id} event=inference_failed] err={e}");
+            crate::stats::record_event_user(user_id, "asr", "", "fail", 0).await;
+            crate::stats::record_error_global("asr", &format!("inference failed: {e}")).await;
             let _ = edit_status(&api, chat_id, message_id, &t("asr.error.processing_failed")).await;
         }
     }

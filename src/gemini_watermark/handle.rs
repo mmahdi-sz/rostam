@@ -120,6 +120,8 @@ pub async fn handle_gwm_image(
 
     if let Err(e) = download_file(api, &file_id, input_path.to_str().unwrap(), trace_id).await {
         eprintln!("[gwm trace={trace_id} event=download_failed] err={e}");
+        crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
+        crate::stats::record_error_global("gwm", &format!("download failed: {e}")).await;
         let _ = send_text(api, chat_id, &t("gemini_wm.error.download_failed")).await;
         std::fs::remove_dir_all(&work_dir).ok();
         return;
@@ -131,6 +133,8 @@ pub async fn handle_gwm_image(
         Ok(b) => b,
         Err(e) => {
             eprintln!("[gwm trace={trace_id} event=read_failed] err={e}");
+            crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
+            crate::stats::record_error_global("gwm", &format!("read failed: {e}")).await;
             let _ = send_text(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
             std::fs::remove_dir_all(&work_dir).ok();
             return;
@@ -146,12 +150,15 @@ pub async fn handle_gwm_image(
         Err(super::remove::GwmError::NoWatermarkDetected(detail)) => {
             let elapsed = t_start.elapsed().as_secs_f64();
             eprintln!("[gwm trace={trace_id} event=no_watermark] elapsed={elapsed:.2}s detail={detail:?}");
+            crate::stats::record_event_user(user_id, "gwm", "", "no_watermark", 0).await;
             let _ = send_text(api, chat_id, &t("gemini_wm.error.no_watermark")).await;
             return;
         }
         Err(e) => {
             let elapsed = t_start.elapsed().as_secs_f64();
             eprintln!("[gwm trace={trace_id} event=remove_failed] elapsed={elapsed:.2}s err={e}");
+            crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
+            crate::stats::record_error_global("gwm", &format!("remove failed: {e}")).await;
             let _ = send_text(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
             return;
         }
@@ -163,6 +170,8 @@ pub async fn handle_gwm_image(
     );
 
     if n == 0 {
+        crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
+        crate::stats::record_error_global("gwm", "remove produced 0 passes").await;
         let _ = send_text(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
         return;
     }
@@ -199,6 +208,7 @@ pub async fn handle_gwm_image(
     }
 
     eprintln!("[gwm trace={trace_id} event=all_passes_sent] passes={n}");
+    crate::stats::record_event_user(user_id, "gwm", "", "ok", n as i64).await;
 }
 
 /// Build the caption for one pass. The first message in a multi-pass set also

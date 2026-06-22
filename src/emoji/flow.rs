@@ -36,6 +36,8 @@ pub enum FlowState {
     AwaitingAsrAudio,
     AwaitingAsrConfirm { file_id: String, filename: String, duration_secs: f64 },
     AwaitingAsrQueued { file_id: String, filename: String, duration_secs: f64 },
+    /// ادمین دکمه‌ی ساخت کد را زده و منتظر آرگومان‌ها (مثل `30d es 1u`) هستیم
+    AwaitingRedeemGenArgs,
 }
 
 #[derive(Debug, Default)]
