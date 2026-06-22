@@ -26,6 +26,8 @@ pub static EMOJI_MAP: &[(&str, &str)] = &[
     ("📋", "list"),
     ("📥", "import"),
     ("📤", "upload_icon"),
+    ("⬇️", "download_icon"),
+    ("⬇", "download_icon"),
     ("📦", "export"),
     ("💾", "floppy"),
     ("🆕", "new_icon"),
@@ -72,4 +74,21 @@ pub static EMOJI_MAP: &[(&str, &str)] = &[
     ("✨", "sparkles"),
     ("📺", "tv"),
     ("🤖", "bot_premium_emoji"),
+    // rank.guide decorations
+    ("⚔️", "swords"),
+    ("⚔", "swords"),
+    ("🎖️", "medal"),
+    ("🎖", "medal"),
+    ("📚", "books"),
+    ("💰", "money_bag"),
+    ("🏆", "trophy"),
+    ("💳", "credit_card"),
+    ("🧠", "brain"),
+    ("👑", "crown"),
+    ("⏰", "alarm_clock"),
+    ("♻️", "recycle"),
+    ("♻", "recycle"),
+    ("🛒", "shopping_cart"),
+    // NOTE: 🔥 is intentionally NOT here — it is randomized across fire1..fire4
+    // by apply_premium_to_html (see premium_md.rs).
 ];

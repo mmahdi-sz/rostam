@@ -5,7 +5,7 @@ use std::{
 };
 
 use super::{
-    DEFAULT_CACHE_ROOT, DEFAULT_COOLDOWN, REFRESH_COOLDOWN, DEFAULT_FIREFOX_ROOT, DEFAULT_MAX_COOKIES,
+    DEFAULT_CACHE_ROOT, DEFAULT_COOLDOWN, REFRESH_COOLDOWN, DEFAULT_FIREFOX_ROOT,
     discover::{discover_firefox_cookies, materialize_profiles_cache},
     types::{CooldownEntry, CookiePoolSnapshot, CookiePoolStatus, CookieSource, SelectedCookie},
 };
@@ -26,7 +26,7 @@ impl CookiePool {
     pub fn from_firefox_root(root: impl AsRef<Path>) -> Self {
         let mut available_cookies = discover_firefox_cookies(root.as_ref());
         available_cookies.sort_by(|l, r| l.id.cmp(&r.id));
-        available_cookies.truncate(DEFAULT_MAX_COOKIES);
+        // No cap on the number of cookies — all discovered profiles are used.
         available_cookies = materialize_profiles_cache(Path::new(DEFAULT_CACHE_ROOT), available_cookies);
         Self { available_cookies, last_used_cookie: None, cooldown_list: Vec::new(), cooldown: DEFAULT_COOLDOWN, random_counter: 0 }
     }
@@ -57,7 +57,6 @@ impl CookiePool {
         self.cooldown_list = cooldown_list
             .into_iter()
             .filter(|e| available_ids.contains(e.cookie_id.as_str()))
-            .take(DEFAULT_MAX_COOKIES)
             .collect();
         self.cleanup_expired_cooldowns();
     }
@@ -76,7 +75,7 @@ impl CookiePool {
     pub fn mark_rate_limited(&mut self, cookie_id: &str) -> bool {
         self.cleanup_expired_cooldowns();
         if self.cooldown_list.iter().any(|e| e.cookie_id == cookie_id) { return false; }
-        if self.cooldown_list.len() >= DEFAULT_MAX_COOKIES { return false; }
+        if self.cooldown_list.len() >= self.available_cookies.len() { return false; }
         self.cooldown_list.push(CooldownEntry { cookie_id: cookie_id.to_owned(), expire_at: SystemTime::now() + self.cooldown });
         true
     }
@@ -85,7 +84,7 @@ impl CookiePool {
         let cookie_id = self.last_used_cookie.clone()?;
         self.cleanup_expired_cooldowns();
         if self.cooldown_list.iter().any(|e| e.cookie_id == cookie_id) { return None; }
-        if self.cooldown_list.len() >= DEFAULT_MAX_COOKIES { return None; }
+        if self.cooldown_list.len() >= self.available_cookies.len() { return None; }
         // Use REFRESH_COOLDOWN as a safety net; the caller is expected to call
         // remove_from_cooldown() explicitly once the auto-refresh finishes.
         self.cooldown_list.push(CooldownEntry {

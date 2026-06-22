@@ -65,6 +65,12 @@ Binary: `target/debug/ros-telegram-bot`. Unit: `systemd/abc.service` → `/etc/s
 - `BOT_API_BASE_URL` (optional local Bot API, e.g. `http://127.0.0.1:8081`; built via
   `Bot::new_url("{base}/bot{token}")`. If host is localhost, startup calls `logOut` on official
   API first via `Bot::new(token)` then switches.)
+- `REDIS_URL` (default `redis://127.0.0.1:6379`; used by the cookie freshness worker. **Shared
+  between dev and prod** so cookies aren't refreshed redundantly.)
+- `ENV_LABEL` (cookie refresh-lock owner; falls back to `dev`/`prod` via `DEV_MODE`).
+- `COOKIE_REFRESH_ENABLED` (default true; `false` disables the cookie worker).
+- `COOKIE_FRESH_TTL_SECS` (default 36h), `COOKIE_WORKER_INTERVAL_SECS` (default 10 min),
+  `COOKIE_REFRESH_LOCK_TTL_SECS` (default 30 min) — see Cookie Pool / refresh.
 
 ## Commands
 
@@ -96,8 +102,10 @@ All UI emoji are premium custom emoji via `i18n.json`. IDs in `emoji.panel.icons
 in `src/i18n/emoji_map.rs` (variation-selector forms first). `send_text()` auto-converts known
 chars to `CustomEmoji` entities (`src/i18n/entities.rs`). Inline buttons: `btn_icon(text, cb, key)`
 in `src/emoji/panel/buttons.rs` (uses `icon_custom_emoji_id`). MarkdownV2 needs explicit
-`apply_premium_to_md()` (`src/i18n/premium_md.rs`) — does NOT get entities automatically.
-Add new: add ID to `emoji.panel.icons`, add `("🔥","key")` to `EMOJI_MAP`.
+`apply_premium_to_md()`; HTML (`ParseMode::Html`, e.g. `rank.guide`) needs explicit
+`apply_premium_to_html()` (wraps emojis in `<tg-emoji emoji-id=...>` tags, skips tag contents,
+randomizes 🔥 across `emoji.panel.icons.fire1..fire4`). Both in `src/i18n/premium_md.rs` — neither
+gets entities automatically. Add new: add ID to `emoji.panel.icons`, add `("🔥","key")` to `EMOJI_MAP`.
 
 ## Source Layout
 
@@ -106,8 +114,8 @@ src/main.rs                  — mod declarations + app::run()
 src/app/                     — mod (event loop), startup, dispatch (routing), state
 src/config.rs                — env reading
 src/bot.rs                   — send_text, send_text_md, send_start_button
-src/cookie_pool/             — CookiePool + format helpers
-src/modules/cookie_refresher.rs — Firefox profile refresh cycle
+src/cookie_pool/             — CookiePool + format helpers; fresh.rs (Redis freshness/lock store)
+src/modules/                 — mod (notify_admin), cookie_refresher (Firefox profile refresh cycle)
 src/i18n/                    — mod (t/tf), emoji_map, entities, premium_md
 src/youtube/                 — extract, fetch, format, handle, quality_keyboard, trace, types,
                                lang_names; selection/ (menu); download/ (runner, store, cancel,
@@ -145,16 +153,34 @@ Messages starting with `/` skip step 1, so commands always reach dispatch.
 - Output: `downloads/yt/{trace_id}/`, format `{format_id}+bestaudio/best` merged to mp4.
 
 ### Cookie Pool / refresh
-- Firefox profiles discovered from `/home/mahdi/.mozilla/firefox` (max 20), cached in
-  `cookie_profiles_cache/`. yt-dlp reads `cookies.sqlite` directly. Random selection excluding
-  last-used + cooldown.
-- Refresh every 6h, profiles 3-at-a-time parallel. Per profile: kill firefox → check login →
-  open firefox (`sudo -u mahdi firefox --profile ...` with `DISPLAY=:10`,
-  `XDG_RUNTIME_DIR=/run/user/1002`, X11) → open 3 random links from `files/youtube_links.txt` →
-  wait up to 1h → copy cookies to cache.
+- Firefox profiles discovered from `/home/mahdi/.mozilla/firefox` (**no cap** — all profiles
+  used), cached in `cookie_profiles_cache/`. yt-dlp reads `cookies.sqlite` directly. Random
+  selection excluding last-used + cooldown.
+- **Refresh model (Redis-coordinated, shared dev+prod):** `spawn_cookie_refresher`
+  (`src/app/startup.rs`) runs a worker every `COOKIE_WORKER_INTERVAL_SECS` (default 10 min).
+  Sequential (one profile at a time). Per profile:
+  1. `cookie:fresh:{profile}` key exists in Redis? → skip (still fresh).
+  2. else take lock `cookie:refreshing:{profile}` via `SET NX EX` (`COOKIE_REFRESH_LOCK_TTL_SECS`,
+     default 30 min). Lost lock (other env refreshing) → skip.
+  3. won lock → `cookie_refresher::run` (kill firefox → check login → open firefox
+     `sudo -u mahdi firefox --profile ...` `DISPLAY=:10` `XDG_RUNTIME_DIR=/run/user/1002` → 1 link
+     from `files/youtube_links.txt` → wait 10 min (`duration_secs=600`) → copy cookies to cache).
+  4. success → write `cookie:fresh:{profile}` TTL=`COOKIE_FRESH_TTL_SECS` (default 36h) + release
+     lock. Failure → leave lock to expire (back-off, no retry until lock TTL).
+- **Redis keys** (impl `src/cookie_pool/fresh.rs`, NOT namespaced — dev+prod share one Redis so a
+  profile refreshed by one env is skipped by the other): `cookie:fresh:{profile}` (String, TTL 36h),
+  `cookie:refreshing:{profile}` (String, NX lock).
+- **Redis down** → cycle skipped entirely (Mode A, never refresh blindly), admin notified once in
+  PV (`ADMIN_USER_ID`) until recovery. Config: `REDIS_URL` (default `redis://127.0.0.1:6379`),
+  `ENV_LABEL` (lock owner, falls back to dev/prod via `DEV_MODE`).
+- **Startup lock cleanup** (`fresh::clear_own_locks`): on worker start, all `cookie:refreshing:*`
+  locks owned by this `ENV_LABEL` are deleted (a fresh process can't be mid-refresh — they're
+  leaked from a prior run that died before unlocking). Other env's locks untouched. Without this,
+  a restart would leave profiles `skip_locked` for up to lock_ttl.
 - 429: `mark_last_rate_limited()` (4h cooldown safety net) → channel to event loop → 30-min task
-  → per-profile refresh → re-add to pool.
-- Logs: `journalctl -u abc -f | grep cookie_refresh`, format `[cookie_refresh profile=x event=y]`.
+  → per-profile refresh → re-add to pool. (cooldown list bound = number of available cookies.)
+- Logs: `journalctl -u abc -f | grep cookie_worker`, format `[cookie_worker profile=x event=y]`.
+  Per-profile Firefox logs still `[cookie_refresh profile=x event=y]`.
 - Add profile: create Firefox profile + Google login, ensure `cookies.sqlite`, restart abc.
 
 ### Image upscale (Real-ESRGAN)
@@ -212,8 +238,13 @@ Messages starting with `/` skip step 1, so commands always reach dispatch.
   `sched_setaffinity(pid, cores)` + background pinner thread (polls `/proc/self/task` every 200ms
   to re-pin lazily-spawned ONNX/OMP threads) + `OMP_NUM_THREADS`/`OPENBLAS_NUM_THREADS`. Release
   in `finally`; pinner stopped + affinity restored to all cores after job.
-- Redis keys: `cpu:reserved` (Hash), `cpu:queue` (Sorted Set, VIP priority), `cpu:notify`
-  (pub/sub), `cpu:overloaded` (String, TTL=300s — set when 3-min avg >50% AND 1-min avg >80%).
+- Redis keys: `cpu:reserved` (Hash, RESERVE_TTL=15min/core), `cpu:queue` (Sorted Set, VIP
+  priority), `cpu:notify` (pub/sub), `cpu:overloaded` (String, TTL=300s — set when 3-min avg
+  >50% AND 1-min avg >80%).
+- **Self-healing sweeper** (`_purge_stale` + 60s `_sweeper`, also run once at `start_broker`):
+  purges expired reservations (past RESERVE_TTL) and orphaned queue tickets (past TICKET_TTL=40min,
+  >Rust 35-min hard timeout). Ticket pruning is **age-only** (cross-process safe: separation/asr
+  each have a private `_waiters`, so "no local waiter" ≠ dead). Cleans leaked state after a crash.
 - Core allocation by current CPU usage%: `<50%→4`, `<75%→2`, `<94%→1`, `>=94%→0 (queue)`.
   If `cpu:overloaded` key exists → always 0 (queue).
 - Rust queue UX (`handle.rs`): calls `GET /cpu/status` first; if server free → shows
@@ -264,8 +295,8 @@ Messages starting with `/` skip step 1, so commands always reach dispatch.
 - **حذف واترمارک Gemini:** سریع و سبک — محدودیت توجیه نداره.
 
 ### rank methodهای تعریف‌شده ولی هنوز wire نشده (فیچرش وجود نداره)
-`can_subtitle_hardcode` (در حال ساخت)، `ai_chat_monthly_toomar`، `yt_search_per_12h`،
-`gemini_pro_access`، `playlist_limit`. منسوخ: `stt_per_week` (با fast/accurate جایگزین شد).
+`can_subtitle_hardcode` (در حال ساخت)، `ai_chat_monthly_toomar`، `playlist_limit`.
+(حذف‌شده: `yt_search_per_12h`، `gemini_pro_access`، و `stt_per_week` منسوخ.)
 
 ### سقف‌های حذف نویز
 | مقام | روزانه | هفتگی |
@@ -316,8 +347,22 @@ Messages starting with `/` skip step 1, so commands always reach dispatch.
 | دلاور | ۵ گیگ | ۱۵ گیگ |
 | سپهبد | ۵ گیگ | ۶۰ گیگ |
 | اسفندیار | ۴۰ گیگ | ۴۰۰ گیگ |
-| سهراب | ۵ گیگ | ۱۵ گیگ |
+| سهراب | ۵ گیگ (ارث از دلاور) | ۱۵ گیگ (ارث از دلاور) |
 | رستم | ۴۰ گیگ | ۴۰۰ گیگ |
+
+**نکته:** سهراب برای ترافیک از دلاور ارث‌بری می‌کنه (`Self::Dalavar.{daily,monthly}_traffic_bytes()`).
+
+### سقف کیفیت YouTube (`max_yt_quality`)
+| مقام | سقف کیفیت |
+|---|---|
+| دلاور | ۵۰۰p |
+| سپهبد | ۱۱۵۰p |
+| اسفندیار | بدون محدودیت |
+| سهراب | ۵۰۰p (ارث از دلاور) |
+| رستم | بدون محدودیت |
+
+`min_for_quality` هماهنگ: ≤۵۰۰→دلاور، ≤۱۱۵۰→سپهبد، بالاتر→اسفندیار. سهراب برای یوتیوب از دلاور
+ارث‌بری می‌کنه (`Self::Dalavar.max_yt_quality()`).
 
 ### سقف‌های رونویسی صدا به متن (STT)
 | مقام | سریع — روزانه | سریع — هفتگی | دقیق — روزانه | دقیق — هفتگی |

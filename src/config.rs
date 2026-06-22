@@ -36,6 +36,42 @@ pub fn cookie_refresh_enabled() -> bool {
         .unwrap_or(true)
 }
 
+/// Redis connection URL (shared between dev and production so cookie freshness
+/// keys are not duplicated). Defaults to local Redis.
+pub fn redis_url() -> String {
+    config_value("REDIS_URL").unwrap_or_else(|| "redis://127.0.0.1:6379".to_string())
+}
+
+/// How long a freshly-refreshed cookie is considered fresh (Redis TTL). Default 36h.
+pub fn cookie_fresh_ttl_secs() -> u64 {
+    config_value("COOKIE_FRESH_TTL_SECS")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(36 * 3600)
+}
+
+/// How often the cookie worker wakes up to look for stale profiles. Default 10 min.
+pub fn cookie_worker_interval_secs() -> u64 {
+    config_value("COOKIE_WORKER_INTERVAL_SECS")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10 * 60)
+}
+
+/// Refresh lock TTL — held while a profile is being refreshed so dev and prod
+/// never open the same Firefox profile at once. Also acts as the back-off window
+/// after a failed refresh (lock is left to expire instead of being released).
+/// Default 30 min (> the ~10 min Firefox warm-up).
+pub fn cookie_refresh_lock_ttl_secs() -> u64 {
+    config_value("COOKIE_REFRESH_LOCK_TTL_SECS")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30 * 60)
+}
+
+/// Short label identifying this deployment (used as the Redis refresh-lock owner
+/// for diagnostics). Falls back to dev/prod based on DEV_MODE.
+pub fn env_label() -> String {
+    config_value("ENV_LABEL").unwrap_or_else(|| if dev_mode() { "dev".into() } else { "prod".into() })
+}
+
 pub fn config_value(key: &str) -> Option<String> {
     value_from_env_file(".env", key)
         .or_else(|| value_from_env_file("/etc/default/abc", key))

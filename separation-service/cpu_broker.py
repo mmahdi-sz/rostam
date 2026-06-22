@@ -9,6 +9,11 @@ Redis keys used:
   cpu:notify            Pub/Sub channel — broker publishes "release" on each release
   cpu:overloaded        String  exists → server overloaded, TTL=300s
 
+Self-healing: a background sweeper (started by start_broker) periodically purges
+expired reservations from cpu:reserved and stale tickets from cpu:queue, so leaked
+state from a crashed broker process is cleaned up even when no acquire() runs.
+Reservations expire after RESERVE_TTL; tickets after TICKET_TTL.
+
 Ticket JSON: {"ticket_id": str, "user_id": int, "is_vip": bool, "ts": float}
 
 acquire(user_id, is_vip) → List[int] of core indices
@@ -31,6 +36,11 @@ from cpu_monitor import available_cores, pick_cores, set_overload_callback
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379")
 RESERVE_TTL = 900               # 15 min: max reservation lifetime (seconds)
 OVERLOAD_TTL = 300              # 5 min: how long overloaded flag persists
+TICKET_TTL = 2400              # 40 min: queued ticket lifetime — longer than the
+                               # Rust-side 35-min hard timeout, so a ticket past
+                               # this age is certainly orphaned (client gave up
+                               # or its broker process died).
+SWEEP_INTERVAL = 60            # how often the background sweeper purges stale state
 NOTIFY_CHANNEL = "cpu:notify"
 RESERVED_KEY = "cpu:reserved"
 QUEUE_KEY = "cpu:queue"
@@ -51,13 +61,77 @@ async def get_redis() -> aioredis.Redis:
 # In-process waiters: ticket_id → asyncio.Event
 _waiters: dict[str, asyncio.Event] = {}
 _listener_task: Optional[asyncio.Task] = None
+_sweeper_task: Optional[asyncio.Task] = None
 
 
 async def start_broker():
     """Start the Redis pub/sub listener and wire the overload callback. Call once at startup."""
-    global _listener_task
+    global _listener_task, _sweeper_task
     _listener_task = asyncio.create_task(_listen_releases())
+    _sweeper_task = asyncio.create_task(_sweeper())
     set_overload_callback(_on_overload_detected)
+    # Clean up anything a previous (crashed) run left behind before serving traffic.
+    try:
+        purged = await _purge_stale(time.time())
+        if purged:
+            log.info(f"[cpu_broker event=startup_purge] removed={purged}")
+    except Exception as e:
+        log.warning(f"[cpu_broker event=startup_purge_failed] err={e}")
+
+
+async def _purge_stale(now_ts: float) -> int:
+    """Remove expired reservations and stale tickets. Returns count removed.
+
+    Reservations whose embedded expire_ts has passed are dropped. Tickets older
+    than TICKET_TTL are dropped — their owning waiter is gone (process crashed or
+    client gave up long ago), so they would otherwise wedge the queue forever.
+    """
+    r = await get_redis()
+    removed = 0
+
+    # Expired reservations.
+    all_reserved = await r.hgetall(RESERVED_KEY)
+    for core_str, val in all_reserved.items():
+        try:
+            _, expire_str = val.split(":", 1)
+            if float(expire_str) < now_ts:
+                await r.hdel(RESERVED_KEY, core_str)
+                removed += 1
+        except (ValueError, AttributeError):
+            # Malformed value — drop it rather than let it linger forever.
+            await r.hdel(RESERVED_KEY, core_str)
+            removed += 1
+
+    # Stale / orphaned tickets.
+    for m in await r.zrange(QUEUE_KEY, 0, -1):
+        try:
+            data = json.loads(m)
+            ts = float(data.get("ts", 0))
+        except Exception:
+            await r.zrem(QUEUE_KEY, m)
+            removed += 1
+            continue
+        # Age is the only cross-process-safe signal: separation and asr each run
+        # their own broker with a private _waiters dict, so "no local waiter" does
+        # NOT mean the ticket is dead — it may belong to the other process. Prune
+        # strictly by age, which both processes agree on.
+        if now_ts - ts > TICKET_TTL:
+            await r.zrem(QUEUE_KEY, m)
+            removed += 1
+
+    return removed
+
+
+async def _sweeper():
+    """Periodically purge stale reservations and tickets (self-healing)."""
+    while True:
+        await asyncio.sleep(SWEEP_INTERVAL)
+        try:
+            removed = await _purge_stale(time.time())
+            if removed:
+                log.info(f"[cpu_broker event=sweep] removed={removed}")
+        except Exception as e:
+            log.warning(f"[cpu_broker event=sweep_failed] err={e}")
 
 
 async def _on_overload_detected():
@@ -94,13 +168,9 @@ async def _try_acquire_now(user_id: int) -> Optional[List[int]]:
     if await is_overloaded():
         return None
 
-    # Purge stale reservations.
+    # Purge stale reservations + tickets before computing free cores.
     now_ts = time.time()
-    all_reserved = await r.hgetall(RESERVED_KEY)
-    for core_str, val in all_reserved.items():
-        _, expire_str = val.split(":", 1)
-        if float(expire_str) < now_ts:
-            await r.hdel(RESERVED_KEY, core_str)
+    await _purge_stale(now_ts)
 
     count = await available_cores()
     if count == 0:

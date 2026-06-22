@@ -105,6 +105,18 @@ pub async fn init_emoji_cache(database_url: &str) {
     });
 }
 
+/// Cookie refresh worker (Redis-coordinated, shared dev+prod).
+///
+/// Every `COOKIE_WORKER_INTERVAL_SECS` (default 10 min) it scans all profiles
+/// sequentially: a profile with a live `cookie:fresh:{profile}` key in Redis is
+/// skipped; otherwise the worker takes the `cookie:refreshing:{profile}` lock
+/// (NX EX) and — only if it wins the lock — opens Firefox to refresh it. On a
+/// successful refresh it writes a fresh key with TTL=`COOKIE_FRESH_TTL_SECS`
+/// (default 36h) and releases the lock. On failure the lock is left to expire,
+/// acting as a back-off so a broken profile is not retried every cycle.
+///
+/// If Redis is unreachable the cycle is skipped entirely (Mode A — never refresh
+/// blindly) and the admin is notified once until Redis recovers.
 pub fn spawn_cookie_refresher(api: &Bot, cookie_pool: &mut CookiePool) {
     let profiles: Vec<(String, String, String)> = cookie_pool
         .snapshot()
@@ -118,62 +130,124 @@ pub fn spawn_cookie_refresher(api: &Bot, cookie_pool: &mut CookiePool) {
         .collect();
 
     if profiles.is_empty() {
-        println!("[cookie_refresher] no profiles found, skipping.");
+        println!("[cookie_worker] no profiles found, skipping.");
         return;
     }
 
     if !config::cookie_refresh_enabled() {
-        println!("[cookie_refresher] disabled via COOKIE_REFRESH_ENABLED=false, skipping.");
+        println!("[cookie_worker] disabled via COOKIE_REFRESH_ENABLED=false, skipping.");
         return;
     }
 
     let admin_chat_id = config::admin_user_id().unwrap_or(0);
-    let refresh_interval_secs: u64 = config::config_value("COOKIE_REFRESH_INTERVAL_SECS")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(6 * 3600);
-    let refresh_api = api.clone();
+    let interval = config::cookie_worker_interval_secs();
+    let fresh_ttl = config::cookie_fresh_ttl_secs();
+    let lock_ttl = config::cookie_refresh_lock_ttl_secs();
+    let redis_url = config::redis_url();
+    let owner = config::env_label();
+    let api = api.clone();
 
     println!(
-        "[cookie_refresher] background task starting: {} profile(s), interval={}s",
-        profiles.len(), refresh_interval_secs
+        "[cookie_worker] starting: {} profile(s) interval={}s fresh_ttl={}s lock_ttl={}s owner={} redis={}",
+        profiles.len(), interval, fresh_ttl, lock_ttl, owner, redis_url
     );
 
     tokio::spawn(async move {
-        loop {
-            for chunk in profiles.chunks(3) {
-                println!(
-                    "[cookie_refresher] starting chunk of {} profile(s): {}",
-                    chunk.len(),
-                    chunk.iter().map(|(n, _, _)| n.as_str()).collect::<Vec<_>>().join(", ")
-                );
-                let futs: Vec<_> = chunk.iter().map(|(profile_name, profile_path, cache_dir)| {
-                    let cfg = modules::cookie_refresher::CookieRefresherConfig {
-                        profile_path: profile_path.clone(),
-                        profile_name: profile_name.clone(),
-                        cache_dir: cache_dir.clone(),
-                        links_file: "files/youtube_links.txt".to_string(),
-                        duration_secs: 600,
-                        link_count: 1,
-                        admin_chat_id,
-                    };
-                    let api = refresh_api.clone();
-                    let pname = profile_name.clone();
-                    async move {
-                        println!("[cookie_refresher] running for profile={pname}");
-                        if let Err(e) = modules::cookie_refresher::run(&api, cfg).await {
-                            eprintln!("[cookie_refresher] profile={pname} error: {e}");
-                        } else {
-                            println!("[cookie_refresher] profile={pname} cookies updated on disk");
-                        }
-                    }
-                }).collect();
-                futures::future::join_all(futs).await;
-                println!("[cookie_refresher] chunk done");
+        let store = match crate::cookie_pool::fresh::FreshStore::new(&redis_url) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[cookie_worker event=redis_client_init_failed] err={e}");
+                modules::notify_admin(&api, admin_chat_id, "⚠️ ساخت کلاینت Redis برای رفرش کوکی شکست خورد — رفرش کوکی‌ها غیرفعال شد. REDIS_URL رو چک کن.").await;
+                return;
             }
-            println!("[cookie_refresher] all profiles done, sleeping {refresh_interval_secs}s");
-            tokio::time::sleep(Duration::from_secs(refresh_interval_secs)).await;
+        };
+
+        // A freshly-started process can't be mid-refresh, so clear any refresh
+        // locks left by a previous run of THIS env that died before unlocking
+        // (prevents profiles being skip_locked for up to lock_ttl after a restart).
+        match store.conn().await {
+            Ok(mut conn) => match crate::cookie_pool::fresh::clear_own_locks(&mut conn, &owner).await {
+                Ok(n) if n > 0 => println!("[cookie_worker event=startup_lock_cleanup] owner={owner} removed={n}"),
+                Ok(_) => {}
+                Err(e) => eprintln!("[cookie_worker event=startup_lock_cleanup_failed] err={e}"),
+            },
+            Err(e) => eprintln!("[cookie_worker event=startup_lock_cleanup_failed] err={e}"),
+        }
+
+        let mut redis_down = false;
+        loop {
+            match cookie_worker_cycle(&api, &store, &profiles, &owner, fresh_ttl, lock_ttl, admin_chat_id).await {
+                Ok(()) => {
+                    if redis_down {
+                        redis_down = false;
+                        println!("[cookie_worker event=redis_recovered]");
+                        modules::notify_admin(&api, admin_chat_id, "✅ ارتباط با Redis دوباره برقرار شد — رفرش کوکی‌ها از سر گرفته شد.").await;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[cookie_worker event=redis_error] err={e}");
+                    if !redis_down {
+                        redis_down = true;
+                        modules::notify_admin(&api, admin_chat_id, "⚠️ ارتباط با Redis قطع شده! رفرش کوکی‌ها متوقف شد. لطفاً Redis رو چک کن.").await;
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(interval)).await;
         }
     });
+}
+
+/// One worker pass over all profiles. Returns Err only on a Redis failure, which
+/// aborts the cycle (Mode A) so nothing is refreshed blindly.
+async fn cookie_worker_cycle(
+    api: &Bot,
+    store: &crate::cookie_pool::fresh::FreshStore,
+    profiles: &[(String, String, String)],
+    owner: &str,
+    fresh_ttl: u64,
+    lock_ttl: u64,
+    admin_chat_id: i64,
+) -> redis::RedisResult<()> {
+    use crate::cookie_pool::fresh;
+    let mut conn = store.conn().await?; // Redis unreachable ⇒ Err ⇒ cycle aborts
+
+    for (profile_name, profile_path, cache_dir) in profiles {
+        if fresh::is_fresh(&mut conn, profile_name).await? {
+            continue;
+        }
+        if !fresh::try_lock(&mut conn, profile_name, owner, lock_ttl).await? {
+            println!("[cookie_worker profile={profile_name} event=skip_locked] (another env refreshing)");
+            continue;
+        }
+
+        println!("[cookie_worker profile={profile_name} event=refresh_start] owner={owner}");
+        let cfg = modules::cookie_refresher::CookieRefresherConfig {
+            profile_path: profile_path.clone(),
+            profile_name: profile_name.clone(),
+            cache_dir: cache_dir.clone(),
+            links_file: "files/youtube_links.txt".to_string(),
+            duration_secs: 600,
+            link_count: 1,
+            admin_chat_id,
+        };
+
+        match modules::cookie_refresher::run(api, cfg).await {
+            Ok(()) => {
+                let ts = chrono::Utc::now().timestamp();
+                if let Err(e) = fresh::mark_fresh(&mut conn, profile_name, fresh_ttl, ts).await {
+                    eprintln!("[cookie_worker profile={profile_name} event=mark_fresh_failed] err={e}");
+                }
+                let _ = fresh::unlock(&mut conn, profile_name).await;
+                println!("[cookie_worker profile={profile_name} event=refresh_done] fresh_ttl={fresh_ttl}s");
+            }
+            Err(e) => {
+                // Leave the lock to expire (back-off) instead of unlocking, so a
+                // broken profile is not hammered every cycle.
+                eprintln!("[cookie_worker profile={profile_name} event=refresh_failed] err={e} backoff={lock_ttl}s");
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn spawn_cooldown_refresh(

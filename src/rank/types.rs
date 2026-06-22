@@ -32,9 +32,9 @@ impl Rank {
 
     /// حداقل رتبه لازم برای دانلود یه کیفیت خاص
     pub fn min_for_quality(height: u32) -> Self {
-        if height <= 360 {
+        if height <= 500 {
             Self::Dalavar
-        } else if height <= 720 {
+        } else if height <= 1150 {
             Self::Sepahbod
         } else {
             Self::Esfandyar
@@ -81,10 +81,11 @@ impl Rank {
     /// محدودیت کیفیت YouTube (None = بدون محدودیت)
     pub fn max_yt_quality(&self) -> Option<u32> {
         match self {
-            Self::Dalavar => Some(360),
-            Self::Sepahbod => Some(720),
+            Self::Dalavar => Some(500),
+            Self::Sepahbod => Some(1150),
             Self::Esfandyar | Self::Rostam => None,
-            Self::Sohrab => Some(360), // AI-only plan, same as free for YT
+            // AI-only plan — برای یوتیوب از دلاور ارث‌بری می‌کنه
+            Self::Sohrab => Self::Dalavar.max_yt_quality(),
         }
     }
 
@@ -93,7 +94,8 @@ impl Rank {
         match self {
             Self::Dalavar | Self::Sepahbod => 5 * 1024 * 1024 * 1024,
             Self::Esfandyar | Self::Rostam => 40 * 1024 * 1024 * 1024,
-            Self::Sohrab => 5 * 1024 * 1024 * 1024,
+            // AI-only plan — برای ترافیک از دلاور ارث‌بری می‌کنه
+            Self::Sohrab => Self::Dalavar.daily_traffic_bytes(),
         }
     }
 
@@ -103,7 +105,8 @@ impl Rank {
             Self::Dalavar => 15 * 1024 * 1024 * 1024,
             Self::Sepahbod => 60 * 1024 * 1024 * 1024,
             Self::Esfandyar | Self::Rostam => 400 * 1024 * 1024 * 1024,
-            Self::Sohrab => 15 * 1024 * 1024 * 1024,
+            // AI-only plan — برای ترافیک از دلاور ارث‌بری می‌کنه
+            Self::Sohrab => Self::Dalavar.monthly_traffic_bytes(),
         }
     }
 
@@ -148,23 +151,6 @@ impl Rank {
         matches!(self, Self::Esfandyar | Self::Rostam)
     }
 
-    /// جستجوی YouTube (None = ممنوع)
-    pub fn yt_search_per_12h(&self) -> Option<u32> {
-        match self {
-            Self::Esfandyar | Self::Rostam => Some(50),
-            _ => None,
-        }
-    }
-
-    /// تبدیل صدا به متن در هفته (None = ممنوع)
-    pub fn stt_per_week(&self) -> Option<u32> {
-        match self {
-            Self::Sohrab => Some(30),
-            Self::Rostam => Some(200),
-            _ => None,
-        }
-    }
-
     /// سقف افزایش کیفیت تصویر در هفته (تعداد عکس) بر اساس scale factor.
     /// رستم = ۱۰ برابر سهراب. هرچی scale بزرگ‌تر، سقف کمتر (پردازش سنگین‌تر).
     pub fn upscale_weekly_quota(&self, scale: u32) -> u32 {
@@ -205,11 +191,6 @@ impl Rank {
             Self::Rostam => Some(1000),
             _ => None,
         }
-    }
-
-    /// دسترسی به مدل‌های جدید Gemini
-    pub fn gemini_pro_access(&self) -> bool {
-        matches!(self, Self::Rostam)
     }
 
     /// denoise قبل از رونویسی — سهراب و رستم دیفالت فعال
