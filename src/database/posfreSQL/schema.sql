@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS stats_users (
 );
 
 ALTER TABLE stats_users ADD COLUMN IF NOT EXISTS first_upload_at BIGINT;
+ALTER TABLE stats_users ADD COLUMN IF NOT EXISTS language TEXT;
 
 CREATE TABLE IF NOT EXISTS stats_downloads (
     id              BIGSERIAL   PRIMARY KEY,

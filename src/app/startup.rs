@@ -13,7 +13,7 @@ use crate::config;
 use crate::cookie_pool::{CookiePool, CookieSource};
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji;
-use crate::i18n::reload_i18n;
+use crate::i18n::{reload_i18n, t, LANG};
 use crate::modules;
 use crate::stats;
 
@@ -341,13 +341,26 @@ pub async fn set_bot_commands(api: &Bot) {
         Err(e) => eprintln!("Failed to set chat menu button: {e}"),
     }
 
-    let commands = vec![
-        BotCommand { command: "start".to_string(), description: "منوی اصلی".to_string() },
-        BotCommand { command: "emoji".to_string(), description: "پنل مدیریت ایموجی".to_string() },
-        BotCommand { command: "se".to_string(), description: "تنظیم لقب ایموجی".to_string() },
-    ];
-    match api.set_my_commands(&SetMyCommandsParams::builder().commands(commands).build()).await {
-        Ok(_) => println!("Bot commands set successfully."),
-        Err(e) => eprintln!("Failed to set bot commands: {e}"),
+    // ponytail: یه بار برای هر زبان صدا می‌زنیم؛ تلگرام خودش بر اساس زبان اپ کاربر match می‌کنه
+    for lang in ["fa", "en", "it"] {
+        let commands = LANG.scope(lang.to_owned(), async {
+            vec![
+                BotCommand { command: "start".to_string(),    description: t("commands.start") },
+                BotCommand { command: "language".to_string(), description: t("commands.language") },
+                BotCommand { command: "rank".to_string(),     description: t("commands.rank") },
+                BotCommand { command: "emoji".to_string(),    description: t("commands.emoji") },
+                BotCommand { command: "se".to_string(),       description: t("commands.se") },
+            ]
+        }).await;
+
+        match api.set_my_commands(
+            &SetMyCommandsParams::builder()
+                .commands(commands)
+                .language_code(lang.to_owned())
+                .build(),
+        ).await {
+            Ok(_) => println!("Bot commands set for lang={lang}."),
+            Err(e) => eprintln!("Failed to set bot commands for lang={lang}: {e}"),
+        }
     }
 }

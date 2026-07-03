@@ -28,6 +28,7 @@ pub const CB_ADMIN_STATS: &str = "admin:stats";
 pub const CB_ADMIN_STATS_MORE: &str = "admin:stats_more";
 pub const CB_ADMIN_ERRORS: &str = "admin:errors_1d";
 pub const CB_ADMIN_GEN_CODE: &str = "admin:gencode";
+pub const CB_LANG_SET: &str = "lang:set:";
 
 pub async fn send_text(
     api: &Bot,
@@ -220,12 +221,41 @@ pub async fn send_text_md(
     Ok(())
 }
 
+pub async fn send_lang_picker(api: &Bot, chat_id: i64) -> Result<(), Box<dyn std::error::Error>> {
+    use frankenstein::types::InlineKeyboardButton;
+    let mk_btn = |text: &str, cb: &str| InlineKeyboardButton {
+        text: text.to_string(),
+        callback_data: Some(cb.to_string()),
+        icon_custom_emoji_id: None,
+        style: None,
+        url: None, login_url: None, web_app: None,
+        switch_inline_query: None, switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None, copy_text: None,
+        callback_game: None, pay: None,
+    };
+    let keyboard = InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![
+            vec![mk_btn("🇮🇷 پارسی | Parsi", "lang:set:fa")],
+            vec![mk_btn("🇬🇧 English", "lang:set:en")],
+            vec![mk_btn("🇮🇹 Italiano | Italian", "lang:set:it")],
+        ])
+        .build();
+    api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text("زبان خود را انتخاب کنید\nChoose your language\nScegli la tua lingua")
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard))
+            .build(),
+    ).await?;
+    Ok(())
+}
+
+
 pub async fn send_start_menu(
     api: &Bot,
     chat_id: i64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let is_admin = crate::config::admin_user_id().map(|id| id == chat_id).unwrap_or(false);
-    // پاک کردن هر reply keyboard باقی‌مانده — یه پیام موقت می‌فرستیم و فوری حذف می‌کنیم
     let remove_params = SendMessageParams::builder()
         .chat_id(chat_id)
         .text("\u{200B}")
@@ -241,7 +271,6 @@ pub async fn send_start_menu(
                 .build(),
         ).await;
     }
-
     let text = apply_premium_to_md(&t("start.welcome"));
     api.send_message(
         &SendMessageParams::builder()

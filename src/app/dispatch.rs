@@ -5,8 +5,9 @@ use frankenstein::{
     updates::UpdateContent,
 };
 
-use crate::bot::{send_start_menu, edit_to_start_menu, edit_to_ai_lab};
+use crate::bot::{send_start_menu, edit_to_start_menu, edit_to_ai_lab, send_lang_picker};
 use crate::bot::{
+    CB_LANG_SET,
     CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB,
     CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_AI_SEP, CB_AI_GWM, CB_AI_ASR, CB_DENOISE_CANCEL,
     CB_ADMIN_PANEL, CB_ADMIN_STATS, CB_ADMIN_STATS_MORE, CB_ADMIN_ERRORS, CB_ADMIN_GEN_CODE,
@@ -16,7 +17,7 @@ use crate::config;
 use crate::denoise;
 use crate::emoji::{FlowState, handler as emoji_handler, panel::CB_START_PANEL};
 use crate::gemini_watermark::{enter_gwm, handle_gwm_cancel, handle_gwm_image, CB_GWM_CANCEL};
-use crate::i18n::{t, reload_i18n};
+use crate::i18n::{t, reload_i18n, LANG};
 use crate::separation::{enter_separation, handle_separation_audio, handle_separation_callback, CB_SEP_PREFIX};
 use crate::stt::{config::CB_STT_CANCEL, handle::{enter_stt_config, handle_stt_audio, handle_stt_callback}};
 use crate::upscale::{
@@ -51,6 +52,76 @@ pub async fn handle_update(
         }
     }
 
+    let sender = match &content {
+        UpdateContent::Message(m) => m.from.as_ref().map(|u| u.id as i64),
+        UpdateContent::CallbackQuery(c) => Some(c.from.id as i64),
+        _ => None,
+    };
+
+    // ── language gate ────────────────────────────────────────────────────────
+    // callback "lang:set:xx" → ذخیره زبان، ack، ادامه عادی
+    // بقیه بدون زبان → منوی انتخاب زبان بفرست و برگرد
+    if let Some(uid) = sender {
+        let cb_data = if let UpdateContent::CallbackQuery(cq) = &content {
+            cq.data.as_deref()
+        } else {
+            None
+        };
+
+        if let Some(lang) = cb_data.and_then(|d| d.strip_prefix(CB_LANG_SET)) {
+            // ack callback
+            if let UpdateContent::CallbackQuery(cq) = &content {
+                let _ = state.api.answer_callback_query(
+                    &AnswerCallbackQueryParams::builder()
+                        .callback_query_id(cq.id.clone())
+                        .build(),
+                ).await;
+            }
+            stats::set_user_language(uid, lang).await;
+            eprintln!("[dispatch event=lang_set] user_id={uid} lang={lang}");
+            // بعد از ذخیره زبان، منوی شروع رو نشون بده
+            let chat_id = match &content {
+                UpdateContent::CallbackQuery(cq) => cq.message.as_ref().and_then(|m| match m {
+                    MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
+                    _ => None,
+                }).unwrap_or(uid),
+                _ => uid,
+            };
+            let lang_owned = lang.to_owned();
+            LANG.scope(lang_owned, async {
+                send_start_menu(&state.api, chat_id).await
+            }).await?;
+            return Ok(());
+        }
+
+        // چک زبان فقط اگه DB وجود داشته باشه
+        if state.database.is_some() {
+            let lang_opt = stats::get_user_language(uid).await;
+            if lang_opt.is_none() {
+                let chat_id = match &content {
+                    UpdateContent::Message(m) => m.chat.id,
+                    UpdateContent::CallbackQuery(cq) => cq.message.as_ref().and_then(|m| match m {
+                        MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
+                        _ => None,
+                    }).unwrap_or(uid),
+                    _ => uid,
+                };
+                send_lang_picker(&state.api, chat_id).await?;
+                return Ok(());
+            }
+            let lang = lang_opt.unwrap();
+            return LANG.scope(lang, async {
+                match content {
+                    UpdateContent::Message(message) => handle_message(state, *message).await?,
+                    UpdateContent::CallbackQuery(callback_query) => handle_callback(state, *callback_query).await?,
+                    _ => {}
+                }
+                Ok(())
+            }).await;
+        }
+    }
+
+    // بدون DB (یا update بدون sender): مستقیم dispatch با fa
     match content {
         UpdateContent::Message(message) => handle_message(state, *message).await?,
         UpdateContent::CallbackQuery(callback_query) => handle_callback(state, *callback_query).await?,
@@ -215,6 +286,10 @@ async fn handle_message(
         if cmd == "/rank" {
             eprintln!("[dispatch event=rank_menu] user_id={user_id:?} chat_id={}", message.chat.id);
             crate::rank::menu::send_rank_menu(api, message.chat.id).await;
+            return Ok(());
+        }
+        if cmd == "/language" {
+            send_lang_picker(api, message.chat.id).await?;
             return Ok(());
         }
         // ساخت کد هدیه (فقط ادمین): /re 30d es 1u

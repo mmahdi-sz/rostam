@@ -31,16 +31,34 @@ pub fn reload() {
     }
 }
 
-pub fn t(key: &str) -> String {
+fn lookup(lang: &str, key: &str) -> String {
     let guard = cache().read().unwrap();
     let mut node = &*guard;
-    for segment in key.split('.') {
+    let mut ok = true;
+    for segment in std::iter::once(lang).chain(key.split('.')) {
         match node.get(segment) {
             Some(next) => node = next,
-            None => return format!("!{key}!"),
+            None => { ok = false; break; }
         }
     }
-    node.as_str().map(|s| s.to_owned()).unwrap_or_else(|| format!("!{key}!"))
+    if ok {
+        if let Some(s) = node.as_str() { return s.to_owned(); }
+    }
+    // fallback به fa اگه زبان دیگه‌ای key رو نداشت
+    if lang != "fa" {
+        drop(guard);
+        return lookup("fa", key);
+    }
+    format!("!{key}!")
+}
+
+tokio::task_local! {
+    pub static LANG: String;
+}
+
+pub fn t(key: &str) -> String {
+    let lang = LANG.try_with(|l| l.clone()).unwrap_or_else(|_| "fa".to_owned());
+    lookup(&lang, key)
 }
 
 pub fn tf(key: &str, vars: &[(&str, &str)]) -> String {

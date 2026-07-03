@@ -164,6 +164,24 @@ impl PostgresDatabase {
         Ok(())
     }
 
+    pub async fn get_user_lang(&self, user_id: i64) -> Option<String> {
+        self.client
+            .query_opt("SELECT language FROM stats_users WHERE user_id = $1", &[&user_id])
+            .await
+            .ok()
+            .flatten()
+            .and_then(|row| row.get::<_, Option<String>>(0))
+    }
+
+    pub async fn set_user_lang(&self, user_id: i64, lang: &str) {
+        let _ = self.client.execute(
+            "INSERT INTO stats_users (user_id, first_seen, last_seen, language)
+             VALUES ($1, NOW(), NOW(), $2)
+             ON CONFLICT (user_id) DO UPDATE SET language = $2",
+            &[&user_id, &lang],
+        ).await;
+    }
+
     async fn cleanup_expired_cooldowns(&self) -> Result<(), tokio_postgres::Error> {
         self.client
             .execute(
