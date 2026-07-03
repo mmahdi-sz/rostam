@@ -303,6 +303,7 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<
             subtitle_langs: Vec::new(),
             subtitle_mode: SubtitleMode::Embedded,
             view: SelectionView::Main,
+            audio_only: None,
         }
     });
     log_trace(trace_id, "selection_confirm", &format!(

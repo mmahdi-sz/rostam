@@ -45,6 +45,7 @@ pub fn init_selection(req: &YoutubeRequest, height: u32) -> Selection {
         subtitle_langs: Vec::new(),
         subtitle_mode: SubtitleMode::Embedded,
         view: SelectionView::Main,
+        audio_only: None,
     }
 }
 

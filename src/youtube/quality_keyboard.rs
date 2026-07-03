@@ -18,11 +18,13 @@ use super::download::{YoutubeRequest, cancel_download, get_request, store_reques
 use super::selection::{enter_selection_menu, handle_selection_callback, CB_BACK_TO_QUALITY_PREFIX, CB_SELECTION_PREFIX};
 use super::trace::log_trace;
 use super::types::{VideoCodec, VideoFormatOption, VideoInfo};
+use super::download::types::AudioQuality;
 use crate::bot::CB_START_PANEL;
 
 const CB_QUALITY_PREFIX: &str = "yt:q:";
 const CB_CODEC_PREFIX: &str = "yt:c:";
 const CB_CANCEL_PREFIX: &str = "yt:cancel:";
+const CB_AUDIO_PREFIX: &str = "yt:audio:";
 
 const QUALITY_OPTIONS: &[(u32, &str, &str)] = &[
     (4320, "youtube.quality.buttons.4320", "diamond"),
@@ -72,6 +74,7 @@ pub async fn send_quality_prompt(
         webpage_url: info.webpage_url.clone(),
         cookie_spec: cookie_spec.to_string(),
         title: info.title.clone(),
+        channel: info.channel.clone(),
         duration: info.duration,
         thumbnail_url: info.thumbnail.clone(),
         formats: info.video_formats.clone(),
@@ -135,6 +138,9 @@ pub async fn handle_quality_callback(api: &Bot, callback_query: &CallbackQuery, 
     }
     if data.starts_with(CB_BACK_TO_QUALITY_PREFIX) {
         return handle_back_to_quality_callback(api, callback_query, data).await;
+    }
+    if data.starts_with(CB_AUDIO_PREFIX) {
+        return handle_audio_quality_callback(api, callback_query, data).await;
     }
     false
 }
@@ -221,6 +227,9 @@ fn quality_keyboard(request_id: u64, options: &[QualityOption]) -> InlineKeyboar
         })
         .collect();
 
+    rows.push(vec![quality_button(&t("youtube.audio.quality.best"),   &format!("{CB_AUDIO_PREFIX}{request_id}:best"), ButtonStyle::Success, "music_note")]);
+    rows.push(vec![quality_button(&t("youtube.audio.quality.medium"), &format!("{CB_AUDIO_PREFIX}{request_id}:mid"),  ButtonStyle::Primary, "music_note")]);
+    rows.push(vec![quality_button(&t("youtube.audio.quality.low"),    &format!("{CB_AUDIO_PREFIX}{request_id}:low"),  ButtonStyle::Danger,  "music_note")]);
     rows.push(vec![main_menu_button()]);
 
     InlineKeyboardMarkup::builder()
@@ -309,6 +318,61 @@ fn quality_button(text: &str, callback_data: &str, style: ButtonStyle, icon_key:
         callback_game: None,
         pay: None,
     }
+}
+
+async fn handle_audio_quality_callback(api: &Bot, cq: &CallbackQuery, data: &str) -> bool {
+    let rest = data.strip_prefix(CB_AUDIO_PREFIX).unwrap_or("");
+    let Some((req_str, quality_str)) = rest.split_once(':') else {
+        answer_callback(api, cq, "").await;
+        return true;
+    };
+    let Some(request_id) = req_str.parse::<u64>().ok() else {
+        answer_callback(api, cq, "").await;
+        return true;
+    };
+    let Some(audio_quality) = AudioQuality::from_str(quality_str) else {
+        answer_callback(api, cq, "").await;
+        return true;
+    };
+    let Some(MaybeInaccessibleMessage::Message(message)) = cq.message.as_ref() else {
+        answer_callback(api, cq, "").await;
+        return true;
+    };
+    if get_request(request_id).is_none() {
+        answer_callback(api, cq, "youtube.download.request_expired").await;
+        return true;
+    }
+
+    use super::download::types::{Selection, SelectionView, SubtitleMode};
+    use super::download::spawn_download;
+    use crate::i18n::tf;
+
+    let selection = Selection {
+        height: 0,
+        codec: super::types::VideoCodec::H264,
+        audio_lang: None,
+        subtitle_langs: Vec::new(),
+        subtitle_mode: SubtitleMode::Embedded,
+        view: SelectionView::Main,
+        audio_only: Some(audio_quality),
+    };
+
+    let status_text = tf("youtube.audio.starting", &[("quality", &t(audio_quality.label_key()))]);
+    let edit_result = api.edit_message_text(
+        &EditMessageTextParams::builder()
+            .chat_id(message.chat.id)
+            .message_id(message.message_id)
+            .text(&status_text)
+            .build(),
+    ).await;
+
+    if edit_result.is_ok() {
+        spawn_download(api.clone(), request_id, selection, message.chat.id, message.message_id);
+        log_trace(0, "audio_quality_dispatch", &format!("request_id={request_id} quality={quality_str}"));
+    }
+
+    answer_callback(api, cq, "").await;
+    true
 }
 
 async fn handle_back_to_quality_callback(api: &Bot, cq: &CallbackQuery, data: &str) -> bool {

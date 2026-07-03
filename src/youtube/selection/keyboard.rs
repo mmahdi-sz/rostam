@@ -25,6 +25,7 @@ pub fn build_keyboard(req: &YoutubeRequest, request_id: u64) -> InlineKeyboardMa
         subtitle_langs: Vec::new(),
         subtitle_mode: SubtitleMode::Embedded,
         view: SelectionView::Main,
+        audio_only: None,
     });
     match selection.view {
         SelectionView::Main => build_main_keyboard(req, request_id, &selection),

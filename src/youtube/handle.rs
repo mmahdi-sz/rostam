@@ -100,22 +100,20 @@ pub async fn handle_youtube_url(
                 }
                 log_trace(trace_id, "send_photo_ok", "preview photo sent");
                 if let Some(desc) = info.description.as_deref() {
-                    if desc.chars().count() > 1000 {
-                        let link_preview = LinkPreviewOptions::builder().is_disabled(true).build();
-                        let chunks = build_description_blockquotes(desc);
-                        log_trace(trace_id, "description_chunks", &format!("count={}", chunks.len()));
-                        for chunk in chunks {
-                            let msg = SendMessageParams::builder()
-                                .chat_id(chat_id)
-                                .text(chunk)
-                                .parse_mode(ParseMode::MarkdownV2)
-                                .link_preview_options(link_preview.clone())
-                                .build();
-                            if let Err(error) = api.send_message(&msg).await {
-                                eprintln!("send description chunk failed: {error}");
-                                log_trace(trace_id, "description_chunk_failed", &error.to_string());
-                                break;
-                            }
+                    let link_preview = LinkPreviewOptions::builder().is_disabled(true).build();
+                    let chunks = build_description_blockquotes(desc);
+                    log_trace(trace_id, "description_chunks", &format!("count={}", chunks.len()));
+                    for chunk in chunks {
+                        let msg = SendMessageParams::builder()
+                            .chat_id(chat_id)
+                            .text(chunk)
+                            .parse_mode(ParseMode::MarkdownV2)
+                            .link_preview_options(link_preview.clone())
+                            .build();
+                        if let Err(error) = api.send_message(&msg).await {
+                            eprintln!("send description chunk failed: {error}");
+                            log_trace(trace_id, "description_chunk_failed", &error.to_string());
+                            break;
                         }
                     }
                 }

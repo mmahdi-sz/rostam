@@ -346,7 +346,19 @@
     "subtitle_file_feature": "ارسال زیرنویس به‌صورت فایل جداگانه",
     "traffic_daily_limit": "ترافیک روزانه ({limit})",
     "traffic_monthly_limit": "ترافیک ماهانه ({limit})",
-    "traffic_file_too_big": "حجم این فایل ({size})، باقی‌مانده ترافیک شما ({remaining})"
+    "traffic_file_too_big": "حجم این فایل ({size})، باقی‌مانده ترافیک شما ({remaining})",
+    "audio": {
+      "menu_button": "🎵 دانلود صوت",
+      "menu_prompt": "🎵 *دانلود صوت*\n\nانتخاب کیفیت:",
+      "quality": {
+        "best": "بهترین کیفیت",
+        "medium": "کیفیت متوسط",
+        "low": "کیفیت پایین"
+      },
+      "uploading": "در حال آپلود فایل صوتی...",
+      "caption": "🎵 {title}\n\n🔊 کیفیت: {quality}\n\n📤 @{username}",
+      "starting": "⏳ شروع دانلود صوت ({quality})..."
+    }
   },
   "gemini_wm": {
     "prompt": "🖼️ تصویر مورد نظر را ارسال کنید تا واترمارک Gemini از آن حذف شود:",

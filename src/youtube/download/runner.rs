@@ -23,7 +23,8 @@ use super::split::split_video;
 use super::status::{edit_progress_status, edit_status};
 use super::store::take_request;
 use super::types::{Selection, SubtitleMode};
-use super::upload::{build_part_params, build_single_params, send_video_with_progress};
+use super::types::AudioQuality;
+use super::upload::{build_part_params, build_single_params, send_audio_file, send_video_with_progress};
 
 pub const EDIT_THROTTLE: Duration = Duration::from_secs(1);
 const DOWNLOAD_ROOT: &str = "/mnt/data/mahdidev/ros/dev/downloads/yt";
@@ -65,6 +66,13 @@ async fn run_download(
 
     // ثبت شروع دانلود
     let stats_job_id = stats::record_download_start(user_id).await;
+
+    // audio-only path
+    if let Some(audio_quality) = selection.audio_only {
+        run_audio_download(api, request_id, audio_quality, req, stats_job_id,
+            status_chat_id, status_message_id, cancel_fut).await;
+        return;
+    }
 
     let quality_label = quality_label_for(height);
     log_trace(trace_id, "download_begin", &format!(
@@ -350,5 +358,146 @@ async fn run_download(
         ).await;
     }
 
+    cleanup_dir(&dir, trace_id).await;
+}
+
+async fn run_audio_download(
+    api: Bot,
+    request_id: u64,
+    audio_quality: AudioQuality,
+    req: super::types::YoutubeRequest,
+    stats_job_id: Option<i64>,
+    status_chat_id: i64,
+    status_message_id: i32,
+    mut cancel_fut: std::pin::Pin<&mut impl std::future::Future<Output = ()>>,
+) {
+    let trace_id = req.trace_id;
+    let user_id = req.user_id.unwrap_or(0);
+    log_trace(trace_id, "audio_download_begin", &format!(
+        "request_id={request_id} quality={} url={}", audio_quality.as_str(), req.webpage_url
+    ));
+    let dir = PathBuf::from(format!("{DOWNLOAD_ROOT}/{trace_id}"));
+    if let Err(e) = tokio::fs::create_dir_all(&dir).await {
+        log_trace(trace_id, "audio_mkdir_failed", &e.to_string());
+        edit_status(&api, status_chat_id, status_message_id,
+            tf("youtube.download.failed", &[("error", &e.to_string())])).await;
+        return;
+    }
+    let output_template = format!("{}/%(id)s.%(ext)s", dir.display());
+    let format_spec = audio_quality.format_spec();
+    let mut cmd = tokio::process::Command::new("yt-dlp");
+    cmd.arg("--js-runtimes").arg("deno:/root/.deno/bin/deno")
+        .arg("--cookies-from-browser").arg(&req.cookie_spec)
+        .arg("--no-warnings").arg("--no-playlist")
+        .arg("-f").arg(format_spec)
+        .arg("--extract-audio").arg("--audio-format").arg("mp3").arg("--audio-quality").arg("0")
+        .arg("--print").arg("after_move:filepath")
+        .arg("-o").arg(&output_template)
+        .arg(&req.webpage_url)
+        .stdout(Stdio::piped()).stderr(Stdio::piped());
+    log_trace(trace_id, "audio_download_args", &format!("cookie_spec={} format_spec={format_spec}", req.cookie_spec));
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            log_trace(trace_id, "audio_spawn_failed", &e.to_string());
+            edit_status(&api, status_chat_id, status_message_id,
+                tf("youtube.download.failed", &[("error", &e.to_string())])).await;
+            return;
+        }
+    };
+    let stdout = child.stdout.take().expect("piped stdout");
+    let stderr = child.stderr.take().expect("piped stderr");
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<(&'static str, String)>(64);
+    let tx_out = tx.clone();
+    let stdout_task = tokio::spawn(async move {
+        let mut reader = BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = reader.next_line().await { let _ = tx_out.send(("stdout", line)).await; }
+    });
+    let tx_err = tx;
+    let stderr_task = tokio::spawn(async move {
+        let mut reader = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = reader.next_line().await { let _ = tx_err.send(("stderr", line)).await; }
+    });
+    let mut filepath: Option<String> = None;
+    let mut stderr_tail = String::new();
+    loop {
+        tokio::select! {
+            msg = rx.recv() => {
+                let Some((source, line)) = msg else { break; };
+                let trimmed = line.trim().to_string();
+                if trimmed.is_empty() { continue; }
+                if source == "stdout" && trimmed.starts_with('/') && tokio::fs::metadata(&trimmed).await.is_ok() {
+                    filepath = Some(trimmed.clone());
+                    log_trace(trace_id, "audio_filepath", &trimmed);
+                } else if source == "stderr" {
+                    stderr_tail = trimmed.clone();
+                    log_trace(trace_id, "audio_yt_dlp_stderr", &trimmed);
+                }
+            }
+            _ = &mut cancel_fut => {
+                log_trace(trace_id, "audio_download_cancelled", "cancel signal");
+                let _ = child.kill().await;
+                edit_status(&api, status_chat_id, status_message_id, t("youtube.download.cancelled")).await;
+                cleanup_dir(&dir, trace_id).await;
+                return;
+            }
+        }
+    }
+    let _ = stdout_task.await;
+    let _ = stderr_task.await;
+    let status = match child.wait().await {
+        Ok(s) => s,
+        Err(e) => {
+            log_trace(trace_id, "audio_wait_failed", &e.to_string());
+            edit_status(&api, status_chat_id, status_message_id,
+                tf("youtube.download.failed", &[("error", &e.to_string())])).await;
+            return;
+        }
+    };
+    if !status.success() {
+        let err = if stderr_tail.is_empty() { format!("exit {status}") } else { stderr_tail };
+        log_trace(trace_id, "audio_download_failed", &format!("status={status} err={err}"));
+        crate::stats::record_error_global("youtube", &format!("audio_download_failed: {err}")).await;
+        edit_status(&api, status_chat_id, status_message_id,
+            tf("youtube.download.failed", &[("error", &err)])).await;
+        cleanup_dir(&dir, trace_id).await;
+        return;
+    }
+    let path = match filepath.or_else(|| pick_largest_file(&dir)) {
+        Some(p) => p,
+        None => {
+            log_trace(trace_id, "audio_no_filepath", "no output file");
+            edit_status(&api, status_chat_id, status_message_id,
+                tf("youtube.download.failed", &[("error", "no output file")])).await;
+            cleanup_dir(&dir, trace_id).await;
+            return;
+        }
+    };
+    log_trace(trace_id, "audio_download_complete", &format!("path={path}"));
+    let file_size_bytes = tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0);
+    if let Some(jid) = stats_job_id {
+        stats::record_download_done(jid, file_size_bytes as i64).await;
+    }
+    edit_status(&api, status_chat_id, status_message_id, t("youtube.audio.uploading")).await;
+    let quality_label = t(audio_quality.label_key());
+    let bot_username = crate::config::bot_username().to_string();
+    let caption = tf("youtube.audio.caption", &[
+        ("title", &req.title), ("quality", &quality_label), ("username", &bot_username),
+    ]);
+    let caption_entities = entities_for_text(&caption);
+    let upload_ok = send_audio_file(
+        &api, req.chat_id, &path, req.title.clone(), req.channel.clone(),
+        caption, caption_entities,
+        status_chat_id, status_message_id, request_id, &mut cancel_fut, trace_id,
+    ).await;
+    if upload_ok {
+        if let Some(jid) = stats_job_id {
+            stats::record_upload_done(jid, user_id, file_size_bytes as i64).await;
+        }
+        let _ = api.delete_message(
+            &DeleteMessageParams::builder()
+                .chat_id(status_chat_id).message_id(status_message_id).build(),
+        ).await;
+    }
     cleanup_dir(&dir, trace_id).await;
 }
