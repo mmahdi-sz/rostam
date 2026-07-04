@@ -83,6 +83,7 @@ struct GwtRun {
     success: bool,
     stdout: String,
     stderr: String,
+    #[allow(dead_code)]
     elapsed_secs: f64,
     skipped: bool,
 }

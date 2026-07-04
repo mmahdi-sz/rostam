@@ -30,13 +30,14 @@ pub enum FlowState {
     AwaitingDenoiseAudio,
     AwaitingUpscaleImage { scale_factor: u32, model_name: String, anime_expanded: bool },
     AwaitingSeparation,
-    AwaitingSeparationMode { file_id: String, filename: String, prompt_msg_id: Option<i32>, is_video: bool },
+    AwaitingSeparationMode { file_id: String, filename: String, #[allow(dead_code)] prompt_msg_id: Option<i32>, is_video: bool },
     AwaitingSeparationQueued { cancel: Arc<AtomicBool> },
     AwaitingGeminiWmImage,
     AwaitingAsrAudio,
     AwaitingAsrConfirm { file_id: String, filename: String, duration_secs: f64 },
     AwaitingAsrQueued { file_id: String, filename: String, duration_secs: f64 },
     /// ادمین دکمه‌ی ساخت کد را زده و منتظر آرگومان‌ها (مثل `30d es 1u`) هستیم
+    #[allow(dead_code)]
     AwaitingRedeemGenArgs,
 }
 

@@ -30,6 +30,7 @@ pub struct CooldownEntry {
 pub struct SelectedCookie {
     pub id: String,
     pub profile_name: String,
+    #[allow(dead_code)]
     pub cookies_file: PathBuf,
     pub yt_dlp_browser_spec: String,
 }
@@ -39,6 +40,7 @@ pub struct CookiePoolStatus {
     pub available_cookies: usize,
     pub selectable_cookies: usize,
     pub cooldown_cookies: usize,
+    #[allow(dead_code)]
     pub last_used_cookie: Option<String>,
     pub next_available_in: Option<std::time::Duration>,
 }

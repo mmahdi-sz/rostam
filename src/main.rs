@@ -1,3 +1,5 @@
+#[macro_use]
+mod log;
 mod admin;
 mod app;
 mod rank;

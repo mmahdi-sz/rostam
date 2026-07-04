@@ -3,10 +3,15 @@ mod lookup;
 mod entities;
 mod premium_md;
 
-pub use emoji_map::EMOJI_MAP;
 pub use lookup::{t, tf, reload as reload_i18n, LANG};
 pub use entities::entities_for_text;
 pub use premium_md::{apply_premium_to_md, apply_premium_to_html};
+
+/// Escape all MarkdownV2 special characters. Apply to every dynamic value in MarkdownV2 messages.
+pub fn md_escape(s: &str) -> String {
+    const SPECIAL: &[char] = &['_','*','[',']','(',')','>','#','+','-','=','|','{','}','.','!','~','`','\\'];
+    s.chars().flat_map(|c| if SPECIAL.contains(&c) { vec!['\\', c] } else { vec![c] }).collect()
+}
 
 /// تبدیل ارقام انگلیسی به فارسی (شامل نقطه‌ی اعشار → ممیز فارسی).
 pub fn to_fa_digits(s: &str) -> String {

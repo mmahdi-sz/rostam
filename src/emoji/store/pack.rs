@@ -38,6 +38,7 @@ pub async fn list_packs(client: &Client, owner: i64) -> Result<Vec<EmojiPack>, t
     Ok(rows.into_iter().map(row_to_pack).collect())
 }
 
+#[allow(dead_code)]
 pub async fn get_default_pack(client: &Client, owner: i64) -> Result<Option<EmojiPack>, tokio_postgres::Error> {
     let row = client.query_opt(
         "SELECT p.id, p.owner_user_id, p.name, p.alias, p.is_default,

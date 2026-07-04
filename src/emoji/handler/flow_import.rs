@@ -5,7 +5,7 @@ use frankenstein::{
     types::Message,
 };
 
-use crate::i18n::{t, tf};
+use crate::i18n::t;
 use crate::emoji::{FlowManager, FlowState, import as emoji_import, panel as emoji_panel};
 
 use super::{

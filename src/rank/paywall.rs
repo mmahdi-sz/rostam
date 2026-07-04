@@ -23,9 +23,10 @@ fn show_plans_keyboard() -> InlineKeyboardMarkup {
 /// min_rank: حداقل رتبه لازم
 pub async fn block_feature(api: &Bot, chat_id: i64, feature: &str, min_rank: Rank) {
     crate::stats::record_event_global("paywall", "feature", min_rank.as_str(), 0).await;
+    let min_rank_name = min_rank.display_name();
     let text = tf("rank.paywall_feature", &[
         ("feature", feature),
-        ("min_rank", min_rank.display_name()),
+        ("min_rank", &min_rank_name),
     ]);
     let params = SendMessageParams::builder()
         .chat_id(chat_id)
@@ -43,9 +44,10 @@ pub async fn block_feature(api: &Bot, chat_id: i64, feature: &str, min_rank: Ran
 /// min_rank: حداقل رتبه برای بیشتر
 pub async fn block_limit(api: &Bot, chat_id: i64, limit: &str, min_rank: Rank) {
     crate::stats::record_event_global("paywall", "limit", min_rank.as_str(), 0).await;
+    let min_rank_name = min_rank.display_name();
     let text = tf("rank.paywall_limit", &[
         ("limit", limit),
-        ("min_rank", min_rank.display_name()),
+        ("min_rank", &min_rank_name),
     ]);
     let params = SendMessageParams::builder()
         .chat_id(chat_id)

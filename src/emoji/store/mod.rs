@@ -2,13 +2,14 @@ mod pack;
 mod item;
 mod export;
 
-pub use pack::{create_pack, find_pack_by_name, list_packs, get_default_pack, set_default_pack, set_pack_alias, delete_pack};
+pub use pack::{create_pack, find_pack_by_name, list_packs, set_default_pack, set_pack_alias, delete_pack};
 pub use item::{list_items, existing_custom_emoji_ids, allocate_smart_name, add_item, set_item_alias};
-pub use export::{export_user_sql, render_template};
+pub use export::export_user_sql;
 
 #[derive(Debug, Clone)]
 pub struct EmojiPack {
     pub id: i32,
+    #[allow(dead_code)]
     pub owner_user_id: i64,
     pub name: String,
     pub alias: Option<String>,
@@ -19,11 +20,13 @@ pub struct EmojiPack {
 #[derive(Debug, Clone)]
 pub struct EmojiItem {
     pub id: i32,
+    #[allow(dead_code)]
     pub pack_id: i32,
     pub custom_emoji_id: String,
     pub fallback: String,
     pub smart_name: String,
     pub alias: Option<String>,
+    #[allow(dead_code)]
     pub position: i32,
 }
 

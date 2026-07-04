@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::process::Stdio;
 
 use super::super::trace::log_trace;

@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use frankenstein::{
@@ -11,14 +10,10 @@ use frankenstein::{
 use crate::bot::edit_to_ai_lab;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{t, tf};
+use crate::log::next_trace_id;
 
 use super::client::{transcribe_voice, get_cpu_status, AsrError};
 
-static NEXT_TRACE: AtomicU64 = AtomicU64::new(1);
-
-fn next_trace_id() -> u64 {
-    NEXT_TRACE.fetch_add(1, Ordering::Relaxed)
-}
 
 pub const CB_ASR_CANCEL: &str = "asr:cancel";
 pub const CB_ASR_CONFIRM: &str = "asr:confirm";
@@ -91,7 +86,8 @@ pub async fn enter_asr(
     flow_manager: &mut FlowManager,
 ) {
     let trace_id = next_trace_id();
-    eprintln!("[asr trace={trace_id} event=enter] user_id={user_id} chat_id={chat_id}");
+    log_actor_id!("asr", trace_id, user_id, "clicked" => "ai:asr");
+    log_ev!("asr", trace_id, "enter", "user_id" => user_id, "chat_id" => chat_id);
 
     flow_manager.set(user_id, FlowState::AwaitingAsrAudio);
 
@@ -102,8 +98,8 @@ pub async fn enter_asr(
         .reply_markup(cancel_keyboard())
         .build();
     match api.edit_message_text(&params).await {
-        Ok(_) => eprintln!("[asr trace={trace_id} event=prompt_shown]"),
-        Err(e) => eprintln!("[asr trace={trace_id} event=prompt_failed] err={e}"),
+        Ok(_) => log_ev!("asr", trace_id, "prompt_shown"),
+        Err(e) => log_ev!("asr", trace_id, "prompt_failed", "raw" => format!("err={e}")),
     }
 }
 
@@ -115,10 +111,10 @@ pub async fn handle_asr_cancel(
     flow_manager: &mut FlowManager,
 ) {
     let trace_id = next_trace_id();
-    eprintln!("[asr trace={trace_id} event=cancel] user_id={user_id}");
+    log_ev!("asr", trace_id, "cancel", "raw" => "user_id={user_id}");
     flow_manager.clear(user_id);
     let r = edit_to_ai_lab(api, chat_id, message_id).await;
-    eprintln!("[asr trace={trace_id} event=cancel_done] ok={}", r.is_ok());
+    log_ev!("asr", trace_id, "cancel_done", "raw" => format!("ok={}", r.is_ok()));
 }
 
 // Fast: reads duration from Telegram metadata (no download), checks CPU, shows prompt.
@@ -131,29 +127,29 @@ pub async fn handle_asr_audio(
 ) {
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
-
-    eprintln!("[asr trace={trace_id} event=audio_received] user_id={user_id}");
+    log_actor_id!("asr", trace_id, user_id, "clicked" => "audio/voice");
+    log_ev!("asr", trace_id, "audio_received", "user_id" => user_id);
 
     let Some((file_id, duration_secs, ext)) = extract_file_info(message) else {
-        eprintln!("[asr trace={trace_id} event=no_file_id]");
+        log_ev!("asr", trace_id, "no_file_id");
         let _ = send_new(api, chat_id, &t("asr.error.invalid_audio")).await;
         return;
     };
 
     let filename = format!("audio.{ext}");
 
-    eprintln!("[asr trace={trace_id} event=file_extracted] file_id={file_id} duration={duration_secs:.0}s ext={ext}");
+    log_ev!("asr", trace_id, "file_extracted", "raw" => "file_id={file_id} duration={duration_secs:.0}s ext={ext}");
 
     // Check available cores — fast HTTP call
     let cores = match get_cpu_status().await {
         Ok(s) => s.available_cores,
         Err(e) => {
-            eprintln!("[asr trace={trace_id} event=cpu_status_failed] err={e}");
+            log_ev!("asr", trace_id, "cpu_status_failed", "raw" => format!("err={e}"));
             0
         }
     };
 
-    eprintln!("[asr trace={trace_id} event=cpu_status] cores={cores}");
+    log_ev!("asr", trace_id, "cpu_status", "raw" => "cores={cores}");
 
     if cores == 0 {
         // Server busy — ask if user wants to queue
@@ -212,7 +208,7 @@ pub async fn handle_asr_confirm(
         FlowState::AwaitingAsrConfirm { file_id, filename, duration_secs } => (file_id, filename, duration_secs),
         FlowState::AwaitingAsrQueued { file_id, filename, duration_secs } => (file_id, filename, duration_secs),
         other => {
-            eprintln!("[asr trace={trace_id} event=confirm_bad_state] user_id={user_id} state={other:?}");
+            log_ev!("asr", trace_id, "confirm_bad_state", "raw" => format!("user_id={user_id} state={other:?}"));
             return;
         }
     };
@@ -226,7 +222,7 @@ pub async fn handle_asr_confirm(
     };
     let _ = edit_status(api, chat_id, message_id, &init_text).await;
 
-    eprintln!("[asr trace={trace_id} event=confirm] user_id={user_id} file_id={file_id} dur={duration_secs:.0}s is_queue={is_queue}");
+    log_ev!("asr", trace_id, "confirm", "raw" => format!("user_id={user_id} file_id={file_id} dur={duration_secs:.0}s is_queue={is_queue}"));
 
     let api2 = api.clone();
     tokio::spawn(async move {
@@ -251,9 +247,9 @@ async fn run_asr_inference(
     std::fs::create_dir_all(&work_dir).ok();
     let audio_path = work_dir.join(format!("input.{ext}"));
 
-    eprintln!("[asr trace={trace_id} event=download_start]");
+    log_ev!("asr", trace_id, "download_start");
     if let Err(e) = download_file(&api, &file_id, audio_path.to_str().unwrap(), trace_id).await {
-        eprintln!("[asr trace={trace_id} event=download_failed] err={e}");
+        log_ev!("asr", trace_id, "download_failed", "raw" => "err={e}");
         std::fs::remove_dir_all(&work_dir).ok();
         crate::stats::record_event_user(user_id, "asr", "", "fail", 0).await;
         crate::stats::record_error_global("asr", &format!("download failed: {e}")).await;
@@ -274,7 +270,7 @@ async fn run_asr_inference(
         }
     });
 
-    eprintln!("[asr trace={trace_id} event=inference_start] path={}", audio_path.display());
+    log_ev!("asr", trace_id, "inference_start", "raw" => format!("path={}", audio_path.display()));
     let result = transcribe_voice(&audio_path, user_id).await;
     ticker.abort();
 
@@ -308,8 +304,8 @@ async fn run_asr_inference(
                         .caption(t("asr.srt_caption"))
                         .build();
                     match api.send_document(&doc_params).await {
-                        Ok(_) => eprintln!("[asr trace={trace_id} event=srt_sent]"),
-                        Err(e) => eprintln!("[asr trace={trace_id} event=srt_send_failed] err={e}"),
+                        Ok(_) => log_ev!("asr", trace_id, "srt_sent"),
+                        Err(e) => log_ev!("asr", trace_id, "srt_send_failed", "raw" => format!("err={e}")),
                     }
                     std::fs::remove_file(&srt_path).ok();
                 }
@@ -318,20 +314,20 @@ async fn run_asr_inference(
             crate::stats::record_event_user(user_id, "asr", "", "ok", asr.duration_seconds.ceil() as i64).await;
         }
         Err(AsrError::ServiceUnavailable) => {
-            eprintln!("[asr trace={trace_id} event=service_unavailable]");
+            log_ev!("asr", trace_id, "service_unavailable");
             crate::stats::record_event_user(user_id, "asr", "", "fail", 0).await;
             crate::stats::record_error_global("asr", "service unavailable").await;
             let _ = edit_status(&api, chat_id, message_id, &t("asr.error.service_unavailable")).await;
         }
         Err(AsrError::Timeout) => {
-            eprintln!("[asr trace={trace_id} event=timeout] elapsed={:.1}s", elapsed.as_secs_f64());
+            log_ev!("asr", trace_id, "timeout", "raw" => format!("elapsed={:.1}s", elapsed.as_secs_f64()));
             crate::stats::record_event_user(user_id, "cpu", "timeout", "asr", 0).await;
             crate::stats::record_event_user(user_id, "asr", "", "timeout", 0).await;
             crate::stats::record_error_global("asr", "timeout").await;
             let _ = edit_status(&api, chat_id, message_id, &t("asr.error.timeout")).await;
         }
         Err(e) => {
-            eprintln!("[asr trace={trace_id} event=inference_failed] err={e}");
+            log_ev!("asr", trace_id, "inference_failed", "raw" => "err={e}");
             crate::stats::record_event_user(user_id, "asr", "", "fail", 0).await;
             crate::stats::record_error_global("asr", &format!("inference failed: {e}")).await;
             let _ = edit_status(&api, chat_id, message_id, &t("asr.error.processing_failed")).await;
@@ -379,7 +375,7 @@ async fn send_new_keyboard(
 }
 
 fn cancel_keyboard() -> frankenstein::types::InlineKeyboardMarkup {
-    use frankenstein::types::{InlineKeyboardButton, InlineKeyboardMarkup};
+    use frankenstein::types::InlineKeyboardMarkup;
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![vec![inline_btn(&t("asr.cancel_button"), CB_ASR_CANCEL)]])
         .build()
@@ -429,13 +425,13 @@ async fn download_file(
     let file_info = api.get_file(&GetFileParams::builder().file_id(file_id).build()).await?;
     let file_path = file_info.result.file_path.ok_or("no file_path")?;
 
-    eprintln!("[asr trace={trace_id} event=file_path] {file_path}");
+    log_ev!("asr", trace_id, "file_path", "raw" => "{file_path}");
 
     // Local Bot API: file_path starts with '/'
     if file_path.starts_with('/') {
         std::fs::copy(&file_path, dest)?;
         let size = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
-        eprintln!("[asr trace={trace_id} event=local_copy] size={size}");
+        log_ev!("asr", trace_id, "local_copy", "raw" => format!("size={size}"));
         return Ok(());
     }
 
@@ -446,9 +442,9 @@ async fn download_file(
         None => format!("https://api.telegram.org/file/bot{token}/{file_path}"),
     };
 
-    eprintln!("[asr trace={trace_id} event=http_download] prefix={}", &url[..url.len().min(60)]);
+    log_ev!("asr", trace_id, "http_download", "raw" => format!("prefix={}", &url[..url.len().min(60)]));
     let bytes = reqwest::get(&url).await?.bytes().await?;
-    eprintln!("[asr trace={trace_id} event=http_done] bytes={}", bytes.len());
+    log_ev!("asr", trace_id, "http_done", "raw" => format!("bytes={}", bytes.len()));
     std::fs::write(dest, &bytes)?;
     Ok(())
 }

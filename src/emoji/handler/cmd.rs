@@ -7,7 +7,7 @@ use frankenstein::{
 
 use crate::bot::send_text;
 use crate::database::postgresql::PostgresDatabase;
-use crate::emoji::{FlowManager, panel as emoji_panel, store as emoji_store, cache};
+use crate::emoji::{FlowManager, panel as emoji_panel, store as emoji_store};
 use crate::i18n::{entities_for_text, t, tf};
 
 /// Open the emoji panel for a given chat_id + user_id (from callback or other non-message sources).
@@ -18,7 +18,7 @@ pub async fn open_emoji_panel(
     flow_manager: &mut FlowManager,
     database: &Option<PostgresDatabase>,
 ) {
-    let trace_id = cache::next_trace_id();
+    let trace_id = crate::log::next_trace_id();
     eprintln!("[emoji_open trace={trace_id} event=open] user_id={user_id} chat_id={chat_id}");
     flow_manager.clear(user_id);
     if database.is_none() {
@@ -51,7 +51,7 @@ pub async fn handle_emoji_command(
         Some(u) => u.id as i64,
         None => return,
     };
-    let trace_id = cache::next_trace_id();
+    let trace_id = crate::log::next_trace_id();
     eprintln!("[emoji_cmd trace={trace_id} event=emoji_cmd] user_id={user_id} chat_id={chat_id}");
     flow_manager.clear(user_id);
     if database.is_none() {
@@ -82,7 +82,7 @@ pub async fn handle_se_command(
     let chat_id = message.chat.id;
     let Some(user) = message.from.as_ref() else { return };
     let user_id = user.id as i64;
-    let trace_id = cache::next_trace_id();
+    let trace_id = crate::log::next_trace_id();
 
     let Some(db) = database else {
         eprintln!("[emoji_cmd trace={trace_id} event=no_db]");

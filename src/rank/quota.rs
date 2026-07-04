@@ -2,6 +2,7 @@ use tokio_postgres::Client;
 
 /// نوع quota
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum QuotaKind {
     TrafficDaily,
     TrafficMonthly,

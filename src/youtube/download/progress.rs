@@ -72,12 +72,14 @@ pub fn format_progress_body(snap: &ProgressSnapshot, quality_label: &str) -> Str
         .parse::<f32>()
         .unwrap_or(0.0);
     let bar = build_bar(percent_f);
-    let percent = clean_val(&snap.percent, "۰٪");
+    let default_percent = crate::i18n::t("youtube.progress_default_percent");
+    let percent = clean_val(&snap.percent, &default_percent);
     let downloaded = clean_val(&snap.downloaded, "-");
     let total = clean_val(&snap.total, "-");
     let speed = clean_val(&snap.speed, "...");
     let eta = clean_val(&snap.eta, "...");
-    let elapsed = clean_val(&snap.elapsed, "۰۰:۰۰");
+    let default_elapsed = crate::i18n::t("youtube.progress_default_elapsed");
+    let elapsed = clean_val(&snap.elapsed, &default_elapsed);
     tf(
         "youtube.download.progress.body",
         &[

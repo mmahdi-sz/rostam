@@ -164,6 +164,7 @@ impl PostgresDatabase {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn get_user_lang(&self, user_id: i64) -> Option<String> {
         self.client
             .query_opt("SELECT language FROM stats_users WHERE user_id = $1", &[&user_id])
@@ -173,6 +174,7 @@ impl PostgresDatabase {
             .and_then(|row| row.get::<_, Option<String>>(0))
     }
 
+    #[allow(dead_code)]
     pub async fn set_user_lang(&self, user_id: i64, lang: &str) {
         let _ = self.client.execute(
             "INSERT INTO stats_users (user_id, first_seen, last_seen, language)

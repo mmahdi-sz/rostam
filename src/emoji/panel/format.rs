@@ -47,8 +47,8 @@ pub fn format_pending_emojis(
         for d in duplicates {
             rendered.push_str(&format!("![{}](tg://emoji?id={})", d.fallback, d.custom_emoji_id));
         }
-        let prefix = emd("ℹ️ ایموجی‌های ");
-        let suffix = escape_markdown_v2(" تکراری بودند و در لیست نیومدند.");
+        let prefix = emd(&crate::i18n::t("emoji.duplicate_prefix"));
+        let suffix = escape_markdown_v2(&crate::i18n::t("emoji.duplicate_suffix"));
         lines.push(String::new());
         lines.push(format!("{prefix}{rendered}{suffix}"));
     }
@@ -92,6 +92,7 @@ pub fn build_list_page(
     (out, page, total_pages)
 }
 
+#[allow(dead_code)]
 pub fn render_pack_list_entry(pack: &EmojiPack, items: &[EmojiItem]) -> String {
     let mut out = String::new();
     out.push_str(&escape_markdown_v2(&tf("emoji.list.pack_header", &[("name", &pack.name)])));

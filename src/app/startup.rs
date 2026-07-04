@@ -346,6 +346,7 @@ pub async fn set_bot_commands(api: &Bot) {
         let commands = LANG.scope(lang.to_owned(), async {
             vec![
                 BotCommand { command: "start".to_string(),    description: t("commands.start") },
+                BotCommand { command: "panel".to_string(),   description: t("commands.panel") },
                 BotCommand { command: "language".to_string(), description: t("commands.language") },
                 BotCommand { command: "rank".to_string(),     description: t("commands.rank") },
                 BotCommand { command: "emoji".to_string(),    description: t("commands.emoji") },

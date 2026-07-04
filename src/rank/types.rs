@@ -68,14 +68,15 @@ impl Rank {
         }
     }
 
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            Self::Dalavar => "دلاور",
-            Self::Sepahbod => "سپهبد",
-            Self::Esfandyar => "اسفندیار",
-            Self::Sohrab => "سهراب",
-            Self::Rostam => "رستم",
-        }
+    pub fn display_name(&self) -> String {
+        let key = match self {
+            Self::Dalavar => "rank.dalavar",
+            Self::Sepahbod => "rank.sepahbod",
+            Self::Esfandyar => "rank.esfandyar",
+            Self::Sohrab => "rank.sohrab",
+            Self::Rostam => "rank.rostam",
+        };
+        crate::i18n::t(key)
     }
 
     /// محدودیت کیفیت YouTube (None = بدون محدودیت)
@@ -128,6 +129,7 @@ impl Rank {
     }
 
     /// پلی‌لیست YouTube (None = نامحدود)
+    #[allow(dead_code)]
     pub fn playlist_limit(&self) -> Option<u32> {
         match self {
             Self::Dalavar | Self::Sohrab => Some(0), // ممنوع
@@ -147,6 +149,7 @@ impl Rank {
     }
 
     /// حک زیرنویس روی ویدیو (hardcode)
+    #[allow(dead_code)]
     pub fn can_subtitle_hardcode(&self) -> bool {
         matches!(self, Self::Esfandyar | Self::Rostam)
     }

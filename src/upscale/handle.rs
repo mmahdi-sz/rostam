@@ -14,20 +14,14 @@ use frankenstein::{
 use crate::bot::send_text;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
-use crate::emoji::panel::{btn_icon, btn_icon_plain, btn_icon_success, btn_icon_danger};
+use crate::emoji::panel::{btn_icon_plain, btn_icon_success, btn_icon_danger};
 use crate::i18n::{t, tf, to_fa_digits, apply_premium_to_md};
 use crate::rank::{self, quota::{QuotaKind, get_usage, add_usage}};
-use crate::youtube::log_trace;
+use crate::log::next_trace_id;
 
 const UPSCALE_BIN: &str = "files/realesrgan/realesrgan-ncnn-vulkan";
 const MODEL_DIR: &str = "files/realesrgan/models";
 const SEP_BASE: &str = "http://127.0.0.1:6589";
-
-fn next_trace_id() -> u64 {
-    use std::sync::atomic::AtomicU64;
-    static NEXT: AtomicU64 = AtomicU64::new(1);
-    NEXT.fetch_add(1, Ordering::Relaxed)
-}
 
 pub const CB_UPSCALE_CANCEL: &str = "upscale:cancel";
 pub const CB_UPSCALE_MODEL_PREFIX: &str = "upscale:model:";
@@ -83,11 +77,11 @@ async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
                 .get("cores")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
-            eprintln!("[upscale trace={trace_id} event=cpu_acquired] cores={cores:?}");
+            log_ev!("upscale", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
             cores
         }
         Err(e) => {
-            eprintln!("[upscale trace={trace_id} event=cpu_acquire_failed] err={e}");
+            log_ev!("upscale", trace_id, "cpu_acquire_failed", "=>" => format!("fail err={e}"));
             vec![]
         }
     }
@@ -103,7 +97,7 @@ async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
         .timeout(Duration::from_secs(10))
         .send()
         .await;
-    eprintln!("[upscale trace={trace_id} event=cpu_released] cores={cores:?} ok={}", r.is_ok());
+    log_ev!("upscale", trace_id, "cpu_released", "cores" => format!("{cores:?}"), "=>" => if r.is_ok() { "ok" } else { "fail" });
 }
 
 // Pin a subprocess (by PID) to the given CPU core list via sched_setaffinity.
@@ -122,7 +116,7 @@ fn pin_pid_to_cores(pid: Option<u32>, cores: &[i32], trace_id: u64) {
             std::mem::size_of::<libc::cpu_set_t>(),
             &set,
         );
-        eprintln!("[upscale trace={trace_id} event=pin_affinity] pid={pid} cores={cores:?} ret={ret}");
+        log_ev!("upscale", trace_id, "pin_affinity", "pid" => pid, "cores" => format!("{cores:?}"), "ret" => ret);
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -196,7 +190,8 @@ pub async fn enter_upscale(
     flow_manager.set(user_id, FlowState::AwaitingUpscaleImage {
         scale_factor: 4, model_name: "realesrgan-x4plus".to_string(), anime_expanded: false,
     });
-    eprintln!("[upscale trace={trace_id} event=enter] user_id={user_id} chat_id={chat_id}");
+    log_actor_id!("upscale", trace_id, user_id, "clicked" => "ai:upscale");
+    log_ev!("upscale", trace_id, "enter", "user_id" => user_id, "chat_id" => chat_id);
     let text = apply_premium_to_md(&t("upscale.prompt"));
     let params = EditMessageTextParams::builder()
         .chat_id(chat_id).message_id(message_id).text(&text)
@@ -204,8 +199,8 @@ pub async fn enter_upscale(
         .reply_markup(upscale_keyboard(false, "realesrgan-x4plus"))
         .build();
     match api.edit_message_text(&params).await {
-        Ok(_) => eprintln!("[upscale trace={trace_id} event=prompt_shown]"),
-        Err(e) => eprintln!("[upscale trace={trace_id} event=prompt_failed] err={e}"),
+        Ok(_) => log_ev!("upscale", trace_id, "prompt_shown"),
+        Err(e) => log_ev!("upscale", trace_id, "prompt_failed", "=>" => format!("fail err={e}")),
     }
 }
 
@@ -220,7 +215,8 @@ pub async fn handle_upscale_anime_toggle(
         _ => ("realesrgan-x4plus".to_string(), false, 4u32),
     };
     let now_expanded = !was_expanded;
-    eprintln!("[upscale trace={trace_id} event=anime_toggle] now_expanded={now_expanded}");
+    log_actor_id!("upscale", trace_id, user_id, "clicked" => "upscale:anime_toggle");
+    log_ev!("upscale", trace_id, "anime_toggle", "now_expanded" => now_expanded);
     flow_manager.set(user_id, FlowState::AwaitingUpscaleImage {
         scale_factor, model_name: active_model.clone(), anime_expanded: now_expanded,
     });
@@ -230,8 +226,8 @@ pub async fn handle_upscale_anime_toggle(
         .parse_mode(ParseMode::MarkdownV2).reply_markup(upscale_keyboard(now_expanded, &active_model))
         .build();
     match api.edit_message_text(&params).await {
-        Ok(_) => eprintln!("[upscale trace={trace_id} event=toggle_done]"),
-        Err(e) => eprintln!("[upscale trace={trace_id} event=toggle_failed] err={e}"),
+        Ok(_) => log_ev!("upscale", trace_id, "toggle_done"),
+        Err(e) => log_ev!("upscale", trace_id, "toggle_failed", "=>" => format!("fail err={e}")),
     }
 }
 
@@ -242,7 +238,8 @@ pub async fn handle_upscale_model_pick(
     let trace_id = next_trace_id();
     let scale_factor = if model_name == "realesrgan-x4plus" { 4 } else { scale_for_model(model_name) };
     let anime_expanded = is_anime_model(model_name);
-    eprintln!("[upscale trace={trace_id} event=model_pick] model={model_name}");
+    log_actor_id!("upscale", trace_id, user_id, "clicked" => format!("upscale:model:{model_name}"));
+    log_ev!("upscale", trace_id, "model_pick", "model" => model_name);
     flow_manager.set(user_id, FlowState::AwaitingUpscaleImage {
         scale_factor, model_name: model_name.to_string(), anime_expanded,
     });
@@ -252,27 +249,27 @@ pub async fn handle_upscale_model_pick(
         .parse_mode(ParseMode::MarkdownV2).reply_markup(upscale_keyboard(anime_expanded, model_name))
         .build();
     match api.edit_message_text(&params).await {
-        Ok(_) => eprintln!("[upscale trace={trace_id} event=model_pick_done]"),
+        Ok(_) => log_ev!("upscale", trace_id, "model_pick_done"),
         Err(e) if e.to_string().contains("message is not modified") => {},
-        Err(e) => eprintln!("[upscale trace={trace_id} event=model_pick_failed] err={e}"),
+        Err(e) => log_ev!("upscale", trace_id, "model_pick_failed", "=>" => format!("fail err={e}")),
     }
 }
 
 pub async fn handle_upscale_cancel(
     api: &Bot, chat_id: i64, message_id: i32, user_id: i64,
-    flow_manager: &mut FlowManager,
+    _flow_manager: &mut FlowManager,
 ) {
     let trace_id = next_trace_id();
+    log_actor_id!("upscale", trace_id, user_id, "clicked" => "upscale:cancel");
     if cancel_upscale(user_id) {
         // Active processing — main task detects the flag and edits the message itself.
-        eprintln!("[upscale trace={trace_id} event=cancel_active] user_id={user_id}");
+        log_ev!("upscale", trace_id, "cancel_active", "user_id" => user_id);
         return;
     }
     // Model-selection screen — go back to AI Lab.
-    eprintln!("[upscale trace={trace_id} event=cancel_prompt] user_id={user_id}");
-
+    log_ev!("upscale", trace_id, "cancel_prompt", "user_id" => user_id);
     let r = crate::bot::edit_to_ai_lab(api, chat_id, message_id).await;
-    eprintln!("[upscale trace={trace_id} event=cancel_done] ok={}", r.is_ok());
+    log_ev!("upscale", trace_id, "cancel_done", "=>" => if r.is_ok() { "ok" } else { "fail" });
 }
 
 // ── main processing ───────────────────────────────────────────────────────────
@@ -293,7 +290,8 @@ pub async fn handle_upscale_image(
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
     let api = &api;
-    eprintln!("[upscale trace={trace_id} event=image_received] user_id={user_id} model={model_name} scale={scale_factor}");
+    log_actor_id!("upscale", trace_id, user_id, "clicked" => "photo/doc");
+    log_ev!("upscale", trace_id, "image_received", "user_id" => user_id, "model" => model_name, "scale" => scale_factor);
 
     let file_id = message
         .photo.as_ref().and_then(|p| p.last()).map(|p| &p.file_id)
@@ -310,7 +308,7 @@ pub async fn handle_upscale_image(
         let limit = user_rank.upscale_weekly_quota(scale_factor);
         let used = get_usage(db.client(), user_id, quota_kind, 7 * 86400).await.unwrap_or(0) as u32;
         if used >= limit {
-            eprintln!("[upscale trace={trace_id} event=quota_blocked] user_id={user_id} scale={scale_factor} used={used} limit={limit}");
+            log_ev!("upscale", trace_id, "quota_check", "used" => used, "limit" => limit, "=>" => "blocked");
             let label = tf("upscale.quota_weekly_limit", &[
                 ("scale", &format!("×{}", to_fa_digits(&scale_factor.to_string()))),
                 ("limit", &to_fa_digits(&limit.to_string())),
@@ -334,7 +332,7 @@ pub async fn handle_upscale_image(
             .build();
         api.send_message(&params).await.ok().map(|r| r.result.message_id)
     };
-    eprintln!("[upscale trace={trace_id} event=status_sent] msg_id={status_msg_id:?}");
+    log_ev!("upscale", trace_id, "status_sent", "msg_id" => format!("{status_msg_id:?}"));
 
     // ── cancel flag + elapsed timer ───────────────────────────────────────────
     let cancel_flag = register_upscale(user_id);
@@ -371,7 +369,7 @@ pub async fn handle_upscale_image(
 
     let dl_result = download_file(api, file_id, input_path.to_str().unwrap()).await;
     if let Err(e) = dl_result.map_err(|e| e.to_string()) {
-        eprintln!("[upscale trace={trace_id} event=download_failed] err={e}");
+        log_ev!("upscale", trace_id, "download_failed", "=>" => format!("fail err={e}"));
         done_flag.store(true, Ordering::Relaxed);
         unregister_upscale(user_id);
         release_cpu(cores, trace_id).await;
@@ -399,18 +397,18 @@ pub async fn handle_upscale_image(
 
     let processing_secs = match result {
         Ok(Ok(s)) => {
-            eprintln!("[upscale trace={trace_id} event=upscale_done] elapsed={s:.1}s");
+            log_ev!("upscale", trace_id, "upscale_done", "elapsed" => format!("{s:.1}s"), "=>" => "ok");
             s
         }
         Ok(Err(ref e)) if e == "cancelled" => {
-            eprintln!("[upscale trace={trace_id} event=upscale_cancelled]");
+            log_ev!("upscale", trace_id, "upscale_cancelled", "=>" => "cancel");
             crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "cancel", 0).await;
             edit_or_send(api, chat_id, status_msg_id, &t("upscale.cancelled")).await;
             clean_up(&work_dir);
             return;
         }
         Ok(Err(e)) => {
-            eprintln!("[upscale trace={trace_id} event=upscale_failed] err={e}");
+            log_ev!("upscale", trace_id, "upscale_failed", "=>" => format!("fail err={e}"));
             crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "fail", 0).await;
             crate::stats::record_error_global("upscale", &format!("upscale failed: {e}")).await;
             edit_or_send(api, chat_id, status_msg_id, &t("upscale.upscale_failed")).await;
@@ -418,7 +416,7 @@ pub async fn handle_upscale_image(
             return;
         }
         Err(e) => {
-            eprintln!("[upscale trace={trace_id} event=spawn_failed] err={e}");
+            log_ev!("upscale", trace_id, "spawn_failed", "=>" => format!("fail err={e}"));
             crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "fail", 0).await;
             crate::stats::record_error_global("upscale", &format!("spawn failed: {e}")).await;
             edit_or_send(api, chat_id, status_msg_id, &t("upscale.upscale_failed")).await;
@@ -449,26 +447,26 @@ pub async fn handle_upscale_image(
             .document(PathBuf::from(output_path.to_str().unwrap()))
             .caption(&full_caption).parse_mode(ParseMode::MarkdownV2).build();
         let r = api.send_document(&params).await;
-        eprintln!("[upscale trace={trace_id} event=send_doc] ok={}", r.is_ok());
+        log_ev!("upscale", trace_id, "send_doc", "=>" => if r.is_ok() { "ok" } else { "fail" });
     } else {
         let params = SendPhotoParams::builder()
             .chat_id(chat_id)
             .photo(PathBuf::from(output_path.to_str().unwrap()))
             .caption(&full_caption).parse_mode(ParseMode::MarkdownV2).build();
         let r = api.send_photo(&params).await;
-        eprintln!("[upscale trace={trace_id} event=send_photo] ok={}", r.is_ok());
+        log_ev!("upscale", trace_id, "send_photo", "=>" => if r.is_ok() { "ok" } else { "fail" });
     }
 
     // ── ثبت مصرف quota ──
     if let Some(db) = database.as_ref() {
         let _ = add_usage(db.client(), user_id, quota_kind, 1, 7 * 86400).await;
-        eprintln!("[upscale trace={trace_id} event=quota_added] user_id={user_id} scale={scale_factor}");
+        log_ev!("upscale", trace_id, "quota_added", "user_id" => user_id, "scale" => scale_factor);
     }
 
     crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "ok", 1).await;
 
     clean_up(&work_dir);
-    eprintln!("[upscale trace={trace_id} event=done]");
+    log_ev!("upscale", trace_id, "done");
 }
 
 // ── small helpers ─────────────────────────────────────────────────────────────
@@ -489,7 +487,7 @@ fn run_upscale(
 ) -> Result<f64, String> {
     use std::time::Instant;
     let start = Instant::now();
-    eprintln!("[upscale trace={trace_id} event=realesrgan_spawn] model={model_name} scale={scale}");
+    log_ev!("upscale", trace_id, "realesrgan_spawn", "model" => model_name, "scale" => scale);
     let mut child = std::process::Command::new(UPSCALE_BIN)
         .args(["-i", input, "-o", output, "-n", model_name, "-s", &scale.to_string(), "-m", MODEL_DIR])
         .stderr(std::process::Stdio::piped())
@@ -504,13 +502,13 @@ fn run_upscale(
         if cancel.load(Ordering::Relaxed) {
             child.kill().ok();
             child.wait().ok();
-            eprintln!("[upscale trace={trace_id} event=realesrgan_killed]");
+            log_ev!("upscale", trace_id, "realesrgan_killed");
             return Err("cancelled".into());
         }
         match child.try_wait() {
             Ok(Some(status)) => {
                 let elapsed = start.elapsed().as_secs_f64();
-                eprintln!("[upscale trace={trace_id} event=realesrgan_exit] status={status} elapsed={elapsed:.1}s");
+                log_ev!("upscale", trace_id, "realesrgan_exit", "status" => status, "elapsed" => format!("{elapsed:.1}s"));
                 if !status.success() { return Err(format!("exit {status}")); }
                 if !std::path::Path::new(output).exists() { return Err("no output".into()); }
                 return Ok(elapsed);

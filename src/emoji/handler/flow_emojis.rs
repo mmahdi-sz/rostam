@@ -5,13 +5,13 @@ use frankenstein::{
     types::{Message, ReplyMarkup},
 };
 
-use crate::i18n::{t, tf};
+use crate::i18n::t;
 use crate::emoji::{FlowManager, FlowState, PendingEmoji, panel as emoji_panel, store as emoji_store};
 
 use super::{
     addemoji::extract_19digit_ids,
     extract::extract_custom_emojis,
-    helpers::{filter_duplicates, send_all_duplicate_message, send_with_ents},
+    helpers::{filter_duplicates, send_all_duplicate_message},
     pack_ops::send_cancel_and_panel,
 };
 

@@ -16,7 +16,8 @@
       "ai_sep_button": "جداسازی خواننده و موزیک",
       "ai_gwm_button": "حذف واترمارک Gemini",
       "admin_button": "پنل ادمین",
-      "ai_asr_button": "جادو ✨"
+      "ai_asr_button": "جادو ✨",
+      "panel_button": "پنل کاربری"
     },
     "stt": {
       "config_title": "زبان و کیفیت رونویسی را انتخاب کنید:\n\nگزینه «بهبود خودکار صدا قبل از رونویسی» اگر فعال باشد، ابتدا صدا با DeepFilterNetV3 نویزگیری میشود و سپس نتیجه برای تبدیل گفتار به متن به Vosk ارسال میشود. این گزینه برای افزایش دقت رونویسی در صداهای محیطی و نویزی مفید است.\n\nاین گزینه خودکار عملیات را کمی طولانیتر میکند و حدود ۲۰٪ به زمان پردازش اضافه میکند؛ اگر نیاز ندارید خاموشش کنید.",
@@ -203,6 +204,10 @@
           "brain": "4958937938239947673",
           "crown": "5803032306213982905",
           "alarm_clock": "5215394081911351762",
+          "bell": "5841589769523435046",
+          "key": "5307843983102204243",
+          "numbers": "5226513232549664618",
+          "clock": "5778605968208170641",
           "recycle": "5262934980421492594",
           "shopping_cart": "5265226165085282693"
         },
@@ -266,7 +271,13 @@
       "db_required": "این بخش به دیتابیس نیاز داره — DATABASE_URL باید ست شده باشه.",
       "canceled": "❌ لغو شد.",
       "cancel_button": "لغو عملیات",
-      "guide_text": "راهنمای سیستم ایموجی پریمیوم\n\n🎯 هدف: به جای حفظ ID تلگرام مثل {5393512611968995988}، از نام‌های ساده استفاده کن!\n\n━━ نام هوشمند ━━\nوقتی ایموجی اضافه می‌کنی، بر اساس نوع ایموجی خودکار نام‌گذاری می‌شه.\nمثال: سه تا 🔥 اضافه کنی ← fire1، fire2، fire3\n\n{fire1} — ایموجی اول\n{fire} — تصادفی از همه‌ی گروه (fire1، fire2، ...)\n\n━━ شناسه عددی ━━\nهر ایموجی یه شماره ترتیبی هم داره:\n{43} — ایموجی شماره ۴۳\n\n━━ لقب ━━\nمی‌تونی برای هر ایموجی نام دلخواه بذاری:\n/se 43 boss — ثبت لقب «boss» برای ایموجی شماره ۴۳\n{boss} — استفاده از لقب\n/se 43 - — حذف لقب\n\n━━ مجموعه ━━\nایموجی‌ها داخل مجموعه‌ها گروه‌بندی می‌شن.\nمجموعه اولیه: ایموجی‌های جدید به‌صورت پیش‌فرض به اینجا میرن.\nاز بخش «مجموعه‌ها» مجموعه اولیه رو تنظیم کن.\n\n━━ دسترسی بین مجموعه‌ها ━━\n{terraria:fire1} — ایموجی fire1 از مجموعه terraria\n{terraria:boss} — ایموجی با لقب boss از مجموعه terraria\n{2:43} — ایموجی شماره ۴۳ از مجموعه شماره ۲"
+      "guide_text": "راهنمای سیستم ایموجی پریمیوم\n\n🎯 هدف: به جای حفظ ID تلگرام مثل {5393512611968995988}، از نام‌های ساده استفاده کن!\n\n━━ نام هوشمند ━━\nوقتی ایموجی اضافه می‌کنی، بر اساس نوع ایموجی خودکار نام‌گذاری می‌شه.\nمثال: سه تا 🔥 اضافه کنی ← fire1، fire2، fire3\n\n{fire1} — ایموجی اول\n{fire} — تصادفی از همه‌ی گروه (fire1، fire2، ...)\n\n━━ شناسه عددی ━━\nهر ایموجی یه شماره ترتیبی هم داره:\n{43} — ایموجی شماره ۴۳\n\n━━ لقب ━━\nمی‌تونی برای هر ایموجی نام دلخواه بذاری:\n/se 43 boss — ثبت لقب «boss» برای ایموجی شماره ۴۳\n{boss} — استفاده از لقب\n/se 43 - — حذف لقب\n\n━━ مجموعه ━━\nایموجی‌ها داخل مجموعه‌ها گروه‌بندی می‌شن.\nمجموعه اولیه: ایموجی‌های جدید به‌صورت پیش‌فرض به اینجا میرن.\nاز بخش «مجموعه‌ها» مجموعه اولیه رو تنظیم کن.\n\n━━ دسترسی بین مجموعه‌ها ━━\n{terraria:fire1} — ایموجی fire1 از مجموعه terraria\n{terraria:boss} — ایموجی با لقب boss از مجموعه terraria\n{2:43} — ایموجی شماره ۴۳ از مجموعه شماره ۲",
+      "packs_title": "📁 مجموعه‌ها:",
+      "unknown_pack": "(پک ناشناخته)",
+      "duplicate_prefix": "ℹ️ ایموجی‌های ",
+      "duplicate_suffix": " تکراری بودند و در لیست نیومدند.",
+      "all_duplicate_prefix": "⚠️ همه‌ی ایموجی‌های ",
+      "all_duplicate_suffix": " از قبل توی دیتابیس ذخیره‌اند. چیزی به لیست اضافه نشد."
     },
     "youtube": {
       "analyzing": "⏳",
@@ -359,7 +370,11 @@
         "uploading": "در حال آپلود فایل صوتی...",
         "caption": "🎵 {title}\n\n🔊 کیفیت: {quality}\n\n📤 @{username}",
         "starting": "⏳ شروع دانلود صوت ({quality})..."
-      }
+      },
+      "unit_gb": "گیگابایت",
+      "unit_mb": "مگابایت",
+      "progress_default_percent": "۰٪",
+      "progress_default_elapsed": "۰۰:۰۰"
     },
     "gemini_wm": {
       "prompt": "🖼️ تصویر مورد نظر را ارسال کنید تا واترمارک Gemini از آن حذف شود:",
@@ -445,7 +460,17 @@
           "paywall": "پی‌وال و پلن‌ها",
           "cpu": "صف پردازش (CPU)"
         }
-      }
+      },
+      "db_missing": "دیتابیس متصل نیست.",
+      "stats_error": "خطا در دریافت آمار",
+      "stats_users_error": "خطا در دریافت آمار کاربران فعال",
+      "stats_dl_error": "خطا در دریافت آمار دانلود",
+      "stats_more_header": "📊 آمار بیشتر\n",
+      "stats_no_data": "— داده‌ای نیست —\n",
+      "stats_more_rows": "… و {n} مورد دیگر\n",
+      "no_errors": "✅ در ۲۴ ساعت گذشته خطایی ثبت نشده.",
+      "errors_fetch_error": "خطا در دریافت لیست خطاها",
+      "errors_header": "🐞 خطاهای ۲۴ ساعت گذشته: {count}\n"
     },
     "asr": {
       "send_audio_prompt": "🪄 جادو — تبدیل گفتار به متن\n\nیک فایل صوتی، ویس یا ویدیو بفرست تا متنش رو برات بنویسم.\n\n📋 فرمت‌های پشتیبانی‌شده:\nOGG ، MP3 ، WAV ، M4A ، FLAC ، OPUS ، AAC\nMP4 ، MKV ، AVI ، MOV ، WEBM",
@@ -479,7 +504,23 @@
       "created": "🎉 خرید شما با موفقیت انجام شد ✅\n\n🏅 رتبه: {rank}\n⏳ مدت: {days} روز\n\n🔗 لینک فعال‌سازی:\n{link}\n\nبرای فعال‌سازی کافیست روی لینک بالا بزنید تا به‌صورت خودکار رتبه شما فعال شود ✅",
       "back_button": "🔙 برگشت",
       "gen_usage": "فرمت ساخت کد را بفرست:\n\n«مدت» «مقام» «تعداد»\nمثال: 30d es 1u\n\nمقام‌ها: da (دلاور) | se (سپهبد) | es (اسفندیار) | so (سهراب) | ro (رستم)",
-      "gen_bad_args": "❌ {err}"
+      "gen_bad_args": "❌ {err}",
+      "db_missing": "دیتابیس متصل نیست.",
+      "gen_error": "خطا در ساخت کد.",
+      "apply_error": "خطا در اعمال مقام.",
+      "no_username": "ندارد",
+      "panel_title": "🎁 ساخت کد هدیه\n\nمقام: {rank}\nمدت: {days} روز\nتعداد مصرف: {uses} عدد\n\nانتخاب‌ها را بزن و «ساخت کد» را لمس کن.",
+      "panel_rank_header": "— مقام —",
+      "panel_duration_header": "— مدت (روز) —",
+      "panel_uses_header": "— تعداد مصرف —",
+      "panel_days": "{n} روز",
+      "panel_create_btn": "✅ ساخت کد",
+      "admin_notify": "🔔 *کد هدیه مصرف شد*\n\n🔑 کد: `{code}`\n👤 نام: {name}\n🆔 یوزرنیم: {username}\n🔢 آیدی عددی: {user_id}\n🎖 رتبه فعال‌شده: {rank}\n📅 مدت: {duration}\n🕒 زمان: {time}",
+      "gen_invalid_days": "مدت نامعتبر: «{tok}». مثال: 30d",
+      "gen_invalid_uses": "تعداد مصرف نامعتبر: «{tok}». مثال: 5u",
+      "gen_invalid_rank": "مقام نامعتبر: «{tok}». مقام‌ها: da/se/es/so/ro",
+      "gen_missing_rank": "مقام مشخص نشده. مثال: 30d es 1u",
+      "gen_missing_days": "مدت مشخص نشده. مثال: 30d es 1u"
     },
     "rank": {
       "dalavar": "دلاور",
@@ -489,21 +530,33 @@
       "rostam": "رستم",
       "paywall_feature": "این قابلیت برای رتبه شما در دسترس نیست\nبرای دسترسی به <b>{feature}</b>، به مقام <b>{min_rank}</b> یا بالاتر ارتقا دهید",
       "paywall_limit": "این درخواست از محدودیت رتبه شما بیشتر است\nحداکثر مجاز برای رتبه شما: <b>{limit}</b>\nبرای محدودیت بیشتر، به مقام <b>{min_rank}</b> یا بالاتر ارتقا دهید",
-      "paywall_button": "مشاهده پلن‌ها ↗",
+      "paywall_button": "مشاهده پلن‌ها",
       "guide": "📜 <b>راهنمای اشتراک رستم</b>\nرستم دو بخش جدا دارد تا انتخاب برایت شفاف باشد:\n۱. <b>رتبه‌های دانلود</b> (سرعت، کیفیت، سقف دانلود و ترافیک)\n۲. <b>پلن‌های هوش مصنوعی</b> (رونویسی، جداسازی موزیک، حذف نویز، افزایش کیفیت تصویر)\n\n⚔️ <b>دلاور (پیش‌فرض)</b>\n<blockquote expandable>✅ مناسب استفاده روزمره\n⬇️ ترافیک: <b>۵ گیگابایت روزانه</b> | <b>۱۵ گیگابایت ماهانه</b>\n📱 کیفیت دانلود یوتیوب: تا <b>۴۸۰p</b>\n🔇 حذف نویز: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۶ دقیقه روزانه</b> | <b>۲۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پنج</b> عدد برای 2x | <b>سه</b> عدد برای 3x | <b>دو</b> عدد برای 4x</blockquote>\n\n🎖 <b>سپهبد</b>\n<blockquote expandable>✅ مناسب کاربران نیمه‌حرفه‌ای\n⬇️ ترافیک: <b>۵ گیگابایت روزانه</b> | <b>۶۰ گیگابایت ماهانه</b>\n🔥 کیفیت دانلود یوتیوب: تا <b>۱۰۸۰p</b>\n📚 پلی‌لیست/کانال یوتیوب: فقط <b>۱۰ ویدیوی اول</b>\n🧾 ارسال زیرنویس به‌صورت فایل جداگانه: ✅\n📎 چسباندن زیرنویس به ویدیو: ✅\n🔇 حذف نویز: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۶ دقیقه روزانه</b> | <b>۲۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پنج</b> عدد برای 2x | <b>سه</b> عدد برای 3x | <b>دو</b> عدد برای 4x\n💰 مبلغ اشتراک: <b>۱۵۰ هزار تومان / ماه</b></blockquote>\n\n🏆 <b>اسفندیار</b>\n<blockquote expandable>✅ مناسب دانلودهای سنگین و حرفه‌ای\n⬇️ ترافیک: <b>۴۰ گیگابایت روزانه</b> | <b>۴۰۰ گیگابایت ماهانه</b>\n🚀 کیفیت دانلود یوتیوب: تا <b>4K (بدون محدودیت کیفیت)</b>\n📚 پلی‌لیست/کانال یوتیوب: <b>بدون محدودیت</b>\n🧾 ارسال زیرنویس به‌صورت فایل جداگانه: ✅\n📎 چسباندن زیرنویس به ویدیو: ✅\n🔥 حک‌کردن زیرنویس روی ویدیو: ✅\n🔇 حذف نویز: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۶ دقیقه روزانه</b> | <b>۲۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پنج</b> عدد برای 2x | <b>سه</b> عدد برای 3x | <b>دو</b> عدد برای 4x\n💳 اعتبار گفت‌وگو با هوش مصنوعی در ماه: <b>۱۰۰ تومار</b>\n💰 مبلغ اشتراک: <b>۲۵۰ هزار تومان / ماه</b></blockquote>\n\n🧠 <b>سهراب (اقتصادی)</b>\n<blockquote expandable>✅ مناسب استفاده منظم از ابزارهای هوش مصنوعی\n🔇 حذف نویز: <b>۲ ساعت روزانه</b> | <b>۱۰ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳ ساعت روزانه</b> | <b>۱۵ ساعت هفتگی</b>\n🎙 رونویسی دقیق: <b>۱ ساعت روزانه</b> | <b>۵ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۲۰ دقیقه روزانه</b> | <b>۹۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پنجاه</b> عدد برای 2x | <b>سی</b> عدد برای 3x | <b>بیست</b> عدد برای 4x\n💳 اعتبار گفت‌وگو با هوش مصنوعی در ماه: <b>۳۵۰ تومار</b>\n💰 مبلغ اشتراک: <b>۲۰۰ هزار تومان / ماه</b></blockquote>\n\n👑 <b>رستم (حرفه‌ای)</b>\n<blockquote expandable>🏆 <b>تمام قابلیت‌های مقام اسفندیار</b>\n🔇 حذف نویز: <b>۱۰ ساعت روزانه</b> | <b>۹۹ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ ساعت روزانه</b> | <b>۱۵۰ ساعت هفتگی</b>\n🎙 رونویسی دقیق: <b>۱۰ ساعت روزانه</b> | <b>۵۰ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۲۰۰ دقیقه روزانه</b> | <b>۹۹۹ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پانصد</b> عدد برای 2x | <b>سیصد</b> عدد برای 3x | <b>دویست</b> عدد برای 4x\n✨ دسترسی ویژه به <b>جدیدترین مدل‌های جمنای</b>\n💳 اعتبار گفت‌وگو با هوش مصنوعی در ماه: <b>۱۰۰۰ تومار</b>\n💰 مبلغ اشتراک: <b>۴۰۰ هزار تومان / ماه</b></blockquote>\n\n🕛 <b>زمان ریست سهمیه‌ها</b>\n⏰ ترافیک روزانه: ساعت <b>۰۰:۰۰</b>\n📅 چرخه ماهانه: هر <b>۳۰ روز</b> از زمان اولین دانلود\n♻️ محدودیت‌های هوش مصنوعی: بر اساس <b>بازه روزانه/هفتگی</b> هر سرویس\n\n🛒 <b>برای خرید و ارتقا</b>\n@mmahdi_sz",
       "duration_minutes": "{mins} دقیقه",
       "duration_hours": "{hours} ساعت",
       "duration_hours_minutes": "{hours} ساعت و {mins} دقیقه",
       "denoise_daily_limit": "{limit} در روز",
       "denoise_weekly_limit": "{limit} در هفته",
-      "denoise_remaining": "{remaining} باقی‌مانده"
+      "denoise_remaining": "{remaining} باقی‌مانده",
+      "unit_mib": "{n} مگ",
+      "unit_gib": "{n} گیگ",
+      "expiry_with_date": "تا {date} ({days} روز)",
+      "expiry_unlimited": "نامحدود"
     },
     "commands": {
-      "start":    "منوی اصلی",
+      "start": "منوی اصلی",
       "language": "تغییر زبان",
-      "rank":     "مشاهده پلن‌ها و ارتقای اشتراک",
-      "emoji":    "پنل مدیریت ایموجی",
-      "se":       "تنظیم لقب ایموجی"
+      "rank": "مشاهده پلن‌ها و ارتقای اشتراک",
+      "emoji": "پنل مدیریت ایموجی",
+      "se": "تنظیم لقب ایموجی",
+      "panel": "پنل کاربری — مقام، ترافیک و سهمیه‌ها"
+    },
+    "panel": {
+      "more_button": "سهمیه‌های دیگر اکانت",
+      "back_button": "بازگشت",
+      "unavailable": "پنل کاربری در حال حاضر در دسترس نیست.",
+      "main_text": "👤 <b>پنل کاربری</b>\nمقام: <b>{rank}</b>  ·  {expiry}\n\n<b>📶 ترافیک روزانه</b>\n{bar_d}  {used_d} مصرف  |  {left_d} باقی\n\n<b>📅 ترافیک ماهانه</b>\n{bar_m}  {used_m} مصرف  |  {left_m} باقی\n\n<b>🧠 هوش مصنوعی (ماهانه)</b>\n{bar_ai}  {ai_u} / {ai_lim} تومار",
+      "more_text": "📊 <b>سهمیه‌های دیگر اکانت</b>\n\n<b>🎙️ رونویسی سریع</b>\nروزانه: {b_sf_d}  {u_sf_d} / {l_sf_d}\nهفتگی: {b_sf_w}  {u_sf_w} / {l_sf_w}\n\n<b>✨ رونویسی دقیق</b>\nروزانه: {b_sa_d}  {u_sa_d} / {l_sa_d}\nهفتگی: {b_sa_w}  {u_sa_w} / {l_sa_w}\n\n<b>🎚️ حذف نویز</b>\nروزانه: {b_dn_d}  {u_dn_d} / {l_dn_d}\nهفتگی: {b_dn_w}  {u_dn_w} / {l_dn_w}\n\n<b>🎵 جداسازی</b>\nروزانه: {b_sep_d}  {u_sep_d} / {l_sep_d}\nهفتگی: {b_sep_w}  {u_sep_w} / {l_sep_w}\n\n<b>🖼️ افزایش کیفیت (هفتگی)</b>\n×۲: {b_u2}  {v_u2}/{l_u2}  |  ×۳: {b_u3}  {v_u3}/{l_u3}  |  ×۴: {b_u4}  {v_u4}/{l_u4}"
     }
   },
   "en": {
@@ -523,7 +576,8 @@
       "ai_sep_button": "Vocal Separation",
       "ai_gwm_button": "Gemini Watermark Removal",
       "admin_button": "Admin Panel",
-      "ai_asr_button": "Magic ✨"
+      "ai_asr_button": "Magic ✨",
+      "panel_button": "My Account"
     },
     "stt": {
       "config_title": "Select transcription language and quality:\n\nIf «Auto noise reduction before transcription» is enabled, the audio is first denoised with DeepFilterNetV3 and then sent to Vosk for speech-to-text. This improves accuracy for noisy or ambient recordings.\n\nThis option adds roughly 20% to processing time; turn it off if you don't need it.",
@@ -710,6 +764,10 @@
           "brain": "4958937938239947673",
           "crown": "5803032306213982905",
           "alarm_clock": "5215394081911351762",
+          "bell": "5841589769523435046",
+          "key": "5307843983102204243",
+          "numbers": "5226513232549664618",
+          "clock": "5778605968208170641",
           "recycle": "5262934980421492594",
           "shopping_cart": "5265226165085282693"
         },
@@ -773,7 +831,13 @@
       "db_required": "This section requires a database — DATABASE_URL must be set.",
       "canceled": "❌ Cancelled.",
       "cancel_button": "Cancel",
-      "guide_text": "Premium Emoji System Guide\n\n🎯 Goal: Instead of memorizing Telegram IDs like {5393512611968995988}, use simple names!\n\n━━ Smart Name ━━\nWhen you add an emoji, it's automatically named based on its type.\nExample: add three 🔥 ← fire1, fire2, fire3\n\n{fire1} — first emoji\n{fire} — random from the group (fire1, fire2, ...)\n\n━━ Numeric ID ━━\nEach emoji also has a sequential number:\n{43} — emoji number 43\n\n━━ Alias ━━\nYou can set a custom name for any emoji:\n/se 43 boss — set alias «boss» for emoji #43\n{boss} — use the alias\n/se 43 - — remove alias\n\n━━ Pack ━━\nEmojis are grouped in packs.\nDefault pack: new emojis go here by default.\nSet the default pack from the «Packs» section.\n\n━━ Cross-pack Access ━━\n{terraria:fire1} — fire1 emoji from terraria pack\n{terraria:boss} — emoji with alias boss from terraria pack\n{2:43} — emoji #43 from pack #2"
+      "guide_text": "Premium Emoji System Guide\n\n🎯 Goal: Instead of memorizing Telegram IDs like {5393512611968995988}, use simple names!\n\n━━ Smart Name ━━\nWhen you add an emoji, it's automatically named based on its type.\nExample: add three 🔥 ← fire1, fire2, fire3\n\n{fire1} — first emoji\n{fire} — random from the group (fire1, fire2, ...)\n\n━━ Numeric ID ━━\nEach emoji also has a sequential number:\n{43} — emoji number 43\n\n━━ Alias ━━\nYou can set a custom name for any emoji:\n/se 43 boss — set alias «boss» for emoji #43\n{boss} — use the alias\n/se 43 - — remove alias\n\n━━ Pack ━━\nEmojis are grouped in packs.\nDefault pack: new emojis go here by default.\nSet the default pack from the «Packs» section.\n\n━━ Cross-pack Access ━━\n{terraria:fire1} — fire1 emoji from terraria pack\n{terraria:boss} — emoji with alias boss from terraria pack\n{2:43} — emoji #43 from pack #2",
+      "all_duplicate_prefix": "⚠️ All emojis of ",
+      "all_duplicate_suffix": " are already saved in the database. Nothing was added.",
+      "duplicate_prefix": "ℹ️ Emojis of ",
+      "duplicate_suffix": " were duplicates and were not added to the list.",
+      "packs_title": "📁 Packs:",
+      "unknown_pack": "(unknown pack)"
     },
     "youtube": {
       "analyzing": "⏳",
@@ -866,7 +930,11 @@
         "uploading": "Uploading audio file...",
         "caption": "🎵 {title}\n\n🔊 Quality: {quality}\n\n📤 @{username}",
         "starting": "⏳ Starting audio download ({quality})..."
-      }
+      },
+      "progress_default_elapsed": "00:00",
+      "progress_default_percent": "0%",
+      "unit_gb": "GB",
+      "unit_mb": "MB"
     },
     "gemini_wm": {
       "prompt": "🖼️ Send the image to remove the Gemini watermark from:",
@@ -952,7 +1020,17 @@
           "paywall": "Paywall & Plans",
           "cpu": "Processing Queue (CPU)"
         }
-      }
+      },
+      "db_missing": "Database not connected.",
+      "errors_fetch_error": "Failed to fetch error list",
+      "errors_header": "🐞 Errors in the last 24h: {count}\n",
+      "no_errors": "✅ No errors logged in the last 24h.",
+      "stats_dl_error": "Failed to fetch download stats",
+      "stats_error": "Failed to fetch stats",
+      "stats_more_header": "📊 More stats\n",
+      "stats_more_rows": "… and {n} more\n",
+      "stats_no_data": "— no data —\n",
+      "stats_users_error": "Failed to fetch active-user stats"
     },
     "asr": {
       "send_audio_prompt": "🪄 Magic — Speech to Text\n\nSend an audio file, voice message or video and I'll transcribe it for you.\n\n📋 Supported formats:\nOGG, MP3, WAV, M4A, FLAC, OPUS, AAC\nMP4, MKV, AVI, MOV, WEBM",
@@ -986,7 +1064,23 @@
       "created": "🎉 Your purchase was successful ✅\n\n🏅 Rank: {rank}\n⏳ Duration: {days} days\n\n🔗 Activation link:\n{link}\n\nJust tap the link above to automatically activate your rank ✅",
       "back_button": "🔙 Back",
       "gen_usage": "Send the code generation format:\n\n«duration» «rank» «count»\nExample: 30d es 1u\n\nRanks: da (Dalavar) | se (Sepahbod) | es (Esfandyar) | so (Sohrab) | ro (Rostam)",
-      "gen_bad_args": "❌ {err}"
+      "gen_bad_args": "❌ {err}",
+      "admin_notify": "🔔 *Gift code redeemed*\n\n🔑 Code: `{code}`\n👤 Name: {name}\n🆔 Username: {username}\n🔢 User ID: {user_id}\n🎖 Activated rank: {rank}\n📅 Duration: {duration}\n🕒 Time: {time}",
+      "apply_error": "Failed to apply rank.",
+      "db_missing": "Database not connected.",
+      "gen_error": "Failed to create code.",
+      "gen_invalid_days": "Invalid duration: «{tok}». Example: 30d",
+      "gen_invalid_rank": "Invalid rank: «{tok}». Ranks: da/se/es/so/ro",
+      "gen_invalid_uses": "Invalid use count: «{tok}». Example: 5u",
+      "gen_missing_days": "Duration not specified. Example: 30d es 1u",
+      "gen_missing_rank": "Rank not specified. Example: 30d es 1u",
+      "no_username": "none",
+      "panel_create_btn": "✅ Create code",
+      "panel_days": "{n} days",
+      "panel_duration_header": "— Duration (days) —",
+      "panel_rank_header": "— Rank —",
+      "panel_title": "🎁 Create gift code\n\nRank: {rank}\nDuration: {days} days\nUse count: {uses}\n\nMake your selections and tap «Create code».",
+      "panel_uses_header": "— Use count —"
     },
     "rank": {
       "dalavar": "Dalavar",
@@ -996,21 +1090,33 @@
       "rostam": "Rostam",
       "paywall_feature": "This feature is not available for your rank\nTo access <b>{feature}</b>, upgrade to <b>{min_rank}</b> or higher",
       "paywall_limit": "This request exceeds your rank's limit\nMaximum allowed for your rank: <b>{limit}</b>\nFor higher limits, upgrade to <b>{min_rank}</b> or higher",
-      "paywall_button": "View Plans ↗",
+      "paywall_button": "View Plans",
       "guide": "📜 <b>Rostam Subscription Guide</b>\nRostam has two separate sections for clarity:\n1. <b>Download Ranks</b> (speed, quality, download and traffic limits)\n2. <b>AI Plans</b> (transcription, vocal separation, noise removal, image upscaling)\n\n⚔️ <b>Dalavar (default)</b>\n<blockquote expandable>✅ Suitable for everyday use\n⬇️ Traffic: <b>5 GB daily</b> | <b>15 GB monthly</b>\n📱 YouTube download quality: up to <b>480p</b>\n🔇 Noise removal: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎙 Fast transcription: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎵 Vocal separation: <b>6 min daily</b> | <b>20 min weekly</b>\n🖼 Image upscaling (weekly): <b>five</b> for 2x | <b>three</b> for 3x | <b>two</b> for 4x</blockquote>\n\n🎖 <b>Sepahbod</b>\n<blockquote expandable>✅ Suitable for semi-professional users\n⬇️ Traffic: <b>5 GB daily</b> | <b>60 GB monthly</b>\n🔥 YouTube download quality: up to <b>1080p</b>\n🧾 Send subtitle as separate file: ✅\n📎 Attach subtitle to video: ✅\n🔇 Noise removal: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎙 Fast transcription: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎵 Vocal separation: <b>6 min daily</b> | <b>20 min weekly</b>\n🖼 Image upscaling (weekly): <b>five</b> for 2x | <b>three</b> for 3x | <b>two</b> for 4x\n💰 Subscription: <b>150,000 Toman / month</b></blockquote>\n\n🏆 <b>Esfandyar</b>\n<blockquote expandable>✅ Suitable for heavy and professional downloads\n⬇️ Traffic: <b>40 GB daily</b> | <b>400 GB monthly</b>\n🚀 YouTube download quality: up to <b>4K (unlimited)</b>\n🧾 Send subtitle as separate file: ✅\n📎 Attach subtitle to video: ✅\n🔇 Noise removal: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎙 Fast transcription: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎵 Vocal separation: <b>6 min daily</b> | <b>20 min weekly</b>\n🖼 Image upscaling (weekly): <b>five</b> for 2x | <b>three</b> for 3x | <b>two</b> for 4x\n💳 Monthly AI chat credit: <b>100 Toomar</b>\n💰 Subscription: <b>250,000 Toman / month</b></blockquote>\n\n🧠 <b>Sohrab (Economy)</b>\n<blockquote expandable>✅ Suitable for regular AI tool usage\n🔇 Noise removal: <b>2 hours daily</b> | <b>10 hours weekly</b>\n🎙 Fast transcription: <b>3 hours daily</b> | <b>15 hours weekly</b>\n🎙 Accurate transcription: <b>1 hour daily</b> | <b>5 hours weekly</b>\n🎵 Vocal separation: <b>20 min daily</b> | <b>90 min weekly</b>\n🖼 Image upscaling (weekly): <b>fifty</b> for 2x | <b>thirty</b> for 3x | <b>twenty</b> for 4x\n💳 Monthly AI chat credit: <b>350 Toomar</b>\n💰 Subscription: <b>200,000 Toman / month</b></blockquote>\n\n👑 <b>Rostam (Professional)</b>\n<blockquote expandable>🏆 <b>All Esfandyar features</b>\n🔇 Noise removal: <b>10 hours daily</b> | <b>99 hours weekly</b>\n🎙 Fast transcription: <b>30 hours daily</b> | <b>150 hours weekly</b>\n🎙 Accurate transcription: <b>10 hours daily</b> | <b>50 hours weekly</b>\n🎵 Vocal separation: <b>200 min daily</b> | <b>999 min weekly</b>\n🖼 Image upscaling (weekly): <b>five hundred</b> for 2x | <b>three hundred</b> for 3x | <b>two hundred</b> for 4x\n✨ Exclusive access to <b>latest Gemini models</b>\n💳 Monthly AI chat credit: <b>1000 Toomar</b>\n💰 Subscription: <b>400,000 Toman / month</b></blockquote>\n\n🕛 <b>Quota Reset Times</b>\n⏰ Daily traffic: at <b>00:00</b>\n📅 Monthly cycle: every <b>30 days</b> from first download\n♻️ AI limits: based on each service's <b>daily/weekly window</b>\n\n🛒 <b>To purchase and upgrade</b>\n@mmahdi_sz",
       "duration_minutes": "{mins} min",
       "duration_hours": "{hours} hr",
       "duration_hours_minutes": "{hours} hr {mins} min",
       "denoise_daily_limit": "{limit} per day",
       "denoise_weekly_limit": "{limit} per week",
-      "denoise_remaining": "{remaining} remaining"
+      "denoise_remaining": "{remaining} remaining",
+      "expiry_unlimited": "Unlimited",
+      "expiry_with_date": "until {date} ({days} days)",
+      "unit_gib": "{n} GB",
+      "unit_mib": "{n} MB"
     },
     "commands": {
-      "start":    "Main menu",
+      "start": "Main menu",
       "language": "Change language",
-      "rank":     "View plans & upgrade subscription",
-      "emoji":    "Emoji management panel",
-      "se":       "Set emoji alias"
+      "rank": "View plans & upgrade subscription",
+      "emoji": "Emoji management panel",
+      "se": "Set emoji alias",
+      "panel": "My account — rank, traffic and quotas"
+    },
+    "panel": {
+      "more_button": "Other quotas",
+      "back_button": "Back",
+      "main_text": "👤 <b>User Panel</b>\nRank: <b>{rank}</b>  ·  {expiry}\n\n<b>📶 Daily traffic</b>\n{bar_d}  {used_d} used  |  {left_d} left\n\n<b>📅 Monthly traffic</b>\n{bar_m}  {used_m} used  |  {left_m} left\n\n<b>🧠 AI (monthly)</b>\n{bar_ai}  {ai_u} / {ai_lim} Toomar",
+      "more_text": "📊 <b>Other account quotas</b>\n\n<b>🎙️ Fast transcription</b>\nDaily: {b_sf_d}  {u_sf_d} / {l_sf_d}\nWeekly: {b_sf_w}  {u_sf_w} / {l_sf_w}\n\n<b>✨ Accurate transcription</b>\nDaily: {b_sa_d}  {u_sa_d} / {l_sa_d}\nWeekly: {b_sa_w}  {u_sa_w} / {l_sa_w}\n\n<b>🎚️ Noise removal</b>\nDaily: {b_dn_d}  {u_dn_d} / {l_dn_d}\nWeekly: {b_dn_w}  {u_dn_w} / {l_dn_w}\n\n<b>🎵 Separation</b>\nDaily: {b_sep_d}  {u_sep_d} / {l_sep_d}\nWeekly: {b_sep_w}  {u_sep_w} / {l_sep_w}\n\n<b>🖼️ Upscale (weekly)</b>\n×2: {b_u2}  {v_u2}/{l_u2}  |  ×3: {b_u3}  {v_u3}/{l_u3}  |  ×4: {b_u4}  {v_u4}/{l_u4}",
+      "unavailable": "User panel is currently unavailable."
     }
   },
   "it": {
@@ -1030,7 +1136,8 @@
       "ai_sep_button": "Separazione Vocale",
       "ai_gwm_button": "Rimozione Filigrana Gemini",
       "admin_button": "Pannello Admin",
-      "ai_asr_button": "Magia ✨"
+      "ai_asr_button": "Magia ✨",
+      "panel_button": "Il mio account"
     },
     "stt": {
       "config_title": "Seleziona lingua e qualità della trascrizione:\n\nSe «Riduzione automatica del rumore prima della trascrizione» è attiva, l'audio viene prima elaborato con DeepFilterNetV3 poi inviato a Vosk. Migliora la precisione per registrazioni rumorose.\n\nAggiunge circa il 20% al tempo di elaborazione; disattivala se non necessario.",
@@ -1217,6 +1324,10 @@
           "brain": "4958937938239947673",
           "crown": "5803032306213982905",
           "alarm_clock": "5215394081911351762",
+          "bell": "5841589769523435046",
+          "key": "5307843983102204243",
+          "numbers": "5226513232549664618",
+          "clock": "5778605968208170641",
           "recycle": "5262934980421492594",
           "shopping_cart": "5265226165085282693"
         },
@@ -1280,7 +1391,13 @@
       "db_required": "Questa sezione richiede un database — DATABASE_URL deve essere impostato.",
       "canceled": "❌ Annullato.",
       "cancel_button": "Annulla",
-      "guide_text": "Guida al Sistema Emoji Premium\n\n🎯 Obiettivo: invece di memorizzare ID Telegram come {5393512611968995988}, usa nomi semplici!\n\n━━ Nome Intelligente ━━\nQuando aggiungi un'emoji, viene nominata automaticamente in base al tipo.\nEsempio: aggiungi tre 🔥 ← fire1, fire2, fire3\n\n{fire1} — prima emoji\n{fire} — casuale dal gruppo (fire1, fire2, ...)\n\n━━ ID Numerico ━━\nOgni emoji ha anche un numero sequenziale:\n{43} — emoji numero 43\n\n━━ Alias ━━\nPuoi impostare un nome personalizzato per ogni emoji:\n/se 43 boss — imposta alias «boss» per emoji #43\n{boss} — usa l'alias\n/se 43 - — rimuovi alias\n\n━━ Pack ━━\nLe emoji sono raggruppate in pack.\nPack predefinito: le nuove emoji vanno qui.\nImposta il pack predefinito dalla sezione «Pack».\n\n━━ Accesso Cross-pack ━━\n{terraria:fire1} — emoji fire1 dal pack terraria\n{terraria:boss} — emoji con alias boss dal pack terraria\n{2:43} — emoji #43 dal pack #2"
+      "guide_text": "Guida al Sistema Emoji Premium\n\n🎯 Obiettivo: invece di memorizzare ID Telegram come {5393512611968995988}, usa nomi semplici!\n\n━━ Nome Intelligente ━━\nQuando aggiungi un'emoji, viene nominata automaticamente in base al tipo.\nEsempio: aggiungi tre 🔥 ← fire1, fire2, fire3\n\n{fire1} — prima emoji\n{fire} — casuale dal gruppo (fire1, fire2, ...)\n\n━━ ID Numerico ━━\nOgni emoji ha anche un numero sequenziale:\n{43} — emoji numero 43\n\n━━ Alias ━━\nPuoi impostare un nome personalizzato per ogni emoji:\n/se 43 boss — imposta alias «boss» per emoji #43\n{boss} — usa l'alias\n/se 43 - — rimuovi alias\n\n━━ Pack ━━\nLe emoji sono raggruppate in pack.\nPack predefinito: le nuove emoji vanno qui.\nImposta il pack predefinito dalla sezione «Pack».\n\n━━ Accesso Cross-pack ━━\n{terraria:fire1} — emoji fire1 dal pack terraria\n{terraria:boss} — emoji con alias boss dal pack terraria\n{2:43} — emoji #43 dal pack #2",
+      "all_duplicate_prefix": "⚠️ Tutte le emoji di ",
+      "all_duplicate_suffix": " sono già salvate nel database. Niente è stato aggiunto.",
+      "duplicate_prefix": "ℹ️ Le emoji di ",
+      "duplicate_suffix": " erano duplicate e non sono state aggiunte all'elenco.",
+      "packs_title": "📁 Raccolte:",
+      "unknown_pack": "(pack sconosciuto)"
     },
     "youtube": {
       "analyzing": "⏳",
@@ -1373,7 +1490,11 @@
         "uploading": "Caricamento file audio...",
         "caption": "🎵 {title}\n\n🔊 Qualità: {quality}\n\n📤 @{username}",
         "starting": "⏳ Avvio download audio ({quality})..."
-      }
+      },
+      "progress_default_elapsed": "00:00",
+      "progress_default_percent": "0%",
+      "unit_gb": "GB",
+      "unit_mb": "MB"
     },
     "gemini_wm": {
       "prompt": "🖼️ Invia l'immagine per rimuovere la filigrana Gemini:",
@@ -1459,7 +1580,17 @@
           "paywall": "Paywall e Piani",
           "cpu": "Coda Elaborazione (CPU)"
         }
-      }
+      },
+      "db_missing": "Database non connesso.",
+      "errors_fetch_error": "Impossibile recuperare l'elenco errori",
+      "errors_header": "🐞 Errori nelle ultime 24h: {count}\n",
+      "no_errors": "✅ Nessun errore registrato nelle ultime 24h.",
+      "stats_dl_error": "Impossibile recuperare le statistiche di download",
+      "stats_error": "Impossibile recuperare le statistiche",
+      "stats_more_header": "📊 Altre statistiche\n",
+      "stats_more_rows": "… e altri {n}\n",
+      "stats_no_data": "— nessun dato —\n",
+      "stats_users_error": "Impossibile recuperare le statistiche utenti attivi"
     },
     "asr": {
       "send_audio_prompt": "🪄 Magia — Testo da Voce\n\nInvia un file audio, messaggio vocale o video e lo trascrivo per te.\n\n📋 Formati supportati:\nOGG, MP3, WAV, M4A, FLAC, OPUS, AAC\nMP4, MKV, AVI, MOV, WEBM",
@@ -1493,7 +1624,23 @@
       "created": "🎉 Acquisto completato con successo ✅\n\n🏅 Rango: {rank}\n⏳ Durata: {days} giorni\n\n🔗 Link di attivazione:\n{link}\n\nTocca il link sopra per attivare automaticamente il tuo rango ✅",
       "back_button": "🔙 Indietro",
       "gen_usage": "Invia il formato di generazione codice:\n\n«durata» «rango» «quantità»\nEsempio: 30d es 1u\n\nRanghi: da (Dalavar) | se (Sepahbod) | es (Esfandyar) | so (Sohrab) | ro (Rostam)",
-      "gen_bad_args": "❌ {err}"
+      "gen_bad_args": "❌ {err}",
+      "admin_notify": "🔔 *Codice regalo riscattato*\n\n🔑 Codice: `{code}`\n👤 Nome: {name}\n🆔 Username: {username}\n🔢 ID utente: {user_id}\n🎖 Rango attivato: {rank}\n📅 Durata: {duration}\n🕒 Ora: {time}",
+      "apply_error": "Impossibile applicare il rango.",
+      "db_missing": "Database non connesso.",
+      "gen_error": "Impossibile creare il codice.",
+      "gen_invalid_days": "Durata non valida: «{tok}». Esempio: 30d",
+      "gen_invalid_rank": "Rango non valido: «{tok}». Ranghi: da/se/es/so/ro",
+      "gen_invalid_uses": "Numero di utilizzi non valido: «{tok}». Esempio: 5u",
+      "gen_missing_days": "Durata non specificata. Esempio: 30d es 1u",
+      "gen_missing_rank": "Rango non specificato. Esempio: 30d es 1u",
+      "no_username": "nessuno",
+      "panel_create_btn": "✅ Crea codice",
+      "panel_days": "{n} giorni",
+      "panel_duration_header": "— Durata (giorni) —",
+      "panel_rank_header": "— Rango —",
+      "panel_title": "🎁 Crea codice regalo\n\nRango: {rank}\nDurata: {days} giorni\nUtilizzi: {uses}\n\nEffettua le selezioni e tocca «Crea codice».",
+      "panel_uses_header": "— Numero di utilizzi —"
     },
     "rank": {
       "dalavar": "Dalavar",
@@ -1503,21 +1650,33 @@
       "rostam": "Rostam",
       "paywall_feature": "Questa funzione non è disponibile per il tuo rango\nPer accedere a <b>{feature}</b>, passa a <b>{min_rank}</b> o superiore",
       "paywall_limit": "Questa richiesta supera il limite del tuo rango\nMassimo consentito: <b>{limit}</b>\nPer limiti maggiori, passa a <b>{min_rank}</b> o superiore",
-      "paywall_button": "Vedi Piani ↗",
+      "paywall_button": "Vedi Piani",
       "guide": "📜 <b>Guida Abbonamento Rostam</b>\nRostam ha due sezioni separate:\n1. <b>Ranghi Download</b> (velocità, qualità, limiti download e traffico)\n2. <b>Piani AI</b> (trascrizione, separazione vocale, riduzione rumore, miglioramento immagini)\n\n⚔️ <b>Dalavar (predefinito)</b>\n<blockquote expandable>✅ Per uso quotidiano\n⬇️ Traffico: <b>5 GB giornalieri</b> | <b>15 GB mensili</b>\n📱 Qualità download YouTube: fino a <b>480p</b>\n🔇 Riduzione rumore: <b>30 min/giorno</b> | <b>2 ore/settimana</b>\n🎙 Trascrizione veloce: <b>30 min/giorno</b> | <b>2 ore/settimana</b>\n🎵 Separazione vocale: <b>6 min/giorno</b> | <b>20 min/settimana</b>\n🖼 Miglioramento immagini (sett.): <b>cinque</b> per 2x | <b>tre</b> per 3x | <b>due</b> per 4x</blockquote>\n\n🎖 <b>Sepahbod</b>\n<blockquote expandable>✅ Per utenti semi-professionali\n⬇️ Traffico: <b>5 GB giornalieri</b> | <b>60 GB mensili</b>\n🔥 Qualità download YouTube: fino a <b>1080p</b>\n🧾 Sottotitoli come file separato: ✅\n📎 Allegare sottotitoli al video: ✅\n🔇 Riduzione rumore: <b>30 min/giorno</b> | <b>2 ore/settimana</b>\n🎙 Trascrizione veloce: <b>30 min/giorno</b> | <b>2 ore/settimana</b>\n🎵 Separazione vocale: <b>6 min/giorno</b> | <b>20 min/settimana</b>\n🖼 Miglioramento immagini (sett.): <b>cinque</b> per 2x | <b>tre</b> per 3x | <b>due</b> per 4x\n💰 Abbonamento: <b>150.000 Toman / mese</b></blockquote>\n\n🏆 <b>Esfandyar</b>\n<blockquote expandable>✅ Per download intensivi e professionali\n⬇️ Traffico: <b>40 GB giornalieri</b> | <b>400 GB mensili</b>\n🚀 Qualità download YouTube: fino a <b>4K (illimitata)</b>\n🧾 Sottotitoli come file separato: ✅\n📎 Allegare sottotitoli al video: ✅\n🔇 Riduzione rumore: <b>30 min/giorno</b> | <b>2 ore/settimana</b>\n🎙 Trascrizione veloce: <b>30 min/giorno</b> | <b>2 ore/settimana</b>\n🎵 Separazione vocale: <b>6 min/giorno</b> | <b>20 min/settimana</b>\n🖼 Miglioramento immagini (sett.): <b>cinque</b> per 2x | <b>tre</b> per 3x | <b>due</b> per 4x\n💳 Credito chat AI mensile: <b>100 Toomar</b>\n💰 Abbonamento: <b>250.000 Toman / mese</b></blockquote>\n\n🧠 <b>Sohrab (Economico)</b>\n<blockquote expandable>✅ Per uso regolare degli strumenti AI\n🔇 Riduzione rumore: <b>2 ore/giorno</b> | <b>10 ore/settimana</b>\n🎙 Trascrizione veloce: <b>3 ore/giorno</b> | <b>15 ore/settimana</b>\n🎙 Trascrizione precisa: <b>1 ora/giorno</b> | <b>5 ore/settimana</b>\n🎵 Separazione vocale: <b>20 min/giorno</b> | <b>90 min/settimana</b>\n🖼 Miglioramento immagini (sett.): <b>cinquanta</b> per 2x | <b>trenta</b> per 3x | <b>venti</b> per 4x\n💳 Credito chat AI mensile: <b>350 Toomar</b>\n💰 Abbonamento: <b>200.000 Toman / mese</b></blockquote>\n\n👑 <b>Rostam (Professionale)</b>\n<blockquote expandable>🏆 <b>Tutte le funzioni Esfandyar</b>\n🔇 Riduzione rumore: <b>10 ore/giorno</b> | <b>99 ore/settimana</b>\n🎙 Trascrizione veloce: <b>30 ore/giorno</b> | <b>150 ore/settimana</b>\n🎙 Trascrizione precisa: <b>10 ore/giorno</b> | <b>50 ore/settimana</b>\n🎵 Separazione vocale: <b>200 min/giorno</b> | <b>999 min/settimana</b>\n🖼 Miglioramento immagini (sett.): <b>cinquecento</b> per 2x | <b>trecento</b> per 3x | <b>duecento</b> per 4x\n✨ Accesso esclusivo ai <b>modelli Gemini più recenti</b>\n💳 Credito chat AI mensile: <b>1000 Toomar</b>\n💰 Abbonamento: <b>400.000 Toman / mese</b></blockquote>\n\n🕛 <b>Reset Quote</b>\n⏰ Traffico giornaliero: alle <b>00:00</b>\n📅 Ciclo mensile: ogni <b>30 giorni</b> dal primo download\n♻️ Limiti AI: basati sulla <b>finestra giornaliera/settimanale</b> di ogni servizio\n\n🛒 <b>Per acquistare e fare upgrade</b>\n@mmahdi_sz",
       "duration_minutes": "{mins} min",
       "duration_hours": "{hours} h",
       "duration_hours_minutes": "{hours} h {mins} min",
       "denoise_daily_limit": "{limit} al giorno",
       "denoise_weekly_limit": "{limit} alla settimana",
-      "denoise_remaining": "{remaining} rimanente"
+      "denoise_remaining": "{remaining} rimanente",
+      "expiry_unlimited": "Illimitato",
+      "expiry_with_date": "fino al {date} ({days} giorni)",
+      "unit_gib": "{n} GB",
+      "unit_mib": "{n} MB"
     },
     "commands": {
-      "start":    "Menu principale",
+      "start": "Menu principale",
       "language": "Cambia lingua",
-      "rank":     "Visualizza piani e aggiorna abbonamento",
-      "emoji":    "Pannello gestione emoji",
-      "se":       "Imposta alias emoji"
+      "rank": "Visualizza piani e aggiorna abbonamento",
+      "emoji": "Pannello gestione emoji",
+      "se": "Imposta alias emoji",
+      "panel": "Il mio account — rango, traffico e quote"
+    },
+    "panel": {
+      "more_button": "Altre quote",
+      "back_button": "Indietro",
+      "main_text": "👤 <b>Pannello utente</b>\nRango: <b>{rank}</b>  ·  {expiry}\n\n<b>📶 Traffico giornaliero</b>\n{bar_d}  {used_d} usato  |  {left_d} rimasto\n\n<b>📅 Traffico mensile</b>\n{bar_m}  {used_m} usato  |  {left_m} rimasto\n\n<b>🧠 IA (mensile)</b>\n{bar_ai}  {ai_u} / {ai_lim} Toomar",
+      "more_text": "📊 <b>Altre quote dell'account</b>\n\n<b>🎙️ Trascrizione rapida</b>\nGiornaliera: {b_sf_d}  {u_sf_d} / {l_sf_d}\nSettimanale: {b_sf_w}  {u_sf_w} / {l_sf_w}\n\n<b>✨ Trascrizione accurata</b>\nGiornaliera: {b_sa_d}  {u_sa_d} / {l_sa_d}\nSettimanale: {b_sa_w}  {u_sa_w} / {l_sa_w}\n\n<b>🎚️ Rimozione rumore</b>\nGiornaliera: {b_dn_d}  {u_dn_d} / {l_dn_d}\nSettimanale: {b_dn_w}  {u_dn_w} / {l_dn_w}\n\n<b>🎵 Separazione</b>\nGiornaliera: {b_sep_d}  {u_sep_d} / {l_sep_d}\nSettimanale: {b_sep_w}  {u_sep_w} / {l_sep_w}\n\n<b>🖼️ Upscale (settimanale)</b>\n×2: {b_u2}  {v_u2}/{l_u2}  |  ×3: {b_u3}  {v_u3}/{l_u3}  |  ×4: {b_u4}  {v_u4}/{l_u4}",
+      "unavailable": "Il pannello utente non è al momento disponibile."
     }
   }
 }

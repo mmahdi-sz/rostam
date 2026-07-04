@@ -179,6 +179,7 @@ pub async fn separate_audio(
 }
 
 // Simple RFC-4648 base64 decoder — no external crate needed.
+#[allow(unused_assignments)]
 fn b64_decode(s: &str) -> Result<Vec<u8>, &'static str> {
     const TABLE: [i8; 256] = {
         let mut t = [-1i8; 256];

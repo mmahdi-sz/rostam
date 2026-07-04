@@ -1,13 +1,12 @@
 use std::path::PathBuf;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use frankenstein::{
-    AsyncTelegramApi, ParseMode,
+    AsyncTelegramApi,
     client_reqwest::Bot,
     methods::{
-        AnswerCallbackQueryParams, DeleteMessageParams, EditMessageTextParams,
+        DeleteMessageParams, EditMessageTextParams,
         SendAudioParams,
     },
     types::{InlineKeyboardMarkup, Message},
@@ -20,17 +19,17 @@ use crate::emoji::{FlowManager, FlowState};
 use crate::emoji::panel::{btn_icon_success, btn_icon, btn_icon_danger};
 use crate::i18n::{t, tf, entities_for_text};
 use crate::rank::{self, quota::{QuotaKind, get_usage, add_usage}};
-use crate::youtube::log_trace;
+use crate::log::next_trace_id;
 
 use super::client::{separate_audio, fetch_cpu_status};
 use super::types::SeparationMode;
 
-static NEXT_TRACE: AtomicU64 = AtomicU64::new(1);
-
-fn next_trace_id() -> u64 {
-    NEXT_TRACE.fetch_add(1, Ordering::Relaxed)
+// ponytail: thin shim so 30+ log_trace() calls below keep working with correct domain.
+fn log_trace(trace_id: u64, event: &str, details: &str) {
+    crate::log::emit("sep", trace_id, event, details);
 }
 
+#[allow(dead_code)]
 pub const CB_AI_SEP: &str = "ai:sep";
 pub const CB_SEP_PREFIX: &str = "sep:";
 pub const CB_SEP_BACK: &str = "sep:back";
@@ -74,7 +73,8 @@ pub async fn enter_separation(
 ) {
     let trace_id = next_trace_id();
     flow_manager.set(user_id, FlowState::AwaitingSeparation);
-    eprintln!("[separation trace={trace_id} event=enter] user_id={user_id} chat_id={chat_id}");
+    log_actor_id!("sep", trace_id, user_id, "clicked" => "ai:sep");
+    log_ev!("sep", trace_id, "enter", "user_id" => user_id, "chat_id" => chat_id);
 
     let text = t("separation.send_audio_prompt");
     let entities = entities_for_text(&text);
@@ -86,8 +86,8 @@ pub async fn enter_separation(
         .build();
     if !entities.is_empty() { params.entities = Some(entities); }
     match api.edit_message_text(&params).await {
-        Ok(_) => eprintln!("[separation trace={trace_id} event=prompt_shown]"),
-        Err(e) => eprintln!("[separation trace={trace_id} event=prompt_failed] err={e}"),
+        Ok(_) => log_trace(trace_id, "prompt_shown", ""),
+        Err(e) => log_trace(trace_id, "prompt_failed", &format!("=> fail err={e}")),
     }
 }
 
@@ -102,8 +102,9 @@ pub async fn handle_separation_audio(
     let chat_id = message.chat.id;
     let msg_id = message.message_id;
 
-    eprintln!("[separation trace={trace_id} event=audio_received] user_id={user_id} chat_id={chat_id} msg_id={msg_id} has_audio={} has_voice={} has_doc={}",
-        message.audio.is_some(), message.voice.is_some(), message.document.is_some());
+    log_actor_id!("sep", trace_id, user_id, "clicked" => "audio/voice");
+    log_trace(trace_id, "audio_received", &format!("user_id={user_id} chat_id={chat_id} msg_id={msg_id} has_audio={} has_voice={} has_doc={}",
+        message.audio.is_some(), message.voice.is_some(), message.document.is_some()));
 
     // Keep flow alive — mode hasn't been selected yet.
     // We store the file_id so we can download after mode selection.
@@ -114,7 +115,7 @@ pub async fn handle_separation_audio(
         .or_else(|| message.document.as_ref().map(|d| d.file_id.clone()));
 
     let Some(file_id) = file_id else {
-        eprintln!("[separation trace={trace_id} event=no_file_id]");
+        log_trace(trace_id, "no_file_id", "");
         let _ = send_text(api, chat_id, &t("separation.error.invalid_audio")).await;
         return;
     };
@@ -124,7 +125,7 @@ pub async fn handle_separation_audio(
         .unwrap_or(if is_video { "video.mp4" } else { "audio.mp3" })
         .to_string();
 
-    eprintln!("[separation trace={trace_id} event=file_stored] file_id={file_id} filename={orig_filename} is_video={is_video}");
+    log_trace(trace_id, "file_stored", &format!("file_id={file_id} filename={orig_filename} is_video={is_video}"));
 
     // Update flow to store file info, waiting for mode selection.
     flow_manager.set(user_id, FlowState::AwaitingSeparationMode {
@@ -145,7 +146,7 @@ pub async fn handle_separation_audio(
     match api.send_message(&params).await {
         Ok(resp) => {
             let prompt_id = resp.result.message_id;
-            eprintln!("[separation trace={trace_id} event=mode_keyboard_sent] prompt_msg_id={prompt_id}");
+            log_trace(trace_id, "mode_keyboard_sent", &format!("prompt_msg_id={prompt_id}"));
             // Store the prompt message id so we can edit/delete it later.
             flow_manager.set(user_id, FlowState::AwaitingSeparationMode {
                 file_id,
@@ -154,7 +155,7 @@ pub async fn handle_separation_audio(
                 is_video,
             });
         }
-        Err(e) => eprintln!("[separation trace={trace_id} event=mode_keyboard_failed] err={e}"),
+        Err(e) => log_trace(trace_id, "mode_keyboard_failed", &format!("=> fail err={e}")),
     }
 }
 
@@ -170,17 +171,17 @@ pub async fn handle_separation_callback(
     database: &Option<PostgresDatabase>,
 ) {
     let trace_id = next_trace_id();
-    eprintln!("[separation trace={trace_id} event=callback] user_id={user_id} chat_id={chat_id} data={cb_data}");
+    log_trace(trace_id, "callback", &format!("user_id={user_id} chat_id={chat_id} data={cb_data}"));
 
     // sep:qcancel — user cancelled while in queue
     if cb_data == CB_SEP_QUEUE_CANCEL {
-        eprintln!("[separation trace={trace_id} event=queue_cancel] user_id={user_id}");
+        log_trace(trace_id, "queue_cancel", &format!("user_id={user_id}"));
         if let FlowState::AwaitingSeparationQueued { cancel } = flow_manager.get(user_id) {
             cancel.store(true, Ordering::Relaxed);
         }
         flow_manager.clear(user_id);
         let r = edit_to_ai_lab(api, chat_id, message_id).await;
-        eprintln!("[separation trace={trace_id} event=queue_cancel_done] ok={}", r.is_ok());
+        log_trace(trace_id, "queue_cancel_done", &format!("ok={}", r.is_ok()));
         return;
     }
 
@@ -188,16 +189,16 @@ pub async fn handle_separation_callback(
     if cb_data.starts_with("sep:back:") {
         flow_manager.clear(user_id);
         let r = edit_to_ai_lab(api, chat_id, message_id).await;
-        eprintln!("[separation trace={trace_id} event=back_done] ok={}", r.is_ok());
+        log_trace(trace_id, "back_done", &format!("ok={}", r.is_ok()));
         return;
     }
 
     // sep:cancel:{msg_id}
     if let Some(rest) = cb_data.strip_prefix("sep:cancel:") {
-        eprintln!("[separation trace={trace_id} event=cancel] msg_id_from_cb={rest}");
+        log_trace(trace_id, "cancel", &format!("msg_id_from_cb={rest}"));
         flow_manager.clear(user_id);
         let r = edit_to_ai_lab(api, chat_id, message_id).await;
-        eprintln!("[separation trace={trace_id} event=cancel_done] ok={}", r.is_ok());
+        log_trace(trace_id, "cancel_done", &format!("ok={}", r.is_ok()));
         return;
     }
 
@@ -207,7 +208,7 @@ pub async fn handle_separation_callback(
     } else if let Some(rest) = cb_data.strip_prefix("sep:fast:") {
         (SeparationMode::Fast, rest)
     } else {
-        eprintln!("[separation trace={trace_id} event=unknown_callback] data={cb_data}");
+        log_trace(trace_id, "unknown_callback", &format!("data={cb_data}"));
         return;
     };
 
@@ -215,13 +216,13 @@ pub async fn handle_separation_callback(
         SeparationMode::Quality => "quality",
         SeparationMode::Fast => "fast",
     };
-    eprintln!("[separation trace={trace_id} event=mode_selected] user_id={user_id} mode={mode_label}");
+    log_trace(trace_id, "mode_selected", &format!("user_id={user_id} mode={mode_label}"));
 
     // Read stored file info from flow state.
     let (file_id, filename, is_video) = match flow_manager.get(user_id) {
         FlowState::AwaitingSeparationMode { file_id, filename, is_video, .. } => (file_id, filename, is_video),
         other => {
-            eprintln!("[separation trace={trace_id} event=wrong_state] state={other:?}");
+            log_trace(trace_id, "wrong_state", &format!("state={other:?}"));
             let _ = send_text(api, chat_id, &t("separation.error.service_unavailable")).await;
             return;
         }
@@ -242,16 +243,16 @@ pub async fn handle_separation_callback(
         .text(&processing_text)
         .build();
     match api.edit_message_text(&edit_params).await {
-        Ok(_) => eprintln!("[separation trace={trace_id} event=processing_msg_shown] is_video={is_video}"),
-        Err(e) => eprintln!("[separation trace={trace_id} event=processing_msg_failed] err={e}"),
+        Ok(_) => log_trace(trace_id, "processing_msg_shown", "is_video={is_video}"),
+        Err(e) => log_trace(trace_id, "processing_msg_failed", &format!("err={e}")),
     }
 
     // Download file from Telegram.
-    eprintln!("[separation trace={trace_id} event=download_start] file_id={file_id} filename={filename} is_video={is_video}");
+    log_trace(trace_id, "download_start", &format!("file_id={file_id} filename={filename} is_video={is_video}"));
     let file_bytes = match download_file(api, &file_id, trace_id).await {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("[separation trace={trace_id} event=download_failed] err={e}");
+            log_trace(trace_id, "download_failed", &format!("err={e}"));
             crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
             crate::stats::record_error_global("separation", &format!("download failed: {e}")).await;
             let _ = send_text(api, chat_id, &t("separation.error.service_unavailable")).await;
@@ -259,7 +260,7 @@ pub async fn handle_separation_callback(
             return;
         }
     };
-    eprintln!("[separation trace={trace_id} event=download_done] bytes={}", file_bytes.len());
+    log_trace(trace_id, "download_done", &format!("bytes={}", file_bytes.len()));
 
     // If video: extract audio with ffmpeg, then compress if needed.
     let tmp_dir = std::env::temp_dir().join(format!("sep_{trace_id}"));
@@ -269,7 +270,7 @@ pub async fn handle_separation_callback(
         match extract_and_prepare_audio(&file_bytes, &tmp_dir, message_id, chat_id, api, trace_id).await {
             Ok(b) => b,
             Err(e) => {
-                eprintln!("[separation trace={trace_id} event=extract_failed] err={e}");
+                log_trace(trace_id, "extract_failed", &format!("err={e}"));
                 crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
                 crate::stats::record_error_global("separation", &format!("audio extraction failed: {e}")).await;
                 let _ = send_text(api, chat_id, &t("separation.error.audio_extraction_failed")).await;
@@ -281,7 +282,7 @@ pub async fn handle_separation_callback(
     } else {
         file_bytes
     };
-    eprintln!("[separation trace={trace_id} event=audio_ready] bytes={}", audio_bytes.len());
+    log_trace(trace_id, "audio_ready", &format!("bytes={}", audio_bytes.len()));
 
     // Quota check — duration از ffprobe روی audio bytes
     {
@@ -297,7 +298,7 @@ pub async fn handle_separation_callback(
             .and_then(|s| s.trim().parse::<f64>().ok())
             .map(|d| d.ceil() as u64)
             .unwrap_or(0);
-        eprintln!("[separation trace={trace_id} event=duration_probed] secs={audio_duration_secs}");
+        log_trace(trace_id, "duration_probed", &format!("secs={audio_duration_secs}"));
 
         if let Some(db) = database.as_ref() {
             let user_rank = rank::effective_rank(db.client(), user_id).await;
@@ -323,7 +324,7 @@ pub async fn handle_separation_callback(
             };
 
             if let Some((label, next_rank)) = block {
-                eprintln!("[separation trace={trace_id} event=quota_blocked] user_id={user_id}");
+                log_trace(trace_id, "quota_blocked", &format!("user_id={user_id}"));
                 let _ = delete_message(api, chat_id, message_id).await;
                 std::fs::remove_dir_all(&tmp_dir).ok();
                 flow_manager.clear(user_id);
@@ -348,14 +349,14 @@ pub async fn handle_separation_callback(
     }
 
     // Call separation service.
-    eprintln!("[separation trace={trace_id} event=separate_start] mode={mode_label}");
+    log_trace(trace_id, "separate_start", &format!("mode={mode_label}"));
     let audio_filename: String = if is_video { "audio.mp3".to_string() } else { filename.clone() };
 
     // Check server load before showing any message.
     let cpu_status = fetch_cpu_status().await;
     let server_free = cpu_status.available_cores > 0 && !cpu_status.overloaded;
-    eprintln!("[separation trace={trace_id} event=cpu_status_check] available={} overloaded={} queue={} server_free={server_free}",
-        cpu_status.available_cores, cpu_status.overloaded, cpu_status.queue_length);
+    log_trace(trace_id, "cpu_status_check", &format!("available={} overloaded={} queue={} server_free={server_free}",
+        cpu_status.available_cores, cpu_status.overloaded, cpu_status.queue_length));
     if !server_free {
         crate::stats::record_event_user(user_id, "cpu", "queue", "separation", 0).await;
     }
@@ -381,7 +382,7 @@ pub async fn handle_separation_callback(
             .build();
         if !entities.is_empty() { params.entities = Some(entities); }
         let _ = api.edit_message_text(&params).await;
-        eprintln!("[separation trace={trace_id} event=initial_msg_shown] server_free={server_free}");
+        log_trace(trace_id, "initial_msg_shown", &format!("server_free={server_free}"));
     }
 
     // Spawn all heavy work so the event loop stays free — this makes the cancel button work.
@@ -408,7 +409,7 @@ pub async fn handle_separation_callback(
                 .build();
             if !entities.is_empty() { params.entities = Some(entities); }
             let _ = api_queue.edit_message_text(&params).await;
-            eprintln!("[separation trace={trace_id} event=queue_msg_shown_delayed]");
+            log_trace(trace_id, "queue_msg_shown_delayed", "");
         });
 
         // Status-update task: after 5 min (if not done) edit to "still busy".
@@ -460,14 +461,14 @@ pub async fn handle_separation_callback(
         let _ = flow_clear_tx.send(user_id);
 
         if cancelled.load(Ordering::Relaxed) {
-            eprintln!("[separation trace={trace_id} event=cancelled_in_queue]");
+            log_trace(trace_id, "cancelled_in_queue", "");
             std::fs::remove_dir_all(&tmp_dir).ok();
             return;
         }
 
         let result = match sep_result {
             None => {
-                eprintln!("[separation trace={trace_id} event=queue_timeout]");
+                log_trace(trace_id, "queue_timeout", "");
                 crate::stats::record_event_user(user_id, "cpu", "timeout", "separation", 0).await;
                 crate::stats::record_event_user(user_id, "separation", mode_label, "timeout", 0).await;
                 crate::stats::record_error_global("separation", "queue timeout (35min)").await;
@@ -481,9 +482,9 @@ pub async fn handle_separation_callback(
 
         match result {
             Ok(result) => {
-                eprintln!("[separation trace={trace_id} event=separate_done] duration={:.1}s vocals_wav={} instrumental_wav={} vocals_compressed={} instrumental_compressed={} ext={}",
+                log_trace(trace_id, "separate_done", &format!("duration={:.1}s vocals_wav={} instrumental_wav={} vocals_compressed={} instrumental_compressed={} ext={}",
                     result.duration_seconds, result.vocals_wav.len(), result.instrumental_wav.len(),
-                    result.vocals_compressed.len(), result.instrumental_compressed.len(), result.compressed_ext);
+                    result.vocals_compressed.len(), result.instrumental_compressed.len(), result.compressed_ext));
 
                 let _ = delete_message(&api_task, chat_id, message_id).await;
 
@@ -497,48 +498,48 @@ pub async fn handle_separation_callback(
                 std::fs::write(&vocals_compressed_path, &result.vocals_compressed).ok();
                 std::fs::write(&instrumental_compressed_path, &result.instrumental_compressed).ok();
 
-                eprintln!("[separation trace={trace_id} event=send_vocals_compressed]");
+                log_trace(trace_id, "send_vocals_compressed", "");
                 let p = SendAudioParams::builder()
                     .chat_id(chat_id)
                     .audio(PathBuf::from(&vocals_compressed_path))
                     .caption(t("separation.result.vocals_compressed_caption"))
                     .build();
                 match api_task.send_audio(&p).await {
-                    Ok(_) => eprintln!("[separation trace={trace_id} event=vocals_compressed_sent]"),
-                    Err(e) => eprintln!("[separation trace={trace_id} event=vocals_compressed_failed] err={e}"),
+                    Ok(_) => log_trace(trace_id, "vocals_compressed_sent", ""),
+                    Err(e) => log_trace(trace_id, "vocals_compressed_failed", &format!("err={e}")),
                 }
 
-                eprintln!("[separation trace={trace_id} event=send_vocals_wav]");
+                log_trace(trace_id, "send_vocals_wav", "");
                 let p = frankenstein::methods::SendDocumentParams::builder()
                     .chat_id(chat_id)
                     .document(PathBuf::from(&vocals_wav_path))
                     .caption(t("separation.result.vocals_wav_caption"))
                     .build();
                 match api_task.send_document(&p).await {
-                    Ok(_) => eprintln!("[separation trace={trace_id} event=vocals_wav_sent]"),
-                    Err(e) => eprintln!("[separation trace={trace_id} event=vocals_wav_failed] err={e}"),
+                    Ok(_) => log_trace(trace_id, "vocals_wav_sent", ""),
+                    Err(e) => log_trace(trace_id, "vocals_wav_failed", &format!("err={e}")),
                 }
 
-                eprintln!("[separation trace={trace_id} event=send_instrumental_compressed]");
+                log_trace(trace_id, "send_instrumental_compressed", "");
                 let p = SendAudioParams::builder()
                     .chat_id(chat_id)
                     .audio(PathBuf::from(&instrumental_compressed_path))
                     .caption(t("separation.result.instrumental_compressed_caption"))
                     .build();
                 match api_task.send_audio(&p).await {
-                    Ok(_) => eprintln!("[separation trace={trace_id} event=instrumental_compressed_sent]"),
-                    Err(e) => eprintln!("[separation trace={trace_id} event=instrumental_compressed_failed] err={e}"),
+                    Ok(_) => log_trace(trace_id, "instrumental_compressed_sent", ""),
+                    Err(e) => log_trace(trace_id, "instrumental_compressed_failed", &format!("err={e}")),
                 }
 
-                eprintln!("[separation trace={trace_id} event=send_instrumental_wav]");
+                log_trace(trace_id, "send_instrumental_wav", "");
                 let p = frankenstein::methods::SendDocumentParams::builder()
                     .chat_id(chat_id)
                     .document(PathBuf::from(&instrumental_wav_path))
                     .caption(t("separation.result.instrumental_wav_caption"))
                     .build();
                 match api_task.send_document(&p).await {
-                    Ok(_) => eprintln!("[separation trace={trace_id} event=instrumental_wav_sent]"),
-                    Err(e) => eprintln!("[separation trace={trace_id} event=instrumental_wav_failed] err={e}"),
+                    Ok(_) => log_trace(trace_id, "instrumental_wav_sent", ""),
+                    Err(e) => log_trace(trace_id, "instrumental_wav_failed", &format!("err={e}")),
                 }
 
                 // ثبت مصرف quota
@@ -546,16 +547,16 @@ pub async fn handle_separation_callback(
                     let dur = result.duration_seconds.ceil() as i64;
                     let _ = add_usage(db.client(), user_id, QuotaKind::SeparationDaily, dur, 86400).await;
                     let _ = add_usage(db.client(), user_id, QuotaKind::SeparationWeekly, dur, 7 * 86400).await;
-                    eprintln!("[separation trace={trace_id} event=quota_added] user_id={user_id} secs={dur}");
+                    log_trace(trace_id, "quota_added", &format!("user_id={user_id} secs={dur}"));
                 }
 
                 crate::stats::record_event_user(user_id, "separation", mode_label, "ok", result.duration_seconds.ceil() as i64).await;
 
                 std::fs::remove_dir_all(&tmp_dir).ok();
-                eprintln!("[separation trace={trace_id} event=cleanup_done]");
+                log_trace(trace_id, "cleanup_done", "");
             }
             Err(e) => {
-                eprintln!("[separation trace={trace_id} event=separate_error] err={e}");
+                log_trace(trace_id, "separate_error", &format!("err={e}"));
                 crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
                 crate::stats::record_error_global("separation", &format!("processing error: {e:?}")).await;
                 let _ = delete_message(&api_task, chat_id, message_id).await;
@@ -600,7 +601,7 @@ async fn extract_and_prepare_audio(
     }
 
     let audio_size = std::fs::metadata(&audio_path)?.len();
-    eprintln!("[separation trace={trace_id} event=audio_extracted] size={audio_size}");
+    log_trace(trace_id, "audio_extracted", &format!("size={audio_size}"));
 
     if audio_size <= MAX_AUDIO_BYTES {
         return Ok(std::fs::read(&audio_path)?);
@@ -625,7 +626,7 @@ async fn extract_and_prepare_audio(
         attempt += 1;
         bitrate_bps = (bitrate_bps as f64 * 0.9) as u32;
         let bitrate_kbps = (bitrate_bps / 1000).max(32);
-        eprintln!("[separation trace={trace_id} event=compress_attempt] attempt={attempt} bitrate={bitrate_kbps}k");
+        log_trace(trace_id, "compress_attempt", &format!("attempt={attempt} bitrate={bitrate_kbps}k"));
 
         let edit_text = crate::i18n::tf("separation.compressing_audio",
             &[("attempt", &attempt.to_string()), ("max", &MAX_ATTEMPTS.to_string())]);
@@ -647,7 +648,7 @@ async fn extract_and_prepare_audio(
         }
 
         let size = std::fs::metadata(&out_path)?.len();
-        eprintln!("[separation trace={trace_id} event=compressed] attempt={attempt} size={size}");
+        log_trace(trace_id, "compressed", &format!("attempt={attempt} size={size}"));
 
         if size <= MAX_AUDIO_BYTES {
             return Ok(std::fs::read(&out_path)?);
@@ -665,11 +666,11 @@ async fn download_file(api: &Bot, file_id: &str, trace_id: u64) -> Result<Vec<u8
     let file_info = api.get_file(&GetFileParams::builder().file_id(file_id).build()).await?;
     let file_path = file_info.result.file_path.ok_or("no file_path")?;
 
-    eprintln!("[separation trace={trace_id} event=file_path] file_path={file_path}");
+    log_trace(trace_id, "file_path", &format!("file_path={file_path}"));
 
     if file_path.starts_with('/') {
         let bytes = std::fs::read(&file_path)?;
-        eprintln!("[separation trace={trace_id} event=local_read] size={}", bytes.len());
+        log_trace(trace_id, "local_read", &format!("size={}", bytes.len()));
         return Ok(bytes);
     }
 
@@ -680,11 +681,11 @@ async fn download_file(api: &Bot, file_id: &str, trace_id: u64) -> Result<Vec<u8
         format!("https://api.telegram.org/file/bot{}/{file_path}", crate::config::bot_token()?)
     };
 
-    eprintln!("[separation trace={trace_id} event=http_download] url_prefix={}", &url[..url.len().min(60)]);
+    log_trace(trace_id, "http_download", &format!("url_prefix={}", &url[..url.len().min(60)]));
     let response = reqwest::get(&url).await?;
     let status = response.status();
     let bytes = response.bytes().await?.to_vec();
-    eprintln!("[separation trace={trace_id} event=http_done] status={status} bytes={}", bytes.len());
+    log_trace(trace_id, "http_done", &format!("status={status} bytes={}", bytes.len()));
     Ok(bytes)
 }
 

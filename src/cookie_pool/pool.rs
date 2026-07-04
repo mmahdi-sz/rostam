@@ -14,6 +14,7 @@ pub struct CookiePool {
     available_cookies: Vec<CookieSource>,
     last_used_cookie: Option<String>,
     cooldown_list: Vec<CooldownEntry>,
+    #[allow(dead_code)]
     cooldown: Duration,
     random_counter: u64,
 }
@@ -72,6 +73,7 @@ impl CookiePool {
         Some(SelectedCookie { id: selected.id, profile_name: selected.profile_name, cookies_file: selected.cookies_sqlite, yt_dlp_browser_spec })
     }
 
+    #[allow(dead_code)]
     pub fn mark_rate_limited(&mut self, cookie_id: &str) -> bool {
         self.cleanup_expired_cooldowns();
         if self.cooldown_list.iter().any(|e| e.cookie_id == cookie_id) { return false; }

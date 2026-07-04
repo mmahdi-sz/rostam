@@ -10,6 +10,7 @@ pub fn btn_success(text: &str, callback_data: &str) -> InlineKeyboardButton {
     btn_icon_success(text, callback_data, "")
 }
 
+#[allow(dead_code)]
 pub fn btn_danger(text: &str, callback_data: &str) -> InlineKeyboardButton {
     btn_icon_danger(text, callback_data, "")
 }

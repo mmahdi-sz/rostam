@@ -166,6 +166,7 @@ async fn handle_resolution_callback(api: &Bot, callback_query: &CallbackQuery, d
     };
     let trace_id = request.trace_id;
 
+    log_actor_id!("yt", trace_id, callback_query.from.id as i64, "clicked" => format!("yt:q:{request_id}:{height}"));
     log_trace(
         trace_id,
         "quality_clicked",

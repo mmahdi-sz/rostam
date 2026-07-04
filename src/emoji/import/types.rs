@@ -11,6 +11,7 @@ pub struct ParsedItem {
     pub old_pack_id: i32,
     pub custom_emoji_id: String,
     pub fallback: String,
+    #[allow(dead_code)]
     pub smart_name: String,
     pub alias: Option<String>,
     pub position: i32,

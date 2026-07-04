@@ -5,7 +5,7 @@ use frankenstein::types::{
 
 use crate::i18n::{t, tf};
 
-use super::buttons::{btn, btn_icon, btn_success, btn_danger};
+use super::buttons::{btn, btn_icon, btn_success};
 use super::constants::*;
 use super::super::store::{EmojiItem, EmojiPack};
 
@@ -145,6 +145,7 @@ pub fn import_choice_keyboard(db_empty: bool) -> InlineKeyboardMarkup {
     }
 }
 
+#[allow(dead_code)]
 pub fn remove_reply_keyboard() -> ReplyKeyboardRemove {
     ReplyKeyboardRemove::builder().remove_keyboard(true).build()
 }

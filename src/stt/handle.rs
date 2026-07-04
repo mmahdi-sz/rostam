@@ -15,12 +15,11 @@ use crate::stt::config::*;
 use crate::stt::deepfilter;
 use crate::stt::types::{SttConfig, SttLang, SttModelSize};
 use crate::stt::vosk;
-use crate::youtube::log_trace;
+use crate::log::next_trace_id;
 
-fn next_trace_id() -> u64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT: AtomicU64 = AtomicU64::new(1);
-    NEXT.fetch_add(1, Ordering::Relaxed)
+// ponytail: thin shim — existing log_trace() calls below keep working with correct domain.
+fn log_trace(trace_id: u64, event: &str, details: &str) {
+    crate::log::emit("stt", trace_id, event, details);
 }
 
 // action قابل‌گرپ برای آمار: big/fast + fa/en + پسوند denoise.
@@ -47,6 +46,7 @@ pub async fn enter_stt_config(
     database: &Option<PostgresDatabase>,
 ) {
     let trace_id = next_trace_id();
+    log_actor_id!("stt", trace_id, user_id, "clicked" => "ai:stt");
 
     let denoise_default = if let Some(db) = database.as_ref() {
         let user_rank = rank::effective_rank(db.client(), user_id).await;
@@ -86,6 +86,7 @@ pub async fn handle_stt_callback(
     database: &Option<PostgresDatabase>,
 ) -> bool {
     let trace_id = next_trace_id();
+    log_actor_id!("stt", trace_id, user_id, "clicked" => data);
 
     match data {
         CB_STT_FA_BIG | CB_STT_FA_SMALL | CB_STT_EN_BIG | CB_STT_EN_SMALL => {
@@ -263,6 +264,7 @@ pub async fn handle_stt_audio(
     database: Option<PostgresDatabase>,
 ) {
     let trace_id = next_trace_id();
+    log_actor_id!("stt", trace_id, user_id, "clicked" => "audio/voice");
     log_trace(trace_id, "stt_audio_received", &format!("user_id={user_id} chat_id={chat_id}"));
 
     let _ = send_text(api, chat_id, &t("stt.preparing")).await;

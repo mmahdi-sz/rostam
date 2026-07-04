@@ -7,9 +7,9 @@ mod format;
 mod snapshot;
 pub mod fresh;
 
-pub use types::{CookieSource, CooldownEntry, SelectedCookie, CookiePoolStatus, CookiePoolSnapshot};
+pub use types::{CookieSource, CooldownEntry, CookiePoolSnapshot};
 pub use pool::CookiePool;
-pub use format::{format_cookie_status, format_selected_cookie, format_no_cookie_available, format_duration};
+pub use format::format_no_cookie_available;
 pub use snapshot::save_snapshot;
 
 const DEFAULT_FIREFOX_ROOT: &str = "/home/mahdi/.mozilla/firefox";

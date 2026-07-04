@@ -11,16 +11,16 @@ use frankenstein::{
     },
     types::{
         InlineKeyboardMarkup, LinkPreviewOptions, MaybeInaccessibleMessage,
-        ReplyMarkup, ReplyKeyboardRemove,
+        ReplyMarkup,
     },
 };
 
 use crate::bot::send_text;
 use crate::database::postgresql::PostgresDatabase;
-use crate::i18n::{entities_for_text, t, tf};
+use crate::i18n::{t, tf};
 use crate::youtube::jalali::gregorian_to_jalali;
 use crate::emoji::{
-    FlowManager, FlowState, cache,
+    FlowManager, FlowState,
     panel::{self as emoji_panel, *},
     store as emoji_store, import as emoji_import,
 };
@@ -36,7 +36,7 @@ pub async fn handle_emoji_callback(
     api: &Bot, cbq: &frankenstein::types::CallbackQuery,
     flow_manager: &mut FlowManager, database: &Option<PostgresDatabase>,
 ) {
-    let trace_id = cache::next_trace_id();
+    let trace_id = crate::log::next_trace_id();
 
     let _ = api.answer_callback_query(
         &AnswerCallbackQueryParams::builder().callback_query_id(&cbq.id).build(),
@@ -48,10 +48,8 @@ pub async fn handle_emoji_callback(
     let message_id = panel_msg.message_id;
     let user_id = cbq.from.id as i64;
 
-    eprintln!(
-        "[emoji_cb trace={trace_id} event=entry] user_id={user_id} chat_id={chat_id} \
-         msg_id={message_id} data={data:?}"
-    );
+    log_actor!(&"emoji", trace_id, &cbq.from, "clicked" => data);
+    log_ev!("emoji", trace_id, "entry", "chat_id" => chat_id, "msg_id" => message_id);
 
     let Some(db) = database else {
         eprintln!("[emoji_cb trace={trace_id} event=no_db]");
@@ -64,7 +62,7 @@ pub async fn handle_emoji_callback(
         d if d == CB_ADD => {
             eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_ADD");
             flow_manager.set(user_id, FlowState::AwaitingEmojis { collected: Vec::new() });
-            let r = send_with_ents(api, chat_id, t("emoji.add_prompt"),
+            let _r = send_with_ents(api, chat_id, t("emoji.add_prompt"),
                 Some(ReplyMarkup::ReplyKeyboardMarkup(emoji_panel::cancel_reply_keyboard()))).await;
             eprintln!("[emoji_cb trace={trace_id} event=state_transition] new_state=AwaitingEmojis");
         }

@@ -1,7 +1,7 @@
 use frankenstein::{client_reqwest::Bot, types::CallbackQuery};
 
 use crate::database::postgresql::PostgresDatabase;
-use crate::i18n::{entities_for_text, t, tf};
+use crate::i18n::{entities_for_text, tf};
 use crate::rank;
 
 use super::super::download::{
@@ -294,6 +294,9 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<
         return;
     };
     let trace_id = req.trace_id;
+    if let Some(uid) = req.user_id {
+        log_actor_id!("yt", trace_id, uid, "clicked" => "yt:s:go");
+    }
     let selection = with_selection(&req, |slot| slot.clone()).unwrap_or_else(|| {
         log_trace(trace_id, "selection_go_missing", "no selection present, falling back");
         Selection {
@@ -355,7 +358,7 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<
             if let Some(min_rank) = next_rank {
                 crate::rank::paywall::block_limit(api, message.chat.id, &label, min_rank).await;
             } else {
-                crate::bot::send_text(api, message.chat.id, &label).await;
+                let _ = crate::bot::send_text(api, message.chat.id, &label).await;
             }
             return;
         }
@@ -409,12 +412,12 @@ fn fmt_traffic_fa(bytes: u64) -> String {
         let g = b / GB;
         // عدد صحیح اگه گرد، وگرنه یک رقم اعشار
         if (g.round() - g).abs() < 0.05 {
-            (format!("{:.0}", g.round()), "گیگابایت")
+            (format!("{:.0}", g.round()), crate::i18n::t("youtube.unit_gb"))
         } else {
-            (format!("{:.1}", g), "گیگابایت")
+            (format!("{:.1}", g), crate::i18n::t("youtube.unit_gb"))
         }
     } else {
-        (format!("{:.0}", (b / MB).round()), "مگابایت")
+        (format!("{:.0}", (b / MB).round()), crate::i18n::t("youtube.unit_mb"))
     };
     format!("{} {}", crate::i18n::to_fa_digits(&num), unit)
 }

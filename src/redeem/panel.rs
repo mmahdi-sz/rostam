@@ -2,7 +2,7 @@
 
 use frankenstein::types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup};
 
-use crate::i18n::to_fa_digits;
+use crate::i18n::{t, tf, to_fa_digits};
 use crate::rank::types::Rank;
 
 use super::panel_state::GenSelection;
@@ -47,12 +47,12 @@ fn header(text: &str) -> InlineKeyboardButton {
 
 /// متن بالای پنل با خلاصه‌ی انتخاب فعلی
 pub fn panel_text(sel: &GenSelection) -> String {
-    to_fa_digits(&format!(
-        "🎁 ساخت کد هدیه\n\nمقام: {}\nمدت: {} روز\nتعداد مصرف: {} عدد\n\nانتخاب‌ها را بزن و «ساخت کد» را لمس کن.",
-        sel.rank.display_name(),
-        sel.days,
-        sel.uses,
-    ))
+    let rank_name = sel.rank.display_name();
+    to_fa_digits(&tf("redeem.panel_title", &[
+        ("rank", &rank_name),
+        ("days", &sel.days.to_string()),
+        ("uses", &sel.uses.to_string()),
+    ]))
 }
 
 /// کیبورد پنل بر اساس انتخاب فعلی
@@ -60,13 +60,13 @@ pub fn build_keyboard(sel: &GenSelection) -> InlineKeyboardMarkup {
     let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
 
     // ── مقام (۲×۲) ──
-    rows.push(vec![header("— مقام —")]);
+    rows.push(vec![header(&t("redeem.panel_rank_header"))]);
     for pair in RANKS.chunks(2) {
         let row: Vec<InlineKeyboardButton> = pair
             .iter()
             .map(|r| {
                 choice(
-                    r.display_name().to_string(),
+                    r.display_name(),
                     format!("{CB_GC_RANK}{}", r.as_str()),
                     sel.rank == *r,
                 )
@@ -76,13 +76,13 @@ pub fn build_keyboard(sel: &GenSelection) -> InlineKeyboardMarkup {
     }
 
     // ── مدت (۲×۲) ──
-    rows.push(vec![header("— مدت (روز) —")]);
+    rows.push(vec![header(&t("redeem.panel_duration_header"))]);
     for pair in DAYS.chunks(2) {
         let row: Vec<InlineKeyboardButton> = pair
             .iter()
             .map(|d| {
                 choice(
-                    to_fa_digits(&format!("{d} روز")),
+                    to_fa_digits(&tf("redeem.panel_days", &[("n", &d.to_string())])),
                     format!("{CB_GC_DAYS}{d}"),
                     sel.days == *d,
                 )
@@ -92,7 +92,7 @@ pub fn build_keyboard(sel: &GenSelection) -> InlineKeyboardMarkup {
     }
 
     // ── تعداد مصرف (۲ ردیف × ۵ ستون: ۱..۱۰) ──
-    rows.push(vec![header("— تعداد مصرف —")]);
+    rows.push(vec![header(&t("redeem.panel_uses_header"))]);
     for chunk in (1..=10).collect::<Vec<i32>>().chunks(5) {
         let row: Vec<InlineKeyboardButton> = chunk
             .iter()
@@ -108,8 +108,8 @@ pub fn build_keyboard(sel: &GenSelection) -> InlineKeyboardMarkup {
     }
 
     // ── تایید + برگشت ──
-    rows.push(vec![btn("✅ ساخت کد".to_string(), CB_GC_GO.to_string(), Some(ButtonStyle::Success))]);
-    rows.push(vec![plain("🔙 برگشت".to_string(), crate::bot::CB_ADMIN_PANEL)]);
+    rows.push(vec![btn(t("redeem.panel_create_btn"), CB_GC_GO.to_string(), Some(ButtonStyle::Success))]);
+    rows.push(vec![plain(t("redeem.back_button"), crate::bot::CB_ADMIN_PANEL)]);
 
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
 }

@@ -44,7 +44,7 @@ pub(super) async fn build_pack_links_text(
             .map(|e| format!("![{}](tg://emoji?id={})", e.fallback, e.custom_emoji_id))
             .collect::<Vec<_>>().join("");
         if set_name == "unknown" {
-            lines.push(format!("{}{}", emoji_line, escape_markdown_v2(":\n(پک ناشناخته)")));
+            lines.push(format!("{}{}", emoji_line, escape_markdown_v2(&format!(":\n{}", crate::i18n::t("emoji.unknown_pack")))));
         } else {
             lines.push(format!(
                 "{}{}\n{}",

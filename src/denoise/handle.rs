@@ -14,12 +14,11 @@ use crate::emoji::panel::btn_icon_danger;
 use crate::i18n::{t, tf, apply_premium_to_md};
 use crate::rank::{self, quota::{QuotaKind, get_usage, add_usage}};
 use crate::stt::deepfilter;
-use crate::youtube::log_trace;
+use crate::log::next_trace_id;
 
-fn next_trace_id() -> u64 {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static NEXT: AtomicU64 = AtomicU64::new(1);
-    NEXT.fetch_add(1, Ordering::Relaxed)
+// ponytail: thin shim so existing log_trace() calls below keep working with correct domain.
+fn log_trace(trace_id: u64, event: &str, details: &str) {
+    crate::log::emit("denoise", trace_id, event, details);
 }
 
 /// Called from main.rs when `ai:denoise` is pressed.
@@ -33,6 +32,7 @@ pub async fn enter_denoise(
 ) {
     let trace_id = next_trace_id();
     flow_manager.set(user_id, FlowState::AwaitingDenoiseAudio);
+    log_actor_id!("denoise", trace_id, user_id, "clicked" => "ai:denoise");
 
     let text = apply_premium_to_md(&t("denoise.prompt"));
     let params = EditMessageTextParams::builder()
@@ -81,6 +81,7 @@ pub async fn handle_denoise_audio(
     flow_manager.clear(user_id);
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
+    log_actor_id!("denoise", trace_id, user_id, "clicked" => "audio/voice");
 
     let file_id = message
         .voice

@@ -9,7 +9,9 @@ pub const CODE_TTL_SECS: i64 = 7 * 86_400;
 pub struct RedeemCodeRow {
     pub rank: Rank,
     pub duration_days: i32,
+    #[allow(dead_code)]
     pub max_uses: i32,
+    #[allow(dead_code)]
     pub used_count: i32,
     /// زمان انقضای رکورد کد (epoch). None یعنی بدون انقضا (کدهای قدیمی).
     pub expires_at: Option<i64>,

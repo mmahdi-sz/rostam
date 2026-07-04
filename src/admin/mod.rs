@@ -57,21 +57,21 @@ pub async fn render_stats(client: &Client) -> String {
         Ok(u) => u,
         Err(e) => {
             eprintln!("[admin event=stats_users_failed] err={e}");
-            return "خطا در دریافت آمار".to_string();
+            return t("admin.stats_error");
         }
     };
     let active = match get_active_users(client).await {
         Ok(a) => a,
         Err(e) => {
             eprintln!("[admin event=stats_active_failed] err={e}");
-            return "خطا در دریافت آمار کاربران فعال".to_string();
+            return t("admin.stats_users_error");
         }
     };
     let dl = match get_download_stats(client).await {
         Ok(d) => d,
         Err(e) => {
             eprintln!("[admin event=stats_downloads_failed] err={e}");
-            return "خطا در دریافت آمار دانلود".to_string();
+            return t("admin.stats_dl_error");
         }
     };
 
@@ -154,7 +154,7 @@ const MORE_FEATURES: &[(&str, &str)] = &[
 const MORE_MAX_ROWS: usize = 14;
 
 pub async fn render_stats_more(client: &Client) -> String {
-    let mut out = String::from("📊 آمار بیشتر\n");
+    let mut out = t("admin.stats_more_header");
 
     for (feature, name_key) in MORE_FEATURES {
         let rows = match get_action_breakdown(client, feature).await {
@@ -166,7 +166,7 @@ pub async fn render_stats_more(client: &Client) -> String {
         };
         out.push_str(&format!("\n━━ {} ━━\n", t(name_key)));
         if rows.is_empty() {
-            out.push_str("— داده‌ای نیست —\n");
+            out.push_str(&t("admin.stats_no_data"));
             continue;
         }
         for row in rows.iter().take(MORE_MAX_ROWS) {
@@ -182,7 +182,7 @@ pub async fn render_stats_more(client: &Client) -> String {
             ));
         }
         if rows.len() > MORE_MAX_ROWS {
-            out.push_str(&format!("… و {} مورد دیگر\n", rows.len() - MORE_MAX_ROWS));
+            out.push_str(&tf("admin.stats_more_rows", &[("n", &(rows.len() - MORE_MAX_ROWS).to_string())]));
         }
     }
 
@@ -199,18 +199,18 @@ fn html_escape(s: &str) -> String {
 pub async fn render_errors_1d(client: &Client) -> String {
     let count = count_recent_errors(client).await.unwrap_or(0);
     if count == 0 {
-        return to_fa_digits("✅ در ۲۴ ساعت گذشته خطایی ثبت نشده.");
+        return to_fa_digits(&t("admin.no_errors"));
     }
 
     let rows = match get_recent_errors(client, 40).await {
         Ok(r) => r,
         Err(e) => {
             eprintln!("[admin event=errors_failed] err={e}");
-            return "خطا در دریافت لیست خطاها".to_string();
+            return t("admin.errors_fetch_error");
         }
     };
 
-    let header = format!("🐞 خطاهای ۲۴ ساعت گذشته: {count}\n");
+    let header = tf("admin.errors_header", &[("count", &count.to_string())]);
     let mut body = String::new();
     for r in &rows {
         let line = format!("{}m · {}: {}", r.minutes_ago, r.feature, r.message);

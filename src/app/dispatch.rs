@@ -8,7 +8,7 @@ use frankenstein::{
 use crate::bot::{send_start_menu, edit_to_start_menu, edit_to_ai_lab, send_lang_picker};
 use crate::bot::{
     CB_LANG_SET,
-    CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB,
+    CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB, CB_USER_PANEL,
     CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_AI_SEP, CB_AI_GWM, CB_AI_ASR, CB_DENOISE_CANCEL,
     CB_ADMIN_PANEL, CB_ADMIN_STATS, CB_ADMIN_STATS_MORE, CB_ADMIN_ERRORS, CB_ADMIN_GEN_CODE,
 };
@@ -19,13 +19,15 @@ use crate::emoji::{FlowState, handler as emoji_handler, panel::CB_START_PANEL};
 use crate::gemini_watermark::{enter_gwm, handle_gwm_cancel, handle_gwm_image, CB_GWM_CANCEL};
 use crate::i18n::{t, reload_i18n, LANG};
 use crate::separation::{enter_separation, handle_separation_audio, handle_separation_callback, CB_SEP_PREFIX};
-use crate::stt::{config::CB_STT_CANCEL, handle::{enter_stt_config, handle_stt_audio, handle_stt_callback}};
+use crate::stt::handle::{enter_stt_config, handle_stt_audio, handle_stt_callback};
 use crate::upscale::{
     enter_upscale, handle_upscale_anime_toggle, handle_upscale_cancel,
     handle_upscale_image, handle_upscale_model_pick,
     CB_UPSCALE_CANCEL, CB_UPSCALE_MODEL_PREFIX, CB_UPSCALE_ANIME_TOGGLE,
 };
-use crate::youtube::{extract_youtube_urls, handle_youtube_url, log_trace, next_trace_id};
+use crate::youtube::{extract_youtube_urls, handle_youtube_url};
+use crate::youtube::trace::log_trace;
+use crate::log::next_trace_id;
 use crate::stats;
 use frankenstein::{
     methods::SendMessageParams,
@@ -96,8 +98,18 @@ pub async fn handle_update(
 
         // چک زبان فقط اگه DB وجود داشته باشه
         if state.database.is_some() {
+            // redeem deep-link: gate رو bypass کن تا کد اول فعال بشه، بعد زبان انتخاب میشه
+            let is_redeem = if let UpdateContent::Message(m) = &content {
+                m.text.as_deref()
+                    .and_then(|t| t.strip_prefix("/start"))
+                    .map(|r| r.trim().starts_with("redeem"))
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+
             let lang_opt = stats::get_user_language(uid).await;
-            if lang_opt.is_none() {
+            if lang_opt.is_none() && !is_redeem {
                 let chat_id = match &content {
                     UpdateContent::Message(m) => m.chat.id,
                     UpdateContent::CallbackQuery(cq) => cq.message.as_ref().and_then(|m| match m {
@@ -109,7 +121,7 @@ pub async fn handle_update(
                 send_lang_picker(&state.api, chat_id).await?;
                 return Ok(());
             }
-            let lang = lang_opt.unwrap();
+            let lang = lang_opt.unwrap_or_else(|| "fa".to_string());
             return LANG.scope(lang, async {
                 match content {
                     UpdateContent::Message(message) => handle_message(state, *message).await?,
@@ -134,10 +146,13 @@ async fn handle_message(
     state: &mut AppState,
     message: frankenstein::types::Message,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let AppState { api, cookie_pool, database, flow_manager, rate_limit_tx, flow_clear_tx } = state;
+    let AppState { api, cookie_pool, database, flow_manager, rate_limit_tx, flow_clear_tx: _ } = state;
     let user_id = message.from.as_ref().map(|u| u.id as i64);
     let msg_text = message.text.as_deref().unwrap_or("");
-    eprintln!("[dispatch event=message] user_id={user_id:?} chat_id={} text={msg_text:?}", message.chat.id);
+    if let Some(u) = message.from.as_ref() {
+        let trace_id = crate::log::next_trace_id();
+        log_actor!("dispatch", trace_id, u, "msg" => msg_text.chars().take(40).collect::<String>());
+    }
 
     // ثبت کاربر در stats (fire-and-forget)
     if let Some(uid) = user_id {
@@ -164,7 +179,9 @@ async fn handle_message(
             flow_manager.clear(uid);
             let payload = rest.trim();
             if let Some(code) = payload.strip_prefix("redeem") {
-                crate::redeem::handle::handle_redeem(api, message.chat.id, uid, code, database).await;
+                let first_name = message.from.as_ref().map(|u| u.first_name.as_str()).unwrap_or("");
+                let username = message.from.as_ref().and_then(|u| u.username.as_deref());
+                crate::redeem::handle::handle_redeem(api, message.chat.id, uid, first_name, username, code, database).await;
             } else {
                 send_start_menu(api, message.chat.id).await?;
             }
@@ -174,7 +191,7 @@ async fn handle_message(
 
     // Step 3: «لغو عملیات» reply keyboard when Idle
     if let (Some(uid), Some(text)) = (user_id, message.text.as_deref()) {
-        if text.contains("لغو عملیات") && matches!(flow_manager.get(uid), FlowState::Idle) {
+        if text.contains(&crate::i18n::t("emoji.cancel_button")) && matches!(flow_manager.get(uid), FlowState::Idle) {
             send_start_menu(api, message.chat.id).await?;
             return Ok(());
         }
@@ -288,6 +305,12 @@ async fn handle_message(
             crate::rank::menu::send_rank_menu(api, message.chat.id).await;
             return Ok(());
         }
+        if cmd == "/panel" {
+            if let Some(uid) = user_id {
+                crate::rank::panel::send_user_panel(api, message.chat.id, uid, database).await;
+            }
+            return Ok(());
+        }
         if cmd == "/language" {
             send_lang_picker(api, message.chat.id).await?;
             return Ok(());
@@ -345,10 +368,13 @@ async fn handle_callback(
         MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
         _ => None,
     }).unwrap_or(0);
-
-    eprintln!("[main event=callback_received] user_id={cb_user_id} chat_id={cb_chat_id} data={cb_data:?}");
+    {
+        let trace_id = crate::log::next_trace_id();
+        log_actor!("dispatch", trace_id, &callback_query.from, "clicked" => cb_data, "chat_id" => cb_chat_id);
+    }
 
     // Helper to answer callback and extract Message
+    #[allow(unused_macros)]
     macro_rules! answer_and_get_msg {
         () => {{
             let _ = api.answer_callback_query(
@@ -368,6 +394,11 @@ async fn handle_callback(
             &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
         ).await;
         crate::rank::menu::send_rank_menu(api, cb_chat_id).await;
+        return Ok(());
+    }
+
+    if cb_data == CB_USER_PANEL || cb_data.starts_with("user:panel") {
+        crate::rank::panel::handle_panel_callback(api, &callback_query, cb_user_id as i64, database).await;
         return Ok(());
     }
 
@@ -679,7 +710,7 @@ async fn handle_callback(
             let text = if let Some(db) = database {
                 crate::admin::render_stats(db.client()).await
             } else {
-                "دیتابیس متصل نیست.".to_string()
+                crate::i18n::t("admin.db_missing")
             };
             let kb = frankenstein::types::InlineKeyboardMarkup::builder()
                 .inline_keyboard(vec![
@@ -705,7 +736,7 @@ async fn handle_callback(
             let text = if let Some(db) = database {
                 crate::admin::render_stats_more(db.client()).await
             } else {
-                "دیتابیس متصل نیست.".to_string()
+                crate::i18n::t("admin.db_missing")
             };
             let kb = frankenstein::types::InlineKeyboardMarkup::builder()
                 .inline_keyboard(vec![vec![
@@ -752,7 +783,7 @@ async fn handle_callback(
             let text = if let Some(db) = database {
                 crate::admin::render_errors_1d(db.client()).await
             } else {
-                "دیتابیس متصل نیست.".to_string()
+                crate::i18n::t("admin.db_missing")
             };
             // HTML چون blockquote جمع‌شو داره — پیام جدید می‌فرستیم تا پنل دست‌نخورده بمونه.
             use frankenstein::{methods::SendMessageParams, ParseMode};

@@ -9,7 +9,7 @@ use frankenstein::{
 
 use crate::bot::send_text;
 use crate::database::postgresql::PostgresDatabase;
-use crate::emoji::{FlowManager, FlowState, PendingEmoji, panel as emoji_panel, store as emoji_store, cache};
+use crate::emoji::{FlowManager, FlowState, PendingEmoji, panel as emoji_panel, store as emoji_store};
 use crate::i18n::tf;
 
 use super::helpers::{filter_duplicates, send_all_duplicate_message};
@@ -63,7 +63,7 @@ pub async fn handle_addemoji_link(
     api: &Bot, message: &Message, user_id: i64, pack_name: &str,
     flow_manager: &mut FlowManager, database: &Option<PostgresDatabase>,
 ) {
-    let trace_id = cache::next_trace_id();
+    let trace_id = crate::log::next_trace_id();
     let chat_id = message.chat.id;
     eprintln!(
         "[emoji_add trace={trace_id} event=addemoji_link] user_id={user_id} \

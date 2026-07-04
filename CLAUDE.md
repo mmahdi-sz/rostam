@@ -61,11 +61,48 @@ sudo bash /mnt/data/mahdidev/ros/deploy.sh
    `i18n::tf("key", &[("name", val)])`. Operator/dev logs (`println!`, panics, journalctl) stay
    hardcoded — never put them in `i18n.json`.
 
-3. **Tracing**: every non-trivial flow needs grep-friendly operator logs covering routing →
-   handler → external calls → Telegram response. Use a stable trace id and structured lines:
-   `[domain trace=N event=name] key=val`. Log routing inputs (user_id, chat_id, branch),
-   function boundaries, external work (cmd/args/exit/retry/cookie), and Telegram ops. Never log
-   secrets (tokens, raw cookies, DB URLs). Grep: `journalctl -u abc -n 300 | rg "trace|event"`.
+3. **Tracing**: every user action MUST be traceable step-by-step — see **Logging Standard** below.
+   Never log secrets (tokens, raw cookies, DB URLs). Grep: `journalctl -u abc -n 300 | rg "trace="`.
+
+## Logging Standard (MANDATORY — every handler follows this)
+
+Goal: from the log alone, reconstruct **who** did **what**, **which functions ran**, and **exactly where** it broke — even when a function is never reached (the *missing* line is the clue).
+
+**One `trace` id per user action.** Generate `let trace = next_trace_id();` at the entry handler and thread it through every helper the action touches. All lines of one action share `trace=N` → `rg "trace=42"` replays the whole journey in order.
+
+**Two line kinds:**
+
+1. **Actor line — once, first thing in the entry handler** (who + entrypoint):
+   ```
+   [<domain> trace=N actor] user=@<username> id=<user_id> rank=<Rank> clicked=<callback_or_cmd>
+   ```
+2. **Event line — one per step, logged BEFORE the step runs** (a missing next line pinpoints the stall):
+   ```
+   [<domain> trace=N event=<step>] key=val ... => <outcome>
+   ```
+
+**Rules:**
+- Log **before** calling a sub-step, not after — an absent event line means "we never got here".
+- Every fallible step logs its outcome: `=> ok` / `=> fail err=<..>` / `=> pass` / `=> blocked`.
+- At real fork points (paywall, quota, dispatch, download, spawn) log helper entry as `event=<fn>_enter`.
+- `<domain>` = subsystem (`upscale`, `yt`, `stt`, `sep`, `dispatch`, …). Keep names stable — they're grep keys.
+- Values: primitives only, no secrets. IDs/tokens → first 6 chars + `…`.
+- Dispatch entry handlers log the **actor line first**, so a callback that routes nowhere shows an actor line with no follow-up events.
+
+**Macros** (`src/log.rs` — use everywhere; never raw `eprintln!` for traces):
+```rust
+log_actor!("upscale", trace, user, "clicked" => cb_data);
+log_ev!("upscale", trace, "quota_check", "used" => used, "limit" => limit, "=>" => "pass");
+```
+
+Example (a `handle` that fails at CPU acquire — the `cores=[]` line is the smoking gun):
+```
+[upscale trace=43 actor] user=@parsa id=671234… rank=Dalavar clicked=upscale:model:realesrgan-x4plus
+[upscale trace=43 event=image_received] type=photo scale=4
+[upscale trace=43 event=quota_check] used=2 limit=3 => pass
+[upscale trace=43 event=cpu_acquire] => cores=[]        # broker returned empty
+[upscale trace=43 event=realesrgan_exit] status=255 => fail
+```
 
 ## Build & Run
 
@@ -122,7 +159,9 @@ All UI emoji are premium custom emoji via `i18n.json`. IDs in `emoji.panel.icons
 in `src/i18n/emoji_map.rs` (variation-selector forms first). `send_text()` auto-converts known
 chars to `CustomEmoji` entities (`src/i18n/entities.rs`). Inline buttons: `btn_icon(text, cb, key)`
 in `src/emoji/panel/buttons.rs` (uses `icon_custom_emoji_id`). MarkdownV2 needs explicit
-`apply_premium_to_md()`; HTML (`ParseMode::Html`, e.g. `rank.guide`) needs explicit
+`apply_premium_to_md()`; **every dynamic value in MarkdownV2 messages must be wrapped with
+`i18n::md_escape(val)` (`src/i18n/mod.rs`) — never interpolate raw strings into MarkdownV2.**
+HTML (`ParseMode::Html`, e.g. `rank.guide`) needs explicit
 `apply_premium_to_html()` (wraps emojis in `<tg-emoji emoji-id=...>` tags, skips tag contents,
 randomizes 🔥 across `emoji.panel.icons.fire1..fire4`). Both in `src/i18n/premium_md.rs` — neither
 gets entities automatically. Add new: add ID to `emoji.panel.icons`, add `("🔥","key")` to `EMOJI_MAP`.

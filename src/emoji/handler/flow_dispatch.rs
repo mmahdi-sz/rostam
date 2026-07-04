@@ -1,7 +1,7 @@
 use frankenstein::{client_reqwest::Bot, types::Message};
 
 use crate::database::postgresql::PostgresDatabase;
-use crate::emoji::{FlowManager, FlowState, cache};
+use crate::emoji::{FlowManager, FlowState};
 
 use super::{flow_emojis, flow_pack_choice, flow_import, flow_misc};
 
@@ -12,7 +12,7 @@ pub async fn handle_emoji_flow_message(
     flow_manager: &mut FlowManager,
     database: &Option<PostgresDatabase>,
 ) -> bool {
-    let trace_id = cache::next_trace_id();
+    let trace_id = crate::log::next_trace_id();
     let chat_id = message.chat.id;
     let text_preview = message.text.as_deref()
         .map(|t| crate::emoji::cache::preview(t, 80))

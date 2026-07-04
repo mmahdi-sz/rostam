@@ -5,7 +5,6 @@ use frankenstein::{
     types::{LinkPreviewOptions, ReplyMarkup},
 };
 
-use crate::i18n::t;
 use crate::emoji::{panel as emoji_panel, store as emoji_store};
 
 pub(super) async fn send_emoji_list(

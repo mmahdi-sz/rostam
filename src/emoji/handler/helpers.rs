@@ -48,8 +48,8 @@ pub(super) async fn send_all_duplicate_message(
     for d in duplicates {
         rendered.push_str(&format!("![{}](tg://emoji?id={})", d.fallback, d.custom_emoji_id));
     }
-    let prefix = escape_markdown_v2("⚠️ همه‌ی ایموجی‌های ");
-    let suffix = escape_markdown_v2(" از قبل توی دیتابیس ذخیره‌اند. چیزی به لیست اضافه نشد.");
+    let prefix = escape_markdown_v2(&crate::i18n::t("emoji.all_duplicate_prefix"));
+    let suffix = escape_markdown_v2(&crate::i18n::t("emoji.all_duplicate_suffix"));
     send_text_md(api, chat_id, &format!("{prefix}{rendered}{suffix}")).await
 }
 

@@ -34,22 +34,19 @@ pub fn reload() {
 fn lookup(lang: &str, key: &str) -> String {
     let guard = cache().read().unwrap();
     let mut node = &*guard;
-    let mut ok = true;
     for segment in std::iter::once(lang).chain(key.split('.')) {
         match node.get(segment) {
             Some(next) => node = next,
-            None => { ok = false; break; }
+            None => {
+                drop(guard);
+                return if lang != "fa" { lookup("fa", key) } else { format!("!{key}!") };
+            }
         }
     }
-    if ok {
-        if let Some(s) = node.as_str() { return s.to_owned(); }
-    }
-    // fallback به fa اگه زبان دیگه‌ای key رو نداشت
-    if lang != "fa" {
+    node.as_str().map(|s| s.to_owned()).unwrap_or_else(|| {
         drop(guard);
-        return lookup("fa", key);
-    }
-    format!("!{key}!")
+        if lang != "fa" { lookup("fa", key) } else { format!("!{key}!") }
+    })
 }
 
 tokio::task_local! {

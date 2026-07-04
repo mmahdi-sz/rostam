@@ -4,6 +4,7 @@ use crate::i18n::{t, tf};
 
 use super::types::{CookiePoolStatus, SelectedCookie};
 
+#[allow(dead_code)]
 pub fn format_cookie_status(status: &CookiePoolStatus) -> String {
     let last_used = status.last_used_cookie.as_deref().unwrap_or("-");
     let wait = status.next_available_in.map(format_duration).unwrap_or_else(|| "-".to_owned());
@@ -18,6 +19,7 @@ pub fn format_cookie_status(status: &CookiePoolStatus) -> String {
     )
 }
 
+#[allow(dead_code)]
 pub fn format_selected_cookie(cookie: &SelectedCookie) -> String {
     tf(
         "cookie.selected",

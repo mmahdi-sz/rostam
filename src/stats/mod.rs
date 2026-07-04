@@ -1,8 +1,6 @@
 mod query;
 pub use query::{
-    UserStats, DownloadStats, get_user_stats, get_download_stats, fmt_bytes,
-    Periods, FeatureStats, get_feature_stats, ActiveUsers, get_active_users, fmt_secs,
-    ActionCount, get_action_breakdown, ErrorRow, get_recent_errors, count_recent_errors,
+    get_user_stats, get_download_stats, fmt_bytes, FeatureStats, get_feature_stats, get_active_users, fmt_secs, get_action_breakdown, get_recent_errors, count_recent_errors,
 };
 
 use std::sync::OnceLock;

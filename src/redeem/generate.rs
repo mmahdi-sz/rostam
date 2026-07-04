@@ -1,5 +1,6 @@
 use rand::Rng;
 
+use crate::i18n::tf;
 use crate::rank::types::Rank;
 
 /// الفبای بدون حروف/ارقام مبهم (بدون 0/O/1/I)
@@ -43,7 +44,7 @@ pub fn parse_gen_args(s: &str) -> Result<(Rank, i32, i32), String> {
                     continue;
                 }
             }
-            return Err(format!("مدت نامعتبر: «{tok}». مثال: 30d"));
+            return Err(tf("redeem.gen_invalid_days", &[("tok", tok)]));
         }
         if let Some(num) = lower.strip_suffix('u') {
             if let Ok(n) = num.parse::<i32>() {
@@ -52,19 +53,19 @@ pub fn parse_gen_args(s: &str) -> Result<(Rank, i32, i32), String> {
                     continue;
                 }
             }
-            return Err(format!("تعداد مصرف نامعتبر: «{tok}». مثال: 5u"));
+            return Err(tf("redeem.gen_invalid_uses", &[("tok", tok)]));
         }
         match rank_from_abbrev(tok) {
             Some(r) => rank = Some(r),
-            None => return Err(format!("مقام نامعتبر: «{tok}». مقام‌ها: da/se/es/so/ro")),
+            None => return Err(tf("redeem.gen_invalid_rank", &[("tok", tok)])),
         }
     }
 
     let Some(rank) = rank else {
-        return Err("مقام مشخص نشده. مثال: 30d es 1u".to_string());
+        return Err(crate::i18n::t("redeem.gen_missing_rank"));
     };
     let Some(days) = days else {
-        return Err("مدت مشخص نشده. مثال: 30d es 1u".to_string());
+        return Err(crate::i18n::t("redeem.gen_missing_days"));
     };
 
     Ok((rank, days, uses))

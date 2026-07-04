@@ -55,7 +55,7 @@ pub(super) async fn handle_test_text(
     api: &Bot, message: &Message, chat_id: i64, user_id: i64,
     flow_manager: &mut FlowManager,
 ) -> bool {
-    let trace_id = cache::next_trace_id();
+    let trace_id = crate::log::next_trace_id();
     let raw = message.text.as_deref().unwrap_or("");
     let text = raw.trim();
 

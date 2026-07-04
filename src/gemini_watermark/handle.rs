@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use frankenstein::{
     AsyncTelegramApi,
@@ -11,12 +10,7 @@ use frankenstein::{
 use crate::bot::{send_text, edit_to_ai_lab};
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{t, tf};
-
-static NEXT_TRACE: AtomicU64 = AtomicU64::new(1);
-
-fn next_trace_id() -> u64 {
-    NEXT_TRACE.fetch_add(1, Ordering::Relaxed)
-}
+use crate::log::next_trace_id;
 
 pub const CB_GWM_CANCEL: &str = "gwm:cancel";
 
@@ -49,7 +43,7 @@ pub async fn enter_gwm(
 ) {
     let trace_id = next_trace_id();
     flow_manager.set(user_id, FlowState::AwaitingGeminiWmImage);
-    eprintln!("[gwm trace={trace_id} event=enter] user_id={user_id} chat_id={chat_id}");
+    log_ev!("gwm", trace_id, "enter", "raw" => "user_id={user_id} chat_id={chat_id}");
 
     let text = t("gemini_wm.prompt");
     let params = EditMessageTextParams::builder()
@@ -59,8 +53,8 @@ pub async fn enter_gwm(
         .reply_markup(cancel_keyboard())
         .build();
     match api.edit_message_text(&params).await {
-        Ok(_) => eprintln!("[gwm trace={trace_id} event=prompt_shown]"),
-        Err(e) => eprintln!("[gwm trace={trace_id} event=prompt_failed] err={e}"),
+        Ok(_) => log_ev!("gwm", trace_id, "prompt_shown"),
+        Err(e) => log_ev!("gwm", trace_id, "prompt_failed", "raw" => format!("err={e}")),
     }
 }
 
@@ -72,10 +66,10 @@ pub async fn handle_gwm_cancel(
     flow_manager: &mut FlowManager,
 ) {
     let trace_id = next_trace_id();
-    eprintln!("[gwm trace={trace_id} event=cancel] user_id={user_id} chat_id={chat_id}");
+    log_ev!("gwm", trace_id, "cancel", "raw" => "user_id={user_id} chat_id={chat_id}");
     flow_manager.clear(user_id);
     let r = edit_to_ai_lab(api, chat_id, message_id).await;
-    eprintln!("[gwm trace={trace_id} event=cancel_done] ok={}", r.is_ok());
+    log_ev!("gwm", trace_id, "cancel_done", "raw" => format!("ok={}", r.is_ok()));
 }
 
 pub async fn handle_gwm_image(
@@ -87,11 +81,9 @@ pub async fn handle_gwm_image(
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
 
-    eprintln!(
-        "[gwm trace={trace_id} event=image_received] user_id={user_id} chat_id={chat_id} \
-         has_photo={} has_doc={}",
-        message.photo.is_some(), message.document.is_some()
-    );
+    log_actor_id!("gwm", trace_id, user_id, "clicked" => "photo/doc");
+    log_ev!("gwm", trace_id, "image_received", "raw" => format!("user_id={user_id} chat_id={chat_id} has_photo={} has_doc={}",
+        message.photo.is_some(), message.document.is_some()));
 
     // Get file_id and extension from photo (largest) or document.
     let file_id = message.photo.as_ref()
@@ -100,26 +92,26 @@ pub async fn handle_gwm_image(
         .or_else(|| message.document.as_ref().map(|d| d.file_id.clone()));
 
     let Some(file_id) = file_id else {
-        eprintln!("[gwm trace={trace_id} event=no_file_id]");
+        log_ev!("gwm", trace_id, "no_file_id");
         let _ = send_text(api, chat_id, &t("gemini_wm.error.invalid_image")).await;
         return;
     };
 
     let ext = detect_ext(message);
-    eprintln!("[gwm trace={trace_id} event=file_info] file_id={file_id} ext={ext}");
+    log_ev!("gwm", trace_id, "file_info", "raw" => "file_id={file_id} ext={ext}");
 
     flow_manager.clear(user_id);
 
     let _ = send_text(api, chat_id, &t("gemini_wm.processing")).await;
 
     // Download image.
-    eprintln!("[gwm trace={trace_id} event=download_start] file_id={file_id}");
+    log_ev!("gwm", trace_id, "download_start", "raw" => "file_id={file_id}");
     let work_dir = std::env::temp_dir().join(format!("gwm_{trace_id}"));
     std::fs::create_dir_all(&work_dir).ok();
     let input_path = work_dir.join(format!("input.{ext}"));
 
     if let Err(e) = download_file(api, &file_id, input_path.to_str().unwrap(), trace_id).await {
-        eprintln!("[gwm trace={trace_id} event=download_failed] err={e}");
+        log_ev!("gwm", trace_id, "download_failed", "raw" => "err={e}");
         crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
         crate::stats::record_error_global("gwm", &format!("download failed: {e}")).await;
         let _ = send_text(api, chat_id, &t("gemini_wm.error.download_failed")).await;
@@ -127,12 +119,12 @@ pub async fn handle_gwm_image(
         return;
     }
     let file_size = std::fs::metadata(&input_path).map(|m| m.len()).unwrap_or(0);
-    eprintln!("[gwm trace={trace_id} event=download_done] size={file_size}");
+    log_ev!("gwm", trace_id, "download_done", "raw" => format!("size={file_size}"));
 
     let image_bytes = match std::fs::read(&input_path) {
         Ok(b) => b,
         Err(e) => {
-            eprintln!("[gwm trace={trace_id} event=read_failed] err={e}");
+            log_ev!("gwm", trace_id, "read_failed", "raw" => "err={e}");
             crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
             crate::stats::record_error_global("gwm", &format!("read failed: {e}")).await;
             let _ = send_text(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
@@ -143,20 +135,20 @@ pub async fn handle_gwm_image(
     std::fs::remove_dir_all(&work_dir).ok();
 
     // Run watermark removal.
-    eprintln!("[gwm trace={trace_id} event=remove_start] user_id={user_id} ext={ext} bytes={}", image_bytes.len());
+    log_ev!("gwm", trace_id, "remove_start", "raw" => format!("user_id={user_id} ext={ext} bytes={}", image_bytes.len()));
     let t_start = std::time::Instant::now();
     let pass_outputs = match super::remove::remove_watermark(image_bytes, ext.clone(), user_id, trace_id).await {
         Ok(v) => v,
         Err(super::remove::GwmError::NoWatermarkDetected(detail)) => {
             let elapsed = t_start.elapsed().as_secs_f64();
-            eprintln!("[gwm trace={trace_id} event=no_watermark] elapsed={elapsed:.2}s detail={detail:?}");
+            log_ev!("gwm", trace_id, "no_watermark", "raw" => format!("elapsed={elapsed:.2}s detail={detail:?}"));
             crate::stats::record_event_user(user_id, "gwm", "", "no_watermark", 0).await;
             let _ = send_text(api, chat_id, &t("gemini_wm.error.no_watermark")).await;
             return;
         }
         Err(e) => {
             let elapsed = t_start.elapsed().as_secs_f64();
-            eprintln!("[gwm trace={trace_id} event=remove_failed] elapsed={elapsed:.2}s err={e}");
+            log_ev!("gwm", trace_id, "remove_failed", "raw" => format!("elapsed={elapsed:.2}s err={e}"));
             crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
             crate::stats::record_error_global("gwm", &format!("remove failed: {e}")).await;
             let _ = send_text(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
@@ -165,9 +157,7 @@ pub async fn handle_gwm_image(
     };
     let elapsed = t_start.elapsed().as_secs_f64();
     let n = pass_outputs.len();
-    eprintln!(
-        "[gwm trace={trace_id} event=remove_done] elapsed={elapsed:.2}s passes={n}"
-    );
+    log_ev!("gwm", trace_id, "remove_done", "elapsed" => format!("{elapsed:.2}s"), "passes" => n);
 
     if n == 0 {
         crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
@@ -183,16 +173,13 @@ pub async fn handle_gwm_image(
         let pass_num = output.pass_num;
         let out_path = std::env::temp_dir().join(format!("gwm_out_{trace_id}_p{pass_num}.{ext}"));
         if let Err(e) = std::fs::write(&out_path, &output.bytes) {
-            eprintln!("[gwm trace={trace_id} event=write_failed] pass={pass_num} err={e}");
+            log_ev!("gwm", trace_id, "write_failed", "raw" => format!("pass={pass_num} err={e}"));
             continue;
         }
 
         let caption = build_caption(n, pass_num, idx == 0);
-        eprintln!(
-            "[gwm trace={trace_id} event=sending_pass] pass={pass_num} total={n} \
-             bytes={} caption_len={}",
-            output.bytes.len(),
-            caption.chars().count()
+        log_ev!("gwm", trace_id, "sending_pass", "pass" => pass_num, "total" => n,
+            "bytes" => output.bytes.len(), "caption_len" => caption.chars().count()
         );
 
         let p = SendDocumentParams::builder()
@@ -201,13 +188,13 @@ pub async fn handle_gwm_image(
             .caption(&caption)
             .build();
         match api.send_document(&p).await {
-            Ok(_) => eprintln!("[gwm trace={trace_id} event=pass_sent] pass={pass_num}"),
-            Err(e) => eprintln!("[gwm trace={trace_id} event=pass_send_failed] pass={pass_num} err={e}"),
+            Ok(_) => log_ev!("gwm", trace_id, "pass_sent", "raw" => "pass={pass_num}"),
+            Err(e) => log_ev!("gwm", trace_id, "pass_send_failed", "raw" => format!("pass={pass_num} err={e}")),
         }
         std::fs::remove_file(&out_path).ok();
     }
 
-    eprintln!("[gwm trace={trace_id} event=all_passes_sent] passes={n}");
+    log_ev!("gwm", trace_id, "all_passes_sent", "raw" => "passes={n}");
     crate::stats::record_event_user(user_id, "gwm", "", "ok", n as i64).await;
 }
 
@@ -265,12 +252,12 @@ async fn download_file(
     let file_info = api.get_file(&GetFileParams::builder().file_id(file_id).build()).await?;
     let file_path = file_info.result.file_path.ok_or("no file_path")?;
 
-    eprintln!("[gwm trace={trace_id} event=file_path] file_path={file_path}");
+    log_ev!("gwm", trace_id, "file_path", "raw" => "file_path={file_path}");
 
     if file_path.starts_with('/') {
         std::fs::copy(&file_path, dest)?;
         let size = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
-        eprintln!("[gwm trace={trace_id} event=local_copy] size={size}");
+        log_ev!("gwm", trace_id, "local_copy", "raw" => format!("size={size}"));
         return Ok(());
     }
 
@@ -281,11 +268,11 @@ async fn download_file(
         format!("https://api.telegram.org/file/bot{}/{file_path}", crate::config::bot_token()?)
     };
 
-    eprintln!("[gwm trace={trace_id} event=http_download] url_prefix={}", &url[..url.len().min(60)]);
+    log_ev!("gwm", trace_id, "http_download", "raw" => format!("url_prefix={}", &url[..url.len().min(60)]));
     let response = reqwest::get(&url).await?;
     let status = response.status();
     let bytes = response.bytes().await?;
-    eprintln!("[gwm trace={trace_id} event=http_done] status={status} bytes={}", bytes.len());
+    log_ev!("gwm", trace_id, "http_done", "raw" => format!("status={status} bytes={}", bytes.len()));
     std::fs::write(dest, &bytes)?;
     Ok(())
 }

@@ -11,7 +11,7 @@ use tokio_postgres::Client;
 use crate::bot::send_text;
 use crate::config;
 use crate::database::postgresql::PostgresDatabase;
-use crate::i18n::{t, tf, to_fa_digits};
+use crate::i18n::{t, tf, to_fa_digits, md_escape, apply_premium_to_md};
 use crate::rank::types::Rank;
 use crate::youtube::jalali::gregorian_to_jalali;
 
@@ -200,14 +200,14 @@ async fn do_generate(
     database: &Option<PostgresDatabase>,
 ) {
     let Some(db) = database else {
-        let _ = send_text(api, chat_id, "دیتابیس متصل نیست.").await;
+        let _ = send_text(api, chat_id, &t("redeem.db_missing")).await;
         return;
     };
 
     let code = random_code();
     if let Err(e) = store::create_code(db.client(), &code, rank, days, uses, created_by).await {
         eprintln!("[redeem event=create_failed code={code} err={e}]");
-        let _ = send_text(api, chat_id, "خطا در ساخت کد.").await;
+        let _ = send_text(api, chat_id, &t("redeem.gen_error")).await;
         return;
     }
 
@@ -226,10 +226,11 @@ async fn do_generate(
     // نکته: to_fa_digits روی کل پیام اعمال نمی‌شود تا ارقام داخل لینک (کد) سالم بماند؛
     // فقط مقدار «روز» فارسی می‌شود.
     let _ = uses; // در بنر نمایش داده نمی‌شود؛ در لاگ ثبت شده
+    let rank_name = rank.display_name();
     let msg = tf(
         "redeem.created",
         &[
-            ("rank", rank.display_name()),
+            ("rank", &rank_name),
             ("days", &to_fa_digits(&days.to_string())),
             ("link", &link),
         ],
@@ -285,18 +286,21 @@ async fn send_with_back(api: &Bot, chat_id: i64, text: &str) {
     }
 }
 
-/// redeem کد توسط کاربر (deep-link استارت: `redeem<CODE>`)
+/// redeem کد توسط کاربر (deep-link استارت: `redeem<CODE>`).
+/// برمی‌گردونه true اگه redeem موفق بود (برای نمایش lang_picker بعدش).
 pub async fn handle_redeem(
     api: &Bot,
     chat_id: i64,
     user_id: i64,
+    first_name: &str,
+    username: Option<&str>,
     code: &str,
     database: &Option<PostgresDatabase>,
-) {
+) -> bool {
     let code = code.trim();
     let Some(db) = database else {
         send_with_back(api, chat_id, &t("redeem.invalid")).await;
-        return;
+        return false;
     };
     let client = db.client();
 
@@ -305,12 +309,12 @@ pub async fn handle_redeem(
         Ok(None) => {
             eprintln!("[redeem event=redeem_invalid user_id={user_id} code={code}]");
             send_with_back(api, chat_id, &t("redeem.invalid")).await;
-            return;
+            return false;
         }
         Err(e) => {
             eprintln!("[redeem event=get_failed code={code} err={e}]");
             send_with_back(api, chat_id, &t("redeem.invalid")).await;
-            return;
+            return false;
         }
     };
 
@@ -320,7 +324,7 @@ pub async fn handle_redeem(
             let _ = store::delete_code(client, code).await;
             eprintln!("[redeem event=redeem_expired user_id={user_id} code={code}]");
             send_with_back(api, chat_id, &t("redeem.invalid")).await;
-            return;
+            return false;
         }
     }
 
@@ -330,13 +334,13 @@ pub async fn handle_redeem(
             eprintln!("[redeem event=already_used user_id={user_id} code={code}]");
             let msg = tf("redeem.consumed", &[("datetime", &datetime_fa(ts))]);
             send_with_back(api, chat_id, &msg).await;
-            return;
+            return false;
         }
         Ok(None) => {}
         Err(e) => {
             eprintln!("[redeem event=user_redemption_failed code={code} err={e}]");
             send_with_back(api, chat_id, &t("redeem.invalid")).await;
-            return;
+            return false;
         }
     }
 
@@ -345,7 +349,7 @@ pub async fn handle_redeem(
         Plan::Reject => {
             eprintln!("[redeem event=downgrade_reject user_id={user_id} code={code} code_rank={}]", row.rank.as_str());
             send_with_back(api, chat_id, &t("redeem.downgrade")).await;
-            return;
+            return false;
         }
         Plan::Apply { rank, expires_at, total_days } => (rank, expires_at, total_days),
     };
@@ -358,19 +362,19 @@ pub async fn handle_redeem(
             let last = store::get_last_redemption(client, code).await.ok().flatten().unwrap_or_else(now_epoch);
             let msg = tf("redeem.consumed", &[("datetime", &datetime_fa(last))]);
             send_with_back(api, chat_id, &msg).await;
-            return;
+            return false;
         }
         Err(e) => {
             eprintln!("[redeem event=mark_failed code={code} err={e}]");
             send_with_back(api, chat_id, &t("redeem.invalid")).await;
-            return;
+            return false;
         }
     }
 
     if let Err(e) = crate::rank::store::set_user_rank(client, user_id, apply_rank, apply_expires).await {
         eprintln!("[redeem event=apply_failed user_id={user_id} code={code} err={e}]");
-        let _ = send_text(api, chat_id, "خطا در اعمال مقام.").await;
-        return;
+        let _ = send_text(api, chat_id, &t("redeem.apply_error")).await;
+        return false;
     }
 
     eprintln!(
@@ -380,13 +384,44 @@ pub async fn handle_redeem(
     crate::stats::record_event_user(user_id, "rank", "redeem", "ok", 0).await;
 
     // پیام موفقیت: مقام + تاریخ انقضای جلالی + مجموع روز (یا «نامحدود»)
+    let apply_rank_name = apply_rank.display_name();
     let msg = match (apply_expires, apply_total) {
         (Some(exp), Some(days)) => tf("redeem.success", &[
-            ("rank", apply_rank.display_name()),
+            ("rank", &apply_rank_name),
             ("date", &date_fa(exp)),
             ("days", &to_fa_digits(&days.to_string())),
         ]),
-        _ => tf("redeem.success_unlimited", &[("rank", apply_rank.display_name())]),
+        _ => tf("redeem.success_unlimited", &[("rank", &apply_rank_name)]),
     };
     let _ = send_text(api, chat_id, &msg).await;
+
+    // نوتیف به ادمین
+    if let Some(admin_id) = config::admin_user_id() {
+        let username_display = username
+            .map(|u| md_escape(&format!("@{u}")))
+            .unwrap_or_else(|| t("redeem.no_username"));
+        let duration_display = apply_total
+            .map(|d| md_escape(&to_fa_digits(&tf("redeem.panel_days", &[("n", &d.to_string())]))))
+            .unwrap_or_else(|| t("rank.expiry_unlimited"));
+        let apply_rank_name = apply_rank.display_name();
+        let raw_msg = tf("redeem.admin_notify", &[
+            ("code", &md_escape(code)),
+            ("name", &md_escape(first_name)),
+            ("username", &username_display),
+            ("user_id", &user_id.to_string()),
+            ("rank", &md_escape(&apply_rank_name)),
+            ("duration", &duration_display),
+            ("time", &md_escape(&datetime_fa(now_epoch()))),
+        ]);
+        let admin_msg = apply_premium_to_md(&raw_msg);
+        let params = SendMessageParams::builder()
+            .chat_id(admin_id)
+            .text(admin_msg)
+            .parse_mode(ParseMode::MarkdownV2)
+            .build();
+        if let Err(e) = api.send_message(&params).await {
+            eprintln!("[redeem event=admin_notify_failed admin_id={admin_id} err={e}]");
+        }
+    }
+    true
 }

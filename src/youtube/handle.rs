@@ -12,7 +12,6 @@ use crate::bot::send_text;
 use crate::cookie_pool::{CookiePool, CookieSource, format_no_cookie_available, save_snapshot};
 use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::{t, tf};
-use crate::rank;
 
 use super::format::{build_caption, build_description_blockquotes};
 use super::fetch::fetch_video_info;
@@ -31,6 +30,9 @@ pub async fn handle_youtube_url(
     database: &Option<PostgresDatabase>,
     rate_limit_tx: &tokio::sync::mpsc::UnboundedSender<CookieSource>,
 ) {
+    if let Some(uid) = user_id {
+        log_actor_id!("yt", trace_id, uid, "clicked" => "url");
+    }
     log_trace(trace_id, "handle_start", &format!("user_id={user_id:?} chat_id={chat_id} url={url}"));
 
     let analyzing_text = t("youtube.analyzing");

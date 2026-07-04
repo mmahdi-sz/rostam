@@ -60,6 +60,7 @@ pub async fn export_user_sql(client: &Client, owner: i64) -> Result<Option<Strin
     Ok(Some(out))
 }
 
+#[allow(dead_code)]
 pub async fn render_template(client: &Client, owner: i64, template: &str) -> Result<String, tokio_postgres::Error> {
     let rows = client.query(
         "SELECT custom_emoji_id, fallback, smart_name, alias FROM emoji_items WHERE owner_user_id = $1",

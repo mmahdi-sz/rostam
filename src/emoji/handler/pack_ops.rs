@@ -8,7 +8,7 @@ use frankenstein::{
 use crate::i18n::{t, tf};
 use crate::emoji::{PendingEmoji, panel as emoji_panel, store as emoji_store};
 
-use super::helpers::{edit_panel, send_with_ents};
+use super::helpers::edit_panel;
 
 pub(super) async fn send_cancel_and_panel(api: &Bot, chat_id: i64, trace_id: u64) {
     eprintln!("[emoji trace={trace_id} event=send_cancel_panel] chat_id={chat_id}");
@@ -110,7 +110,7 @@ pub(super) async fn show_packs_menu(
         eprintln!("[emoji trace={trace_id} event=no_packs_sent] ok={}", r.is_ok());
         return;
     }
-    edit_panel(api, chat_id, message_id, "📁 مجموعه‌ها:", Some(emoji_panel::packs_keyboard(&packs)), trace_id).await;
+    edit_panel(api, chat_id, message_id, &crate::i18n::t("emoji.packs_title"), Some(emoji_panel::packs_keyboard(&packs)), trace_id).await;
 }
 
 pub(super) async fn show_pack_detail(

@@ -9,13 +9,14 @@ use rand::Rng;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
-use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success, btn_success};
+use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_plain, btn_icon_success};
 use crate::i18n::{entities_for_text, apply_premium_to_md, t};
 
 pub const CB_START_EMOJI: &str = "start:emoji";
 pub const CB_START_YOUTUBE: &str = "start:youtube";
 pub const CB_START_PANEL: &str = "start:panel";
 pub const CB_START_AI_LAB: &str = "start:ai_lab";
+pub const CB_USER_PANEL: &str = "user:panel";
 pub const CB_AI_DENOISE: &str = "ai:denoise";
 pub const CB_AI_UPSCALE: &str = "ai:upscale";
 pub const CB_AI_STT: &str = "ai:stt";
@@ -222,22 +223,11 @@ pub async fn send_text_md(
 }
 
 pub async fn send_lang_picker(api: &Bot, chat_id: i64) -> Result<(), Box<dyn std::error::Error>> {
-    use frankenstein::types::InlineKeyboardButton;
-    let mk_btn = |text: &str, cb: &str| InlineKeyboardButton {
-        text: text.to_string(),
-        callback_data: Some(cb.to_string()),
-        icon_custom_emoji_id: None,
-        style: None,
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
-    };
     let keyboard = InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
-            vec![mk_btn("🇮🇷 پارسی | Parsi", "lang:set:fa")],
-            vec![mk_btn("🇬🇧 English", "lang:set:en")],
-            vec![mk_btn("🇮🇹 Italiano | Italian", "lang:set:it")],
+            vec![btn_icon_plain("🇮🇷 پارسی | Parsi", "lang:set:fa", "")],
+            vec![btn_icon_plain("🇬🇧 English", "lang:set:en", "")],
+            vec![btn_icon_plain("🇮🇹 Italiano | Italian", "lang:set:it", "")],
         ])
         .build();
     api.send_message(
@@ -302,6 +292,7 @@ pub fn start_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup {
         vec![btn_icon_success(&t("start.ai_lab_button"), CB_START_AI_LAB, icon)],
         vec![btn_icon_danger(&t("start.youtube_button"), CB_START_YOUTUBE, "clapper")],
         vec![btn_icon(&t("start.emoji_button"), CB_START_EMOJI, "panel")],
+        vec![btn_icon_success(&t("start.panel_button"), CB_USER_PANEL, "user")],
     ];
     if is_admin {
         rows.push(vec![btn_icon(&t("start.admin_button"), CB_ADMIN_PANEL, "stats")]);

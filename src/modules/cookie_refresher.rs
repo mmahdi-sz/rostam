@@ -168,7 +168,7 @@ async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) 
     let p = profile_name;
     // Spawn firefox via sudo. We don't track its pid — we use pgrep/pkill by profile path
     // because child.id() gives the sudo wrapper pid, not the actual firefox pid.
-    let mut child = Command::new("sudo")
+    let child = Command::new("sudo")
         .arg("-u")
         .arg("mahdi")
         .arg("firefox")

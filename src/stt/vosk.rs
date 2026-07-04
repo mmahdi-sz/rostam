@@ -20,7 +20,7 @@ pub fn transcribe(
     wav.read_exact(&mut header)?;
 
     let sample_rate = u32::from_le_bytes([header[24], header[25], header[26], header[27]]);
-    let byte_rate = u32::from_le_bytes([header[28], header[29], header[30], header[31]]);
+    let _byte_rate = u32::from_le_bytes([header[28], header[29], header[30], header[31]]);
     let channels = u16::from_le_bytes([header[22], header[23]]);
     let bits_per_sample = u16::from_le_bytes([header[34], header[35]]);
 

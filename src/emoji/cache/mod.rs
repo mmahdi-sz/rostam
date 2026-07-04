@@ -1,12 +1,13 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use tokio::sync::RwLock;
+// ponytail: counter removed — global counter lives in crate::log.
+pub use crate::log::next_trace_id;
 
 mod types;
 mod render;
 mod loader;
 
-pub use types::{EmojiCache, EmojiEntry};
+pub use types::EmojiCache;
 pub use render::{LookupOutcome, RenderLookup};
 pub use loader::load_from_db;
 
@@ -16,11 +17,6 @@ pub fn global() -> Option<Arc<RwLock<EmojiCache>>> {
     CACHE.get().cloned()
 }
 
-static NEXT_TRACE_ID: AtomicU64 = AtomicU64::new(1);
-
-pub fn next_trace_id() -> u64 {
-    NEXT_TRACE_ID.fetch_add(1, Ordering::Relaxed)
-}
 
 /// Returns a short, log-safe preview of `text`, truncated at character
 /// boundaries to roughly `max_chars` (adds an ellipsis marker if cut).

@@ -1,4 +1,5 @@
 pub mod menu;
+pub mod panel;
 pub mod paywall;
 pub mod quota;
 pub mod store;
