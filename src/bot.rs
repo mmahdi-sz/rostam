@@ -28,7 +28,6 @@ pub const CB_ADMIN_PANEL: &str = "admin:panel";
 pub const CB_ADMIN_STATS: &str = "admin:stats";
 pub const CB_ADMIN_STATS_MORE: &str = "admin:stats_more";
 pub const CB_ADMIN_ERRORS: &str = "admin:errors_1d";
-pub const CB_ADMIN_FORCE_JOIN: &str = "admin:force_join";
 pub const CB_ADMIN_GEN_CODE: &str = "admin:gencode";
 pub const CB_LANG_SET: &str = "lang:set:";
 

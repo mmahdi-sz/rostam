@@ -14,18 +14,28 @@ use super::types::Rank;
 
 pub const CB_USER_PANEL: &str = "user:panel";
 pub const CB_USER_PANEL_MORE: &str = "user:panel:more";
-pub const CB_REFERRAL: &str = "user:panel:referral";
-pub const CB_REFERRAL_CLAIM_PREFIX: &str = "user:panel:referral:claim:";
 
-// ── تبدیل epoch → شمسی، به‌وقت تهران ─────────────────────────────────────────
-// همون مسیر مطمئنی که force_join.rs استفاده می‌کند: chrono + gregorian_to_jalali.
+// ── تبدیل epoch → شمسی (بدون crate) ─────────────────────────────────────────
+// ponytail: الگوریتم Jalali خالص، فقط برای نمایش تاریخ انقضا.
+fn epoch_to_jalali(epoch: i64) -> (i32, u32, u32) {
+    const TEHRAN: i64 = 3 * 3600 + 30 * 60;
+    let days_from_epoch = (epoch + TEHRAN) / 86_400;
+    // Julian Day Number
+    let jdn = days_from_epoch + 2_440_588;
+    let j = jdn - 1_948_440 + 10632;
+    let n = (j - 1) / 10631;
+    let j = j - 10631 * n + 354;
+    let j2 = ((183 + (j * 20 - 3510) / 10631) / 182) * 15;
+    let year = 979 + 30 * n + (j2 * 20 - 3510) / 10631;
+    let j = j - j2;
+    let month = (j - 14) / 30 + 1;
+    let day = j - 29 * (month - 1) - (if month <= 6 { 0 } else { month - 7 });
+    (year as i32, month as u32, day as u32)
+}
+
 fn fmt_jalali(epoch: i64) -> String {
-    use chrono::Datelike;
-    use chrono_tz::Asia::Tehran;
-    let Some(utc) = chrono::DateTime::from_timestamp(epoch, 0) else { return "—".to_string() };
-    let dt = utc.with_timezone(&Tehran);
-    let (y, m, d) = crate::youtube::jalali::gregorian_to_jalali(dt.year(), dt.month() as i32, dt.day() as i32);
-    format!("{y}/{m:02}/{d:02}")
+    let (y, m, d) = epoch_to_jalali(epoch);
+    format!("{}/{:02}/{:02}", y, m, d)
 }
 
 fn days_left(expires_at: i64) -> i64 {
@@ -118,7 +128,6 @@ fn main_keyboard() -> InlineKeyboardMarkup {
                 btn_icon(&t("panel.more_button"), CB_USER_PANEL_MORE, "stats"),
                 btn_icon_success(&t("rank.paywall_button"), crate::rank::paywall::CB_RANK_SHOW_MENU, "rocket"),
             ],
-            vec![btn_icon_success(&t("referral.button"), CB_REFERRAL, "user")],
             vec![btn_icon(&t("start.back"), crate::bot::CB_START_PANEL, "back")],
         ])
         .build()
@@ -131,20 +140,6 @@ fn back_keyboard() -> InlineKeyboardMarkup {
             vec![btn_icon(&t("start.back"), crate::bot::CB_START_PANEL, "back")],
         ])
         .build()
-}
-
-/// پیام دائمی در چت (نه toast/alert) با دکمه‌های بازگشت — برای نتایجی که کاربر
-/// باید بتونه بعداً هم ببینه (مثل نتیجه‌ی فعال‌سازی رتبه با امتیاز).
-async fn send_with_back(api: &Bot, chat_id: i64, text: &str) {
-    let params = SendMessageParams::builder()
-        .chat_id(chat_id)
-        .text(apply_premium_to_html(text))
-        .parse_mode(frankenstein::ParseMode::Html)
-        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(back_keyboard()))
-        .build();
-    if let Err(e) = api.send_message(&params).await {
-        eprintln!("[panel event=claim_result_send_failed] chat_id={chat_id} err={e}");
-    }
 }
 
 // ── ساخت متن صفحه سهمیه‌های دیگر ─────────────────────────────────────────────
@@ -214,66 +209,6 @@ async fn build_more_text(db: &crate::database::postgresql::PostgresDatabase, use
     ]))
 }
 
-// ── زیرمجموعه‌گیری ───────────────────────────────────────────────────────────
-
-fn referral_keyboard() -> InlineKeyboardMarkup {
-    let tier_rows = crate::referral::TIERS.iter().map(|(threshold, rank)| {
-        let label = tf("referral.tier_button", &[
-            ("rank", &rank.display_name()),
-            ("count", &threshold.to_string()),
-        ]);
-        vec![btn_icon(&label, &format!("{CB_REFERRAL_CLAIM_PREFIX}{threshold}"), "rocket")]
-    });
-    let mut rows: Vec<Vec<_>> = tier_rows.collect();
-    rows.push(vec![btn_icon(&t("panel.back_button"), CB_USER_PANEL, "back")]);
-    InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
-}
-
-pub async fn send_referral(
-    api: &Bot,
-    chat_id: i64,
-    user_id: i64,
-    database: &Option<PostgresDatabase>,
-) {
-    let username = crate::config::bot_username();
-    let banner = tf("referral.banner", &[
-        ("username", username),
-        ("user_id", &user_id.to_string()),
-    ]);
-    let _ = api.send_message(
-        &SendMessageParams::builder()
-            .chat_id(chat_id)
-            .text(apply_premium_to_html(&banner))
-            .parse_mode(frankenstein::ParseMode::Html)
-            .link_preview_options(frankenstein::types::LinkPreviewOptions::builder().is_disabled(true).build())
-            .build(),
-    ).await;
-
-    let (count, available, pending) = if let Some(db) = database {
-        let client = db.client();
-        let total = crate::referral::count_referrals(client, user_id).await;
-        let spent = crate::referral::total_spent_points(client, user_id).await;
-        let pending = crate::referral::count_pending(client, user_id).await;
-        (total, total - spent, pending)
-    } else {
-        (0, 0, 0)
-    };
-    let status = tf("referral.status", &[
-        ("count", &count.to_string()),
-        ("available", &available.to_string()),
-        ("pending", &pending.to_string()),
-    ]);
-    let params = SendMessageParams::builder()
-        .chat_id(chat_id)
-        .text(apply_premium_to_html(&status))
-        .parse_mode(frankenstein::ParseMode::Html)
-        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(referral_keyboard()))
-        .build();
-    if let Err(e) = api.send_message(&params).await {
-        eprintln!("[panel event=referral_send_failed] chat_id={chat_id} err={e}");
-    }
-}
-
 // ── public API ───────────────────────────────────────────────────────────────
 
 pub async fn send_user_panel(
@@ -303,105 +238,27 @@ pub async fn send_user_panel(
     }
 }
 
-/// فعال‌سازی رتبه با امتیاز زیرمجموعه‌گیری. متن toast نتیجه را برمی‌گرداند.
-async fn process_claim(
-    database: &Option<PostgresDatabase>,
-    user_id: i64,
-    threshold: u32,
-    trace_id: u64,
-) -> String {
-    let Some(&(_, tier_rank)) = crate::referral::TIERS.iter().find(|(th, _)| *th == threshold) else {
-        log_ev!("referral", trace_id, "claim", "=>" => "unknown_tier");
-        return t("panel.unavailable");
-    };
-
-    let Some(db) = database else {
-        log_ev!("referral", trace_id, "claim", "=>" => "no_db");
-        return t("panel.unavailable");
-    };
-    let client = db.client();
-
-    let total = crate::referral::count_referrals(client, user_id).await;
-    let spent = crate::referral::total_spent_points(client, user_id).await;
-    let available = total - spent;
-    log_ev!("referral", trace_id, "points_check",
-        "total" => total, "spent" => spent, "available" => available, "needed" => threshold);
-
-    if available < threshold as i64 {
-        log_ev!("referral", trace_id, "points_check", "=>" => "insufficient");
-        return tf("referral.activate_insufficient", &[
-            ("available", &available.to_string()),
-            ("needed", &threshold.to_string()),
-        ]);
-    }
-
-    log_ev!("referral", trace_id, "plan_activation_enter");
-    match crate::referral::plan_activation(client, user_id, tier_rank).await {
-        crate::referral::ActivationPlan::Reject => {
-            log_ev!("referral", trace_id, "downgrade_check", "=>" => "rejected");
-            t("referral.activate_downgrade")
-        }
-        crate::referral::ActivationPlan::AlreadyUnlimited => {
-            log_ev!("referral", trace_id, "downgrade_check", "=>" => "already_unlimited");
-            t("referral.activate_unlimited")
-        }
-        crate::referral::ActivationPlan::Apply { rank, expires_at } => {
-            log_ev!("referral", trace_id, "rank_apply_enter", "rank" => rank.as_str(), "expires_at" => expires_at);
-            if let Err(e) = crate::rank::store::set_user_rank(client, user_id, rank, Some(expires_at)).await {
-                log_ev!("referral", trace_id, "rank_apply", "=>" => "fail", "err" => e);
-                return t("redeem.apply_error");
-            }
-            crate::referral::record_activation(client, user_id, rank, threshold as i64, expires_at).await;
-            log_ev!("referral", trace_id, "rank_apply", "=>" => "ok");
-            tf("referral.activate_success", &[
-                ("rank", &rank.display_name()),
-                ("date", &fmt_jalali(expires_at)),
-            ])
-        }
-    }
-}
-
 pub async fn handle_panel_callback(
     api: &Bot,
     cq: &CallbackQuery,
     user_id: i64,
     database: &Option<PostgresDatabase>,
 ) {
-    let cb = cq.data.as_deref().unwrap_or("");
-
-    let claim_threshold = cb.strip_prefix(CB_REFERRAL_CLAIM_PREFIX).and_then(|s| s.parse::<u32>().ok());
-    let claim_result = if let Some(threshold) = claim_threshold {
-        let trace_id = crate::log::next_trace_id();
-        log_actor_id!("referral", trace_id, user_id, "clicked" => cb);
-        Some(process_claim(database, user_id, threshold, trace_id).await)
-    } else {
-        None
-    };
-
-    // برای claim، ack خالیه (فقط اسپینر تلگرام رو متوقف می‌کنه) — نتیجه به‌صورت
-    // پیام دائمی توی چت فرستاده می‌شه که کاربر بتونه ثبتش رو ببینه/نگه داره.
-    let ack = AnswerCallbackQueryParams::builder().callback_query_id(cq.id.clone()).build();
-    let _ = api.answer_callback_query(&ack).await;
+    let _ = api.answer_callback_query(
+        &AnswerCallbackQueryParams::builder().callback_query_id(cq.id.clone()).build(),
+    ).await;
 
     let Some(msg) = cq.message.as_ref() else { return };
+    let msg_id = match msg {
+        frankenstein::types::MaybeInaccessibleMessage::Message(m) => m.message_id,
+        _ => return,
+    };
     let chat_id = match msg {
         frankenstein::types::MaybeInaccessibleMessage::Message(m) => m.chat.id,
         _ => return,
     };
 
-    if let Some(text) = claim_result {
-        send_with_back(api, chat_id, &text).await;
-        return;
-    }
-    if cb == CB_REFERRAL {
-        send_referral(api, chat_id, user_id, database).await;
-        return;
-    }
-
-    let msg_id = match msg {
-        frankenstein::types::MaybeInaccessibleMessage::Message(m) => m.message_id,
-        _ => return,
-    };
+    let cb = cq.data.as_deref().unwrap_or("");
     let Some(db) = database else { return };
 
     let (text, kb) = if cb == CB_USER_PANEL_MORE {

@@ -4,7 +4,7 @@ mod state;
 
 use std::time::Duration;
 
-use frankenstein::{AsyncTelegramApi, methods::GetUpdatesParams, types::AllowedUpdate};
+use frankenstein::{AsyncTelegramApi, methods::GetUpdatesParams};
 
 use crate::config;
 use crate::cookie_pool::CookiePool;
@@ -13,7 +13,7 @@ use crate::emoji::FlowManager;
 use startup::{
     build_bot_api, fetch_bot_username, init_database, init_emoji_cache,
     set_bot_commands, spawn_cookie_refresher, spawn_cooldown_refresh, spawn_i18n_watcher,
-    spawn_redeem_sweeper, spawn_referral_confirm_sweeper,
+    spawn_redeem_sweeper,
 };
 use state::AppState;
 
@@ -27,7 +27,6 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if db.is_some() {
             init_emoji_cache(&database_url).await;
             spawn_redeem_sweeper(&database_url);
-            spawn_referral_confirm_sweeper(&database_url, &api);
         }
         db
     } else {
@@ -61,10 +60,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         flow_clear_tx,
     };
 
-    let mut params = GetUpdatesParams::builder()
-        .timeout(30u32)
-        .allowed_updates(vec![AllowedUpdate::Message, AllowedUpdate::CallbackQuery, AllowedUpdate::ChatMember])
-        .build();
+    let mut params = GetUpdatesParams::builder().timeout(30u32).build();
 
     loop {
         let updates = match state.api.get_updates(&params).await {

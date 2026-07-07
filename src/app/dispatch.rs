@@ -10,7 +10,7 @@ use crate::bot::{
     CB_LANG_SET,
     CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB, CB_USER_PANEL,
     CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_AI_SEP, CB_AI_GWM, CB_AI_ASR, CB_DENOISE_CANCEL,
-    CB_ADMIN_PANEL, CB_ADMIN_STATS, CB_ADMIN_STATS_MORE, CB_ADMIN_ERRORS, CB_ADMIN_FORCE_JOIN, CB_ADMIN_GEN_CODE,
+    CB_ADMIN_PANEL, CB_ADMIN_STATS, CB_ADMIN_STATS_MORE, CB_ADMIN_ERRORS, CB_ADMIN_GEN_CODE,
 };
 use crate::asr::{enter_asr, handle_asr_audio, handle_asr_cancel, handle_asr_confirm, CB_ASR_CANCEL, CB_ASR_CONFIRM, CB_ASR_QUEUE};
 use crate::config;
@@ -54,12 +54,6 @@ pub async fn handle_update(
         }
     }
 
-    // chat_member آپدیت قفل‌های عضویت — کش Redis قفل منطبق را تازه نگه می‌دارد.
-    if let UpdateContent::ChatMember(cm) = &content {
-        crate::force_join::on_chat_member_update(&cm.chat, &cm.new_chat_member).await;
-        return Ok(());
-    }
-
     let sender = match &content {
         UpdateContent::Message(m) => m.from.as_ref().map(|u| u.id as i64),
         UpdateContent::CallbackQuery(c) => Some(c.from.id as i64),
@@ -75,7 +69,6 @@ pub async fn handle_update(
         } else {
             None
         };
-        let is_check_btn = cb_data == Some(crate::force_join::CB_FJ_CHECK);
 
         if let Some(lang) = cb_data.and_then(|d| d.strip_prefix(CB_LANG_SET)) {
             // ack callback
@@ -130,9 +123,6 @@ pub async fn handle_update(
             }
             let lang = lang_opt.unwrap_or_else(|| "fa".to_string());
             return LANG.scope(lang, async {
-                if !is_redeem && !gate_force_join(state, &content, uid, is_check_btn).await? {
-                    return Ok(());
-                }
                 match content {
                     UpdateContent::Message(message) => handle_message(state, *message).await?,
                     UpdateContent::CallbackQuery(callback_query) => handle_callback(state, *callback_query).await?,
@@ -140,11 +130,6 @@ pub async fn handle_update(
                 }
                 Ok(())
             }).await;
-        }
-
-        // بدون DB: مفهومی برای redeem وجود نداره (نیازمند DB است) → همیشه گیت بزن
-        if !gate_force_join(state, &content, uid, is_check_btn).await? {
-            return Ok(());
         }
     }
 
@@ -155,66 +140,6 @@ pub async fn handle_update(
         _ => {}
     }
     Ok(())
-}
-
-/// قفل عضویت اجباری — بعد از زبان و کد فعال‌سازی اجرا می‌شه. `is_check_btn` یعنی
-/// کاربر روی دکمه‌ی سبز «عضو شدم» زده؛ در این حالت کش دور زده می‌شه (چک زنده) و
-/// پاسخ به‌صورت toast/alert روی همون callback داده می‌شه، نه پیام جدید.
-/// خروجی `Ok(true)` یعنی ادامه بده، `Ok(false)` یعنی همینجا برگرد.
-async fn gate_force_join(
-    state: &AppState,
-    content: &UpdateContent,
-    uid: i64,
-    is_check_btn: bool,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let joined = if is_check_btn {
-        crate::force_join::is_joined_live(&state.api, uid).await
-    } else {
-        crate::force_join::is_joined(&state.api, uid).await
-    };
-
-    let chat_id = match content {
-        UpdateContent::Message(m) => m.chat.id,
-        UpdateContent::CallbackQuery(cq) => cq.message.as_ref().and_then(|m| match m {
-            MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
-            _ => None,
-        }).unwrap_or(uid),
-        _ => uid,
-    };
-
-    if !joined {
-        if let UpdateContent::CallbackQuery(cq) = content {
-            let params = if is_check_btn {
-                AnswerCallbackQueryParams::builder()
-                    .callback_query_id(cq.id.clone())
-                    .text(t("force_join.still_not_joined"))
-                    .show_alert(true)
-                    .build()
-            } else {
-                AnswerCallbackQueryParams::builder().callback_query_id(cq.id.clone()).build()
-            };
-            let _ = state.api.answer_callback_query(&params).await;
-        }
-        if !is_check_btn {
-            crate::force_join::send_lock_message(&state.api, chat_id).await;
-        }
-        return Ok(false);
-    }
-
-    if is_check_btn {
-        if let UpdateContent::CallbackQuery(cq) = content {
-            let _ = state.api.answer_callback_query(
-                &AnswerCallbackQueryParams::builder()
-                    .callback_query_id(cq.id.clone())
-                    .text(t("force_join.now_joined"))
-                    .build(),
-            ).await;
-        }
-        send_start_menu(&state.api, chat_id).await?;
-        return Ok(false);
-    }
-
-    Ok(true)
 }
 
 async fn handle_message(
@@ -229,11 +154,9 @@ async fn handle_message(
         log_actor!("dispatch", trace_id, u, "msg" => msg_text.chars().take(40).collect::<String>());
     }
 
-    // ثبت کاربر در stats. is_new_user برای گیت زدن attribution زیرمجموعه‌گیری لازم است
-    // (فقط کاربری که همین الان برای اولین‌بار دیده شده باید به یک referrer نسبت داده شود).
-    let mut is_new_user = false;
+    // ثبت کاربر در stats (fire-and-forget)
     if let Some(uid) = user_id {
-        is_new_user = stats::record_user_global(uid).await;
+        stats::record_user_global(uid).await;
     }
 
     // Step 1: addemoji link detection
@@ -259,16 +182,6 @@ async fn handle_message(
                 let first_name = message.from.as_ref().map(|u| u.first_name.as_str()).unwrap_or("");
                 let username = message.from.as_ref().and_then(|u| u.username.as_deref());
                 crate::redeem::handle::handle_redeem(api, message.chat.id, uid, first_name, username, code, database).await;
-            } else if let Ok(referrer_id) = payload.parse::<i64>() {
-                // زیرمجموعه‌گیری: فقط کاربر واقعاً تازه‌وارد و غیر از خودِ referrer نسبت داده می‌شود.
-                if is_new_user && referrer_id != uid {
-                    if let Some(db) = database {
-                        let trace_id = next_trace_id();
-                        crate::referral::record_referral(db.client(), uid, referrer_id).await;
-                        log_trace(trace_id, "referral_attributed", &format!("referred_id={uid} referrer_id={referrer_id}"));
-                    }
-                }
-                send_start_menu(api, message.chat.id).await?;
             } else {
                 send_start_menu(api, message.chat.id).await?;
             }
@@ -294,37 +207,6 @@ async fn handle_message(
                     let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
                     if is_admin {
                         crate::redeem::handle::handle_generate(api, message.chat.id, uid, text, database).await;
-                    }
-                    return Ok(());
-                }
-            }
-
-            // ادمین لینک قفل جدید را فرستاده
-            if matches!(flow_manager.get(uid), FlowState::AwaitingForceJoinLink) {
-                if let Some(text) = message.text.as_deref() {
-                    let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
-                    if is_admin {
-                        crate::force_join::handle_link_message(api, message.chat.id, text, flow_manager, uid).await;
-                    }
-                    return Ok(());
-                }
-            }
-
-            // ادمین یوزرنیم/آیدی عددی/فوروارد برای لینک خصوصی فرستاده
-            if let FlowState::AwaitingForceJoinPrivateInfo { link } = flow_manager.get(uid) {
-                let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
-                if is_admin {
-                    crate::force_join::handle_private_info_message(api, message.chat.id, &link, &message, flow_manager, uid).await;
-                }
-                return Ok(());
-            }
-
-            // ادمین ورودی ویزارد ویرایش فیلد قفل (نام/زمان/عضو/رزرو) را فرستاده
-            if let FlowState::AwaitingForceJoinField { lock_id, field, .. } = flow_manager.get(uid) {
-                if let Some(text) = message.text.as_deref() {
-                    let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
-                    if is_admin {
-                        crate::force_join::handle_field_message(api, message.chat.id, lock_id, &field, text, flow_manager, uid, database).await;
                     }
                     return Ok(());
                 }
@@ -809,7 +691,6 @@ async fn handle_callback(
             let kb = frankenstein::types::InlineKeyboardMarkup::builder()
                 .inline_keyboard(vec![
                     vec![btn_icon(&t("admin.stats_button"), CB_ADMIN_STATS, "stats")],
-                    vec![btn_icon(&t("admin.force_join_button"), CB_ADMIN_FORCE_JOIN, "")],
                     vec![btn_icon(&t("admin.gencode_button"), CB_ADMIN_GEN_CODE, "panel")],
                     vec![btn_icon(&t("admin.back"), crate::bot::CB_START_PANEL, "back")],
                 ])
@@ -870,153 +751,6 @@ async fn handle_callback(
                 api, message.chat.id, message.message_id, &text, Some(kb),
             ).await;
         }
-        return Ok(());
-    }
-
-    if cb_data == CB_ADMIN_FORCE_JOIN && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            crate::force_join::open_menu(api, message.chat.id, message.message_id).await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == crate::force_join::CB_FJ_TOGGLE && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        crate::force_join::toggle_enabled().await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            crate::force_join::open_menu(api, message.chat.id, message.message_id).await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == crate::force_join::CB_FJ_VIEW && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            crate::force_join::open_locks_list(api, message.chat.id, message.message_id).await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == crate::force_join::CB_FJ_ADD_NEW && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            crate::force_join::prompt_add_new(api, message.chat.id, message.message_id, flow_manager, cb_user_id as i64).await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == crate::force_join::CB_FJ_ADD_CANCEL && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        flow_manager.clear(cb_user_id as i64);
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            crate::force_join::open_locks_list(api, message.chat.id, message.message_id).await;
-        }
-        return Ok(());
-    }
-
-    if let Some(id_str) = cb_data.strip_prefix(crate::force_join::FJ_MANAGE_PREFIX) {
-        if is_admin {
-            let _ = api.answer_callback_query(
-                &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-            ).await;
-            if let (Some(MaybeInaccessibleMessage::Message(message)), Ok(lock_id)) = (callback_query.message, id_str.parse::<i64>()) {
-                crate::force_join::open_manage(api, message.chat.id, message.message_id, lock_id, database).await;
-            }
-        }
-        return Ok(());
-    }
-
-    if let Some(id_str) = cb_data.strip_prefix(crate::force_join::FJ_MODE_PREFIX) {
-        if is_admin {
-            if let Ok(lock_id) = id_str.parse::<i64>() {
-                use crate::force_join::ToggleModeResult;
-                let result = crate::force_join::toggle_lock_mode(api, lock_id).await;
-                let alert_text = match &result {
-                    ToggleModeResult::BotNotAdmin => Some(t("force_join.bot_not_admin")),
-                    ToggleModeResult::NoChatId => Some(t("force_join.no_chat_id")),
-                    _ => None,
-                };
-                let ack = match alert_text {
-                    Some(text) => AnswerCallbackQueryParams::builder()
-                        .callback_query_id(callback_query.id.clone())
-                        .text(text).show_alert(true).build(),
-                    None => AnswerCallbackQueryParams::builder()
-                        .callback_query_id(callback_query.id.clone()).build(),
-                };
-                let _ = api.answer_callback_query(&ack).await;
-                if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-                    crate::force_join::open_manage(api, message.chat.id, message.message_id, lock_id, database).await;
-                }
-            } else {
-                let _ = api.answer_callback_query(
-                    &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-                ).await;
-            }
-        }
-        return Ok(());
-    }
-
-    // ویزاردهای ویرایش فیلد قفل: نام/زمان/عضو/رزرو → پرامپت ورودی متنی
-    {
-        use crate::force_join::{FJ_NAME_PREFIX, FJ_TIME_PREFIX, FJ_MEMBER_PREFIX, FJ_RESERVE_PREFIX};
-        let field = if let Some(id) = cb_data.strip_prefix(FJ_NAME_PREFIX) { Some(("name", id)) }
-            else if let Some(id) = cb_data.strip_prefix(FJ_TIME_PREFIX) { Some(("time", id)) }
-            else if let Some(id) = cb_data.strip_prefix(FJ_MEMBER_PREFIX) { Some(("member", id)) }
-            else if let Some(id) = cb_data.strip_prefix(FJ_RESERVE_PREFIX) { Some(("reserve", id)) }
-            else { None };
-        if let Some((field, id_str)) = field {
-            if is_admin {
-                let _ = api.answer_callback_query(
-                    &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-                ).await;
-                if let (Some(MaybeInaccessibleMessage::Message(message)), Ok(lock_id)) = (callback_query.message, id_str.parse::<i64>()) {
-                    crate::force_join::prompt_field(api, message.chat.id, message.message_id, lock_id, field, flow_manager, cb_user_id as i64).await;
-                }
-            }
-            return Ok(());
-        }
-    }
-
-    if let Some(id_str) = cb_data.strip_prefix(crate::force_join::FJ_DELETE_PREFIX) {
-        if is_admin {
-            let _ = api.answer_callback_query(
-                &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-            ).await;
-            if let (Some(MaybeInaccessibleMessage::Message(message)), Ok(lock_id)) = (callback_query.message, id_str.parse::<i64>()) {
-                crate::force_join::open_delete_confirm(api, message.chat.id, message.message_id, lock_id).await;
-            }
-        }
-        return Ok(());
-    }
-
-    if let Some(id_str) = cb_data.strip_prefix(crate::force_join::FJ_DELETE_YES_PREFIX) {
-        if is_admin {
-            let _ = api.answer_callback_query(
-                &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-            ).await;
-            if let (Some(MaybeInaccessibleMessage::Message(message)), Ok(lock_id)) = (callback_query.message, id_str.parse::<i64>()) {
-                crate::force_join::delete_lock(lock_id).await;
-                crate::force_join::open_locks_list(api, message.chat.id, message.message_id).await;
-            }
-        }
-        return Ok(());
-    }
-
-    if cb_data == crate::force_join::CB_FJ_NOOP && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
         return Ok(());
     }
 
