@@ -45,22 +45,9 @@ fn date_fa(epoch: i64) -> String {
 
 // ── مدل تجمیع/پیشرفت مقام ──
 //
-// جدول ارزش واحد (وزن صحیح): نسبت تبدیل = وزن‌فعلی ÷ وزن‌جدید، گرد به بالا.
+// جدول ارزش واحد (وزن صحیح، Rank::weight()): نسبت تبدیل = وزن‌فعلی ÷ وزن‌جدید، گرد به بالا (rank::types::ceil_div).
 // بازتولید نسبت‌های تعریف‌شده: سپهبد→اسفندیار ۳/۵=۰٫۶، اسفندیار/سهراب→رستم ۵/۱۰=۰٫۵.
-fn rank_weight(r: Rank) -> i64 {
-    match r {
-        Rank::Dalavar => 0,
-        Rank::Sepahbod => 3,
-        Rank::Esfandyar => 5,
-        Rank::Sohrab => 5,
-        Rank::Rostam => 10,
-    }
-}
-
-fn ceil_div(a: i64, b: i64) -> i64 {
-    if b <= 0 { return 0; }
-    (a + b - 1) / b
-}
+use crate::rank::types::ceil_div;
 
 /// پلن فعال‌سازی پس از در نظر گرفتن مقام فعلی کاربر
 enum Plan {
@@ -88,8 +75,8 @@ async fn plan_redeem(client: &Client, user_id: i64, new_rank: Rank, new_days: i3
     }
 
     let cur = cur.unwrap();
-    let wc = rank_weight(cur.rank);
-    let wn = rank_weight(new_rank);
+    let wc = cur.rank.weight();
+    let wn = new_rank.weight();
 
     // مقام پایین‌تر → رد
     if wn < wc {

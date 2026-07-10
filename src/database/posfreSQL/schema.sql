@@ -151,3 +151,40 @@ CREATE TABLE IF NOT EXISTS redeem_redemptions (
 
 -- عمر کشویی ۷ روزه: موقع ساخت now+7d، هر مصرف ریست می‌شود، بعد از انقضا پاک می‌شود.
 ALTER TABLE redeem_codes ADD COLUMN IF NOT EXISTS expires_at BIGINT;
+
+-- ── زیرمجموعه‌گیری (referral) ───────────────────────────────────────────────
+-- هر کاربر فقط یک‌بار می‌تواند زیرمجموعه‌ی کسی محسوب شود (referred_id = PK).
+-- referrals = دعوت‌های تأییدشده (شمرده می‌شوند، امتیاز می‌دهند).
+
+CREATE TABLE IF NOT EXISTS referrals (
+    referred_id BIGINT PRIMARY KEY,
+    referrer_id BIGINT NOT NULL,
+    created_at  BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS referrals_referrer_idx
+    ON referrals (referrer_id);
+
+-- referral_pending = دعوت‌های در انتظار تأیید: کاربر با لینک استارت کرده ولی هنوز
+-- ۲ روز از عضویتش در قفل اجباری نگذشته. sweep دوره‌ای (referral::sweep_confirm)
+-- بعد از ۲ روز عضویت رو دوباره چک می‌کند: عضو بود → به referrals منتقل می‌شود؛
+-- عضو نبود → حذف می‌شود (دعوت باطل).
+CREATE TABLE IF NOT EXISTS referral_pending (
+    referred_id BIGINT PRIMARY KEY,
+    referrer_id BIGINT NOT NULL,
+    started_at  BIGINT NOT NULL
+);
+
+-- تاریخچه‌ی فعال‌سازی رتبه با امتیاز دعوت. points_spent برای محاسبه‌ی موجودی
+-- قابل‌خرج جمع زده می‌شود (موجودی = COUNT(referrals) - SUM(points_spent)).
+CREATE TABLE IF NOT EXISTS referral_activations (
+    id           BIGSERIAL PRIMARY KEY,
+    user_id      BIGINT NOT NULL,
+    rank         TEXT   NOT NULL,
+    points_spent INT    NOT NULL,
+    activated_at BIGINT NOT NULL,
+    expires_at   BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS referral_activations_user_idx
+    ON referral_activations (user_id);

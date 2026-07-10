@@ -64,6 +64,8 @@ pub async fn send_quality_prompt(
                 format_summary(&info.video_formats)
             ),
         );
+        // Never fail silently: tell the user no quality is downloadable.
+        let _ = crate::bot::send_text(api, chat_id, &t("youtube.quality.no_formats")).await;
         return Ok(());
     }
 

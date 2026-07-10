@@ -30,6 +30,17 @@ impl Rank {
         }
     }
 
+    /// وزن رتبه برای مقایسه‌ی ارتقا/تنزل (کد هدیه و زیرمجموعه‌گیری از این استفاده می‌کنند).
+    pub fn weight(&self) -> i64 {
+        match self {
+            Self::Dalavar => 0,
+            Self::Sepahbod => 3,
+            Self::Esfandyar => 5,
+            Self::Sohrab => 5,
+            Self::Rostam => 10,
+        }
+    }
+
     /// حداقل رتبه لازم برای دانلود یه کیفیت خاص
     pub fn min_for_quality(height: u32) -> Self {
         if height <= 500 {
@@ -273,4 +284,10 @@ impl Rank {
             Self::Rostam => Some(50 * 3600),
         }
     }
+}
+
+/// تقسیم صحیح گرد به بالا — مشترک بین کد هدیه و زیرمجموعه‌گیری برای تبدیل وزنی روزهای باقیمانده.
+pub fn ceil_div(a: i64, b: i64) -> i64 {
+    if b <= 0 { return 0; }
+    (a + b - 1) / b
 }

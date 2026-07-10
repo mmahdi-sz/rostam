@@ -274,7 +274,11 @@ fn collect_video_format(
     if height > u32::MAX as u64 {
         return;
     }
-    let height = height as u32;
+    // Non-16:9 videos (e.g. 2:1 cinematic) report off-tier pixel heights like
+    // 960 instead of 1080, so exact-height matching in quality_options() would
+    // drop every format and hide all download buttons. Snap to the nearest
+    // standard tier; the real format_id (below) is what actually downloads.
+    let height = normalize_height(height as u32);
     if !seen.insert((height, codec)) {
         return;
     }
@@ -293,6 +297,13 @@ fn collect_video_format(
         format_id,
         bitrate,
     });
+}
+
+/// Snap a raw pixel height to the nearest standard quality tier, so off-tier
+/// resolutions (from non-16:9 aspect ratios) still map to a labelled button.
+fn normalize_height(h: u32) -> u32 {
+    const STD: [u32; 9] = [144, 240, 360, 480, 720, 1080, 1440, 2160, 4320];
+    STD.into_iter().min_by_key(|&s| s.abs_diff(h)).unwrap()
 }
 
 fn parse_video_codec(vcodec: &str) -> Option<VideoCodec> {

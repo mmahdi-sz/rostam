@@ -39,6 +39,13 @@ pub enum FlowState {
     /// ادمین دکمه‌ی ساخت کد را زده و منتظر آرگومان‌ها (مثل `30d es 1u`) هستیم
     #[allow(dead_code)]
     AwaitingRedeemGenArgs,
+    /// ادمین دکمه‌ی «افزودن قفل جدید» را زده و منتظر لینک است
+    AwaitingForceJoinLink,
+    /// لینک خصوصی ثبت شده؛ منتظر یوزرنیم/فوروارد/آیدی عددی چت هستیم
+    AwaitingForceJoinPrivateInfo { link: String },
+    /// ویزارد ویرایش یک فیلد قفل (نام نمایشی/حد زمان/حد عضو/لینک رزرو).
+    /// `field` یکی از: `name` | `time` | `member` | `reserve`. نتیجه به‌صورت پیام جدید نشون داده می‌شه.
+    AwaitingForceJoinField { lock_id: i64, field: String },
 }
 
 #[derive(Debug, Default)]

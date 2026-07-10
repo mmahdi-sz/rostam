@@ -3,7 +3,7 @@ use frankenstein::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 use crate::i18n::{t, tf};
 
 use super::super::download::{Selection, SelectionView, SubtitleMode, YoutubeRequest, codecs_for_height, with_selection};
-use super::super::lang_names::lang_name_fa;
+use super::super::lang_names::lang_name;
 use super::super::types::VideoCodec;
 use super::buttons::{
     choice_button, confirm_button, header_button, icon_button, main_menu_button, plain_button, primary_button,
@@ -58,7 +58,7 @@ fn build_main_keyboard(req: &YoutubeRequest, request_id: u64, sel: &Selection) -
             .iter()
             .enumerate()
             .map(|(i, lang)| {
-                let mut label = lang_name_fa(&lang.code);
+                let mut label = lang_name(&lang.code);
                 if lang.is_original { label.push_str(" ●"); }
                 let selected = sel.audio_lang.as_deref() == Some(&lang.code);
                 choice_button(&label, format!("{CB_AUDIO}{request_id}:{i}"), selected)
@@ -79,7 +79,7 @@ fn build_main_keyboard(req: &YoutubeRequest, request_id: u64, sel: &Selection) -
                 .enumerate()
                 .find(|(_, l)| l.code.eq_ignore_ascii_case(quick_code))
             {
-                let label = lang_name_fa(&lang.code);
+                let label = lang_name(&lang.code);
                 let selected = sel.subtitle_langs.iter().any(|l| l == &lang.code);
                 quick_row.push(choice_button(
                     &label,
@@ -140,7 +140,7 @@ fn build_sub_menu_keyboard(req: &YoutubeRequest, request_id: u64, sel: &Selectio
             .enumerate()
             .map(|(col_idx, lang)| {
                 let real_i = start + row_idx * SUB_PAGE_COLS + col_idx;
-                let mut label = lang_name_fa(&lang.code);
+                let mut label = lang_name(&lang.code);
                 if lang.is_auto { label.push_str(" 🤖"); }
                 let selected = sel.subtitle_langs.iter().any(|l| l == &lang.code);
                 choice_button(&label, format!("{CB_SUB_TOGGLE}{request_id}:{real_i}"), selected)
