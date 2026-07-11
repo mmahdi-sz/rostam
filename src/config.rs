@@ -72,6 +72,38 @@ pub fn env_label() -> String {
     config_value("ENV_LABEL").unwrap_or_else(|| if dev_mode() { "dev".into() } else { "prod".into() })
 }
 
+/// Max accepted PDF size for the compression feature. Default 2GB.
+pub fn pdf_compress_max_bytes() -> u64 {
+    config_value("PDF_COMPRESS_MAX_MB")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(2048) * 1024 * 1024
+}
+
+/// Hard timeout for the `gs` subprocess — killed cleanly past this. Default 30 min.
+pub fn pdf_compress_timeout_secs() -> u64 {
+    config_value("PDF_COMPRESS_TIMEOUT_SECS")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30 * 60)
+}
+
+/// ipinfo.io API token — source omitted from the IP lookup card when unset.
+pub fn ipinfo_token() -> Option<String> {
+    config_value("IPINFO_TOKEN")
+}
+
+/// AbuseIPDB API key — source omitted from the IP lookup card when unset.
+pub fn abuseipdb_key() -> Option<String> {
+    config_value("ABUSEIPDB_KEY")
+}
+
+/// How often the IP lookup background task refreshes the cloud/Tor/Spamhaus
+/// static lists. Default 6h.
+pub fn ip_lists_refresh_secs() -> u64 {
+    config_value("IP_LISTS_REFRESH_SECS")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(6 * 3600)
+}
+
 pub fn config_value(key: &str) -> Option<String> {
     value_from_env_file(".env", key)
         .or_else(|| value_from_env_file("/etc/default/abc", key))

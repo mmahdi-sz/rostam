@@ -27,12 +27,12 @@ fn now_epoch() -> i64 {
         .unwrap_or(0)
 }
 
-/// تاریخ جلالی + ساعت به وقت تهران (+۳:۳۰)، با ارقام فارسی
+/// تاریخ جلالی + ساعت به وقت تهران (+۳:۳۰)، با ارقام انگلیسی
 fn datetime_fa(epoch: i64) -> String {
     let Some(utc) = Utc.timestamp_opt(epoch, 0).single() else { return String::new() };
     let dt = utc.with_timezone(&Tehran);
     let (jy, jm, jd) = gregorian_to_jalali(dt.year(), dt.month() as i32, dt.day() as i32);
-    to_fa_digits(&format!("{jy:04}/{jm:02}/{jd:02} ساعت {:02}:{:02}", dt.hour(), dt.minute()))
+    format!("{jy:04}/{jm:02}/{jd:02} ساعت {:02}:{:02}", dt.hour(), dt.minute())
 }
 
 /// فقط تاریخ جلالی به وقت تهران (برای نمایش انقضا)
@@ -45,22 +45,9 @@ fn date_fa(epoch: i64) -> String {
 
 // ── مدل تجمیع/پیشرفت مقام ──
 //
-// جدول ارزش واحد (وزن صحیح): نسبت تبدیل = وزن‌فعلی ÷ وزن‌جدید، گرد به بالا.
+// جدول ارزش واحد (وزن صحیح، Rank::weight()): نسبت تبدیل = وزن‌فعلی ÷ وزن‌جدید، گرد به بالا (rank::types::ceil_div).
 // بازتولید نسبت‌های تعریف‌شده: سپهبد→اسفندیار ۳/۵=۰٫۶، اسفندیار/سهراب→رستم ۵/۱۰=۰٫۵.
-fn rank_weight(r: Rank) -> i64 {
-    match r {
-        Rank::Dalavar => 0,
-        Rank::Sepahbod => 3,
-        Rank::Esfandyar => 5,
-        Rank::Sohrab => 5,
-        Rank::Rostam => 10,
-    }
-}
-
-fn ceil_div(a: i64, b: i64) -> i64 {
-    if b <= 0 { return 0; }
-    (a + b - 1) / b
-}
+use crate::rank::types::ceil_div;
 
 /// پلن فعال‌سازی پس از در نظر گرفتن مقام فعلی کاربر
 enum Plan {
@@ -88,8 +75,8 @@ async fn plan_redeem(client: &Client, user_id: i64, new_rank: Rank, new_days: i3
     }
 
     let cur = cur.unwrap();
-    let wc = rank_weight(cur.rank);
-    let wn = rank_weight(new_rank);
+    let wc = cur.rank.weight();
+    let wn = new_rank.weight();
 
     // مقام پایین‌تر → رد
     if wn < wc {
@@ -401,7 +388,7 @@ pub async fn handle_redeem(
             .map(|u| md_escape(&format!("@{u}")))
             .unwrap_or_else(|| t("redeem.no_username"));
         let duration_display = apply_total
-            .map(|d| md_escape(&to_fa_digits(&tf("redeem.panel_days", &[("n", &d.to_string())]))))
+            .map(|d| md_escape(&tf("redeem.panel_days", &[("n", &d.to_string())])))
             .unwrap_or_else(|| t("rank.expiry_unlimited"));
         let apply_rank_name = apply_rank.display_name();
         let raw_msg = tf("redeem.admin_notify", &[

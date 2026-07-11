@@ -9,7 +9,7 @@ use frankenstein::{
 
 use crate::bot::{send_text, edit_to_ai_lab};
 use crate::emoji::{FlowManager, FlowState};
-use crate::i18n::{t, tf};
+use crate::i18n::t;
 use crate::log::next_trace_id;
 
 pub const CB_GWM_CANCEL: &str = "gwm:cancel";
@@ -134,14 +134,17 @@ pub async fn handle_gwm_image(
     };
     std::fs::remove_dir_all(&work_dir).ok();
 
-    // Run watermark removal.
-    log_ev!("gwm", trace_id, "remove_start", "raw" => format!("user_id={user_id} ext={ext} bytes={}", image_bytes.len()));
+    // Run watermark removal (Moebius ONNX inpainting pipeline). The sparkle is
+    // located dynamically; if it can't be found (and the image isn't in the
+    // ≥1024 class where a fixed-corner fallback is trusted), the pipeline
+    // returns NoWatermark and we tell the user rather than inpainting a guess.
+    log_ev!("gwm", trace_id, "remove_start", "raw" => format!("user_id={user_id} bytes={}", image_bytes.len()));
     let t_start = std::time::Instant::now();
-    let pass_outputs = match super::remove::remove_watermark(image_bytes, ext.clone(), user_id, trace_id).await {
+    let result_bytes = match crate::moebius::remove_watermark(image_bytes, user_id, trace_id).await {
         Ok(v) => v,
-        Err(super::remove::GwmError::NoWatermarkDetected(detail)) => {
+        Err(crate::moebius::MoebiusError::NoWatermark) => {
             let elapsed = t_start.elapsed().as_secs_f64();
-            log_ev!("gwm", trace_id, "no_watermark", "raw" => format!("elapsed={elapsed:.2}s detail={detail:?}"));
+            log_ev!("gwm", trace_id, "no_watermark", "raw" => format!("elapsed={elapsed:.2}s"));
             crate::stats::record_event_user(user_id, "gwm", "", "no_watermark", 0).await;
             let _ = send_text(api, chat_id, &t("gemini_wm.error.no_watermark")).await;
             return;
@@ -156,69 +159,39 @@ pub async fn handle_gwm_image(
         }
     };
     let elapsed = t_start.elapsed().as_secs_f64();
-    let n = pass_outputs.len();
-    log_ev!("gwm", trace_id, "remove_done", "elapsed" => format!("{elapsed:.2}s"), "passes" => n);
+    log_ev!("gwm", trace_id, "remove_done", "elapsed" => format!("{elapsed:.2}s"), "bytes" => result_bytes.len());
 
-    if n == 0 {
+    // Moebius always emits a single PNG (fresh synthesis of the masked
+    // region), regardless of the input format.
+    let out_path = std::env::temp_dir().join(format!("gwm_out_{trace_id}.png"));
+    if let Err(e) = std::fs::write(&out_path, &result_bytes) {
+        log_ev!("gwm", trace_id, "write_failed", "raw" => "err={e}");
         crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
-        crate::stats::record_error_global("gwm", "remove produced 0 passes").await;
+        crate::stats::record_error_global("gwm", &format!("write failed: {e}")).await;
         let _ = send_text(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
         return;
     }
 
-    // Send each pass output as its own document. The first pass also carries
-    // the multi-pass explanation so the user understands why several images
-    // are arriving and what the trade-off is.
-    for (idx, output) in pass_outputs.iter().enumerate() {
-        let pass_num = output.pass_num;
-        let out_path = std::env::temp_dir().join(format!("gwm_out_{trace_id}_p{pass_num}.{ext}"));
-        if let Err(e) = std::fs::write(&out_path, &output.bytes) {
-            log_ev!("gwm", trace_id, "write_failed", "raw" => format!("pass={pass_num} err={e}"));
-            continue;
+    let caption = t("gemini_wm.result.single_caption");
+    log_ev!("gwm", trace_id, "sending_result", "bytes" => result_bytes.len(), "caption_len" => caption.chars().count());
+
+    let p = SendDocumentParams::builder()
+        .chat_id(chat_id)
+        .document(PathBuf::from(&out_path))
+        .caption(&caption)
+        .build();
+    match api.send_document(&p).await {
+        Ok(_) => {
+            log_ev!("gwm", trace_id, "result_sent");
+            crate::stats::record_event_user(user_id, "gwm", "", "ok", 1).await;
         }
-
-        let caption = build_caption(n, pass_num, idx == 0);
-        log_ev!("gwm", trace_id, "sending_pass", "pass" => pass_num, "total" => n,
-            "bytes" => output.bytes.len(), "caption_len" => caption.chars().count()
-        );
-
-        let p = SendDocumentParams::builder()
-            .chat_id(chat_id)
-            .document(PathBuf::from(&out_path))
-            .caption(&caption)
-            .build();
-        match api.send_document(&p).await {
-            Ok(_) => log_ev!("gwm", trace_id, "pass_sent", "raw" => "pass={pass_num}"),
-            Err(e) => log_ev!("gwm", trace_id, "pass_send_failed", "raw" => format!("pass={pass_num} err={e}")),
+        Err(e) => {
+            log_ev!("gwm", trace_id, "result_send_failed", "raw" => "err={e}");
+            crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
+            crate::stats::record_error_global("gwm", &format!("send failed: {e}")).await;
         }
-        std::fs::remove_file(&out_path).ok();
     }
-
-    log_ev!("gwm", trace_id, "all_passes_sent", "raw" => "passes={n}");
-    crate::stats::record_event_user(user_id, "gwm", "", "ok", n as i64).await;
-}
-
-/// Build the caption for one pass. The first message in a multi-pass set also
-/// contains the up-front explanation; later passes get just their own label.
-fn build_caption(total: usize, pass_num: u32, is_first: bool) -> String {
-    if total == 1 {
-        return t("gemini_wm.result.single_caption");
-    }
-
-    let label_key = match pass_num {
-        1 => "gemini_wm.result.pass1_label",
-        2 => "gemini_wm.result.pass2_label",
-        3 => "gemini_wm.result.pass3_label",
-        _ => "gemini_wm.result.pass_generic_label",
-    };
-    let label = t(label_key);
-
-    if is_first {
-        let intro = tf("gemini_wm.result.multi_intro", &[("count", &total.to_string())]);
-        format!("{intro}\n\n{label}")
-    } else {
-        label
-    }
+    std::fs::remove_file(&out_path).ok();
 }
 
 fn detect_ext(message: &Message) -> String {

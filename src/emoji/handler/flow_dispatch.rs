@@ -81,6 +81,14 @@ pub async fn handle_emoji_flow_message(
             eprintln!("[emoji_msg trace={trace_id} event=gwm_skip] — handled in main");
             false
         }
+        FlowState::AwaitingPdfCompressFile | FlowState::AwaitingPdfCompressLevel { .. } => {
+            eprintln!("[emoji_msg trace={trace_id} event=pdfcompress_skip] — handled in main");
+            false
+        }
+        FlowState::AwaitingIpLookupInput => {
+            eprintln!("[emoji_msg trace={trace_id} event=ip_lookup_skip] — handled in main");
+            false
+        }
         FlowState::AwaitingAsrAudio
         | FlowState::AwaitingAsrConfirm { .. }
         | FlowState::AwaitingAsrQueued { .. } => {
@@ -89,6 +97,12 @@ pub async fn handle_emoji_flow_message(
         }
         FlowState::AwaitingRedeemGenArgs => {
             eprintln!("[emoji_msg trace={trace_id} event=redeem_gen_skip] — handled in main");
+            false
+        }
+        FlowState::AwaitingForceJoinLink
+        | FlowState::AwaitingForceJoinPrivateInfo { .. }
+        | FlowState::AwaitingForceJoinField { .. } => {
+            eprintln!("[emoji_msg trace={trace_id} event=force_join_skip] — handled in main");
             false
         }
     }
@@ -111,9 +125,15 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingSeparationMode { .. } => "AwaitingSeparationMode",
         FlowState::AwaitingSeparationQueued { .. } => "AwaitingSeparationQueued",
         FlowState::AwaitingGeminiWmImage => "AwaitingGeminiWmImage",
+        FlowState::AwaitingPdfCompressFile => "AwaitingPdfCompressFile",
+        FlowState::AwaitingPdfCompressLevel { .. } => "AwaitingPdfCompressLevel",
+        FlowState::AwaitingIpLookupInput => "AwaitingIpLookupInput",
         FlowState::AwaitingAsrAudio => "AwaitingAsrAudio",
         FlowState::AwaitingAsrConfirm { .. } => "AwaitingAsrConfirm",
         FlowState::AwaitingAsrQueued { .. } => "AwaitingAsrQueued",
         FlowState::AwaitingRedeemGenArgs => "AwaitingRedeemGenArgs",
+        FlowState::AwaitingForceJoinLink => "AwaitingForceJoinLink",
+        FlowState::AwaitingForceJoinPrivateInfo { .. } => "AwaitingForceJoinPrivateInfo",
+        FlowState::AwaitingForceJoinField { .. } => "AwaitingForceJoinField",
     }
 }

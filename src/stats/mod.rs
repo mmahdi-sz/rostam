@@ -47,9 +47,11 @@ pub async fn set_user_language(user_id: i64, lang: &str) {
 
 // ── record functions ──────────────────────────────────────────────────────────
 
-pub async fn record_user_global(user_id: i64) {
-    let Some(client) = db() else { return };
-    record_user(client, user_id).await;
+/// ثبت کاربر در stats. خروجی true یعنی این کاربر برای اولین بار دیده شده
+/// (برای گیت زدن attribution زیرمجموعه‌گیری استفاده می‌شود).
+pub async fn record_user_global(user_id: i64) -> bool {
+    let Some(client) = db() else { return false };
+    record_user(client, user_id).await
 }
 
 // ── generic feature event ───────────────────────────────────────────────────────
@@ -95,15 +97,21 @@ pub async fn record_error_global(feature: &str, message: &str) {
     }
 }
 
-pub async fn record_user(client: &Client, user_id: i64) {
-    let r = client.execute(
+/// خروجی true یعنی ردیف تازه insert شد (کاربر قبلاً وجود نداشت).
+pub async fn record_user(client: &Client, user_id: i64) -> bool {
+    let r = client.query_one(
         "INSERT INTO stats_users (user_id, first_seen, last_seen)
          VALUES ($1, NOW(), NOW())
-         ON CONFLICT (user_id) DO UPDATE SET last_seen = NOW()",
+         ON CONFLICT (user_id) DO UPDATE SET last_seen = NOW()
+         RETURNING (xmax = 0) AS inserted",
         &[&user_id],
     ).await;
-    if let Err(e) = r {
-        eprintln!("[stats event=record_user_failed] user_id={user_id} err={e}");
+    match r {
+        Ok(row) => row.get(0),
+        Err(e) => {
+            eprintln!("[stats event=record_user_failed] user_id={user_id} err={e}");
+            false
+        }
     }
 }
 

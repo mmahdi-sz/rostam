@@ -33,12 +33,22 @@ pub enum FlowState {
     AwaitingSeparationMode { file_id: String, filename: String, #[allow(dead_code)] prompt_msg_id: Option<i32>, is_video: bool },
     AwaitingSeparationQueued { cancel: Arc<AtomicBool> },
     AwaitingGeminiWmImage,
+    AwaitingPdfCompressFile,
+    AwaitingPdfCompressLevel { file_id: String, filename: String },
+    AwaitingIpLookupInput,
     AwaitingAsrAudio,
     AwaitingAsrConfirm { file_id: String, filename: String, duration_secs: f64 },
     AwaitingAsrQueued { file_id: String, filename: String, duration_secs: f64 },
     /// ادمین دکمه‌ی ساخت کد را زده و منتظر آرگومان‌ها (مثل `30d es 1u`) هستیم
     #[allow(dead_code)]
     AwaitingRedeemGenArgs,
+    /// ادمین دکمه‌ی «افزودن قفل جدید» را زده و منتظر لینک است
+    AwaitingForceJoinLink,
+    /// لینک خصوصی ثبت شده؛ منتظر یوزرنیم/فوروارد/آیدی عددی چت هستیم
+    AwaitingForceJoinPrivateInfo { link: String },
+    /// ویزارد ویرایش یک فیلد قفل (نام نمایشی/حد زمان/حد عضو/لینک رزرو).
+    /// `field` یکی از: `name` | `time` | `member` | `reserve`. نتیجه به‌صورت پیام جدید نشون داده می‌شه.
+    AwaitingForceJoinField { lock_id: i64, field: String },
 }
 
 #[derive(Debug, Default)]

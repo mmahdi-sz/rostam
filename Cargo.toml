@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 frankenstein = { version = "0.50", features = ["client-reqwest", "trait-async"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "time", "sync"] }
 tokio-postgres = "0.7"
 serde_json = "1"
 unicode_names2 = "2"
@@ -19,6 +19,8 @@ hound = "3.5"
 vosk = "0.3"
 libc = "0.2"
 redis = { version = "0.27", features = ["tokio-comp"] }
+ort = "=2.0.0-rc.12"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "bmp"] }
 
 [profile.dev]
 opt-level = 0

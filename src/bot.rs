@@ -16,6 +16,7 @@ pub const CB_START_EMOJI: &str = "start:emoji";
 pub const CB_START_YOUTUBE: &str = "start:youtube";
 pub const CB_START_PANEL: &str = "start:panel";
 pub const CB_START_AI_LAB: &str = "start:ai_lab";
+pub const CB_START_TOOLS: &str = "start:tools";
 pub const CB_USER_PANEL: &str = "user:panel";
 pub const CB_AI_DENOISE: &str = "ai:denoise";
 pub const CB_AI_UPSCALE: &str = "ai:upscale";
@@ -28,6 +29,7 @@ pub const CB_ADMIN_PANEL: &str = "admin:panel";
 pub const CB_ADMIN_STATS: &str = "admin:stats";
 pub const CB_ADMIN_STATS_MORE: &str = "admin:stats_more";
 pub const CB_ADMIN_ERRORS: &str = "admin:errors_1d";
+pub const CB_ADMIN_FORCE_JOIN: &str = "admin:force_join";
 pub const CB_ADMIN_GEN_CODE: &str = "admin:gencode";
 pub const CB_LANG_SET: &str = "lang:set:";
 
@@ -292,6 +294,7 @@ pub fn start_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup {
         vec![btn_icon_success(&t("start.ai_lab_button"), CB_START_AI_LAB, icon)],
         vec![btn_icon_danger(&t("start.youtube_button"), CB_START_YOUTUBE, "clapper")],
         vec![btn_icon_success(&t("start.panel_button"), CB_USER_PANEL, "user")],
+        vec![btn_icon(&t("start.tools_button"), CB_START_TOOLS, "")],
     ];
     if is_admin {
         // emoji management hidden until a premium account is connected — admin-only for now
@@ -327,6 +330,33 @@ pub async fn edit_to_ai_lab(
         .text(&text)
         .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(ai_lab_keyboard())
+        .build();
+    api.edit_message_text(&params).await?;
+    Ok(())
+}
+
+pub fn tools_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![
+            vec![btn_icon(&t("tools.pdf_compress_button"), crate::pdfcompress::CB_TOOLS_PDF_COMPRESS, "")],
+            vec![btn_icon(&t("tools.ip_lookup_button"), crate::ip_lookup::CB_TOOLS_IP_LOOKUP, "")],
+            vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
+        ])
+        .build()
+}
+
+pub async fn edit_to_tools(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let text = apply_premium_to_md(&t("start.tools_title"));
+    let params = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(&text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(tools_keyboard())
         .build();
     api.edit_message_text(&params).await?;
     Ok(())
