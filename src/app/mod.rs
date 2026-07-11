@@ -44,7 +44,6 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     fetch_bot_username(&api).await;
     spawn_cookie_refresher(&api, &mut cookie_pool);
     spawn_i18n_watcher();
-    crate::ip_lookup::spawn_refresher();
     set_bot_commands(&api).await;
 
     println!("Bot is running. Send /start to open the green button.");

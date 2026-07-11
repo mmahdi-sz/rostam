@@ -339,7 +339,6 @@ pub fn tools_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![btn_icon(&t("tools.pdf_compress_button"), crate::pdfcompress::CB_TOOLS_PDF_COMPRESS, "")],
-            vec![btn_icon(&t("tools.ip_lookup_button"), crate::ip_lookup::CB_TOOLS_IP_LOOKUP, "")],
             vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
         ])
         .build()

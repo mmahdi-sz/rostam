@@ -22,10 +22,6 @@ use crate::denoise;
 use crate::emoji::{FlowState, handler as emoji_handler, panel::CB_START_PANEL};
 use crate::gemini_watermark::{enter_gwm, handle_gwm_cancel, handle_gwm_image, CB_GWM_CANCEL};
 use crate::i18n::{t, reload_i18n, LANG};
-use crate::ip_lookup::{
-    detect_ip, enter_ip_lookup, handle_ip_command, handle_ip_lookup_auto, handle_ip_lookup_cancel,
-    handle_ip_lookup_text, CB_IP_LOOKUP_CANCEL, CB_TOOLS_IP_LOOKUP,
-};
 use crate::separation::{enter_separation, handle_separation_audio, handle_separation_callback, CB_SEP_PREFIX};
 use crate::stt::handle::{enter_stt_config, handle_stt_audio, handle_stt_callback};
 use crate::upscale::{
@@ -420,15 +416,6 @@ async fn handle_message(
                 return Ok(());
             }
 
-            if matches!(flow_manager.get(uid), FlowState::AwaitingIpLookupInput) {
-                if message.text.is_some() {
-                    let trace_id = next_trace_id();
-                    log_trace(trace_id, "ip_lookup_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
-                    handle_ip_lookup_text(api, &message, uid, flow_manager).await;
-                }
-                return Ok(());
-            }
-
             if matches!(flow_manager.get(uid), FlowState::AwaitingAsrAudio) {
                 if message.voice.is_some() || message.audio.is_some() || message.document.is_some()
                     || message.video.is_some() || message.video_note.is_some() {
@@ -470,12 +457,6 @@ async fn handle_message(
             send_lang_picker(api, message.chat.id).await?;
             return Ok(());
         }
-        if let Some(rest) = text.strip_prefix("/ip ") {
-            if let Some(uid) = user_id {
-                handle_ip_command(api, message.chat.id, uid, rest.trim()).await;
-            }
-            return Ok(());
-        }
         // ساخت کد هدیه (فقط ادمین): /re 30d es 1u
         if let Some(rest) = text.strip_prefix("/re ") {
             let is_admin = config::admin_user_id().map(|id| Some(id) == user_id).unwrap_or(false);
@@ -501,10 +482,6 @@ async fn handle_message(
             "/start" => send_start_menu(api, message.chat.id).await?,
 
             _ => {
-                if let (Some(uid), Some((ip, note))) = (user_id, detect_ip(text)) {
-                    handle_ip_lookup_auto(api, message.chat.id, uid, ip, note).await;
-                    return Ok(());
-                }
                 let urls = extract_youtube_urls(text);
                 for url in urls {
                     let trace_id = next_trace_id();
@@ -718,54 +695,6 @@ async fn handle_callback(
         ).await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             handle_pdf_level(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager, level).await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == CB_TOOLS_IP_LOOKUP {
-        let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ip_lookup_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            enter_ip_lookup(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == CB_IP_LOOKUP_CANCEL {
-        let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ip_lookup_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_ip_lookup_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == CB_TOOLS_IP_LOOKUP {
-        let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ip_lookup_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            enter_ip_lookup(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == CB_IP_LOOKUP_CANCEL {
-        let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ip_lookup_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_ip_lookup_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
         }
         return Ok(());
     }

@@ -13,7 +13,6 @@ mod emoji;
 mod force_join;
 mod gemini_watermark;
 mod i18n;
-mod ip_lookup;
 mod modules;
 mod moebius;
 mod pdfcompress;
