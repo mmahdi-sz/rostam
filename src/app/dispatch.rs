@@ -23,8 +23,8 @@ use crate::emoji::{FlowState, handler as emoji_handler, panel::CB_START_PANEL};
 use crate::gemini_watermark::{enter_gwm, handle_gwm_cancel, handle_gwm_image, CB_GWM_CANCEL};
 use crate::i18n::{t, reload_i18n, LANG};
 use crate::ip_lookup::{
-    enter_ip_lookup, handle_ip_command, handle_ip_lookup_cancel, handle_ip_lookup_text,
-    CB_IP_LOOKUP_CANCEL, CB_TOOLS_IP_LOOKUP,
+    detect_ip, enter_ip_lookup, handle_ip_command, handle_ip_lookup_auto, handle_ip_lookup_cancel,
+    handle_ip_lookup_text, CB_IP_LOOKUP_CANCEL, CB_TOOLS_IP_LOOKUP,
 };
 use crate::separation::{enter_separation, handle_separation_audio, handle_separation_callback, CB_SEP_PREFIX};
 use crate::stt::handle::{enter_stt_config, handle_stt_audio, handle_stt_callback};
@@ -429,15 +429,6 @@ async fn handle_message(
                 return Ok(());
             }
 
-            if matches!(flow_manager.get(uid), FlowState::AwaitingIpLookupInput) {
-                if message.text.is_some() {
-                    let trace_id = next_trace_id();
-                    log_trace(trace_id, "ip_lookup_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
-                    handle_ip_lookup_text(api, &message, uid, flow_manager).await;
-                }
-                return Ok(());
-            }
-
             if matches!(flow_manager.get(uid), FlowState::AwaitingAsrAudio) {
                 if message.voice.is_some() || message.audio.is_some() || message.document.is_some()
                     || message.video.is_some() || message.video_note.is_some() {
@@ -499,12 +490,6 @@ async fn handle_message(
             emoji_handler::handle_se_command(api, &message, rest, database).await;
             return Ok(());
         }
-        if let Some(rest) = text.strip_prefix("/ip ") {
-            if let Some(uid) = user_id {
-                handle_ip_command(api, message.chat.id, uid, rest).await;
-            }
-            return Ok(());
-        }
         match text {
             "/i18n_reload" => {
                 let is_admin = config::admin_user_id().map(|id| Some(id) == user_id).unwrap_or(false);
@@ -516,6 +501,10 @@ async fn handle_message(
             "/start" => send_start_menu(api, message.chat.id).await?,
 
             _ => {
+                if let (Some(uid), Some((ip, note))) = (user_id, detect_ip(text)) {
+                    handle_ip_lookup_auto(api, message.chat.id, uid, ip, note).await;
+                    return Ok(());
+                }
                 let urls = extract_youtube_urls(text);
                 for url in urls {
                     let trace_id = next_trace_id();

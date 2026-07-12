@@ -2,6 +2,30 @@ use super::lists::ListMatches;
 use super::types::IpReport;
 use crate::i18n::{t, tf};
 
+pub fn format_special(ip: &str, key: &str) -> String {
+    let header = tf("ip_lookup.result_header", &[("ip", &escape_md(ip))]);
+    format!("{header}\n\n{}", t(key))
+}
+
+pub fn port_note(port: u16) -> String {
+    tf("ip_lookup.note.port", &[("port", &port.to_string())])
+}
+
+pub fn cidr_note(prefix: u8, is_v4: bool) -> String {
+    let total: u32 = if is_v4 { 32 } else { 128 };
+    let host_bits = total.saturating_sub(prefix as u32);
+    let hosts = if is_v4 && host_bits <= 32 {
+        tf("ip_lookup.note.cidr_hosts", &[("count", &(1u64 << host_bits).to_string())])
+    } else {
+        String::new()
+    };
+    tf("ip_lookup.note.cidr", &[
+        ("prefix", &prefix.to_string()),
+        ("total", &total.to_string()),
+        ("hosts", &hosts),
+    ])
+}
+
 pub fn format_report(report: &IpReport, matches: &ListMatches) -> String {
     let mut sections: Vec<String> = Vec::new();
 

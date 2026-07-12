@@ -5,8 +5,8 @@ mod sources;
 mod types;
 
 pub use handle::{
-    enter_ip_lookup, handle_ip_command, handle_ip_lookup_cancel, handle_ip_lookup_text,
-    CB_IP_LOOKUP_CANCEL, CB_TOOLS_IP_LOOKUP,
+    detect_ip, enter_ip_lookup, handle_ip_command, handle_ip_lookup_auto, handle_ip_lookup_cancel,
+    handle_ip_lookup_text, CB_IP_LOOKUP_CANCEL, CB_TOOLS_IP_LOOKUP,
 };
 pub use lists::spawn_refresher;
 
