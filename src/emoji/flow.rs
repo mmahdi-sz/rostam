@@ -35,6 +35,7 @@ pub enum FlowState {
     AwaitingGeminiWmImage,
     AwaitingPdfCompressFile,
     AwaitingPdfCompressLevel { file_id: String, filename: String },
+    AwaitingIpLookupInput,
     AwaitingAsrAudio,
     AwaitingAsrConfirm { file_id: String, filename: String, duration_secs: f64 },
     AwaitingAsrQueued { file_id: String, filename: String, duration_secs: f64 },

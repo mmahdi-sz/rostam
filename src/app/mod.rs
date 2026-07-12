@@ -44,6 +44,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     fetch_bot_username(&api).await;
     spawn_cookie_refresher(&api, &mut cookie_pool);
     spawn_i18n_watcher();
+    crate::ip_lookup::spawn_refresher();
     set_bot_commands(&api).await;
 
     println!("Bot is running. Send /start to open the green button.");
@@ -70,8 +71,16 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let updates = match state.api.get_updates(&params).await {
             Ok(response) => response.result,
             Err(error) => {
-                eprintln!("get_updates failed: {error}");
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                // 429 → به اندازه‌ی retry_afterِ خودِ سرور صبر کن، نه یه ۲ثانیه‌ی ثابت که
+                // وسطِ backoffِ سرور فقط بهش فشار اضافه می‌کنه (get_updates → getDifference داخلی tdlib).
+                let wait = match &error {
+                    frankenstein::Error::Api(e) if e.error_code == 429 => {
+                        e.parameters.as_ref().and_then(|p| p.retry_after).unwrap_or(5).max(1) as u64
+                    }
+                    _ => 2,
+                };
+                eprintln!("get_updates failed: {error} (retry in {wait}s)");
+                tokio::time::sleep(Duration::from_secs(wait)).await;
                 continue;
             }
         };

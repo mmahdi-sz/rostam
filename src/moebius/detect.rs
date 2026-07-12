@@ -1,21 +1,41 @@
-//! Dynamic watermark localization via multi-scale ZNCC template matching.
+//! Multi-signal Gemini "sparkle" (✦) localization.
 //!
-//! Gemini's sparkle (✦) is always in the bottom-right, but with Gemini 3.5 its
-//! exact offset moved and now depends on the image's aspect ratio (see the
-//! `notes` in `crop.rs`), so a fixed corner formula no longer hits it. Instead
-//! we synthesize a 4-pointed-star template and slide it (at several scales)
-//! over the bottom-right region, scoring each position with zero-mean
-//! normalized cross-correlation. `abs(zncc)` is used so a *bright* sparkle on a
-//! dark background and a *dark* sparkle on a light background both score high.
+//! Gemini's visible watermark is a small 4-pointed sparkle in the bottom-right
+//! corner. Its offset moved with Gemini 3.5 and now depends on aspect ratio
+//! (see `crop.rs`), so a fixed-corner formula misses it and we must find it
+//! dynamically. The *previous* approach — a single astroid ZNCC template slid
+//! over the corner, keeping the global argmax — was too weak: on busy images
+//! (anime, posters, patterned clothing) a textured corner routinely out-scores
+//! the real, faint sparkle, so the pipeline inpainted the wrong spot and left
+//! the watermark untouched.
 //!
-//! Validated in a Python prototype against a real 768×1376 Gemini image: the
-//! best match landed on the star center to within 1px (score 0.866), while a
-//! flat gradient scored 0.000 and random noise 0.168 — so the MIN_SCORE gate
-//! cleanly separates "found" from "no watermark here".
+//! Shape correlation alone can't separate them (a diamond of fabric trim scores
+//! ~0.51 vs the sparkle's ~0.59). What *does* separate them, validated on real
+//! images, is a combination of independent signals scored per candidate:
 //!
-//! To stay resolution-independent (a 4K image's search region would otherwise
-//! be enormous), the region is first downscaled so its longer side is at most
-//! `SEARCH_MAX`; the match is found in that space and mapped back to full-res.
+//!   * **D4 symmetry** — the sparkle is symmetric under both mirror axes, both
+//!     diagonals and rotation; the discriminator. Real sparkle ≈0.7-0.9, busy
+//!     textures ≤0.33. This is what shape-matching lacks.
+//!   * **signed astroid correlation** — the residual matches the 4-pointed
+//!     silhouette (rejects blobs/edges that are merely symmetric).
+//!   * **wedge / concavity** — brightness along the 4 axes minus the 4
+//!     diagonals: a *star* has bright rays and dark gaps (>0); a round
+//!     highlight/bokeh is symmetric AND astroid-ish but has no gaps (≈0). This
+//!     is the only signal that rejects a bright disk.
+//!   * **contrast (|overlay|)** — the sparkle is a real alpha overlay with
+//!     visible amplitude; rejects faint smooth regions whose normalized scores
+//!     spike on near-zero energy.
+//!
+//! Polarity is handled: on light backgrounds the sparkle renders *dark*, so the
+//! overlay sign is estimated per candidate and the shape/wedge signals are
+//! measured in that sign. All four gates must pass (AND), which biases the
+//! detector toward precision — a false positive inpaints and damages a clean
+//! image, a false negative just declines, so precision is the safer error.
+//!
+//! Pipeline: high-pass the luma (subtract a box blur — removes background so the
+//! signals key on the overlay, not the scene), scan the bottom-right region on
+//! a downscaled copy for symmetric candidates, then verify each at full
+//! resolution across several scales and keep the best that clears every gate.
 
 use image::{imageops, RgbImage};
 
@@ -29,160 +49,351 @@ pub struct Detection {
     pub score: f32,
 }
 
-/// Longest side the search region is downscaled to before matching.
-const SEARCH_MAX: u32 = 480;
-/// Confidence gate. 0.55 sits well below the ~0.87 a real sparkle scores and
-/// well above the ~0.17 that textured non-watermark content produces.
-const MIN_SCORE: f32 = 0.55;
-/// Template sizes swept in *downscaled* space. After downscaling the region to
-/// SEARCH_MAX, the sparkle lands in roughly this pixel range regardless of the
-/// source resolution (small 512px images: ~48px; 4K images: ~25px).
-const SCALES: &[u32] = &[16, 22, 28, 34, 40, 48, 56, 64, 72];
-/// Position stride during the sweep (downscaled px).
-const STEP: u32 = 2;
+/// Fraction of the image (from top-left) excluded from the search — the sparkle
+/// is always in the bottom-right, so we scan the bottom-right ~50%.
+const SEARCH_FRAC: f32 = 0.50;
+/// The bottom-right region is downscaled so its longer side is ≤ this before the
+/// (dense) candidate scan, bounding cost at any resolution. 720 leaves common
+/// (≤~1440-wide) images unscaled while capping 4K work.
+const SEARCH_MAX: u32 = 720;
+/// Half-window (px, in the downscaled scan space) for the candidate symmetry
+/// probe. Small: sparkle symmetry peaks in a tight window before surrounding
+/// texture leaks in.
+const SYM_H1: usize = 16;
+/// Grid stride for the dense candidate scan (downscaled px). Small enough that
+/// some grid point lands within the sparkle's high-symmetry core.
+const GSTEP: usize = 3;
+/// Candidate collection threshold (below the final `T_SYM` gate, so a slightly
+/// off-center grid hit still enters and is then refined onto the true center).
+const CAND_T: f32 = 0.45;
+/// Non-max-suppression radius (downscaled px) between kept candidates.
+const NMS: i64 = 14;
+/// Cap on candidates carried into the (more expensive) verification stage.
+const MAX_CAND: usize = 25;
 
-/// Build a zero-mean 4-pointed-star (astroid) template of side `s`.
-/// `|u|^(2/3) + |v|^(2/3) <= 1` is the astroid whose cusps point along the
-/// axes — the sparkle's silhouette. Soft-edged so it matches the glow too.
-fn sparkle_template(s: u32) -> Vec<f32> {
-    let n = s as usize;
-    let mut t = vec![0f32; n * n];
-    let denom = (s.max(2) - 1) as f32;
-    for j in 0..n {
-        for i in 0..n {
-            let u = (i as f32 / denom) * 2.0 - 1.0;
-            let v = (j as f32 / denom) * 2.0 - 1.0;
-            let r = u.abs().powf(2.0 / 3.0) + v.abs().powf(2.0 / 3.0);
-            t[j * n + i] = (1.0 - r).clamp(0.0, 1.0);
+// --- verification gates (all must pass) ---
+const T_SYM: f32 = 0.55;
+const T_SHAPE: f32 = 0.30;
+const T_WEDGE: f32 = 0.15;
+/// Minimum overlay contrast in gray levels — the sparkle visibly lightens (or
+/// darkens) its patch; smooth low-energy regions fall below this.
+const T_ABSBRIGHT: f32 = 12.0;
+/// Combined-score floor for a detection to be reported (also the `score` field).
+const MIN_SCORE: f32 = 0.9;
+
+/// Full-res analysis scales (half-window px). Gemini renders a ~48px sparkle for
+/// images with a dimension ≤1024 and ~96px when both exceed 1024; the range
+/// spans both classes plus tolerance, and the best-fitting scale is chosen per
+/// candidate.
+fn scales(w: u32, h: u32) -> &'static [usize] {
+    if w.min(h) > 1024 {
+        &[18, 24, 30, 40, 52]
+    } else {
+        &[14, 18, 24, 30]
+    }
+}
+
+fn luma_of(img: &RgbImage) -> Vec<f32> {
+    img.pixels()
+        .map(|p| 0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32)
+        .collect()
+}
+
+/// Separable box blur with edge-clamp (replicate). `size` is forced odd.
+fn box_blur(src: &[f32], w: usize, h: usize, size: usize) -> Vec<f32> {
+    let r = ((size.max(1)) | 1) / 2;
+    let win = (2 * r + 1) as f32;
+    let clamp = |v: isize, hi: usize| v.clamp(0, hi as isize - 1) as usize;
+    let mut tmp = vec![0f32; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            let mut s = 0f32;
+            for k in 0..=2 * r {
+                s += src[y * w + clamp(x as isize + k as isize - r as isize, w)];
+            }
+            tmp[y * w + x] = s / win;
         }
     }
-    let mean = t.iter().sum::<f32>() / (n * n) as f32;
-    for v in t.iter_mut() {
-        *v -= mean;
+    let mut out = vec![0f32; w * h];
+    for x in 0..w {
+        for y in 0..h {
+            let mut s = 0f32;
+            for k in 0..=2 * r {
+                s += tmp[clamp(y as isize + k as isize - r as isize, h) * w + x];
+            }
+            out[y * w + x] = s / win;
+        }
+    }
+    out
+}
+
+/// High-pass = luma − box-blur(luma): strips the background so downstream
+/// signals key on the overlay rather than the scene content.
+fn high_pass(src: &[f32], w: usize, h: usize, box_size: usize) -> Vec<f32> {
+    let bb = box_blur(src, w, h, box_size);
+    src.iter().zip(&bb).map(|(a, b)| a - b).collect()
+}
+
+/// Copy the (2·half)² block centered at (cx,cy) out of `luma` and return its
+/// high-pass. Caller guarantees the block is in-bounds.
+fn patch_hp(luma: &[f32], w: usize, cx: usize, cy: usize, half: usize) -> Vec<f32> {
+    let n = 2 * half;
+    let mut p = vec![0f32; n * n];
+    for j in 0..n {
+        let row = (cy - half + j) * w + (cx - half);
+        p[j * n..j * n + n].copy_from_slice(&luma[row..row + n]);
+    }
+    let bb = box_blur(&p, n, n, (half as f32 * 1.2) as usize | 1);
+    for k in 0..n * n {
+        p[k] -= bb[k];
+    }
+    p
+}
+
+/// Mean over the 6 non-identity dihedral (D4) self-correlations of an n×n patch
+/// read from `buf` at (x0,y0) with row stride `stride`. 1.0 = perfectly
+/// symmetric under every mirror/rotation, ~0 = no symmetry. Sign-agnostic.
+fn d4_sym(buf: &[f32], stride: usize, x0: usize, y0: usize, n: usize) -> f32 {
+    let at = |c: usize, r: usize| buf[(y0 + r) * stride + (x0 + c)];
+    let mut sum = 0f32;
+    for r in 0..n {
+        for c in 0..n {
+            sum += at(c, r);
+        }
+    }
+    let mean = sum / (n * n) as f32;
+    let g = |c: usize, r: usize| at(c, r) - mean;
+    let (mut base, mut s1, mut s2, mut s3, mut s4, mut s5, mut s6) =
+        (1e-9f32, 0f32, 0f32, 0f32, 0f32, 0f32, 0f32);
+    for r in 0..n {
+        for c in 0..n {
+            let v = g(c, r);
+            base += v * v;
+            s1 += v * g(n - 1 - c, r); // mirror x
+            s2 += v * g(c, n - 1 - r); // mirror y
+            s3 += v * g(n - 1 - c, n - 1 - r); // rot180
+            s4 += v * g(r, c); // transpose (main diagonal)
+            s5 += v * g(n - 1 - r, n - 1 - c); // anti-diagonal
+            s6 += v * g(r, n - 1 - c); // rot90
+        }
+    }
+    (s1 + s2 + s3 + s4 + s5 + s6) / (6.0 * base)
+}
+
+/// Soft 4-pointed-star (astroid) silhouette of side n, values in [0,1].
+fn astroid_raw(n: usize) -> Vec<f32> {
+    let d = (n.max(2) - 1) as f32;
+    let mut t = vec![0f32; n * n];
+    for j in 0..n {
+        for i in 0..n {
+            let u = (i as f32 / d) * 2.0 - 1.0;
+            let v = (j as f32 / d) * 2.0 - 1.0;
+            let rr = u.abs().powf(2.0 / 3.0) + v.abs().powf(2.0 / 3.0);
+            t[j * n + i] = (1.0 - rr).clamp(0.0, 1.0);
+        }
     }
     t
 }
 
-/// Grayscale (luma) f32 buffer + integral images for O(1) patch sum / sum-sq.
-struct Field {
-    px: Vec<f32>,
-    /// (w+1)*(h+1) summed-area table of px.
-    sum: Vec<f64>,
-    /// (w+1)*(h+1) summed-area table of px².
-    sqsum: Vec<f64>,
+/// Overlay contrast: mean residual inside the star silhouette minus outside.
+/// Sign tells sparkle polarity (bright on dark bg > 0, dark on light bg < 0).
+fn bright(hp: &[f32], n: usize) -> f32 {
+    let a = astroid_raw(n);
+    let (mut cs, mut cn, mut gs, mut gn) = (0f32, 0usize, 0f32, 0usize);
+    for k in 0..n * n {
+        if a[k] > 0.25 {
+            cs += hp[k];
+            cn += 1;
+        } else {
+            gs += hp[k];
+            gn += 1;
+        }
+    }
+    cs / cn.max(1) as f32 - gs / gn.max(1) as f32
 }
 
-impl Field {
-    fn new(gray: Vec<f32>, w: usize, h: usize) -> Self {
-        let stride = w + 1;
-        let mut sum = vec![0f64; stride * (h + 1)];
-        let mut sqsum = vec![0f64; stride * (h + 1)];
-        for y in 0..h {
-            let mut row = 0f64;
-            let mut sqrow = 0f64;
-            for x in 0..w {
-                let v = gray[y * w + x] as f64;
-                row += v;
-                sqrow += v * v;
-                sum[(y + 1) * stride + (x + 1)] = sum[y * stride + (x + 1)] + row;
-                sqsum[(y + 1) * stride + (x + 1)] = sqsum[y * stride + (x + 1)] + sqrow;
+/// Normalized correlation of the (sign-corrected) residual with the astroid
+/// silhouette — how well the residual matches the 4-pointed shape.
+fn signed_shape(hp: &[f32], n: usize, sign: f32) -> f32 {
+    let a0 = astroid_raw(n);
+    let amean = a0.iter().sum::<f32>() / (n * n) as f32;
+    let rmean = sign * hp.iter().sum::<f32>() / (n * n) as f32;
+    let (mut num, mut rr, mut aa) = (0f32, 0f32, 0f32);
+    for k in 0..n * n {
+        let r = hp[k] * sign - rmean;
+        let a = a0[k] - amean;
+        num += r * a;
+        rr += r * r;
+        aa += a * a;
+    }
+    num / ((rr * aa).sqrt() + 1e-9)
+}
+
+/// Ray-vs-gap contrast: mean residual along the 4 axes minus along the 4
+/// diagonals (on a mid-radius ring), normalized by ring RMS. A star has bright
+/// rays and dark diagonal gaps (>0); a round blob has neither (≈0) — the signal
+/// that tells a sparkle from a symmetric highlight.
+fn signed_wedge(hp: &[f32], n: usize, sign: f32) -> f32 {
+    let c = (n as f32 - 1.0) / 2.0;
+    let half = n as f32 / 2.0;
+    let (mut ax_s, mut ax_n, mut dg_s, mut dg_n, mut band_sq, mut band_n) =
+        (0f32, 0usize, 0f32, 0usize, 0f32, 0usize);
+    for j in 0..n {
+        for i in 0..n {
+            let dx = i as f32 - c;
+            let dy = j as f32 - c;
+            let rad = (dx * dx + dy * dy).sqrt() / half;
+            if !(0.5..=0.88).contains(&rad) {
+                continue;
+            }
+            let mut ang = dy.atan2(dx).to_degrees() % 180.0;
+            if ang < 0.0 {
+                ang += 180.0;
+            }
+            let dax = (ang - 0.0).abs().min((ang - 90.0).abs()).min((ang - 180.0).abs());
+            let ddg = (ang - 45.0).abs().min((ang - 135.0).abs());
+            let v = hp[j * n + i];
+            band_sq += v * v;
+            band_n += 1;
+            let vs = v * sign;
+            if dax <= 22.0 {
+                ax_s += vs;
+                ax_n += 1;
+            }
+            if ddg <= 22.0 {
+                dg_s += vs;
+                dg_n += 1;
             }
         }
-        Field { px: gray, sum, sqsum }
     }
-
-    #[inline]
-    fn area(table: &[f64], stride: usize, x: usize, y: usize, s: usize) -> f64 {
-        table[(y + s) * stride + (x + s)] - table[y * stride + (x + s)] - table[(y + s) * stride + x]
-            + table[y * stride + x]
+    if ax_n < 4 || dg_n < 4 || band_n == 0 {
+        return 0.0;
     }
+    let rms = (band_sq / band_n as f32).sqrt() + 1e-6;
+    (ax_s / ax_n as f32 - dg_s / dg_n as f32) / rms
 }
 
-/// Best abs-ZNCC match of the sparkle template within `img`'s bottom-right
-/// region, or None if nothing clears MIN_SCORE.
+/// Best multi-signal match of the Gemini sparkle in `img`'s bottom-right
+/// region, or None if nothing clears every gate.
 pub fn detect_watermark(img: &RgbImage) -> Option<Detection> {
-    let (w, h) = (img.width(), img.height());
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    let luma = luma_of(img);
 
-    // Bottom-right search region: rightmost/bottom ~48% of the image (the
-    // sparkle is always near this corner, and searching only here keeps the
-    // false-positive surface and the cost small).
-    let rx = (w as f32 * 0.52) as u32;
-    let ry = (h as f32 * 0.52) as u32;
-    let rw = w - rx;
-    let rh = h - ry;
-    if rw < 24 || rh < 24 {
+    let rx = (w as f32 * SEARCH_FRAC) as usize;
+    let ry = (h as f32 * SEARCH_FRAC) as usize;
+    let (rw, rh) = (w - rx, h - ry);
+    if rw < 32 || rh < 32 {
         return None;
     }
 
-    let region = imageops::crop_imm(img, rx, ry, rw, rh).to_image();
-
-    // Downscale so the longer side is <= SEARCH_MAX (bounds cost at any res).
-    let maxside = rw.max(rh);
-    let f = if maxside > SEARCH_MAX { SEARCH_MAX as f32 / maxside as f32 } else { 1.0 };
-    let dw = ((rw as f32 * f).round() as u32).max(24);
-    let dh = ((rh as f32 * f).round() as u32).max(24);
-    let small = if f < 1.0 { imageops::resize(&region, dw, dh, imageops::FilterType::Triangle) } else { region };
+    // ---- Stage 1: symmetric candidates on the downscaled region ----
+    let maxside = rw.max(rh) as u32;
+    let f = if maxside > SEARCH_MAX {
+        SEARCH_MAX as f32 / maxside as f32
+    } else {
+        1.0
+    };
+    let region = imageops::crop_imm(img, rx as u32, ry as u32, rw as u32, rh as u32).to_image();
+    let small = if f < 1.0 {
+        let (dw, dh) = ((rw as f32 * f).round().max(32.0) as u32, (rh as f32 * f).round().max(32.0) as u32);
+        imageops::resize(&region, dw, dh, imageops::FilterType::Triangle)
+    } else {
+        region
+    };
     let (dw, dh) = (small.width() as usize, small.height() as usize);
+    let sg = luma_of(&small);
+    let hp1 = high_pass(&sg, dw, dh, (SYM_H1 as f32 * 1.2) as usize | 1);
 
-    // luma f32
-    let mut gray = vec![0f32; dw * dh];
-    for (idx, p) in small.pixels().enumerate() {
-        gray[idx] = 0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32;
+    let mut cands: Vec<(f32, usize, usize)> = Vec::new();
+    let mut cy = SYM_H1;
+    while cy + SYM_H1 < dh {
+        let mut cx = SYM_H1;
+        while cx + SYM_H1 < dw {
+            let s = d4_sym(&hp1, dw, cx - SYM_H1, cy - SYM_H1, 2 * SYM_H1);
+            if s >= CAND_T {
+                cands.push((s, cx, cy));
+            }
+            cx += GSTEP;
+        }
+        cy += GSTEP;
     }
-    let field = Field::new(gray, dw, dh);
-    let stride = dw + 1;
+    cands.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
 
-    let mut best: Option<(f32, usize, usize, u32)> = None; // score, x, y, s
-    for &s in SCALES {
-        let su = s as usize;
-        if su + 1 >= dw || su + 1 >= dh {
-            continue;
+    let mut kept: Vec<(usize, usize)> = Vec::new();
+    for &(_, cx, cy) in &cands {
+        let far = kept.iter().all(|&(kx, ky)| {
+            let (dx, dy) = (cx as i64 - kx as i64, cy as i64 - ky as i64);
+            dx * dx + dy * dy > NMS * NMS
+        });
+        if far {
+            kept.push((cx, cy));
+            if kept.len() >= MAX_CAND {
+                break;
+            }
         }
-        let templ = sparkle_template(s);
-        let t_energy: f32 = templ.iter().map(|&v| v * v).sum();
-        if t_energy < 1e-6 {
-            continue;
-        }
-        let area = (su * su) as f64;
-        for y in (0..=dh - su).step_by(STEP as usize) {
-            for x in (0..=dw - su).step_by(STEP as usize) {
-                let psum = Field::area(&field.sum, stride, x, y, su);
-                let psq = Field::area(&field.sqsum, stride, x, y, su);
-                // sum((patch-mean)^2) = sumsq - sum^2/area
-                let var = psq - psum * psum / area;
-                if var < 1e-3 {
+    }
+
+    // ---- Stage 2: full-res multi-scale verification ----
+    let hpf = high_pass(&luma, w, h, (SYM_H1 as f32 * 1.2) as usize | 1);
+    let scl = scales(img.width(), img.height());
+    let (fx, fy) = (rw as f32 / dw as f32, rh as f32 / dh as f32);
+
+    let mut best: Option<Detection> = None;
+    let mut best_comb = MIN_SCORE;
+
+    for &(cxs, cys) in &kept {
+        let cx0 = rx + (cxs as f32 * fx).round() as usize;
+        let cy0 = ry + (cys as f32 * fy).round() as usize;
+
+        // Refine center by maximizing symmetry (strided read from full-res HP).
+        let mut rbest: Option<(f32, usize, usize)> = None;
+        for dyi in -5i64..=5 {
+            for dxi in -5i64..=5 {
+                let (x, y) = (cx0 as i64 + dxi, cy0 as i64 + dyi);
+                if x - SYM_H1 as i64 <= 0
+                    || y - SYM_H1 as i64 <= 0
+                    || x + SYM_H1 as i64 >= w as i64
+                    || y + SYM_H1 as i64 >= h as i64
+                {
                     continue;
                 }
-                // numerator = sum(patch*templ) (templ is zero-mean).
-                let mut num = 0f32;
-                for j in 0..su {
-                    let base = (y + j) * dw + x;
-                    let trow = j * su;
-                    for i in 0..su {
-                        num += field.px[base + i] * templ[trow + i];
-                    }
+                let (x, y) = (x as usize, y as usize);
+                let s = d4_sym(&hpf, w, x - SYM_H1, y - SYM_H1, 2 * SYM_H1);
+                if rbest.map_or(true, |b| s > b.0) {
+                    rbest = Some((s, x, y));
                 }
-                let denom = (var as f32 * t_energy).sqrt();
-                let score = (num / denom).abs();
-                if best.map_or(true, |b| score > b.0) {
-                    best = Some((score, x, y, s));
+            }
+        }
+        let (sym, x, y) = match rbest {
+            Some(v) if v.0 >= T_SYM => v,
+            _ => continue,
+        };
+
+        for &hh in scl {
+            if x < hh || y < hh || x + hh >= w || y + hh >= h {
+                continue;
+            }
+            let n = 2 * hh;
+            let hp = patch_hp(&luma, w, x, y, hh);
+            let br = bright(&hp, n);
+            let sign = if br >= 0.0 { 1.0 } else { -1.0 };
+            let shape = signed_shape(&hp, n, sign);
+            let wedge = signed_wedge(&hp, n, sign);
+            if shape >= T_SHAPE && wedge >= T_WEDGE && br.abs() >= T_ABSBRIGHT {
+                let comb = sym + 0.5 * shape.clamp(0.0, 1.0) + 0.5 * wedge.tanh();
+                if comb > best_comb {
+                    best_comb = comb;
+                    best = Some(Detection {
+                        cx: x as i64,
+                        cy: y as i64,
+                        size: (hh as f32 * 1.7).round() as i64,
+                        score: comb,
+                    });
                 }
             }
         }
     }
-
-    let (score, bx, by, bs) = best?;
-    if score < MIN_SCORE {
-        return None;
-    }
-
-    // Map downscaled region coords -> full-res image coords.
-    let inv = 1.0 / f;
-    let cx = rx as f64 + (bx as f64 + bs as f64 / 2.0) * inv as f64;
-    let cy = ry as f64 + (by as f64 + bs as f64 / 2.0) * inv as f64;
-    let size = (bs as f64 * inv as f64).round() as i64;
-
-    Some(Detection { cx: cx.round() as i64, cy: cy.round() as i64, size, score })
+    best
 }
 
 #[cfg(test)]
@@ -190,8 +401,8 @@ mod tests {
     use super::*;
     use image::Rgb;
 
-    /// Paint a synthetic bright sparkle onto a dark background and confirm the
-    /// detector localizes it near the painted center with high confidence.
+    /// Paint a bright astroid sparkle onto a dark background and confirm the
+    /// detector localizes it near the painted center and clears the gate.
     #[test]
     fn finds_painted_sparkle() {
         let mut img = RgbImage::from_pixel(1200, 1200, Rgb([40, 30, 60]));
@@ -200,11 +411,8 @@ mod tests {
             for dx in -half..=half {
                 let u = dx as f32 / half as f32;
                 let v = dy as f32 / half as f32;
-                let r = u.abs().powf(2.0 / 3.0) + v.abs().powf(2.0 / 3.0);
-                if r <= 1.0 {
-                    let x = (scx + dx) as u32;
-                    let y = (scy + dy) as u32;
-                    img.put_pixel(x, y, Rgb([235, 235, 245]));
+                if u.abs().powf(2.0 / 3.0) + v.abs().powf(2.0 / 3.0) <= 1.0 {
+                    img.put_pixel((scx + dx) as u32, (scy + dy) as u32, Rgb([235, 235, 245]));
                 }
             }
         }
@@ -219,5 +427,21 @@ mod tests {
     fn rejects_no_watermark() {
         let img = RgbImage::from_fn(1000, 1000, |x, _| Rgb([(x / 4) as u8, 80, 120]));
         assert!(detect_watermark(&img).is_none());
+    }
+
+    /// A bright *round* blob is symmetric and astroid-ish but has no rays — the
+    /// wedge/concavity gate must reject it (guards the disk-vs-star signal).
+    #[test]
+    fn rejects_bright_disk() {
+        let mut img = RgbImage::from_pixel(1200, 1200, Rgb([40, 30, 60]));
+        let (scx, scy, rad) = (1000i32, 1050i32, 26i32);
+        for dy in -rad..=rad {
+            for dx in -rad..=rad {
+                if dx * dx + dy * dy <= rad * rad {
+                    img.put_pixel((scx + dx) as u32, (scy + dy) as u32, Rgb([235, 235, 245]));
+                }
+            }
+        }
+        assert!(detect_watermark(&img).is_none(), "bright disk must not be detected as a sparkle");
     }
 }

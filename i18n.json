@@ -788,7 +788,8 @@
       "invalid_number": "⚠️ ورودی نامعتبر است. لطفاً یک عدد ارسال کنید."
     },
     "tools": {
-      "pdf_compress_button": "📉 کاهش حجم PDF"
+      "pdf_compress_button": "📉 کاهش حجم PDF",
+      "ip_lookup_button": "🔎 تحلیل آی‌پی"
     },
     "pdfcompress": {
       "mode_prompt": "چطوری می‌خوای PDF‌ت رو کوچیک کنیم؟",
@@ -817,6 +818,83 @@
         "no_improvement": "این فایل از قبل بهینه بوده، فشرده‌سازی کمکی نکرد (حتی بزرگ‌تر شد) 🤷‍♂️ همین فایل اصلی رو نگه دار.",
         "send_failed": "فایل فشرده شد ولی ارسالش به مشکل خورد، دوباره امتحان کن."
       }
+    },
+    "ip_lookup": {
+      "prompt": "آدرس آی‌پی رو بفرست تا کامل تحلیلش کنم 🔎\nهمینجا هم می‌تونی مستقیم بفرستی، لازم نیست دستور خاصی بزنی.\n\nنمونه IPv4:\n8.8.8.8\n\nنمونه IPv6:\n2001:4860:4860::8888\n\n📌 پورت و ماسک شبکه (CIDR) رو هم می‌فهمم:\n1.1.1.1:443 ← پورت\n192.168.1.0/24 ← ماسک شبکه",
+      "invalid_ip": "این آی‌پی معتبر نیست 😅 یه IPv4 یا IPv6 درست بفرست.",
+      "processing": "⏳ در حال تحلیل آی‌پی...",
+      "result_header": "🔎 *تحلیل آی‌پی* {ip}",
+      "note": {
+        "port": "🔌 پورت: {port}\nپورت مشخص می‌کنه این آی‌پی داره با کدوم سرویس صحبت می‌کنه؛ مثلاً پورت ۸۰ وب، ۴۴۳ HTTPS، ۲۲ SSH است\\.\nخودِ آی‌پی رو هم تحلیل می‌کنم:",
+        "cidr": "🧮 ماسک شبکه: /{prefix}\nیعنی {prefix} بیت اول «بخش شبکه» و بقیه‌ی بیت‌ها \\(از {total} بیت کل\\) «بخش میزبان» هستن{hosts}\\.\nخودِ آی‌پی رو هم تحلیل می‌کنم:",
+        "cidr_hosts": "، یعنی این بازه حدود {count} آدرس رو پوشش می‌ده"
+      },
+      "error": {
+        "no_data": "متأسفانه هیچ اطلاعاتی برای این آی‌پی پیدا نشد 🤷‍♂️"
+      },
+      "section": {
+        "ownership": "🏢 *مالکیت*",
+        "location": "🌍 *موقعیت*",
+        "network": "🛰️ *شبکه / ASN*",
+        "risk": "🔒 *پرچم‌های ریسک*",
+        "abuse_contact": "📇 *تماس گزارش سوءاستفاده*"
+      },
+      "label": {
+        "org": "سازمان: {value}",
+        "netrange": "بازه آی‌پی: {value}",
+        "registered": "تاریخ ثبت: {value}",
+        "hostname": "هاست‌نیم: {value}",
+        "country": "کشور: {value}",
+        "region": "استان/منطقه: {value}",
+        "city": "شهر: {value}",
+        "isp": "ISP: {value}",
+        "asn": "ASN: {value}",
+        "asn_name": "نام ASN: {value}",
+        "prefix": "پیشوند: {value}",
+        "cloud_provider": "ارائه‌دهنده ابری: {value}",
+        "abuse_score": "امتیاز سوءاستفاده: {value}",
+        "abuse_reports": "تعداد گزارش‌ها: {value}",
+        "abuse_email": "ایمیل تماس: {value}",
+        "usage_type": "نوع استفاده: {value}",
+        "network_name": "نام شبکه: {value}",
+        "updated": "آخرین به‌روزرسانی: {value}",
+        "parent_network": "شبکه والد: {value}",
+        "postal": "کد پستی: {value}",
+        "coords": "📍 مختصات: [نمایش روی نقشه]({value})",
+        "timezone": "منطقه زمانی: {value}",
+        "net_org": "سازمان شبکه: {value}",
+        "other_prefixes": "سایر بازه‌های همین ASN: {value}",
+        "abuse_phone": "تلفن تماس: {value}"
+      },
+      "flag": {
+        "proxy": "⚠️ پروکسی",
+        "vpn": "🛡️ VPN",
+        "hosting": "🖥️ سرور هاستینگ",
+        "mobile": "📱 اینترنت موبایل",
+        "tor": "🧅 خروجی Tor",
+        "relay": "🔁 Relay",
+        "spamhaus": "🚫 لیست سیاه Spamhaus",
+        "anycast": "🛰️ Anycast",
+        "abuse_private": "🔒 آدرس خصوصی/غیرعمومی \\(AbuseIPDB\\)",
+        "abuse_whitelisted": "✅ در فهرست سفید AbuseIPDB"
+      },
+      "abuse_report_note": "ℹ️ برای گزارش سوءاستفاده: [AbuseIPDB]({value})",
+      "special": {
+        "private": "🏠 این یک آدرس خصوصی \\(Private\\) است، طبق استاندارد RFC 1918/4193\\.\nاین بازه فقط داخل شبکه‌های محلی \\(خانه، دفتر، سازمان\\) استفاده می‌شه و روی اینترنت عمومی قابل مسیریابی نیست؛ به همین دلیل اطلاعات مکان یا مالکیت واقعی براش وجود نداره\\.",
+        "loopback": "خدا خیلی اومدی آی‌پی لوکال‌هاست رو بفرستی تحلیل کنم؟😭\nاین آدرس \\(Loopback\\) فقط به خودِ همین سروریه که ربات روش اجراست، هیچ‌وقت واقعاً از شبکه رد نمی‌شه که چیزی راجع‌بهش پیدا کنم 😅",
+        "link_local": "🔗 این یک آدرس Link\\-Local است\\.\nفقط داخل یک شبکه محلی \\(بدون روتر\\) استفاده می‌شه و روی اینترنت قابل مسیریابی نیست\\.",
+        "unspecified": "❔ این یک آدرس نامشخص \\(Unspecified\\) است\\.\nمعمولاً برای «هنوز آدرسی تعیین نشده» استفاده می‌شه، نه برای یک دستگاه واقعی\\.",
+        "broadcast": "📢 این آدرس Broadcast است\\.\nبرای ارسال همزمان به تمام دستگاه‌های یک شبکه محلی استفاده می‌شه، نه برای یک دستگاه خاص\\.",
+        "documentation": "📘 این آدرس در بازه مخصوص مستندات \\(Documentation/TEST\\-NET\\) است\\.\nفقط برای مثال و آموزش رزرو شده و هیچ‌وقت روی اینترنت واقعی استفاده نمی‌شه\\.",
+        "multicast": "📡 این یک آدرس Multicast است\\.\nمتعلق به یک گروه از دستگاه‌هاست، نه یک دستگاه خاص؛ برای ارسال همزمان به چند مقصد استفاده می‌شه\\.",
+        "cgnat": "🔄 این آدرس در بازه CGNAT \\(Carrier\\-Grade NAT، RFC 6598\\) است\\.\nمعمولاً توسط اپراتورهای اینترنت و موبایل برای اشتراک‌گذاری یک آی‌پی عمومی بین چند کاربر استفاده می‌شه؛ روی اینترنت عمومی قابل مسیریابی نیست\\.",
+        "ietf_protocol": "🧩 این آدرس در بازه IETF Protocol Assignments است\\.\nبرای پروتکل‌ها و کاربردهای خاص فنی رزرو شده و در ترافیک عادی اینترنت دیده نمی‌شه\\.",
+        "benchmarking": "⏱ این آدرس در بازه Benchmarking \\(RFC 2544\\) است\\.\nفقط برای تست کارایی و سنجش سرعت تجهیزات شبکه استفاده می‌شه، نه ارتباط واقعی\\.",
+        "reserved": "🚧 این آدرس در بازه رزروشده \\(Reserved/Class E\\) است\\.\nاین بازه برای استفاده‌ی آینده کنار گذاشته شده و در اینترنت عمومی استفاده نمی‌شه\\.",
+        "documentation_v6": "📘 این آدرس در بازه مخصوص مستندات IPv6 \\(2001:db8::/32\\) است\\.\nفقط برای مثال و آموزش رزرو شده و هیچ‌وقت روی اینترنت واقعی استفاده نمی‌شه\\.",
+        "teredo": "🕳 این آدرس در بازه Teredo \\(RFC 4380\\) است\\.\nیک مکانیزم تونل‌سازی برای دسترسی به IPv6 از پشت NAT\\-های IPv4 است\\.",
+        "six_to_four": "🌉 این آدرس در بازه 6to4 \\(RFC 3056\\) است\\.\nبرای انتقال ترافیک IPv6 روی شبکه‌های IPv4 استفاده می‌شد؛ این روش منسوخ شده\\."
+      }
     }
   },
   "en": {
@@ -837,7 +915,9 @@
       "ai_gwm_button": "Gemini Watermark Removal",
       "admin_button": "Admin Panel",
       "ai_asr_button": "Magic ✨",
-      "panel_button": "My Account"
+      "panel_button": "My Account",
+      "tools_button": "🧰 Tools",
+      "tools_title": "🧰 *Tools*\n\nPick one of the tools below:"
     },
     "stt": {
       "config_title": "Select transcription language and quality:\n\nIf «Auto noise reduction before transcription» is enabled, the audio is first denoised with DeepFilterNetV3 and then sent to Vosk for speech-to-text. This improves accuracy for noisy or ambient recordings.\n\nThis option adds roughly 20% to processing time; turn it off if you don't need it.",
@@ -1604,6 +1684,115 @@
       "prompt_member": "🧍 Send the member cap for this lock as a number (e.g., 500).\nAfter reaching this count, the lock will be automatically deactivated.\nTo remove the cap, send 0.",
       "prompt_reserve": "🔗 Send the reserve (alternative) link for this lock:",
       "invalid_number": "⚠️ Invalid input. Please send a number."
+    },
+    "tools": {
+      "pdf_compress_button": "📉 PDF Compression",
+      "ip_lookup_button": "🔎 IP Analysis"
+    },
+    "pdfcompress": {
+      "mode_prompt": "How would you like to shrink your PDF?",
+      "mode_simple_button": "⚡ Quick Mode (AI recommended)",
+      "mode_advanced_button": "🛠 Advanced Mode",
+      "advanced_soon": "This feature is coming soon 🙂",
+      "send_file_prompt": "Alright! 😄 Send me your PDF file and I'll shrink it for you!",
+      "busy_warning": "Hold on a sec 🙏 let this operation finish, then send.",
+      "level_prompt": "Got it! 📄 Now tell me what quality to shrink it to:",
+      "level": {
+        "screen": "Low (screen)",
+        "ebook": "Medium (ebook)",
+        "printer": "Print (printer)",
+        "prepress": "Maximum quality (prepress)"
+      },
+      "processing": "⏳ Shrinking your file...",
+      "result_caption": "✅ Done\\!",
+      "result_report": "Size before: {before}\nSize after: {after}\nReduction: {percent}%",
+      "error": {
+        "invalid_file": "That's not a PDF 😅 send a PDF file.",
+        "too_large": "Your file is too big, the max allowed size is {max}.",
+        "invalid_pdf": "The file was corrupted or not a real PDF 😕 try again.",
+        "download_failed": "Downloading the file failed, try again.",
+        "timeout": "Processing took too long and was stopped. Try a smaller file.",
+        "gs_failed": "Something went wrong during compression, try again.",
+        "no_improvement": "This file was already optimized, compression didn't help (it even got bigger) 🤷‍♂️ keep the original file.",
+        "send_failed": "The file was compressed but sending it failed, try again."
+      }
+    },
+    "ip_lookup": {
+      "prompt": "Send an IP address and I'll fully analyze it 🔎\nYou can also just send it directly here, no special command needed.\n\nIPv4 example:\n8.8.8.8\n\nIPv6 example:\n2001:4860:4860::8888\n\n📌 I also understand port and network mask (CIDR):\n1.1.1.1:443 ← port\n192.168.1.0/24 ← network mask",
+      "invalid_ip": "That's not a valid IP 😅 send a proper IPv4 or IPv6 address.",
+      "processing": "⏳ Analyzing IP...",
+      "result_header": "🔎 *IP Analysis* {ip}",
+      "note": {
+        "port": "🔌 Port: {port}\nThe port shows which service this IP is talking to; e.g. port 80 is web, 443 is HTTPS, 22 is SSH\\.\nNow analyzing the IP itself:",
+        "cidr": "🧮 Network mask: /{prefix}\nMeaning the first {prefix} bits are the «network part» and the rest \\(out of {total} total bits\\) are the «host part»{hosts}\\.\nNow analyzing the IP itself:",
+        "cidr_hosts": ", meaning this range covers about {count} addresses"
+      },
+      "error": {
+        "no_data": "Unfortunately no data was found for this IP 🤷‍♂️"
+      },
+      "section": {
+        "ownership": "🏢 *Ownership*",
+        "location": "🌍 *Location*",
+        "network": "🛰️ *Network / ASN*",
+        "risk": "🔒 *Risk Flags*",
+        "abuse_contact": "📇 *Abuse Contact*"
+      },
+      "label": {
+        "org": "Organization: {value}",
+        "netrange": "IP range: {value}",
+        "registered": "Registered: {value}",
+        "hostname": "Hostname: {value}",
+        "country": "Country: {value}",
+        "region": "Region: {value}",
+        "city": "City: {value}",
+        "isp": "ISP: {value}",
+        "asn": "ASN: {value}",
+        "asn_name": "ASN name: {value}",
+        "prefix": "Prefix: {value}",
+        "cloud_provider": "Cloud provider: {value}",
+        "abuse_score": "Abuse score: {value}",
+        "abuse_reports": "Report count: {value}",
+        "abuse_email": "Abuse email: {value}",
+        "usage_type": "Usage type: {value}",
+        "network_name": "Network name: {value}",
+        "updated": "Last updated: {value}",
+        "parent_network": "Parent network: {value}",
+        "postal": "Postal code: {value}",
+        "coords": "📍 Coordinates: [Show on map]({value})",
+        "timezone": "Timezone: {value}",
+        "net_org": "Network org: {value}",
+        "other_prefixes": "Other ranges on this ASN: {value}",
+        "abuse_phone": "Abuse phone: {value}"
+      },
+      "flag": {
+        "proxy": "⚠️ Proxy",
+        "vpn": "🛡️ VPN",
+        "hosting": "🖥️ Hosting server",
+        "mobile": "📱 Mobile internet",
+        "tor": "🧅 Tor exit",
+        "relay": "🔁 Relay",
+        "spamhaus": "🚫 Spamhaus blacklist",
+        "anycast": "🛰️ Anycast",
+        "abuse_private": "🔒 Private/non-public address \\(AbuseIPDB\\)",
+        "abuse_whitelisted": "✅ Whitelisted on AbuseIPDB"
+      },
+      "abuse_report_note": "ℹ️ To report abuse: [AbuseIPDB]({value})",
+      "special": {
+        "private": "🏠 This is a private address \\(RFC 1918/4193\\)\\.\nThis range is only used inside local networks \\(home, office, organization\\) and is not routable on the public internet; that's why there's no real location or ownership data for it\\.",
+        "loopback": "Really? Sending me the localhost address to analyze? 😭\nThis address \\(Loopback\\) always points to the very device using it, and never actually travels over any network\\.",
+        "link_local": "🔗 This is a Link\\-Local address\\.\nOnly used within a local network \\(no router\\) and not routable on the internet\\.",
+        "unspecified": "❔ This is an Unspecified address\\.\nUsually means «no address assigned yet», not a real device\\.",
+        "broadcast": "📢 This is a Broadcast address\\.\nUsed to send to every device on a local network at once, not to one specific device\\.",
+        "documentation": "📘 This address is in the reserved Documentation/TEST\\-NET range\\.\nReserved only for examples and teaching, never used on the real internet\\.",
+        "multicast": "📡 This is a Multicast address\\.\nBelongs to a group of devices, not one specific device; used to send to multiple destinations at once\\.",
+        "cgnat": "🔄 This address is in the CGNAT range \\(Carrier\\-Grade NAT, RFC 6598\\)\\.\nUsually used by internet/mobile carriers to share one public IP among multiple users; not routable on the public internet\\.",
+        "ietf_protocol": "🧩 This address is in the IETF Protocol Assignments range\\.\nReserved for specific technical protocols and never seen in regular internet traffic\\.",
+        "benchmarking": "⏱ This address is in the Benchmarking range \\(RFC 2544\\)\\.\nOnly used to test performance and measure network equipment speed, not real communication\\.",
+        "reserved": "🚧 This address is in the Reserved/Class E range\\.\nSet aside for future use and not used on the public internet\\.",
+        "documentation_v6": "📘 This address is in the reserved IPv6 documentation range \\(2001:db8::/32\\)\\.\nReserved only for examples and teaching, never used on the real internet\\.",
+        "teredo": "🕳 This address is in the Teredo range \\(RFC 4380\\)\\.\nA tunneling mechanism for reaching IPv6 from behind IPv4 NATs\\.",
+        "six_to_four": "🌉 This address is in the 6to4 range \\(RFC 3056\\)\\.\nUsed to carry IPv6 traffic over IPv4 networks; this method is now deprecated\\."
+      }
     }
   },
   "it": {
@@ -1624,7 +1813,9 @@
       "ai_gwm_button": "Rimozione Filigrana Gemini",
       "admin_button": "Pannello Admin",
       "ai_asr_button": "Magia ✨",
-      "panel_button": "Il mio account"
+      "panel_button": "Il mio account",
+      "tools_button": "🧰 Strumenti",
+      "tools_title": "🧰 *Strumenti*\n\nScegli uno degli strumenti qui sotto:"
     },
     "stt": {
       "config_title": "Seleziona lingua e qualità della trascrizione:\n\nSe «Riduzione automatica del rumore prima della trascrizione» è attiva, l'audio viene prima elaborato con DeepFilterNetV3 poi inviato a Vosk. Migliora la precisione per registrazioni rumorose.\n\nAggiunge circa il 20% al tempo di elaborazione; disattivala se non necessario.",
@@ -2391,6 +2582,115 @@
       "prompt_member": "🧍 Send the member cap for this lock as a number (e.g., 500).\nAfter reaching this count, the lock will be automatically deactivated.\nTo remove the cap, send 0.",
       "prompt_reserve": "🔗 Send the reserve (alternative) link for this lock:",
       "invalid_number": "⚠️ Invalid input. Please send a number."
+    },
+    "tools": {
+      "pdf_compress_button": "📉 Compressione PDF",
+      "ip_lookup_button": "🔎 Analisi IP"
+    },
+    "pdfcompress": {
+      "mode_prompt": "Come vuoi ridurre il tuo PDF?",
+      "mode_simple_button": "⚡ Modalità rapida (consigliata dall'AI)",
+      "mode_advanced_button": "🛠 Modalità avanzata",
+      "advanced_soon": "Questa funzione arriverà presto 🙂",
+      "send_file_prompt": "Perfetto! 😄 Inviami il tuo file PDF e te lo riduco!",
+      "busy_warning": "Aspetta un attimo 🙏 lascia finire questa operazione, poi invia.",
+      "level_prompt": "Preso! 📄 Ora dimmi con quale qualità ridurlo:",
+      "level": {
+        "screen": "Bassa (screen)",
+        "ebook": "Media (ebook)",
+        "printer": "Stampa (printer)",
+        "prepress": "Qualità massima (prepress)"
+      },
+      "processing": "⏳ Riduzione del file in corso...",
+      "result_caption": "✅ Fatto\\!",
+      "result_report": "Dimensione prima: {before}\nDimensione dopo: {after}\nRiduzione: {percent}%",
+      "error": {
+        "invalid_file": "Questo non è un PDF 😅 invia un file PDF.",
+        "too_large": "Il file è troppo grande, la dimensione massima consentita è {max}.",
+        "invalid_pdf": "Il file era corrotto o non era un PDF reale 😕 riprova.",
+        "download_failed": "Il download del file non è riuscito, riprova.",
+        "timeout": "L'elaborazione ha impiegato troppo tempo ed è stata interrotta. Prova un file più piccolo.",
+        "gs_failed": "C'è stato un problema durante la compressione, riprova.",
+        "no_improvement": "Questo file era già ottimizzato, la compressione non ha aiutato (è addirittura diventato più grande) 🤷‍♂️ tieni il file originale.",
+        "send_failed": "Il file è stato compresso ma l'invio non è riuscito, riprova."
+      }
+    },
+    "ip_lookup": {
+      "prompt": "Invia un indirizzo IP e lo analizzo completamente 🔎\nPuoi anche inviarlo direttamente qui, non serve alcun comando speciale.\n\nEsempio IPv4:\n8.8.8.8\n\nEsempio IPv6:\n2001:4860:4860::8888\n\n📌 Capisco anche porta e maschera di rete (CIDR):\n1.1.1.1:443 ← porta\n192.168.1.0/24 ← maschera di rete",
+      "invalid_ip": "Questo non è un IP valido 😅 invia un indirizzo IPv4 o IPv6 corretto.",
+      "processing": "⏳ Analisi IP in corso...",
+      "result_header": "🔎 *Analisi IP* {ip}",
+      "note": {
+        "port": "🔌 Porta: {port}\nLa porta indica con quale servizio sta comunicando questo IP; ad es\\. la porta 80 è il web, 443 è HTTPS, 22 è SSH\\.\nOra analizzo l'IP stesso:",
+        "cidr": "🧮 Maschera di rete: /{prefix}\nSignifica che i primi {prefix} bit sono la «parte di rete» e il resto \\(su {total} bit totali\\) è la «parte host»{hosts}\\.\nOra analizzo l'IP stesso:",
+        "cidr_hosts": ", cioè questo intervallo copre circa {count} indirizzi"
+      },
+      "error": {
+        "no_data": "Purtroppo non è stato trovato nessun dato per questo IP 🤷‍♂️"
+      },
+      "section": {
+        "ownership": "🏢 *Proprietà*",
+        "location": "🌍 *Posizione*",
+        "network": "🛰️ *Rete / ASN*",
+        "risk": "🔒 *Indicatori di Rischio*",
+        "abuse_contact": "📇 *Contatto Segnalazione Abusi*"
+      },
+      "label": {
+        "org": "Organizzazione: {value}",
+        "netrange": "Intervallo IP: {value}",
+        "registered": "Data registrazione: {value}",
+        "hostname": "Hostname: {value}",
+        "country": "Paese: {value}",
+        "region": "Regione: {value}",
+        "city": "Città: {value}",
+        "isp": "ISP: {value}",
+        "asn": "ASN: {value}",
+        "asn_name": "Nome ASN: {value}",
+        "prefix": "Prefisso: {value}",
+        "cloud_provider": "Provider cloud: {value}",
+        "abuse_score": "Punteggio abuso: {value}",
+        "abuse_reports": "Numero segnalazioni: {value}",
+        "abuse_email": "Email contatto: {value}",
+        "usage_type": "Tipo di utilizzo: {value}",
+        "network_name": "Nome rete: {value}",
+        "updated": "Ultimo aggiornamento: {value}",
+        "parent_network": "Rete madre: {value}",
+        "postal": "Codice postale: {value}",
+        "coords": "📍 Coordinate: [Mostra sulla mappa]({value})",
+        "timezone": "Fuso orario: {value}",
+        "net_org": "Organizzazione rete: {value}",
+        "other_prefixes": "Altri intervalli dello stesso ASN: {value}",
+        "abuse_phone": "Telefono contatto: {value}"
+      },
+      "flag": {
+        "proxy": "⚠️ Proxy",
+        "vpn": "🛡️ VPN",
+        "hosting": "🖥️ Server hosting",
+        "mobile": "📱 Internet mobile",
+        "tor": "🧅 Uscita Tor",
+        "relay": "🔁 Relay",
+        "spamhaus": "🚫 Blacklist Spamhaus",
+        "anycast": "🛰️ Anycast",
+        "abuse_private": "🔒 Indirizzo privato/non pubblico \\(AbuseIPDB\\)",
+        "abuse_whitelisted": "✅ In whitelist su AbuseIPDB"
+      },
+      "abuse_report_note": "ℹ️ Per segnalare un abuso: [AbuseIPDB]({value})",
+      "special": {
+        "private": "🏠 Questo è un indirizzo privato \\(RFC 1918/4193\\)\\.\nQuesto intervallo si usa solo all'interno di reti locali \\(casa, ufficio, organizzazione\\) e non è instradabile su internet pubblico; per questo non ci sono dati reali di posizione o proprietà\\.",
+        "loopback": "Ma dai, mi mandi l'indirizzo localhost da analizzare? 😭\nQuesto indirizzo \\(Loopback\\) punta sempre al dispositivo stesso che lo usa, e non attraversa mai davvero una rete\\.",
+        "link_local": "🔗 Questo è un indirizzo Link\\-Local\\.\nUsato solo all'interno di una rete locale \\(senza router\\) e non instradabile su internet\\.",
+        "unspecified": "❔ Questo è un indirizzo Non Specificato\\.\nDi solito significa «nessun indirizzo ancora assegnato», non un dispositivo reale\\.",
+        "broadcast": "📢 Questo è un indirizzo Broadcast\\.\nUsato per inviare simultaneamente a tutti i dispositivi di una rete locale, non a un dispositivo specifico\\.",
+        "documentation": "📘 Questo indirizzo è nell'intervallo riservato Documentation/TEST\\-NET\\.\nRiservato solo per esempi e didattica, mai usato su internet reale\\.",
+        "multicast": "📡 Questo è un indirizzo Multicast\\.\nAppartiene a un gruppo di dispositivi, non a uno specifico; usato per inviare a più destinazioni contemporaneamente\\.",
+        "cgnat": "🔄 Questo indirizzo è nell'intervallo CGNAT \\(Carrier\\-Grade NAT, RFC 6598\\)\\.\nUsato solitamente dagli operatori internet/mobili per condividere un IP pubblico tra più utenti; non instradabile su internet pubblico\\.",
+        "ietf_protocol": "🧩 Questo indirizzo è nell'intervallo IETF Protocol Assignments\\.\nRiservato per protocolli e usi tecnici specifici, non visto nel traffico internet normale\\.",
+        "benchmarking": "⏱ Questo indirizzo è nell'intervallo Benchmarking \\(RFC 2544\\)\\.\nUsato solo per testare le prestazioni e misurare la velocità delle apparecchiature di rete, non per comunicazioni reali\\.",
+        "reserved": "🚧 Questo indirizzo è nell'intervallo Riservato/Classe E\\.\nAccantonato per usi futuri e non utilizzato su internet pubblico\\.",
+        "documentation_v6": "📘 Questo indirizzo è nell'intervallo riservato per la documentazione IPv6 \\(2001:db8::/32\\)\\.\nRiservato solo per esempi e didattica, mai usato su internet reale\\.",
+        "teredo": "🕳 Questo indirizzo è nell'intervallo Teredo \\(RFC 4380\\)\\.\nUn meccanismo di tunneling per raggiungere IPv6 da dietro NAT IPv4\\.",
+        "six_to_four": "🌉 Questo indirizzo è nell'intervallo 6to4 \\(RFC 3056\\)\\.\nUsato per trasportare traffico IPv6 su reti IPv4; questo metodo ora è deprecato\\."
+      }
     }
   }
 }

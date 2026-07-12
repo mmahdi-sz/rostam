@@ -293,8 +293,8 @@ pub fn start_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup {
     let mut rows = vec![
         vec![btn_icon_success(&t("start.ai_lab_button"), CB_START_AI_LAB, icon)],
         vec![btn_icon_danger(&t("start.youtube_button"), CB_START_YOUTUBE, "clapper")],
-        vec![btn_icon_success(&t("start.panel_button"), CB_USER_PANEL, "user")],
         vec![btn_icon(&t("start.tools_button"), CB_START_TOOLS, "")],
+        vec![btn_icon_success(&t("start.panel_button"), CB_USER_PANEL, "user")],
     ];
     if is_admin {
         // emoji management hidden until a premium account is connected — admin-only for now
@@ -339,6 +339,7 @@ pub fn tools_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![btn_icon(&t("tools.pdf_compress_button"), crate::pdfcompress::CB_TOOLS_PDF_COMPRESS, "")],
+            vec![btn_icon(&t("tools.ip_lookup_button"), crate::ip_lookup::CB_TOOLS_IP_LOOKUP, "")],
             vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
         ])
         .build()

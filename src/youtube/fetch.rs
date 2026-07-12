@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 use tokio::process::Command;
 
@@ -6,6 +7,8 @@ use super::trace::log_trace;
 use super::types::{
     AudioLanguage, FetchError, SubtitleLanguage, VideoCodec, VideoFormatOption, VideoInfo,
 };
+
+const FETCH_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub async fn fetch_video_info(
     trace_id: u64,
@@ -17,7 +20,7 @@ pub async fn fetch_video_info(
         "fetch_start",
         &format!("url={url} cookie_spec={yt_dlp_browser_spec}"),
     );
-    let output = Command::new("yt-dlp")
+    let child = Command::new("yt-dlp")
         .arg("--js-runtimes")
         .arg("deno:/root/.deno/bin/deno")
         .arg("--cookies-from-browser")
@@ -28,9 +31,29 @@ pub async fn fetch_video_info(
         .arg("--no-playlist")
         .arg("--ignore-no-formats-error")
         .arg(url)
-        .output()
-        .await
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
         .map_err(|e| FetchError::Other(format!("failed to spawn yt-dlp: {e}")))?;
+
+    // On timeout, dropping this future drops the still-owned `Child`, and
+    // `kill_on_drop` above ensures that actually kills the process instead of
+    // leaking a yt-dlp/deno process stuck resolving a bad or empty URL.
+    let output = match tokio::time::timeout(FETCH_TIMEOUT, child.wait_with_output()).await {
+        Ok(result) => result.map_err(|e| FetchError::Other(format!("failed to run yt-dlp: {e}")))?,
+        Err(_) => {
+            log_trace(
+                trace_id,
+                "fetch_timeout",
+                &format!("no response after {}s, killing yt-dlp", FETCH_TIMEOUT.as_secs()),
+            );
+            return Err(FetchError::Other(format!(
+                "yt-dlp timed out after {}s",
+                FETCH_TIMEOUT.as_secs()
+            )));
+        }
+    };
     log_trace(
         trace_id,
         "yt_dlp_exit",
