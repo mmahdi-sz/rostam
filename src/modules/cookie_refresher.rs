@@ -166,22 +166,29 @@ async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) 
     }
 
     let p = profile_name;
-    // Spawn firefox via sudo. We don't track its pid — we use pgrep/pkill by profile path
-    // because child.id() gives the sudo wrapper pid, not the actual firefox pid.
-    let child = Command::new("sudo")
-        .arg("-u")
-        .arg("mahdi")
-        .arg("firefox")
-        .arg("--profile")
+    // Spawn firefox, optionally via sudo as a configured OS user (needed when the
+    // bot runs as root but the Firefox profile belongs to a desktop user). We
+    // don't track its pid — we use pgrep/pkill by profile path because child.id()
+    // would give the sudo wrapper pid, not the actual firefox pid, when sudo is used.
+    let mut cmd = match crate::config::cookie_refresh_os_user() {
+        Some(user) => {
+            let mut cmd = Command::new("sudo");
+            cmd.arg("-u").arg(user).arg("firefox");
+            cmd
+        }
+        None => Command::new("firefox"),
+    };
+    cmd.arg("--profile")
         .arg(profile_path)
         .arg(&links[0])
-        .env("DISPLAY", ":10")
-        .env("XDG_RUNTIME_DIR", "/run/user/1002")
+        .env("DISPLAY", crate::config::cookie_refresh_display())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("failed to spawn firefox: {e}"))?;
+        .stderr(Stdio::null());
+    if let Some(xdg_runtime_dir) = crate::config::cookie_refresh_xdg_runtime_dir() {
+        cmd.env("XDG_RUNTIME_DIR", xdg_runtime_dir);
+    }
+    let child = cmd.spawn().map_err(|e| format!("failed to spawn firefox: {e}"))?;
 
     // Detach: we don't wait on this child; we track firefox by profile path via pgrep.
     drop(child);

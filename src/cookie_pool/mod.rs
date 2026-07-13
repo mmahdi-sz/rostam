@@ -12,7 +12,6 @@ pub use pool::CookiePool;
 pub use format::format_no_cookie_available;
 pub use snapshot::save_snapshot;
 
-const DEFAULT_FIREFOX_ROOT: &str = "/home/mahdi/.mozilla/firefox";
 /// Cooldown applied to a rate-limited cookie (programmatic / manual commands).
 const DEFAULT_COOLDOWN: Duration = Duration::from_secs(30 * 60);
 /// Safety-net cooldown set when a cookie is rate-limited and queued for auto-refresh.

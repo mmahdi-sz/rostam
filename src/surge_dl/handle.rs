@@ -14,14 +14,11 @@ use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{t, tf};
 use crate::log::next_trace_id;
 
-const SURGE_HOST: &str = "127.0.0.1:1700";
-
 fn surge_cmd(args: &[&str]) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new("surge");
-    cmd.args(args).arg("--host").arg(SURGE_HOST);
+    cmd.args(args).arg("--host").arg(crate::config::surge_host());
     cmd
 }
-const DOWNLOADS_ROOT: &str = "/mnt/data/mahdidev/ros/downloads";
 const MAX_PART_BYTES: u64 = 2000 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_SECS: u64 = 2 * 3600;
 const POLL_INTERVAL_SECS: u64 = 3;
@@ -120,7 +117,7 @@ struct SurgeDetail {
 async fn run_surge_download(
     api: Bot, chat_id: i64, message_id: i32, user_id: i64, url: String, trace_id: u64,
 ) {
-    let dir = format!("{DOWNLOADS_ROOT}/{user_id}");
+    let dir = format!("{}/{user_id}", crate::config::surge_downloads_root());
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         log_ev!("surge_dl", trace_id, "mkdir_failed", "=>" => format!("fail err={e}"));
         edit_status(&api, chat_id, message_id, &t("surge.error.download_failed")).await;

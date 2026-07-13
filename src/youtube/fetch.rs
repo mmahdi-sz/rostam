@@ -22,7 +22,7 @@ pub async fn fetch_video_info(
     );
     let child = Command::new("yt-dlp")
         .arg("--js-runtimes")
-        .arg("deno:/root/.deno/bin/deno")
+        .arg(format!("deno:{}", crate::config::deno_path()))
         .arg("--cookies-from-browser")
         .arg(yt_dlp_browser_spec)
         .arg("--dump-single-json")

@@ -5,7 +5,7 @@ use std::{
 };
 
 use super::{
-    DEFAULT_CACHE_ROOT, DEFAULT_COOLDOWN, REFRESH_COOLDOWN, DEFAULT_FIREFOX_ROOT,
+    DEFAULT_CACHE_ROOT, DEFAULT_COOLDOWN, REFRESH_COOLDOWN,
     discover::{discover_firefox_cookies, materialize_profiles_cache},
     types::{CooldownEntry, CookiePoolSnapshot, CookiePoolStatus, CookieSource, SelectedCookie},
 };
@@ -21,7 +21,10 @@ pub struct CookiePool {
 
 impl CookiePool {
     pub fn from_default_firefox() -> Self {
-        Self::from_firefox_root(DEFAULT_FIREFOX_ROOT)
+        match crate::config::firefox_profiles_root() {
+            Some(root) => Self::from_firefox_root(root),
+            None => Self::from_firefox_root(""),
+        }
     }
 
     pub fn from_firefox_root(root: impl AsRef<Path>) -> Self {

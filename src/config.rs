@@ -104,6 +104,54 @@ pub fn ip_lists_refresh_secs() -> u64 {
         .unwrap_or(6 * 3600)
 }
 
+/// Where YouTube downloads are staged before upload. Defaults to a path relative
+/// to the working directory so dev and prod never share a directory (each systemd
+/// unit's WorkingDirectory differs) unless explicitly pointed at the same place.
+pub fn youtube_download_root() -> String {
+    config_value("YOUTUBE_DOWNLOAD_ROOT").unwrap_or_else(|| "downloads/yt".to_string())
+}
+
+/// Where the `surge` direct-link downloader tool stages files.
+pub fn surge_downloads_root() -> String {
+    config_value("SURGE_DOWNLOADS_ROOT").unwrap_or_else(|| "downloads/surge".to_string())
+}
+
+/// host:port of the running `surge server` daemon.
+pub fn surge_host() -> String {
+    config_value("SURGE_HOST").unwrap_or_else(|| "127.0.0.1:1700".to_string())
+}
+
+/// Root directory containing Firefox profiles used for cookie discovery
+/// (`~/.mozilla/firefox` equivalent). Falls back to `$HOME/.mozilla/firefox`
+/// when unset; if `$HOME` is also unset, cookie discovery finds no profiles.
+pub fn firefox_profiles_root() -> Option<String> {
+    config_value("FIREFOX_PROFILES_ROOT")
+        .or_else(|| env::var("HOME").ok().map(|home| format!("{home}/.mozilla/firefox")))
+}
+
+/// Path to the `deno` binary passed to yt-dlp's `--js-runtimes` flag. Defaults
+/// to bare `deno`, letting yt-dlp resolve it via PATH.
+pub fn deno_path() -> String {
+    config_value("DENO_PATH").unwrap_or_else(|| "deno".to_string())
+}
+
+/// OS user the cookie-refresher spawns Firefox as (via `sudo -u <user>`). When
+/// unset, Firefox is spawned directly as the bot's own user instead of via sudo.
+pub fn cookie_refresh_os_user() -> Option<String> {
+    config_value("COOKIE_REFRESH_OS_USER")
+}
+
+/// X display the cookie-refresher opens Firefox on. Default `:0`.
+pub fn cookie_refresh_display() -> String {
+    config_value("COOKIE_REFRESH_DISPLAY").unwrap_or_else(|| ":0".to_string())
+}
+
+/// `XDG_RUNTIME_DIR` passed to the spawned Firefox process. Left unset (and
+/// omitted from the child's env) when not configured.
+pub fn cookie_refresh_xdg_runtime_dir() -> Option<String> {
+    config_value("COOKIE_REFRESH_XDG_RUNTIME_DIR")
+}
+
 pub fn config_value(key: &str) -> Option<String> {
     value_from_env_file(".env", key)
         .or_else(|| value_from_env_file("/etc/default/abc", key))

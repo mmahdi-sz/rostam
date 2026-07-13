@@ -27,7 +27,6 @@ use super::types::AudioQuality;
 use super::upload::{build_part_params, build_single_params, send_audio_file, send_video_with_progress};
 
 pub const EDIT_THROTTLE: Duration = Duration::from_secs(1);
-const DOWNLOAD_ROOT: &str = "/mnt/data/mahdidev/ros/dev/downloads/yt";
 const MAX_SIZE_MB: u64 = 2000;
 const TARGET_PART_MB: u64 = 1700;
 
@@ -87,7 +86,7 @@ async fn run_download(
     };
     let format_id = fmt.format_id.clone();
 
-    let dir = PathBuf::from(format!("{DOWNLOAD_ROOT}/{trace_id}"));
+    let dir = PathBuf::from(format!("{}/{trace_id}", crate::config::youtube_download_root()));
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         log_trace(trace_id, "download_mkdir_failed", &e.to_string());
         edit_status(&api, status_chat_id, status_message_id,
@@ -110,7 +109,7 @@ async fn run_download(
 
     let postprocess_template = progress_template.clone();
     let mut cmd = tokio::process::Command::new("yt-dlp");
-    cmd.arg("--js-runtimes").arg("deno:/root/.deno/bin/deno")
+    cmd.arg("--js-runtimes").arg(format!("deno:{}", crate::config::deno_path()))
         .arg("--cookies-from-browser").arg(&req.cookie_spec)
         .arg("--no-warnings").arg("--no-playlist").arg("--progress")
         .arg("--no-color").arg("-f").arg(&format_spec)
@@ -376,7 +375,7 @@ async fn run_audio_download(
     log_trace(trace_id, "audio_download_begin", &format!(
         "request_id={request_id} quality={} url={}", audio_quality.as_str(), req.webpage_url
     ));
-    let dir = PathBuf::from(format!("{DOWNLOAD_ROOT}/{trace_id}"));
+    let dir = PathBuf::from(format!("{}/{trace_id}", crate::config::youtube_download_root()));
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         log_trace(trace_id, "audio_mkdir_failed", &e.to_string());
         edit_status(&api, status_chat_id, status_message_id,
@@ -386,7 +385,7 @@ async fn run_audio_download(
     let output_template = format!("{}/%(id)s.%(ext)s", dir.display());
     let format_spec = audio_quality.format_spec();
     let mut cmd = tokio::process::Command::new("yt-dlp");
-    cmd.arg("--js-runtimes").arg("deno:/root/.deno/bin/deno")
+    cmd.arg("--js-runtimes").arg(format!("deno:{}", crate::config::deno_path()))
         .arg("--cookies-from-browser").arg(&req.cookie_spec)
         .arg("--no-warnings").arg("--no-playlist")
         .arg("-f").arg(format_spec)
