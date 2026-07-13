@@ -89,6 +89,10 @@ pub async fn handle_emoji_flow_message(
             eprintln!("[emoji_msg trace={trace_id} event=ip_lookup_skip] — handled in main");
             false
         }
+        FlowState::AwaitingSurgeUrlInput => {
+            eprintln!("[emoji_msg trace={trace_id} event=surge_dl_skip] — handled in main");
+            false
+        }
         FlowState::AwaitingAsrAudio
         | FlowState::AwaitingAsrConfirm { .. }
         | FlowState::AwaitingAsrQueued { .. } => {
@@ -128,6 +132,7 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingPdfCompressFile => "AwaitingPdfCompressFile",
         FlowState::AwaitingPdfCompressLevel { .. } => "AwaitingPdfCompressLevel",
         FlowState::AwaitingIpLookupInput => "AwaitingIpLookupInput",
+        FlowState::AwaitingSurgeUrlInput => "AwaitingSurgeUrlInput",
         FlowState::AwaitingAsrAudio => "AwaitingAsrAudio",
         FlowState::AwaitingAsrConfirm { .. } => "AwaitingAsrConfirm",
         FlowState::AwaitingAsrQueued { .. } => "AwaitingAsrQueued",

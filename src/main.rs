@@ -22,6 +22,7 @@ mod referral;
 mod separation;
 mod stats;
 mod stt;
+mod surge_dl;
 mod upscale;
 mod youtube;
 

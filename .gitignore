@@ -4,6 +4,8 @@ git-server/
 cookie_profiles_cache/
 
 files/models/
+files/realesrgan/
+files/runtime/
 separation-service/models/
 separation-service/__pycache__/
 *.pyc

@@ -27,6 +27,7 @@ use crate::ip_lookup::{
     handle_ip_lookup_text, CB_IP_LOOKUP_CANCEL, CB_TOOLS_IP_LOOKUP,
 };
 use crate::separation::{enter_separation, handle_separation_audio, handle_separation_callback, CB_SEP_PREFIX};
+use crate::surge_dl::{enter_surge_dl, handle_surge_cancel, handle_surge_text, CB_SURGE_CANCEL, CB_TOOLS_SURGE};
 use crate::stt::handle::{enter_stt_config, handle_stt_audio, handle_stt_callback};
 use crate::upscale::{
     enter_upscale, handle_upscale_anime_toggle, handle_upscale_cancel,
@@ -429,6 +430,15 @@ async fn handle_message(
                 return Ok(());
             }
 
+            if matches!(flow_manager.get(uid), FlowState::AwaitingSurgeUrlInput) {
+                if message.text.is_some() {
+                    let trace_id = next_trace_id();
+                    log_trace(trace_id, "surge_dl_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
+                    handle_surge_text(api, &message, uid, flow_manager).await;
+                }
+                return Ok(());
+            }
+
             if matches!(flow_manager.get(uid), FlowState::AwaitingAsrAudio) {
                 if message.voice.is_some() || message.audio.is_some() || message.document.is_some()
                     || message.video.is_some() || message.video_note.is_some() {
@@ -766,6 +776,30 @@ async fn handle_callback(
         ).await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             handle_ip_lookup_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_TOOLS_SURGE {
+        let trace_id = next_trace_id();
+        log_trace(trace_id, "cb_surge_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
+        let _ = api.answer_callback_query(
+            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
+        ).await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            enter_surge_dl(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_SURGE_CANCEL {
+        let trace_id = next_trace_id();
+        log_trace(trace_id, "cb_surge_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
+        let _ = api.answer_callback_query(
+            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
+        ).await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            handle_surge_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
         }
         return Ok(());
     }
