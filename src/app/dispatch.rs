@@ -505,7 +505,7 @@ async fn handle_message(
                 let is_admin = config::admin_user_id().map(|id| Some(id) == user_id).unwrap_or(false);
                 if is_admin {
                     reload_i18n();
-                    crate::bot::send_text(api, message.chat.id, "✅ i18n.json reloaded.").await?;
+                    crate::bot::send_text(api, message.chat.id, "✅ config/i18n.json reloaded.").await?;
                 }
             }
             "/start" => send_start_menu(api, message.chat.id).await?,

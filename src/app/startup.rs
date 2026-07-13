@@ -326,9 +326,9 @@ pub fn spawn_i18n_watcher() {
         let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
         let mut watcher = recommended_watcher(tx).expect("failed to create file watcher");
         watcher
-            .watch(std::path::Path::new("i18n.json"), RecursiveMode::NonRecursive)
-            .expect("failed to watch i18n.json");
-        eprintln!("[i18n] watching i18n.json for changes");
+            .watch(std::path::Path::new("config/i18n.json"), RecursiveMode::NonRecursive)
+            .expect("failed to watch config/i18n.json");
+        eprintln!("[i18n] watching config/i18n.json for changes");
         for res in rx {
             if let Ok(event) = res {
                 match event.kind {
