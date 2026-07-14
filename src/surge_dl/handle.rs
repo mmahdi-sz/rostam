@@ -9,10 +9,12 @@ use frankenstein::{
     types::{InlineKeyboardMarkup, Message},
 };
 use crate::bot::edit_to_tools;
+use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::panel::btn_icon;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{t, tf};
 use crate::log::next_trace_id;
+use crate::rank;
 
 fn surge_cmd(args: &[&str]) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new("surge");
@@ -67,6 +69,7 @@ fn is_direct_link(text: &str) -> bool {
 
 pub async fn handle_surge_text(
     api: &Bot, message: &Message, user_id: i64, flow_manager: &mut FlowManager,
+    database: &Option<PostgresDatabase>,
 ) {
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
@@ -77,6 +80,35 @@ pub async fn handle_surge_text(
         log_ev!("surge_dl", trace_id, "invalid_url", "input" => url, "=>" => "reject");
         let _ = crate::bot::send_text(api, chat_id, &t("surge.invalid_url")).await;
         return;
+    }
+
+    // ── چک ترافیک (روزانه + ماهانه) قبل از شروع دانلود ──
+    if let Some(db) = database.as_ref() {
+        let client = db.client();
+        let user_rank = rank::effective_rank(client, user_id).await;
+        let daily_limit = user_rank.daily_traffic_bytes();
+        let monthly_limit = user_rank.monthly_traffic_bytes();
+        let first_upload_at = rank::quota::get_first_upload_at(client, user_id).await.unwrap_or_else(now_epoch);
+        let daily_used = rank::quota::get_daily_traffic(client, user_id).await.unwrap_or(0) as u64;
+        let monthly_used = rank::quota::get_monthly_traffic(client, user_id, first_upload_at).await.unwrap_or(0) as u64;
+
+        let block = if daily_used >= daily_limit {
+            Some((tf("youtube.traffic_daily_limit", &[("limit", &fmt_traffic_fa(daily_limit))]), user_rank.traffic_daily_next_rank()))
+        } else if monthly_used >= monthly_limit {
+            Some((tf("youtube.traffic_monthly_limit", &[("limit", &fmt_traffic_fa(monthly_limit))]), user_rank.traffic_monthly_next_rank()))
+        } else {
+            None
+        };
+
+        if let Some((label, next_rank)) = block {
+            log_ev!("surge_dl", trace_id, "traffic_paywall", "=>" => "blocked");
+            if let Some(min_rank) = next_rank {
+                rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
+            } else {
+                let _ = crate::bot::send_text(api, chat_id, &label).await;
+            }
+            return;
+        }
     }
 
     flow_manager.clear(user_id);
@@ -117,6 +149,7 @@ struct SurgeDetail {
 async fn run_surge_download(
     api: Bot, chat_id: i64, message_id: i32, user_id: i64, url: String, trace_id: u64,
 ) {
+    let stats_job_id = crate::stats::record_download_start(user_id).await;
     let dir = format!("{}/{user_id}", crate::config::surge_downloads_root());
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         log_ev!("surge_dl", trace_id, "mkdir_failed", "=>" => format!("fail err={e}"));
@@ -197,6 +230,10 @@ async fn run_surge_download(
                 &frankenstein::methods::DeleteMessageParams::builder()
                     .chat_id(chat_id).message_id(message_id).build(),
             ).await;
+            if let Some(jid) = stats_job_id {
+                crate::stats::record_upload_done(jid, user_id, detail.downloaded as i64).await;
+                log_ev!("surge_dl", trace_id, "traffic_added", "bytes" => detail.downloaded);
+            }
             crate::stats::record_event_user(user_id, "surge_dl", "download", "ok", detail.downloaded as i64).await;
         }
         Err(e) => {
@@ -276,6 +313,31 @@ async fn list_rar_parts(archive_base: &Path) -> Result<Vec<PathBuf>, Box<dyn std
     }
     parts.sort();
     Ok(parts)
+}
+
+fn now_epoch() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// قالب‌بندی حجم به فارسی: «۵ گیگابایت» / «۷۵۰ مگابایت».
+fn fmt_traffic_fa(bytes: u64) -> String {
+    const GB: f64 = (1u64 << 30) as f64;
+    const MB: f64 = (1u64 << 20) as f64;
+    let b = bytes as f64;
+    let (num, unit) = if b >= GB {
+        let g = b / GB;
+        if (g.round() - g).abs() < 0.05 {
+            (format!("{:.0}", g.round()), crate::i18n::t("youtube.unit_gb"))
+        } else {
+            (format!("{:.1}", g), crate::i18n::t("youtube.unit_gb"))
+        }
+    } else {
+        (format!("{:.0}", (b / MB).round()), crate::i18n::t("youtube.unit_mb"))
+    };
+    format!("{} {}", crate::i18n::to_fa_digits(&num), unit)
 }
 
 fn fmt_bytes(bytes: u64) -> String {

@@ -434,7 +434,7 @@ async fn handle_message(
                 if message.text.is_some() {
                     let trace_id = next_trace_id();
                     log_trace(trace_id, "surge_dl_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
-                    handle_surge_text(api, &message, uid, flow_manager).await;
+                    handle_surge_text(api, &message, uid, flow_manager, database).await;
                 }
                 return Ok(());
             }
