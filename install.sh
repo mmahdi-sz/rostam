@@ -28,7 +28,8 @@ One-shot installer for the rostam Telegram bot (Rust + Python sidecars).
 Bootstraps EVERYTHING on a bare Debian/Ubuntu or Arch server: clones the repo,
 installs system packages + Rust + deno + yt-dlp, downloads ~4.2 GB of models,
 sets up PostgreSQL + Redis, builds the bot, and installs every sidecar
-(separation :6589, ASR :8765, local Telegram Bot API :8081) as systemd services.
+(separation :6589, ASR :8765, surge :1700, local Telegram Bot API :8081) as
+systemd services.
 
 Usage:
   bash <(curl -Ls https://raw.githubusercontent.com/mmahdi-sz/rostam/master/install.sh)
@@ -68,7 +69,6 @@ if [ "$(id -u)" -ne 0 ]; then
     $([ "$FRESH" = 1 ] && echo --fresh)
 fi
 
-# ─── distro detection ────────────────────────────────────────────────────────
 . /etc/os-release 2>/dev/null || die "cannot read /etc/os-release"
 case "${ID:-}:${ID_LIKE:-}" in
   *arch*)            FAMILY="arch" ;;
@@ -77,7 +77,7 @@ case "${ID:-}:${ID_LIKE:-}" in
 esac
 say "distro=${PRETTY_NAME:-$ID} family=$FAMILY install_dir=$INSTALL_DIR branch=$BRANCH"
 
-pac() {                       # non-interactive pacman (picks provider defaults)
+pac() {
   local rc=0
   set +o pipefail
   yes '' 2>/dev/null | pacman "$@" || rc=$?
@@ -85,10 +85,9 @@ pac() {                       # non-interactive pacman (picks provider defaults)
   return "$rc"
 }
 
-fetch() { curl -fL --retry 3 --retry-delay 2 -o "$2" "$1"; }   # url dest
+fetch() { curl -fL --retry 3 --retry-delay 2 -o "$2" "$1"; }
 
-# download+size-gate: skip if file exists and is bigger than $3 bytes
-need_file() {                 # url dest min_bytes label
+need_file() {
   local url="$1" dest="$2" min="$3" label="$4"
   if [ -f "$dest" ] && [ "$(stat -c '%s' "$dest" 2>/dev/null || echo 0)" -gt "$min" ]; then
     ok "$label present — skipping"
@@ -100,7 +99,6 @@ need_file() {                 # url dest min_bytes label
   fi
 }
 
-# ─── 1. system packages ──────────────────────────────────────────────────────
 say "installing system packages…"
 if [ "$FAMILY" = "debian" ]; then
   export DEBIAN_FRONTEND=noninteractive
@@ -120,7 +118,6 @@ else
 fi
 ok "system packages ready"
 
-# Rust (edition 2024 → rustc ≥ 1.85)
 if ! command -v cargo >/dev/null 2>&1; then
   say "installing Rust via rustup…"
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
@@ -130,14 +127,12 @@ fi
 command -v cargo >/dev/null 2>&1 || die "cargo not on PATH after rustup"
 ok "rust $(rustc --version | awk '{print $2}')"
 
-# deno (yt-dlp --js-runtimes)
 if [ ! -x "$DENO_DIR/bin/deno" ]; then
   say "installing deno → $DENO_DIR…"
   curl -fsSL https://deno.land/install.sh | env DENO_INSTALL="$DENO_DIR" sh -s -- -y >/dev/null 2>&1 || true
 fi
 [ -x "$DENO_DIR/bin/deno" ] && ok "deno ready ($DENO_DIR/bin/deno)" || warn "deno install failed (YouTube JS challenges degrade)"
 
-# yt-dlp latest static binary
 if ! command -v yt-dlp >/dev/null 2>&1; then
   say "installing yt-dlp…"
   fetch "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp" /usr/local/bin/yt-dlp
@@ -145,7 +140,6 @@ if ! command -v yt-dlp >/dev/null 2>&1; then
 fi
 ok "yt-dlp ready"
 
-# ─── 2. clone repo ───────────────────────────────────────────────────────────
 if [ "$FRESH" = 1 ] && [ -d "$INSTALL_DIR/.git" ]; then
   warn "--fresh: removing $INSTALL_DIR"; rm -rf "$INSTALL_DIR"
 fi
@@ -161,12 +155,10 @@ fi
 cd "$INSTALL_DIR"
 ok "repo at $(git rev-parse --short HEAD)"
 
-# ─── 3. model / runtime assets (git-ignored, ~4.2 GB) ────────────────────────
 say "provisioning model assets (this downloads several GB)…"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"; die "failed at line $LINENO (exit $?)"' ERR
 
-# libvosk.so — extract just the x86_64 shared lib from the release zip
 if [ ! -f files/runtime/libvosk.so ]; then
   say "downloading libvosk…"
   fetch "https://github.com/alphacep/vosk-api/releases/download/v0.3.45/vosk-linux-x86_64-0.3.45.zip" "$TMP/vosk.zip"
@@ -176,7 +168,6 @@ if [ ! -f files/runtime/libvosk.so ]; then
   ok "libvosk.so"
 else ok "libvosk.so present — skipping"; fi
 
-# vosk models (unzip in place; dir names are already versioned)
 mkdir -p files/models/vosk
 for m in vosk-model-fa-0.42 vosk-model-small-fa-0.42 vosk-model-en-us-0.22-lgraph vosk-model-small-en-us-0.15; do
   if [ -d "files/models/vosk/$m" ]; then ok "vosk/$m present — skipping"; continue; fi
@@ -187,12 +178,11 @@ for m in vosk-model-fa-0.42 vosk-model-small-fa-0.42 vosk-model-en-us-0.22-lgrap
   ok "vosk/$m"
 done
 
-# moebius onnx (gwm)
 need_file "https://huggingface.co/simonw/Moebius-ONNX/resolve/main/unet.onnx"        files/models/moebius/unet.onnx        800000000 "moebius/unet.onnx"
 need_file "https://huggingface.co/simonw/Moebius-ONNX/resolve/main/vae_decoder.onnx" files/models/moebius/vae_decoder.onnx 150000000 "moebius/vae_decoder.onnx"
 need_file "https://huggingface.co/simonw/Moebius-ONNX/resolve/main/vae_encoder.onnx" files/models/moebius/vae_encoder.onnx 100000000 "moebius/vae_encoder.onnx"
 
-# deepfilter model (kept as tar.gz — code un-tars it) + binary
+# keep as tar.gz — the bot un-tars it at runtime
 need_file "https://github.com/Rikorose/DeepFilterNet/raw/1e96ef05e1ef75b3702f8c55ca065368deae637d/models/DeepFilterNet3_onnx.tar.gz" \
           files/models/deepfilter/DeepFilterNet3_onnx.tar.gz 5000000 "deepfilter model"
 if [ ! -x files/runtime/deep-filter ]; then
@@ -202,7 +192,6 @@ if [ ! -x files/runtime/deep-filter ]; then
   else warn "deep-filter binary unavailable — STT denoise will degrade"; fi
 else ok "deep-filter binary present — skipping"; fi
 
-# real-esrgan (binary + models land flat under files/realesrgan/)
 if [ ! -x files/realesrgan/realesrgan-ncnn-vulkan ]; then
   say "downloading Real-ESRGAN…"
   fetch "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip" "$TMP/resrgan.zip"
@@ -216,7 +205,6 @@ rm -rf "$TMP"
 trap 'die "failed at line $LINENO (exit $?)"' ERR
 ok "assets ready"
 
-# ─── 4. PostgreSQL (DB + role from .env.example DATABASE_URL) ─────────────────
 say "configuring PostgreSQL…"
 # Arch ships an EMPTY /var/lib/postgres/data with the package — initdb when it's
 # empty (not merely absent), else the service won't start.
@@ -234,7 +222,6 @@ SELECT 'CREATE DATABASE ros_telegram_bot'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'ros_telegram_bot')\gexec
 SQL
 
-# ─── 5. Redis ────────────────────────────────────────────────────────────────
 say "configuring Redis…"
 REDIS_UNIT=""
 UNIT_FILES="$(systemctl list-unit-files --type=service 2>/dev/null || true)"
@@ -245,7 +232,6 @@ done
 systemctl enable --now "$REDIS_UNIT" >/dev/null 2>&1 || systemctl restart "$REDIS_UNIT"
 redis-cli ping 2>/dev/null | grep -qi pong && ok "Redis up (unit=$REDIS_UNIT)" || warn "redis PING failed"
 
-# ─── 6. .env (prompt for secrets) ────────────────────────────────────────────
 if [ ! -f .env ]; then
   say "creating .env from .env.example…"
   cp .env.example .env
@@ -257,6 +243,9 @@ if [ ! -f .env ]; then
   [ -n "${ADMIN_ID:-}" ] && set_env ADMIN_USER_ID "$ADMIN_ID"
   set_env DENO_PATH "$DENO_DIR/bin/deno"
   set_env DATABASE_URL "postgres://postgres:postgres@localhost:5432/ros_telegram_bot"
+  # absolute (not the relative default): the surge daemon and the bot must agree
+  # on one path regardless of each process's cwd.
+  set_env SURGE_DOWNLOADS_ROOT "$INSTALL_DIR/downloads/surge"
   [ "$SKIP_BOTAPI" = 1 ] && set_env BOT_API_BASE_URL "" || set_env BOT_API_BASE_URL "http://127.0.0.1:$BOTAPI_PORT"
   chmod 600 .env
   ok ".env written"
@@ -264,7 +253,6 @@ else
   ok ".env exists — leaving as-is"
 fi
 
-# ─── 7. build the bot ────────────────────────────────────────────────────────
 say "building the bot (cargo build --release — this takes a while)…"
 cargo build --release
 [ -x target/release/ros-telegram-bot ] || die "bot binary missing after build"
@@ -274,11 +262,9 @@ ok "bot built"
 # this distro's Python) must NOT abort the install — the core bot is already
 # built and still gets its systemd service below.
 
-# ─── 8. separation-service (reuse its tested installer) ──────────────────────
 say "installing separation-service (:6589)…"
 bash "$INSTALL_DIR/separation-service/setup.sh" || warn "separation-service install failed (:6589 degrades)"
 
-# ─── 9. ASR service (:8765) ──────────────────────────────────────────────────
 asr_install() {
   ( cd asr-service
     [ -x venv/bin/python3 ] || python3 -m venv venv
@@ -315,7 +301,6 @@ if [ "$SKIP_ASR" = 0 ]; then
   else warn "ASR install failed (:8765 unavailable) — likely a pinned dep with no wheel for this Python; core bot unaffected"; fi
 else warn "--skip-asr: ASR service not installed"; fi
 
-# ─── 10. local Telegram Bot API (:8081) ──────────────────────────────────────
 botapi_install() {
   if command -v telegram-bot-api >/dev/null 2>&1; then
     ok "telegram-bot-api already installed"; return 0
@@ -349,7 +334,44 @@ if [ "$SKIP_BOTAPI" = 0 ]; then
   botapi_install || warn "telegram-bot-api install failed (:8081 unavailable) — bot falls back to official API (20 MB cap); core bot unaffected"
 else warn "--skip-bot-api: using official Telegram API (20 MB upload cap)"; fi
 
-# ─── 11. rostam.service ──────────────────────────────────────────────────────
+surge_install() {
+  local dl="$INSTALL_DIR/downloads/surge"; mkdir -p "$dl"
+  if ! command -v surge >/dev/null 2>&1; then
+    say "installing surge (SurgeDM/Surge)…"
+    local url st; st="$(mktemp -d)"
+    url="$(curl -fsSL https://api.github.com/repos/SurgeDM/Surge/releases/latest \
+           | grep -oE 'https://[^"]+/Surge_[0-9.]+_linux_amd64\.tar\.gz' | head -1)"
+    [ -n "$url" ] || { rm -rf "$st"; return 1; }
+    fetch "$url" "$st/surge.tgz"                || { rm -rf "$st"; return 1; }
+    tar xzf "$st/surge.tgz" -C "$st"            || { rm -rf "$st"; return 1; }
+    install -m 0755 "$st/surge" /usr/local/bin/surge || { rm -rf "$st"; return 1; }
+    rm -rf "$st"
+  fi
+  # Daemon runs as root with HOME=/root, so its API token lands in
+  # /root/.local/state/surge/token; the bot (also root) auto-reads the same file
+  # — no token needs wiring into .env.
+  cat > /etc/systemd/system/surge.service <<UNIT
+[Unit]
+Description=Surge download manager daemon
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Environment=HOME=/root
+ExecStart=/usr/local/bin/surge server start -p 1700 -o $dl
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable --now surge.service >/dev/null 2>&1 || systemctl restart surge.service
+}
+say "installing surge download manager (:1700)…"
+if surge_install; then ok "surge.service installed (:1700)"
+else warn "surge install failed (tools:surge degrades; core bot unaffected)"; fi
+
 say "installing rostam.service…"
 cat > /etc/systemd/system/rostam.service <<UNIT
 [Unit]
@@ -373,12 +395,12 @@ systemctl enable rostam.service >/dev/null 2>&1 || true
 systemctl restart rostam.service
 ok "rostam.service enabled and started"
 
-# ─── 12. health checks ───────────────────────────────────────────────────────
 echo
 say "── health ──"
 redis-cli ping >/dev/null 2>&1 && ok "redis: PONG" || warn "redis down"
 sudo -u postgres psql -d ros_telegram_bot -c 'SELECT 1' >/dev/null 2>&1 && ok "postgres: ok" || warn "postgres db unreachable"
 curl -fsS "http://127.0.0.1:6589/health" >/dev/null 2>&1 && ok "separation :6589 up" || warn "separation not ready yet"
+HOME=/root surge --host 127.0.0.1:1700 ls --json >/dev/null 2>&1 && ok "surge :1700 up" || warn "surge not ready yet"
 [ "$SKIP_ASR" = 0 ] && { curl -fsS "http://127.0.0.1:8765/health" >/dev/null 2>&1 && ok "asr :8765 up" || warn "asr not ready yet (model may still be loading)"; }
 [ "$SKIP_BOTAPI" = 0 ] && { curl -fsS "http://127.0.0.1:$BOTAPI_PORT/" >/dev/null 2>&1 && ok "bot-api :$BOTAPI_PORT up" || warn "bot-api not answering yet"; }
 sleep 2

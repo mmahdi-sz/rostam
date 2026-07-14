@@ -1,6 +1,9 @@
 # rostam — Telegram media & utility bot
 
-A Farsi-only Telegram bot (Rust, crate `ros-telegram-bot`) that bundles a media
+**English** · [فارسی](README_fa.md)
+
+A multilingual Telegram bot (Rust, crate `ros-telegram-bot`) — UI in Persian,
+English and Italian (switch with `/language`) — that bundles a media
 toolbox — YouTube downloading, vocal separation, speech-to-text, audio denoise,
 image upscaling, watermark removal, PDF compression, IP lookup, custom emoji
 packs — behind a ranked/paywalled UI. Heavy CPU work runs in Python sidecar
@@ -50,6 +53,7 @@ for your `BOT_TOKEN` (and, for the local Bot API, Telegram `api_id`/`api_hash`).
 | **The bot** | `cargo build --release` → `rostam.service` |
 | **separation-service** | vocal/instrumental split (:6589), auto-downloads its model |
 | **ASR service** | Nemotron speech-to-text (:8765), ~1.5 GB model to `/opt/asr_model` |
+| **surge** | [SurgeDM/Surge](https://github.com/SurgeDM/Surge) parallel download manager daemon (:1700), latest release binary → `surge.service` |
 | **Local Telegram Bot API** | built from tdlib source (:8081) — raises the upload cap to 2 GB |
 
 ---
@@ -89,8 +93,8 @@ startup requirement is `BOT_TOKEN`.
 YouTube download (quality/subtitle/traffic paywalls) · vocal/instrumental
 separation · speech-to-text (Vosk + Nemotron ASR) · audio denoise (DeepFilterNet)
 · image upscale (Real-ESRGAN) · watermark removal (Moebius ONNX, in-process) ·
-PDF compression (Ghostscript) · IP lookup · custom emoji packs · ranks & paywall
-· referrals · admin stats panel.
+PDF compression (Ghostscript) · fast parallel direct-link downloads (Surge) ·
+IP lookup · custom emoji packs · ranks & paywall · referrals · admin stats panel.
 
 Commands: `/start`, `/panel`, `/language`, `/rank`, `/emoji`, `/se`.
 
@@ -123,6 +127,7 @@ to the bot's working directory** (`/opt/rostam`), so the systemd unit sets
 | Bot | `rostam.service` | — |
 | Separation | `separation.service` | 6589 |
 | ASR | `asr.service` | 8765 |
+| Surge (downloads) | `surge.service` | 1700 |
 | Local Bot API | `telegram-bot-api.service` | 8081 |
 | PostgreSQL | `postgresql.service` | 5432 |
 | Redis | `redis-server` / `redis` | 6379 |
@@ -165,8 +170,11 @@ place them manually.
 
 ## Known gaps
 
-- **`surge` direct-downloader (:1700)** — the `surge` binary has no public source;
-  the `tools:surge` feature is unavailable until you provide it yourself.
+- **`surge` daemon (:1700)** is installed from [SurgeDM/Surge](https://github.com/SurgeDM/Surge)
+  and authenticates the bot via a root-owned token file
+  (`/root/.local/state/surge/token`). Both the daemon and the bot therefore run
+  as **root** so they share that token — running the bot as a non-root user would
+  make `tools:surge` return 401.
 - **Firefox cookie-pool** needs an X display; on a headless server the YouTube
   cookie refresher won't run (YouTube still works without cookies). Set
   `COOKIE_REFRESH_DISPLAY` / run under Xvfb to enable it.
