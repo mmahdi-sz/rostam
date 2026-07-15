@@ -476,6 +476,7 @@
       "quality": {
         "prompt": "🖥️ *4K 2160p \\| 2K 1440p*\nمناسب تلویزیون‌های بزرگ و مانیتورهای حرفه‌ای — بالاترین کیفیت، حجم زیاد\n\n💻 *Full HD \\| 1080p*\nمناسب لپ‌تاپ و مانیتور معمولی — بهترین تعادل کیفیت و حجم برای اکثر کاربران\n\n📱 *HD \\| 720p*\nمناسب تماشا روی گوشی — کیفیت خوب با حجم منطقی\n\n📱 *SD \\| 480p*\nمناسب اینترنت ضعیف یا ذخیره‌سازی محدود — حجم کم\n\n📶 *360p \\| 240p \\| 144p*\nمناسب اینترنت خیلی ضعیف — حجم حداقلی، کیفیت پایین",
         "send_failed": "ارسال دکمه‌های کیفیت ناموفق بود: {error}",
+        "playlist_suffix": "🎬 *پلی‌لیست*: _{count} ویدیو_\n\nکیفیت انتخاب‌شده برای *تمام ویدیوها* اعمال می‌شود\\.",
         "no_formats": "⚠️ برای این ویدیو هیچ کیفیت قابل دانلودی پیدا نشد.",
         "not_ready": "دانلود این کیفیت هنوز فعال نشده.",
         "buttons": {
@@ -526,7 +527,20 @@
         "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 قسمت {part} از {total}\n🤖 @{username}",
         "cancel_button": "لغو دانلود",
         "cancelled": "❌ دانلود لغو شد.",
-        "subtitle_caption": "📄 زیرنویس {lang}\n{title}"
+        "subtitle_caption": "📄 زیرنویس {lang}\n{title}",
+        "playlist": {
+          "start": "🎬 دانلود پلی‌لیست: {count} ویدیو\n\nلطفاً صبر کنید...",
+          "progress": "🎬 دانلود پلی‌لیست\n\n▪️ ویدیو {num}/{total}\n📺 {title}\n⏱️ {duration}\n\nدر حال دانلود و ارسال...",
+          "done_header": "✅ پلی‌لیست تمام شد! همه ویدیوها به پیوی شما ارسال شد.",
+          "failures_header": "⚠️ برخی ویدیوها ارسال نشد:",
+          "item_failed": "❌ {num}. {title}\n   دلیل: {reason}",
+          "more_failures": "و {n} مورد دیگر...",
+          "part_line": "part {sent}/{total}",
+          "reason_no_format": "کیفیت انتخاب‌شده برای این ویدیو موجود نیست",
+          "reason_no_file": "فایلی تولید نشد",
+          "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps\n🤖 @{username}",
+          "reason_members_only": "ویدیوی ویژه‌ی اعضای کانال — قابل دانلود نیست"
+        }
       },
       "subtitle_feature": "زیرنویس",
       "subtitle_file_feature": "ارسال زیرنویس به‌صورت فایل جداگانه",
@@ -901,9 +915,15 @@
       "prompt": "لینک مستقیم فایل رو بفرست تا با حداکثر سرعت دانلودش کنم 📥",
       "invalid_url": "این یه لینک معتبر نیست 😅 یه لینک مستقیم که با http یا https شروع بشه بفرست.",
       "queued": "⏳ دانلود به صف اضافه شد...",
-      "progress": "📥 در حال دانلود... {percent}٪",
+      "progress": "⏳ در حال دانلود...\n📁 {name}\n🔘 {bar}  {percent}٪\n📥 {downloaded} از {total}\n🚀 {speed}",
       "done": "✅ دانلود تموم شد، دارم برات می‌فرستم...",
+      "sent": "✅ فایل شما ارسال شد.\n\n📥 دانلود: {download_time} ({download_speed})\n📤 آپلود: {upload_time} ({upload_speed})",
       "sending_part": "📦 ارسال بخش {n} از {total}...",
+      "confirm_prompt": "📤 این لینک رو چطور آپلود کنم؟\n\nنام: {name}\nحجم: {size}",
+      "confirm_original_button": "اسم اصلی",
+      "confirm_rename_button": "تغییر نام",
+      "rename_prompt": "اسم فایل جدید رو بفرست:",
+      "size_unknown": "نامشخص",
       "error": {
         "download_failed": "دانلود با مشکل مواجه شد، دوباره امتحان کن.",
         "send_failed": "فایل دانلود شد ولی ارسالش به مشکل خورد، دوباره امتحان کن."
@@ -1387,6 +1407,7 @@
       "quality": {
         "prompt": "🖥️ *4K 2160p \\| 2K 1440p*\nBest for large TVs and professional monitors — highest quality, large file size\n\n💻 *Full HD \\| 1080p*\nBest for laptops and regular monitors — ideal quality/size balance\n\n📱 *HD \\| 720p*\nGreat for mobile viewing — good quality with reasonable size\n\n📱 *SD \\| 480p*\nFor slow connections or limited storage — small size\n\n📶 *360p \\| 240p \\| 144p*\nFor very slow connections — minimal size, low quality",
         "send_failed": "Failed to send quality buttons: {error}",
+        "playlist_suffix": "🎬 *Playlist*: _{count} videos_\n\nThe selected quality applies to *all videos*\\.",
         "no_formats": "⚠️ No downloadable quality was found for this video.",
         "not_ready": "This quality is not yet available for download.",
         "buttons": {
@@ -1437,7 +1458,20 @@
         "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 Part {part} of {total}\n🤖 @{username}",
         "cancel_button": "Cancel Download",
         "cancelled": "❌ Download cancelled.",
-        "subtitle_caption": "📄 Subtitle {lang}\n{title}"
+        "subtitle_caption": "📄 Subtitle {lang}\n{title}",
+        "playlist": {
+          "start": "🎬 Playlist download: {count} videos\n\nPlease wait...",
+          "progress": "🎬 Playlist download\n\n▪️ Video {num}/{total}\n📺 {title}\n⏱️ {duration}\n\nDownloading and sending...",
+          "done_header": "✅ Playlist finished! All videos were sent to your chat.",
+          "failures_header": "⚠️ Some videos were not sent:",
+          "item_failed": "❌ {num}. {title}\n   Reason: {reason}",
+          "more_failures": "and {n} more...",
+          "part_line": "part {sent}/{total}",
+          "reason_no_format": "Selected quality is not available for this video",
+          "reason_no_file": "No file was produced",
+          "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps\n🤖 @{username}",
+          "reason_members_only": "Members-only video — cannot be downloaded"
+        }
       },
       "subtitle_feature": "Subtitles",
       "subtitle_file_feature": "Send subtitle as separate file",
@@ -1812,9 +1846,15 @@
       "prompt": "Send a direct download link and I'll fetch it at full speed 📥",
       "invalid_url": "That's not a valid link 😅 send a direct link starting with http or https.",
       "queued": "⏳ Download queued...",
-      "progress": "📥 Downloading... {percent}%",
+      "progress": "⏳ Downloading...\n📁 {name}\n🔘 {bar}  {percent}%\n📥 {downloaded} of {total}\n🚀 {speed}",
       "done": "✅ Download finished, sending it to you...",
+      "sent": "✅ Your file has been sent.\n\n📥 Download: {download_time} ({download_speed})\n📤 Upload: {upload_time} ({upload_speed})",
       "sending_part": "📦 Sending part {n} of {total}...",
+      "confirm_prompt": "📤 How would you like to upload this link?\n\nName: {name}\nSize: {size}",
+      "confirm_original_button": "Original name",
+      "confirm_rename_button": "Rename",
+      "rename_prompt": "Send the new file name:",
+      "size_unknown": "unknown",
       "error": {
         "download_failed": "The download failed, try again.",
         "send_failed": "The file was downloaded but sending it failed, try again."
@@ -2298,6 +2338,7 @@
       "quality": {
         "prompt": "🖥️ *4K 2160p \\| 2K 1440p*\nPer TV grandi e monitor professionali — qualità massima, file grande\n\n💻 *Full HD \\| 1080p*\nPer laptop e monitor normali — miglior bilanciamento qualità/dimensione\n\n📱 *HD \\| 720p*\nOttimo per visione mobile — buona qualità con dimensione ragionevole\n\n📱 *SD \\| 480p*\nPer connessioni lente o spazio limitato — dimensione ridotta\n\n📶 *360p \\| 240p \\| 144p*\nPer connessioni molto lente — dimensione minima, qualità bassa",
         "send_failed": "Invio pulsanti qualità fallito: {error}",
+        "playlist_suffix": "🎬 *Playlist*: _{count} video_\n\nLa qualità selezionata si applica a *tutti i video*\\.",
         "no_formats": "⚠️ Nessuna qualità scaricabile trovata per questo video.",
         "not_ready": "Questa qualità non è ancora disponibile.",
         "buttons": {
@@ -2348,7 +2389,20 @@
         "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 Parte {part} di {total}\n🤖 @{username}",
         "cancel_button": "Annulla Download",
         "cancelled": "❌ Download annullato.",
-        "subtitle_caption": "📄 Sottotitoli {lang}\n{title}"
+        "subtitle_caption": "📄 Sottotitoli {lang}\n{title}",
+        "playlist": {
+          "start": "🎬 Download playlist: {count} video\n\nAttendere...",
+          "progress": "🎬 Download playlist\n\n▪️ Video {num}/{total}\n📺 {title}\n⏱️ {duration}\n\nDownload e invio in corso...",
+          "done_header": "✅ Playlist completata! Tutti i video sono stati inviati.",
+          "failures_header": "⚠️ Alcuni video non sono stati inviati:",
+          "item_failed": "❌ {num}. {title}\n   Motivo: {reason}",
+          "more_failures": "e altri {n}...",
+          "part_line": "part {sent}/{total}",
+          "reason_no_format": "La qualità selezionata non è disponibile per questo video",
+          "reason_no_file": "Nessun file prodotto",
+          "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps\n🤖 @{username}",
+          "reason_members_only": "Video riservato ai membri — impossibile scaricare"
+        }
       },
       "subtitle_feature": "Sottotitoli",
       "subtitle_file_feature": "Invia sottotitoli come file separato",
@@ -2723,9 +2777,15 @@
       "prompt": "Invia un link di download diretto e lo scarico alla massima velocità 📥",
       "invalid_url": "Non è un link valido 😅 invia un link diretto che inizi con http o https.",
       "queued": "⏳ Download in coda...",
-      "progress": "📥 Download in corso... {percent}%",
+      "progress": "⏳ Download in corso...\n📁 {name}\n🔘 {bar}  {percent}%\n📥 {downloaded} di {total}\n🚀 {speed}",
       "done": "✅ Download completato, te lo sto inviando...",
+      "sent": "✅ Il tuo file è stato inviato.\n\n📥 Download: {download_time} ({download_speed})\n📤 Upload: {upload_time} ({upload_speed})",
       "sending_part": "📦 Invio parte {n} di {total}...",
+      "confirm_prompt": "📤 Come vuoi caricare questo link?\n\nNome: {name}\nDimensione: {size}",
+      "confirm_original_button": "Nome originale",
+      "confirm_rename_button": "Rinomina",
+      "rename_prompt": "Invia il nuovo nome del file:",
+      "size_unknown": "sconosciuto",
       "error": {
         "download_failed": "Il download non è riuscito, riprova.",
         "send_failed": "Il file è stato scaricato ma l'invio è fallito, riprova."

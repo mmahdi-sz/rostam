@@ -89,7 +89,9 @@ pub async fn handle_emoji_flow_message(
             eprintln!("[emoji_msg trace={trace_id} event=ip_lookup_skip] — handled in main");
             false
         }
-        FlowState::AwaitingSurgeUrlInput => {
+        FlowState::AwaitingSurgeUrlInput
+        | FlowState::AwaitingSurgeConfirm { .. }
+        | FlowState::AwaitingSurgeRenameInput { .. } => {
             eprintln!("[emoji_msg trace={trace_id} event=surge_dl_skip] — handled in main");
             false
         }
@@ -133,6 +135,8 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingPdfCompressLevel { .. } => "AwaitingPdfCompressLevel",
         FlowState::AwaitingIpLookupInput => "AwaitingIpLookupInput",
         FlowState::AwaitingSurgeUrlInput => "AwaitingSurgeUrlInput",
+        FlowState::AwaitingSurgeConfirm { .. } => "AwaitingSurgeConfirm",
+        FlowState::AwaitingSurgeRenameInput { .. } => "AwaitingSurgeRenameInput",
         FlowState::AwaitingAsrAudio => "AwaitingAsrAudio",
         FlowState::AwaitingAsrConfirm { .. } => "AwaitingAsrConfirm",
         FlowState::AwaitingAsrQueued { .. } => "AwaitingAsrQueued",

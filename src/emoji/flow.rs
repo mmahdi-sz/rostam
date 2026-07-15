@@ -37,6 +37,8 @@ pub enum FlowState {
     AwaitingPdfCompressLevel { file_id: String, filename: String },
     AwaitingIpLookupInput,
     AwaitingSurgeUrlInput,
+    AwaitingSurgeConfirm { url: String, filename: String },
+    AwaitingSurgeRenameInput { url: String, original_filename: String, prompt_message_id: i32 },
     AwaitingAsrAudio,
     AwaitingAsrConfirm { file_id: String, filename: String, duration_secs: f64 },
     AwaitingAsrQueued { file_id: String, filename: String, duration_secs: f64 },

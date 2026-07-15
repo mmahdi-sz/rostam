@@ -6,7 +6,7 @@ use std::time::Duration;
 use frankenstein::{
     AsyncTelegramApi,
     client_reqwest::Bot,
-    methods::DeleteMessageParams,
+    methods::{DeleteMessageParams, PinChatMessageParams, UnpinChatMessageParams},
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Notify;
@@ -39,8 +39,303 @@ pub fn spawn_download(
 ) {
     let cancel = register_cancel(request_id);
     tokio::spawn(async move {
+        // check اگر playlist است یا single video
+        if let Some(req_peek) = super::store::get_request(request_id) {
+            if req_peek.is_playlist && !req_peek.playlist_items.is_empty() {
+                run_playlist_download(api, request_id, selection, status_chat_id, status_message_id, cancel).await;
+                return;
+            }
+        }
         run_download(api, request_id, selection, status_chat_id, status_message_id, cancel).await
     });
+}
+
+async fn run_playlist_download(
+    api: Bot,
+    request_id: u64,
+    selection: Selection,
+    status_chat_id: i64,
+    status_message_id: i32,
+    _cancel: Arc<Notify>,
+) {
+    let Some(req) = super::store::take_request(request_id) else {
+        edit_status(&api, status_chat_id, status_message_id, t("youtube.download.request_expired")).await;
+        unregister_cancel(request_id);
+        return;
+    };
+    let _cancel_guard = UnregisterGuard(request_id);
+    let trace_id = req.trace_id;
+    let user_id = req.user_id.unwrap_or(0);
+    let stats_job_id = stats::record_download_start(user_id).await;
+    let total_videos = req.playlist_items.len();
+
+    log_trace(trace_id, "playlist_download_begin", &format!(
+        "total_videos={total_videos} height={} codec={}",
+        selection.height, selection.codec.key()
+    ));
+
+    // پیام شروع
+    let start_msg = tf(
+        "youtube.download.playlist.start",
+        &[("count", &total_videos.to_string())],
+    );
+    edit_status(&api, status_chat_id, status_message_id, start_msg).await;
+
+    // پیام وضعیت را پین می‌کنیم تا لای فایل‌های ارسالی گم نشود.
+    let _ = api.pin_chat_message(
+        &PinChatMessageParams::builder()
+            .chat_id(status_chat_id)
+            .message_id(status_message_id)
+            .disable_notification(true)
+            .build(),
+    ).await;
+
+    let mut sent = 0usize;
+    // (video_num, title, reason) برای هر ویدیویی که ارسال نشد
+    let mut failures: Vec<(usize, String, String)> = Vec::new();
+
+    for (idx, item) in req.playlist_items.iter().enumerate() {
+        let video_num = idx + 1;
+        let title_short = if item.title.chars().count() > 50 {
+            item.title.chars().take(50).collect::<String>() + "…"
+        } else {
+            item.title.clone()
+        };
+        let duration_str = item
+            .duration
+            .map(super::super::format::format_duration)
+            .unwrap_or_else(|| "-".to_string());
+        let progress_msg = tf(
+            "youtube.download.playlist.progress",
+            &[
+                ("num", &video_num.to_string()),
+                ("total", &total_videos.to_string()),
+                ("title", &title_short),
+                ("duration", &duration_str),
+            ],
+        );
+        edit_status(&api, status_chat_id, status_message_id, progress_msg).await;
+
+        // ساخت URL برای یک ویدیو
+        let video_url = format!("https://www.youtube.com/watch?v={}", item.id);
+
+        // دانلود + ارسال تک ویدیو به پیوی کاربر
+        match download_single_playlist_item(
+            &api, &video_url, &req, &selection, &item.title, video_num, total_videos, trace_id,
+        ).await {
+            Ok(bytes) => {
+                sent += 1;
+                if let Some(job_id) = stats_job_id {
+                    stats::record_upload_done(job_id, user_id, bytes as i64).await;
+                }
+            }
+            Err(reason) => {
+                log_trace(trace_id, "playlist_item_not_sent", &format!(
+                    "num={video_num} id={} reason={reason}", item.id
+                ));
+                failures.push((video_num, title_short.clone(), reason));
+            }
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    }
+
+    // گزارش نهایی: هر ویدیوی ناموفق تک‌تک با دلیل، و در آخر part sent/total
+    const MAX_LISTED: usize = 15;
+    let mut lines: Vec<String> = Vec::new();
+    if failures.is_empty() {
+        lines.push(t("youtube.download.playlist.done_header"));
+    } else {
+        lines.push(t("youtube.download.playlist.failures_header"));
+        for (num, title, reason) in failures.iter().take(MAX_LISTED) {
+            lines.push(tf(
+                "youtube.download.playlist.item_failed",
+                &[
+                    ("num", &num.to_string()),
+                    ("title", title),
+                    ("reason", reason),
+                ],
+            ));
+        }
+        if failures.len() > MAX_LISTED {
+            lines.push(tf(
+                "youtube.download.playlist.more_failures",
+                &[("n", &(failures.len() - MAX_LISTED).to_string())],
+            ));
+        }
+    }
+    lines.push(String::new());
+    let width = total_videos.to_string().len();
+    lines.push(tf(
+        "youtube.download.playlist.part_line",
+        &[
+            ("sent", &format!("{sent:0width$}")),
+            ("total", &format!("{total_videos:0width$}")),
+        ],
+    ));
+    edit_status(&api, status_chat_id, status_message_id, lines.join("\n")).await;
+
+    // آنپین پیام وضعیت — کار تمام شده و گزارش نهایی روی همان پیام است.
+    let _ = api.unpin_chat_message(
+        &UnpinChatMessageParams::builder()
+            .chat_id(status_chat_id)
+            .message_id(status_message_id)
+            .build(),
+    ).await;
+
+    log_trace(trace_id, "playlist_download_end", &format!(
+        "sent={sent} failed={} total={total_videos}", failures.len()
+    ));
+    if let Some(job_id) = stats_job_id {
+        stats::record_download_done(job_id, (sent as i64) * 100_000_000).await;
+    }
+}
+
+/// یک ویدیوی پلی‌لیست را در یک پوشه‌ی جدا دانلود، به پیوی کاربر ارسال، و پوشه را پاک می‌کند.
+/// `Ok(bytes)` = ارسال موفق؛ `Err(reason)` = دلیل خوانا برای گزارش کاربر.
+async fn download_single_playlist_item(
+    api: &Bot,
+    video_url: &str,
+    req: &super::types::YoutubeRequest,
+    selection: &Selection,
+    item_title: &str,
+    video_num: usize,
+    total_videos: usize,
+    trace_id: u64,
+) -> Result<u64, String> {
+    let height = selection.height;
+    let codec = selection.codec;
+
+    // یک پوشه‌ی جدا برای هر ویدیو تا فایل‌ها با هم قاطی نشوند
+    let dir = PathBuf::from(format!(
+        "{}/{trace_id}/pl_{video_num}",
+        crate::config::youtube_download_root()
+    ));
+    if let Err(e) = tokio::fs::create_dir_all(&dir).await {
+        log_trace(trace_id, "playlist_item_mkdir_failed", &format!("url={video_url} err={e}"));
+        return Err(e.to_string());
+    }
+
+    // به‌جای format_id ثابت (که فقط برای ویدیوی نماینده معتبر است) از انتخاب‌گر
+    // مبتنی بر ارتفاع/کدک استفاده می‌کنیم تا هر ویدیو فرمت خودش را انتخاب کند.
+    let vcodec_prefix = match codec {
+        super::super::types::VideoCodec::H264 => "avc1",
+        super::super::types::VideoCodec::H265 => "hevc",
+        super::super::types::VideoCodec::Vp9 => "vp9",
+        super::super::types::VideoCodec::Av1 => "av01",
+    };
+    let format_spec = format!(
+        "bestvideo[height<={height}][vcodec^={vcodec_prefix}]+bestaudio/bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
+    );
+
+    let output_template = format!("{}/%(id)s.%(ext)s", dir.display());
+    let mut cmd = tokio::process::Command::new("yt-dlp");
+    cmd.arg("--js-runtimes").arg(format!("deno:{}", crate::config::deno_path()))
+        .arg("--cookies-from-browser").arg(&req.cookie_spec)
+        .arg("--no-warnings").arg("--no-playlist")
+        .arg("-f").arg(&format_spec)
+        .arg("--merge-output-format").arg("mp4")
+        .arg("--print").arg("after_move:filepath")
+        .arg("-o").arg(&output_template);
+
+    // handling subtitles اگر موجود است
+    if !selection.subtitle_langs.is_empty() {
+        let sub_langs = selection.subtitle_langs.join(",");
+        cmd.arg("--write-subs").arg("--write-auto-subs")
+            .arg("--sub-langs").arg(&sub_langs);
+        if let SubtitleMode::Embedded = selection.subtitle_mode {
+            cmd.arg("--embed-subs");
+        } else {
+            cmd.arg("--convert-subs").arg("srt");
+        }
+    }
+
+    cmd.arg(video_url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let output = match cmd.output().await {
+        Ok(o) => o,
+        Err(e) => {
+            log_trace(trace_id, "playlist_item_spawn_failed", &format!("url={video_url} error={e}"));
+            cleanup_dir(&dir, trace_id).await;
+            return Err(e.to_string());
+        }
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let lower = stderr.to_ascii_lowercase();
+        let reason = if lower.contains("members-only") || lower.contains("join this channel") {
+            t("youtube.download.playlist.reason_members_only")
+        } else {
+            stderr.lines().rev().find(|l| !l.trim().is_empty())
+                .map(|l| {
+                    let l = l.trim();
+                    if l.chars().count() > 120 { l.chars().take(120).collect::<String>() + "…" } else { l.to_string() }
+                })
+                .unwrap_or_else(|| t("youtube.download.playlist.reason_no_format"))
+        };
+        log_trace(trace_id, "playlist_item_download_failed", &format!("url={video_url} reason={reason}"));
+        cleanup_dir(&dir, trace_id).await;
+        return Err(reason);
+    }
+
+    // فایل خروجی: از خط after_move:filepath یا بزرگ‌ترین فایل پوشه
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let path = stdout
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| l.starts_with('/') && !l.ends_with(".srt") && !l.ends_with(".vtt"))
+        .last()
+        .map(|s| s.to_string())
+        .filter(|p| std::path::Path::new(p).exists())
+        .or_else(|| pick_largest_file(&dir));
+    let Some(path) = path else {
+        log_trace(trace_id, "playlist_item_no_file", &format!("url={video_url}"));
+        cleanup_dir(&dir, trace_id).await;
+        return Err(t("youtube.download.playlist.reason_no_file"));
+    };
+
+    let file_size_bytes = tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0);
+
+    // کپشن مثل دانلود تکی
+    let quality_label = quality_label_for(height);
+    let codec_name = t(codec.label_key());
+    let bitrate_str = find_format(req, height, codec)
+        .and_then(|f| f.bitrate)
+        .map(|b| format!("{b:.0}"))
+        .unwrap_or_else(|| "?".to_string());
+    let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
+    let bot_username = crate::config::bot_username().to_string();
+    let width = total_videos.to_string().len();
+    let caption = tf("youtube.download.playlist.caption", &[
+        ("title", item_title),
+        ("part", &format!("{video_num:0width$}")),
+        ("total", &format!("{total_videos:0width$}")),
+        ("quality", &quality_label),
+        ("codec", &codec_name),
+        ("bitrate", &bitrate_str),
+        ("username", &bot_username),
+    ]);
+    let caption_entities = entities_for_text(&caption);
+    let params = build_single_params(
+        &path, req.chat_id, &thumb_path, caption, caption_entities, height, None,
+    );
+
+    log_trace(trace_id, "playlist_item_upload_start", &format!("num={video_num} path={path} size={file_size_bytes}"));
+    let send_res = api.send_video(&params).await;
+    cleanup_dir(&dir, trace_id).await;
+    match send_res {
+        Ok(_) => {
+            log_trace(trace_id, "playlist_item_upload_ok", &format!("num={video_num}"));
+            Ok(file_size_bytes)
+        }
+        Err(e) => {
+            log_trace(trace_id, "playlist_item_upload_failed", &format!("num={video_num} err={e}"));
+            Err(e.to_string())
+        }
+    }
 }
 
 async fn run_download(

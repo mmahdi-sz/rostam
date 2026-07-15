@@ -79,4 +79,6 @@ pub struct YoutubeRequest {
     pub audio_languages: Vec<AudioLanguage>,
     pub subtitle_languages: Vec<SubtitleLanguage>,
     pub selection: Arc<Mutex<Option<Selection>>>,
+    pub is_playlist: bool,
+    pub playlist_items: Vec<super::super::types::PlaylistItem>,
 }

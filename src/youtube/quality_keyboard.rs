@@ -83,6 +83,8 @@ pub async fn send_quality_prompt(
         audio_languages: info.audio_languages.clone(),
         subtitle_languages: info.subtitle_languages.clone(),
         selection: Arc::new(Mutex::new(None)),
+        is_playlist: info.is_playlist,
+        playlist_items: info.playlist_items.clone(),
     };
     let request_id = store_request(request);
 
@@ -99,7 +101,19 @@ pub async fn send_quality_prompt(
             info.available_heights
         ),
     );
-    let raw = t("youtube.quality.prompt");
+    let raw = if info.is_playlist {
+        let count = info.playlist_item_count.unwrap_or(0);
+        format!(
+            "{}\n\n{}",
+            t("youtube.quality.prompt"),
+            crate::i18n::tf(
+                "youtube.quality.playlist_suffix",
+                &[("count", &crate::i18n::to_fa_digits(&count.to_string()))]
+            )
+        )
+    } else {
+        t("youtube.quality.prompt")
+    };
     let text = apply_premium_to_md(&raw);
     api.send_message(
         &SendMessageParams::builder()

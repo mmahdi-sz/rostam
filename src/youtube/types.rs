@@ -13,6 +13,16 @@ pub struct VideoInfo {
     pub video_formats: Vec<VideoFormatOption>,
     pub audio_languages: Vec<AudioLanguage>,
     pub subtitle_languages: Vec<SubtitleLanguage>,
+    pub is_playlist: bool,
+    pub playlist_item_count: Option<usize>,
+    pub playlist_items: Vec<PlaylistItem>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlaylistItem {
+    pub id: String,
+    pub title: String,
+    pub duration: Option<u64>,
 }
 
 #[derive(Clone, Debug)]

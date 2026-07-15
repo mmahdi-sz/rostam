@@ -6,13 +6,13 @@ use frankenstein::{
     AsyncTelegramApi,
     client_reqwest::Bot,
     methods::{EditMessageTextParams, SendDocumentParams, SendMessageParams},
-    types::{InlineKeyboardMarkup, Message},
+    types::{InlineKeyboardMarkup, Message, ReplyMarkup},
 };
 use crate::bot::edit_to_tools;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::panel::btn_icon;
 use crate::emoji::{FlowManager, FlowState};
-use crate::i18n::{t, tf};
+use crate::i18n::{entities_for_text, t, tf};
 use crate::log::next_trace_id;
 use crate::rank;
 
@@ -27,10 +27,24 @@ const POLL_INTERVAL_SECS: u64 = 3;
 
 pub const CB_TOOLS_SURGE: &str = "tools:surge";
 pub const CB_SURGE_CANCEL: &str = "surge:cancel";
+pub const CB_SURGE_CONFIRM_ORIGINAL: &str = "surge:confirm:orig";
+pub const CB_SURGE_CONFIRM_RENAME: &str = "surge:confirm:rename";
 
 fn cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![vec![btn_icon(&t("start.back"), CB_SURGE_CANCEL, "back")]])
+        .build()
+}
+
+fn confirm_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![
+            vec![
+                btn_icon(&t("surge.confirm_original_button"), CB_SURGE_CONFIRM_ORIGINAL, "check"),
+                btn_icon(&t("surge.confirm_rename_button"), CB_SURGE_CONFIRM_RENAME, "edit"),
+            ],
+            vec![btn_icon(&t("start.back"), CB_SURGE_CANCEL, "back")],
+        ])
         .build()
 }
 
@@ -42,11 +56,14 @@ pub async fn enter_surge_dl(
     let trace_id = next_trace_id();
     log_actor_id!("surge_dl", trace_id, user_id, "clicked" => CB_TOOLS_SURGE);
     flow_manager.set(user_id, FlowState::AwaitingSurgeUrlInput);
-    let params = EditMessageTextParams::builder()
+    let text = t("surge.prompt");
+    let entities = entities_for_text(&text);
+    let mut params = EditMessageTextParams::builder()
         .chat_id(chat_id).message_id(message_id)
-        .text(t("surge.prompt"))
+        .text(text)
         .reply_markup(cancel_keyboard())
         .build();
+    if !entities.is_empty() { params.entities = Some(entities); }
     let r = api.edit_message_text(&params).await;
     log_ev!("surge_dl", trace_id, "prompt_shown", "=>" => if r.is_ok() { "ok" } else { "fail" });
 }
@@ -62,7 +79,7 @@ pub async fn handle_surge_cancel(
 
 // ── URL intake ─────────────────────────────────────────────────────────────
 
-fn is_direct_link(text: &str) -> bool {
+pub fn is_direct_link(text: &str) -> bool {
     let text = text.trim();
     text.starts_with("http://") || text.starts_with("https://")
 }
@@ -111,26 +128,107 @@ pub async fn handle_surge_text(
         }
     }
 
-    flow_manager.clear(user_id);
     log_ev!("surge_dl", trace_id, "url_accepted", "url" => url);
 
-    let params = SendMessageParams::builder()
+    let (filename, size_bytes) = probe_url(url).await;
+    log_ev!("surge_dl", trace_id, "probed", "name" => &filename, "size" => format!("{size_bytes:?}"));
+
+    flow_manager.set(user_id, FlowState::AwaitingSurgeConfirm {
+        url: url.to_string(), filename: filename.clone(),
+    });
+
+    let size_label = size_bytes.map(fmt_bytes).unwrap_or_else(|| t("surge.size_unknown"));
+    let text = tf("surge.confirm_prompt", &[("name", &filename), ("size", &size_label)]);
+    let entities = entities_for_text(&text);
+    let mut params = SendMessageParams::builder()
         .chat_id(chat_id)
-        .text(t("surge.queued"))
+        .text(text)
+        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(confirm_keyboard()))
         .build();
-    let status_message_id = match api.send_message(&params).await {
-        Ok(r) => r.result.message_id,
-        Err(e) => {
-            log_ev!("surge_dl", trace_id, "queue_message_failed", "=>" => format!("fail err={e}"));
-            return;
-        }
+    if !entities.is_empty() { params.entities = Some(entities); }
+    let r = api.send_message(&params).await;
+    log_ev!("surge_dl", trace_id, "confirm_shown", "=>" => if r.is_ok() { "ok" } else { "fail" });
+}
+
+// ── confirm / rename ──────────────────────────────────────────────────────────
+
+async fn start_surge_job(
+    api: &Bot, chat_id: i64, message_id: i32, user_id: i64,
+    url: String, rename_to: Option<String>, trace_id: u64,
+) {
+    let text = t("surge.queued");
+    let entities = entities_for_text(&text);
+    let mut params = EditMessageTextParams::builder()
+        .chat_id(chat_id).message_id(message_id).text(text).build();
+    if !entities.is_empty() { params.entities = Some(entities); }
+    if let Err(e) = api.edit_message_text(&params).await {
+        log_ev!("surge_dl", trace_id, "queue_edit_failed", "=>" => format!("fail err={e}"));
+    }
+    let api2 = api.clone();
+    tokio::spawn(async move {
+        run_surge_download(api2, chat_id, message_id, user_id, url, rename_to, trace_id).await;
+    });
+}
+
+pub async fn handle_surge_confirm_original(
+    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &mut FlowManager,
+) {
+    let trace_id = next_trace_id();
+    log_actor_id!("surge_dl", trace_id, user_id, "clicked" => CB_SURGE_CONFIRM_ORIGINAL);
+    let FlowState::AwaitingSurgeConfirm { url, .. } = flow_manager.get(user_id) else {
+        log_ev!("surge_dl", trace_id, "confirm_stale", "=>" => "ignored");
+        return;
+    };
+    flow_manager.clear(user_id);
+    start_surge_job(api, chat_id, message_id, user_id, url, None, trace_id).await;
+}
+
+pub async fn handle_surge_confirm_rename(
+    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &mut FlowManager,
+) {
+    let trace_id = next_trace_id();
+    log_actor_id!("surge_dl", trace_id, user_id, "clicked" => CB_SURGE_CONFIRM_RENAME);
+    let FlowState::AwaitingSurgeConfirm { url, filename, .. } = flow_manager.get(user_id) else {
+        log_ev!("surge_dl", trace_id, "confirm_stale", "=>" => "ignored");
+        return;
+    };
+    flow_manager.set(user_id, FlowState::AwaitingSurgeRenameInput {
+        url, original_filename: filename, prompt_message_id: message_id,
+    });
+    let params = EditMessageTextParams::builder()
+        .chat_id(chat_id).message_id(message_id)
+        .text(t("surge.rename_prompt"))
+        .build();
+    let r = api.edit_message_text(&params).await;
+    log_ev!("surge_dl", trace_id, "rename_prompt_shown", "=>" => if r.is_ok() { "ok" } else { "fail" });
+}
+
+pub async fn handle_surge_rename_text(
+    api: &Bot, message: &Message, user_id: i64, flow_manager: &mut FlowManager,
+) {
+    let trace_id = next_trace_id();
+    let chat_id = message.chat.id;
+    log_actor_id!("surge_dl", trace_id, user_id, "clicked" => "send_surge_rename");
+
+    let FlowState::AwaitingSurgeRenameInput { url, original_filename, prompt_message_id } = flow_manager.get(user_id) else {
+        return;
+    };
+    let Some(typed) = message.text.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
     };
 
-    let api2 = api.clone();
-    let url_owned = url.to_string();
-    tokio::spawn(async move {
-        run_surge_download(api2, chat_id, status_message_id, user_id, url_owned, trace_id).await;
-    });
+    let new_name = if typed.contains('.') {
+        typed.to_string()
+    } else {
+        match std::path::Path::new(&original_filename).extension().and_then(|e| e.to_str()) {
+            Some(ext) => format!("{typed}.{ext}"),
+            None => typed.to_string(),
+        }
+    };
+    flow_manager.clear(user_id);
+    log_ev!("surge_dl", trace_id, "rename_accepted", "name" => &new_name);
+
+    start_surge_job(api, chat_id, prompt_message_id, user_id, url, Some(new_name), trace_id).await;
 }
 
 // ── download orchestration ───────────────────────────────────────────────────
@@ -147,7 +245,8 @@ struct SurgeDetail {
 }
 
 async fn run_surge_download(
-    api: Bot, chat_id: i64, message_id: i32, user_id: i64, url: String, trace_id: u64,
+    api: Bot, chat_id: i64, message_id: i32, user_id: i64, url: String,
+    rename_to: Option<String>, trace_id: u64,
 ) {
     let stats_job_id = crate::stats::record_download_start(user_id).await;
     let dir = format!("{}/{user_id}", crate::config::surge_downloads_root());
@@ -176,6 +275,7 @@ async fn run_surge_download(
     };
     log_ev!("surge_dl", trace_id, "job_found", "id" => &job_id);
 
+    let download_start = std::time::Instant::now();
     let mut last_percent: i64 = -1;
     let mut elapsed = 0u64;
     let detail = loop {
@@ -192,7 +292,15 @@ async fn run_surge_download(
                     "percent" => percent, "speed" => fmt_speed(d.speed));
                 if percent != last_percent {
                     last_percent = percent;
-                    edit_status(&api, chat_id, message_id, &tf("surge.progress", &[("percent", &percent.to_string())])).await;
+                    let body = tf("surge.progress", &[
+                        ("name", &d.filename),
+                        ("bar", &build_bar(percent as f32)),
+                        ("percent", &percent.to_string()),
+                        ("downloaded", &fmt_bytes(d.downloaded)),
+                        ("total", &fmt_bytes(d.total_size)),
+                        ("speed", &fmt_speed(d.speed)),
+                    ]);
+                    edit_status(&api, chat_id, message_id, &body).await;
                 }
             }
             None => {}
@@ -211,25 +319,42 @@ async fn run_surge_download(
         crate::stats::record_event_user(user_id, "surge_dl", "download", "fail", 0).await;
         return;
     };
+    let download_elapsed = download_start.elapsed();
 
     log_ev!("surge_dl", trace_id, "download_done", "filename" => &detail.filename, "path" => &detail.dest_path,
         "size" => fmt_bytes(detail.downloaded), "avg_speed" => fmt_speed(detail.avg_speed));
     edit_status(&api, chat_id, message_id, &t("surge.done")).await;
 
     let file_path = PathBuf::from(&detail.dest_path);
+    let file_path = match rename_to {
+        Some(new_name) => {
+            let renamed = file_path.with_file_name(&new_name);
+            match tokio::fs::rename(&file_path, &renamed).await {
+                Ok(()) => {
+                    log_ev!("surge_dl", trace_id, "renamed", "to" => &new_name);
+                    renamed
+                }
+                Err(e) => {
+                    log_ev!("surge_dl", trace_id, "rename_failed", "=>" => format!("fail err={e}"));
+                    file_path
+                }
+            }
+        }
+        None => file_path,
+    };
+    let upload_start = std::time::Instant::now();
     let result = if detail.downloaded <= MAX_PART_BYTES {
         send_single_file(&api, chat_id, &file_path).await
     } else {
         send_split_file(&api, chat_id, &file_path, trace_id).await
     };
+    let upload_elapsed = upload_start.elapsed();
 
     match result {
         Ok(()) => {
             log_ev!("surge_dl", trace_id, "result_sent", "=>" => "ok");
-            let _ = api.delete_message(
-                &frankenstein::methods::DeleteMessageParams::builder()
-                    .chat_id(chat_id).message_id(message_id).build(),
-            ).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            show_sent_menu(&api, chat_id, message_id, detail.downloaded, download_elapsed, upload_elapsed).await;
             if let Some(jid) = stats_job_id {
                 crate::stats::record_upload_done(jid, user_id, detail.downloaded as i64).await;
                 log_ev!("surge_dl", trace_id, "traffic_added", "bytes" => detail.downloaded);
@@ -282,11 +407,13 @@ async fn send_split_file(
     let total = parts.len();
     for (i, part) in parts.iter().enumerate() {
         let caption = tf("surge.sending_part", &[("n", &(i + 1).to_string()), ("total", &total.to_string())]);
-        let params = SendDocumentParams::builder()
+        let caption_entities = entities_for_text(&caption);
+        let mut params = SendDocumentParams::builder()
             .chat_id(chat_id)
             .document(part.clone())
             .caption(&caption)
             .build();
+        if !caption_entities.is_empty() { params.caption_entities = Some(caption_entities); }
         api.send_document(&params).await?;
         log_ev!("surge_dl", trace_id, "part_sent", "n" => i + 1, "total" => total);
     }
@@ -313,6 +440,78 @@ async fn list_rar_parts(archive_base: &Path) -> Result<Vec<PathBuf>, Box<dyn std
     }
     parts.sort();
     Ok(parts)
+}
+
+// ── link preview (name + size before committing to a download) ───────────────
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+fn filename_from_url(url: &str) -> String {
+    let no_query = url.split('?').next().unwrap_or(url);
+    let name = no_query.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or("file");
+    percent_decode(name)
+}
+
+fn extract_content_disposition_filename(header: &str) -> Option<String> {
+    header.split(';').find_map(|part| {
+        part.trim().strip_prefix("filename=").map(|v| v.trim_matches('"').to_string())
+    })
+}
+
+/// حدس اسم + حجم فایل با یه درخواست HEAD قبل از شروع دانلود واقعی — surge CLI
+/// حالت dry-run نداره (فقط `add` که واقعاً دانلود رو شروع می‌کنه)، پس این فقط
+/// یه پیش‌نمایشه؛ اگه HEAD رد بشه یا هدر نداشته باشه، با بهترین حدس ادامه می‌دیم.
+async fn probe_url(url: &str) -> (String, Option<u64>) {
+    let fallback = filename_from_url(url);
+    // بعضی سرورها (مثل thinkbroadband) بدون User-Agent با 403 و یه صفحه‌ی خطای
+    // کوچیک جواب می‌دن — بدون این هدر و بدون چک status، حجمِ همون صفحه‌ی خطا رو
+    // به اشتباه به عنوان حجم فایل برمی‌گردونیم.
+    let resp = match reqwest::Client::new()
+        .head(url)
+        .header(reqwest::header::USER_AGENT, "Mozilla/5.0")
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => r,
+        _ => return (fallback, None),
+    };
+    let filename = resp.headers().get(reqwest::header::CONTENT_DISPOSITION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(extract_content_disposition_filename)
+        .map(|s| percent_decode(&s))
+        .unwrap_or(fallback);
+    let size = resp.headers().get(reqwest::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok());
+    (filename, size)
+}
+
+fn build_bar(percent: f32) -> String {
+    let total = 10usize;
+    let filled = ((percent / 10.0).round() as i32).clamp(0, total as i32) as usize;
+    let mut s = String::new();
+    for _ in 0..filled { s.push('●'); }
+    for _ in 0..(total - filled) { s.push('○'); }
+    s
 }
 
 fn now_epoch() -> i64 {
@@ -352,9 +551,51 @@ fn fmt_speed(mb_per_sec: f64) -> String {
     format!("{mb_per_sec:.2}MB/s")
 }
 
+fn fmt_elapsed(d: Duration) -> String {
+    let s = d.as_secs();
+    format!("{:02}:{:02}", s / 60, s % 60)
+}
+
+/// حجم/زمان — چون تلگرام سرعت آپلود رو گزارش نمی‌ده (برخلاف دانلود که خودِ surge گزارش می‌ده).
+fn fmt_speed_from(bytes: u64, elapsed: Duration) -> String {
+    let secs = elapsed.as_secs_f64().max(0.001);
+    let mb_per_sec = bytes as f64 / (1024.0 * 1024.0) / secs;
+    fmt_speed(mb_per_sec)
+}
+
+async fn show_sent_menu(
+    api: &Bot, chat_id: i64, message_id: i32,
+    bytes: u64, download_elapsed: Duration, upload_elapsed: Duration,
+) {
+    let _ = api.delete_message(
+        &frankenstein::methods::DeleteMessageParams::builder()
+            .chat_id(chat_id).message_id(message_id).build(),
+    ).await;
+
+    let is_admin = crate::config::admin_user_id().map(|id| id == chat_id).unwrap_or(false);
+    // زمان‌ها رو خودمون اندازه می‌گیریم و سرعت رو از تقسیم حجم بر زمان حساب می‌کنیم —
+    // فیلد avg_speed خودِ surge واحدش قابل‌اعتماد نبود (برای دانلود ۹ثانیه‌ای عددی
+    // مثل ۱۶۱۸۵۳۹۰۶٫۷۳MB/s برمی‌گردوند).
+    let text = tf("surge.sent", &[
+        ("download_time", &fmt_elapsed(download_elapsed)),
+        ("download_speed", &fmt_speed_from(bytes, download_elapsed)),
+        ("upload_time", &fmt_elapsed(upload_elapsed)),
+        ("upload_speed", &fmt_speed_from(bytes, upload_elapsed)),
+    ]);
+    let entities = entities_for_text(&text);
+    let mut params = SendMessageParams::builder()
+        .chat_id(chat_id).text(text)
+        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(crate::bot::start_menu_keyboard(is_admin)))
+        .build();
+    if !entities.is_empty() { params.entities = Some(entities); }
+    let _ = api.send_message(&params).await;
+}
+
 async fn edit_status(api: &Bot, chat_id: i64, message_id: i32, text: &str) {
-    let params = EditMessageTextParams::builder()
+    let entities = entities_for_text(text);
+    let mut params = EditMessageTextParams::builder()
         .chat_id(chat_id).message_id(message_id).text(text).build();
+    if !entities.is_empty() { params.entities = Some(entities); }
     let _ = api.edit_message_text(&params).await;
 }
 

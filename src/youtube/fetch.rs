@@ -26,9 +26,9 @@ pub async fn fetch_video_info(
         .arg("--cookies-from-browser")
         .arg(yt_dlp_browser_spec)
         .arg("--dump-single-json")
+        .arg("--flat-playlist")
         .arg("--no-download")
         .arg("--no-warnings")
-        .arg("--no-playlist")
         .arg("--ignore-no-formats-error")
         .arg(url)
         .stdout(std::process::Stdio::piped())
@@ -101,6 +101,13 @@ pub async fn fetch_video_info(
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| FetchError::Other(format!("failed to parse yt-dlp json: {e}")))?;
 
+    // تشخیص: آیا playlist است یا video تک؟
+    let is_playlist = json
+        .get("_type")
+        .and_then(|v| v.as_str())
+        .map(|t| t == "playlist")
+        .unwrap_or(false);
+
     let title = json
         .get("title")
         .and_then(|v| v.as_str())
@@ -125,7 +132,15 @@ pub async fn fetch_video_info(
     let thumbnail = json
         .get("thumbnail")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(|s| s.to_string())
+        .or_else(|| {
+            json.get("thumbnails")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.last())
+                .and_then(|t| t.get("url"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        });
     let webpage_url = json
         .get("webpage_url")
         .and_then(|v| v.as_str())
@@ -136,10 +151,10 @@ pub async fn fetch_video_info(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .filter(|s| !s.trim().is_empty());
-    let video_formats = extract_video_formats(&json);
-    let available_heights = available_heights(&video_formats);
-    let audio_languages = extract_audio_languages(&json);
-    let subtitle_languages = extract_subtitle_languages(&json);
+    let mut video_formats = extract_video_formats(&json);
+    let mut available_heights = available_heights(&video_formats);
+    let mut audio_languages = extract_audio_languages(&json);
+    let mut subtitle_languages = extract_subtitle_languages(&json);
     let format_count = json
         .get("formats")
         .and_then(|v| v.as_array())
@@ -161,11 +176,50 @@ pub async fn fetch_video_info(
         .map(|s| format!("{}{}", s.code, if s.is_auto { "(auto)" } else { "" }))
         .collect::<Vec<_>>()
         .join(",");
+    let (playlist_item_count, playlist_items) = if is_playlist {
+        match fetch_playlist_items(trace_id, url, yt_dlp_browser_spec).await {
+            Ok((count, items)) => {
+                log_trace(trace_id, "playlist_items_fetched", &format!("count={}", count));
+                (Some(count), items)
+            }
+            Err(e) => {
+                log_trace(trace_id, "playlist_items_fetch_failed", &e.to_string());
+                (None, Vec::new())
+            }
+        }
+    } else {
+        (None, Vec::new())
+    };
+
+    // پلی‌لیست فرمت ندارد (flat-playlist)؛ فرمت‌های ویدیوی اول را به‌عنوان نماینده‌ی کل پلی‌لیست می‌گیریم
+    // (format id ها مثل itag استاندارد یوتیوب هستند و بین ویدیوهای پلی‌لیست معمولاً یکسان کار می‌کنند).
+    if is_playlist {
+        if let Some(first) = playlist_items.first() {
+            let video_url = format!("https://www.youtube.com/watch?v={}", first.id);
+            match Box::pin(fetch_video_info(trace_id, &video_url, yt_dlp_browser_spec)).await {
+                Ok(rep) => {
+                    log_trace(
+                        trace_id,
+                        "playlist_representative_formats",
+                        &format!("video_id={} heights={:?}", first.id, rep.available_heights),
+                    );
+                    video_formats = rep.video_formats;
+                    available_heights = rep.available_heights;
+                    audio_languages = rep.audio_languages;
+                    subtitle_languages = rep.subtitle_languages;
+                }
+                Err(e) => {
+                    log_trace(trace_id, "playlist_representative_fetch_failed", &format!("{e:?}"));
+                }
+            }
+        }
+    }
+
     log_trace(
         trace_id,
         "fetch_parsed",
         &format!(
-            "format_count={format_count} requested_format_count={requested_format_count} heights={available_heights:?} codecs={codec_summary} audio_langs={audio_summary} sub_langs={sub_summary}"
+            "is_playlist={is_playlist} format_count={format_count} requested_format_count={requested_format_count} heights={available_heights:?} codecs={codec_summary} audio_langs={audio_summary} sub_langs={sub_summary}"
         ),
     );
 
@@ -183,7 +237,83 @@ pub async fn fetch_video_info(
         video_formats,
         audio_languages,
         subtitle_languages,
+        is_playlist,
+        playlist_item_count,
+        playlist_items,
     })
+}
+
+async fn fetch_playlist_items(
+    trace_id: u64,
+    url: &str,
+    yt_dlp_browser_spec: &str,
+) -> Result<(usize, Vec<super::types::PlaylistItem>), String> {
+    let child = Command::new("yt-dlp")
+        .arg("--js-runtimes")
+        .arg(format!("deno:{}", crate::config::deno_path()))
+        .arg("--cookies-from-browser")
+        .arg(yt_dlp_browser_spec)
+        .arg("--dump-json")
+        .arg("--flat-playlist")
+        .arg("--no-download")
+        .arg("--no-warnings")
+        .arg(url)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| format!("failed to spawn yt-dlp for playlist: {e}"))?;
+
+    let output = match tokio::time::timeout(FETCH_TIMEOUT, child.wait_with_output()).await {
+        Ok(result) => result.map_err(|e| format!("failed to run yt-dlp for playlist: {e}"))?,
+        Err(_) => {
+            log_trace(trace_id, "playlist_fetch_timeout", "yt-dlp timed out");
+            return Err(format!("yt-dlp timed out after {}s", FETCH_TIMEOUT.as_secs()));
+        }
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log_trace(trace_id, "playlist_yt_dlp_failed", stderr.lines().last().unwrap_or(""));
+        return Err(format!("yt-dlp failed: {}", stderr.lines().last().unwrap_or("")));
+    }
+
+    // --dump-json روی یک پلی‌لیست، برای هر ویدیو یک خط JSON جدا چاپ می‌کند (NDJSON)، نه یک JSON واحد.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut items = Vec::new();
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        {
+            if let (Some(id), Some(title)) = (
+                entry.get("id").and_then(|v| v.as_str()),
+                entry.get("title").and_then(|v| v.as_str()),
+            ) {
+                let duration = entry
+                    .get("duration")
+                    .and_then(|v| v.as_f64())
+                    .map(|d| d as u64);
+                items.push(super::types::PlaylistItem {
+                    id: id.to_string(),
+                    title: title.to_string(),
+                    duration,
+                });
+            }
+        }
+    }
+
+    let count = items.len();
+    log_trace(
+        trace_id,
+        "playlist_items_parsed",
+        &format!("count={}", count),
+    );
+    Ok((count, items))
 }
 
 fn extract_audio_languages(json: &serde_json::Value) -> Vec<AudioLanguage> {
