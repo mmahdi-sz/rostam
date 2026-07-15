@@ -1,4 +1,7 @@
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=files/runtime/libvosk.so");
+
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let runtime = std::path::Path::new(&manifest_dir).join("files/runtime");
     if runtime.exists() {
