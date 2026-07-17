@@ -235,6 +235,14 @@ async fn download_file(api: &Bot, file_id: &str, dest: &str) -> Result<(), Box<d
     // Local Bot API returns an absolute filesystem path in --local mode.
     // In that case, copy directly from the filesystem.
     if file_path.starts_with('/') {
+        let allowed_prefix = std::env::var("TELEGRAM_LOCAL_STORAGE_DIR")
+            .unwrap_or_else(|_| "/var/lib/telegram-bot-api".to_string());
+        let canonical = std::path::Path::new(&file_path).canonicalize().ok();
+        let is_safe = canonical.as_ref().map_or(false, |p| p.starts_with(&allowed_prefix))
+            || file_path.starts_with(&allowed_prefix);
+        if !is_safe {
+            return Err("file path outside allowed local directory".into());
+        }
         std::fs::copy(&file_path, dest)?;
         return Ok(());
     }
@@ -276,10 +284,17 @@ pub async fn handle_stt_audio(
     let wav_path = work_dir.join("converted.wav");
     let denoised_path = work_dir.join("denoised.wav");
 
+    let (Some(input_str), Some(wav_str), Some(denoised_str)) =
+        (input_path.to_str(), wav_path.to_str(), denoised_path.to_str()) else {
+        log_trace(trace_id, "stt_invalid_path", "invalid UTF-8 path");
+        clean_up(&work_dir);
+        return;
+    };
+
     let overall_start = Instant::now();
 
     // 1. Download
-    if let Err(e) = download_file(api, file_id, input_path.to_str().unwrap()).await.map_err(|e| e.to_string()) {
+    if let Err(e) = download_file(api, file_id, input_str).await.map_err(|e| e.to_string()) {
         log_trace(trace_id, "stt_download_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
         crate::stats::record_error_global("stt", &format!("download failed: {e}")).await;
@@ -290,10 +305,10 @@ pub async fn handle_stt_audio(
     log_trace(trace_id, "stt_downloaded", "");
 
     // 2. Convert to WAV — blocking (std::process::Command), run on thread pool
-    let input_str = input_path.to_str().unwrap().to_string();
-    let wav_str = wav_path.to_str().unwrap().to_string();
+    let input_str_owned = input_str.to_string();
+    let wav_str_owned = wav_str.to_string();
     if let Err(e) = tokio::task::spawn_blocking(move || {
-        convert_to_wav(&input_str, &wav_str).map_err(|e| e.to_string())
+        convert_to_wav(&input_str_owned, &wav_str_owned).map_err(|e| e.to_string())
     }).await.unwrap_or_else(|e| Err(e.to_string())) {
         log_trace(trace_id, "stt_convert_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
@@ -304,7 +319,7 @@ pub async fn handle_stt_audio(
     }
     log_trace(trace_id, "stt_converted", "");
 
-    let audio_duration = wav_duration(wav_path.to_str().unwrap()).unwrap_or(0.0);
+    let audio_duration = wav_duration(wav_str).unwrap_or(0.0);
     let duration_secs = audio_duration.ceil() as u64;
 
     // 3. Quota check — بعد از دونستن طول فایل
@@ -386,8 +401,8 @@ pub async fn handle_stt_audio(
 
     // 3. Optional denoise — blocking (std::process::Command), run on thread pool
     let denoise_secs = if config.denoise {
-        let wav_in = wav_path.to_str().unwrap().to_string();
-        let wav_out = denoised_path.to_str().unwrap().to_string();
+        let wav_in = wav_str.to_string();
+        let wav_out = denoised_str.to_string();
         match tokio::task::spawn_blocking(move || {
             deepfilter::denoise(&wav_in, &wav_out).map_err(|e| e.to_string())
         }).await.unwrap_or_else(|e| Err(e.to_string())) {
@@ -408,9 +423,9 @@ pub async fn handle_stt_audio(
 
     // 4. Transcribe — CPU-heavy blocking, run on thread pool
     let audio_source = if config.denoise {
-        denoised_path.to_str().unwrap().to_string()
+        denoised_str.to_string()
     } else {
-        wav_path.to_str().unwrap().to_string()
+        wav_str.to_string()
     };
     let config_clone = config.clone();
     let (text, processing_secs) = match tokio::task::spawn_blocking(move || {

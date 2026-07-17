@@ -125,8 +125,15 @@ pub async fn handle_denoise_audio(
     let denoised_path = work_dir.join("denoised.wav");
     let output_path = work_dir.join(&clean_filename);
 
+    let (Some(input_str), Some(wav_str), Some(denoised_str), Some(output_str)) =
+        (input_path.to_str(), wav_path.to_str(), denoised_path.to_str(), output_path.to_str()) else {
+        log_trace(trace_id, "denoise_invalid_path", "invalid UTF-8 path");
+        clean_up(&work_dir);
+        return;
+    };
+
     // 1. Download
-    if let Err(e) = download_file(api, file_id, input_path.to_str().unwrap()).await {
+    if let Err(e) = download_file(api, file_id, input_str).await {
         log_trace(trace_id, "denoise_download_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "denoise", "", "fail", 0).await;
         crate::stats::record_error_global("denoise", &format!("download failed: {e}")).await;
@@ -134,11 +141,11 @@ pub async fn handle_denoise_audio(
         clean_up(&work_dir);
         return;
     }
-    let file_size = std::fs::metadata(input_path.to_str().unwrap()).map(|m| m.len()).unwrap_or(0);
+    let file_size = std::fs::metadata(input_str).map(|m| m.len()).unwrap_or(0);
     log_trace(trace_id, "denoise_downloaded", &format!("size={file_size}"));
 
     // 2. Convert to 48kHz mono 16-bit PCM WAV (DeepFilterNet optimal sample rate)
-    if let Err(e) = convert_to_wav(input_path.to_str().unwrap(), wav_path.to_str().unwrap(), 48000) {
+    if let Err(e) = convert_to_wav(input_str, wav_str, 48000) {
         log_trace(trace_id, "denoise_convert_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "denoise", "", "fail", 0).await;
         crate::stats::record_error_global("denoise", &format!("convert failed: {e}")).await;
@@ -149,7 +156,7 @@ pub async fn handle_denoise_audio(
     log_trace(trace_id, "denoise_converted", "");
 
     // Determine audio duration from WAV header
-    let audio_duration = wav_duration(wav_path.to_str().unwrap()).unwrap_or(0.0);
+    let audio_duration = wav_duration(wav_str).unwrap_or(0.0);
     let duration_secs = audio_duration.ceil() as u64;
 
     // quota check
@@ -206,7 +213,7 @@ pub async fn handle_denoise_audio(
     }
 
     // 3. Denoise via DeepFilterNet
-    let processing_secs = match deepfilter::denoise(wav_path.to_str().unwrap(), denoised_path.to_str().unwrap()) {
+    let processing_secs = match deepfilter::denoise(wav_str, denoised_str) {
         Ok(s) => {
             log_trace(trace_id, "denoise_done", &format!("elapsed={s:.1}s"));
             s
@@ -222,7 +229,7 @@ pub async fn handle_denoise_audio(
     };
 
     // 4. Convert back to original format
-    if let Err(e) = convert_from_wav(denoised_path.to_str().unwrap(), output_path.to_str().unwrap(), &orig_ext) {
+    if let Err(e) = convert_from_wav(denoised_str, output_str, &orig_ext) {
         log_trace(trace_id, "denoise_reconvert_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "denoise", "", "fail", duration_secs as i64).await;
         crate::stats::record_error_global("denoise", &format!("reconvert failed: {e}")).await;
@@ -240,7 +247,7 @@ pub async fn handle_denoise_audio(
     if is_voice {
         let params = SendVoiceParams::builder()
             .chat_id(chat_id)
-            .voice(PathBuf::from(output_path.to_str().unwrap()))
+            .voice(PathBuf::from(output_str))
             .caption(&caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
@@ -249,7 +256,7 @@ pub async fn handle_denoise_audio(
     } else {
         let params = SendAudioParams::builder()
             .chat_id(chat_id)
-            .audio(PathBuf::from(output_path.to_str().unwrap()))
+            .audio(PathBuf::from(output_str))
             .caption(&caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();

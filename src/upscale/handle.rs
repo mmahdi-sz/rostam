@@ -367,7 +367,16 @@ pub async fn handle_upscale_image(
     let input_path  = work_dir.join(format!("input.{orig_ext}"));
     let output_path = work_dir.join(format!("output.{orig_ext}"));
 
-    let dl_result = download_file(api, file_id, input_path.to_str().unwrap()).await;
+    let (Some(input_str_slice), Some(output_str_slice)) = (input_path.to_str(), output_path.to_str()) else {
+        log_ev!("upscale", trace_id, "invalid_path", "=>" => "fail");
+        done_flag.store(true, Ordering::Relaxed);
+        unregister_upscale(user_id);
+        release_cpu(cores, trace_id).await;
+        clean_up(&work_dir);
+        return;
+    };
+
+    let dl_result = download_file(api, file_id, input_str_slice).await;
     if let Err(e) = dl_result.map_err(|e| e.to_string()) {
         log_ev!("upscale", trace_id, "download_failed", "=>" => format!("fail err={e}"));
         done_flag.store(true, Ordering::Relaxed);
@@ -381,8 +390,8 @@ pub async fn handle_upscale_image(
     }
 
     // ── run realesrgan ────────────────────────────────────────────────────────
-    let input_str      = input_path.to_str().unwrap().to_string();
-    let output_str     = output_path.to_str().unwrap().to_string();
+    let input_str      = input_str_slice.to_string();
+    let output_str     = output_str_slice.to_string();
     let model_owned    = model_name.to_string();
     let cancel_for_run = cancel_flag.clone();
     let cores_for_run  = cores.clone();
@@ -444,14 +453,14 @@ pub async fn handle_upscale_image(
     if is_doc || orig_ext != "jpg" {
         let params = SendDocumentParams::builder()
             .chat_id(chat_id)
-            .document(PathBuf::from(output_path.to_str().unwrap()))
+            .document(PathBuf::from(output_str_slice))
             .caption(&full_caption).parse_mode(ParseMode::MarkdownV2).build();
         let r = api.send_document(&params).await;
         log_ev!("upscale", trace_id, "send_doc", "=>" => if r.is_ok() { "ok" } else { "fail" });
     } else {
         let params = SendPhotoParams::builder()
             .chat_id(chat_id)
-            .photo(PathBuf::from(output_path.to_str().unwrap()))
+            .photo(PathBuf::from(output_str_slice))
             .caption(&full_caption).parse_mode(ParseMode::MarkdownV2).build();
         let r = api.send_photo(&params).await;
         log_ev!("upscale", trace_id, "send_photo", "=>" => if r.is_ok() { "ok" } else { "fail" });

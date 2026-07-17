@@ -106,8 +106,9 @@ impl CookiePool {
 
     fn selectable_indexes(&self) -> Vec<usize> {
         let cooldown_ids = self.cooldown_list.iter().map(|e| e.cookie_id.as_str()).collect::<HashSet<_>>();
+        let allow_last = self.available_cookies.len() == 1;
         self.available_cookies.iter().enumerate().filter_map(|(index, cookie)| {
-            let is_last = self.last_used_cookie.as_deref() == Some(cookie.id.as_str());
+            let is_last = !allow_last && self.last_used_cookie.as_deref() == Some(cookie.id.as_str());
             let is_cooling_down = cooldown_ids.contains(cookie.id.as_str());
             (!is_last && !is_cooling_down).then_some(index)
         }).collect()

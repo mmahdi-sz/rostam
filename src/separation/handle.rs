@@ -288,16 +288,20 @@ pub async fn handle_separation_callback(
     {
         let tmp_probe = tmp_dir.join("probe_audio");
         std::fs::write(&tmp_probe, &audio_bytes).unwrap_or(());
-        let probe = tokio::process::Command::new("ffprobe")
-            .args(["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
-                   tmp_probe.to_str().unwrap()])
-            .output().await;
+        let audio_duration_secs = if let Some(tmp_probe_str) = tmp_probe.to_str() {
+            let probe = tokio::process::Command::new("ffprobe")
+                .args(["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                       tmp_probe_str])
+                .output().await;
+            probe.ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .and_then(|s| s.trim().parse::<f64>().ok())
+                .map(|d| d.ceil() as u64)
+                .unwrap_or(0)
+        } else {
+            0
+        };
         std::fs::remove_file(&tmp_probe).ok();
-        let audio_duration_secs = probe.ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| s.trim().parse::<f64>().ok())
-            .map(|d| d.ceil() as u64)
-            .unwrap_or(0);
         log_trace(trace_id, "duration_probed", &format!("secs={audio_duration_secs}"));
 
         if let Some(db) = database.as_ref() {
@@ -590,10 +594,13 @@ async fn extract_and_prepare_audio(
 
     // Extract audio as MP3 at 320kbps.
     let audio_path = tmp_dir.join("extracted.mp3");
+    let video_path_str = video_path.to_str().ok_or("invalid UTF-8 path")?;
+    let audio_path_str = audio_path.to_str().ok_or("invalid UTF-8 path")?;
+
     let status = tokio::process::Command::new("ffmpeg")
-        .args(["-y", "-i", video_path.to_str().unwrap(),
+        .args(["-y", "-i", video_path_str,
                "-vn", "-acodec", "libmp3lame", "-b:a", "320k",
-               audio_path.to_str().unwrap()])
+               audio_path_str])
         .output().await?;
     if !status.status.success() {
         let stderr = String::from_utf8_lossy(&status.stderr);
@@ -613,7 +620,7 @@ async fn extract_and_prepare_audio(
         .args(["-v", "error", "-select_streams", "a:0",
                "-show_entries", "stream=bit_rate",
                "-of", "default=noprint_wrappers=1:nokey=1",
-               audio_path.to_str().unwrap()])
+               audio_path_str])
         .output().await?;
     let initial_bitrate: u32 = String::from_utf8_lossy(&probe.stdout)
         .trim().parse().unwrap_or(320_000);
@@ -637,10 +644,11 @@ async fn extract_and_prepare_audio(
             .build()).await;
 
         let out_path = tmp_dir.join(format!("compressed_{attempt}.mp3"));
+        let out_path_str = out_path.to_str().ok_or("invalid UTF-8 path")?;
         let status = tokio::process::Command::new("ffmpeg")
-            .args(["-y", "-i", audio_path.to_str().unwrap(),
+            .args(["-y", "-i", audio_path_str,
                    "-acodec", "libmp3lame", "-b:a", &format!("{bitrate_kbps}k"),
-                   out_path.to_str().unwrap()])
+                   out_path_str])
             .output().await?;
         if !status.status.success() {
             let stderr = String::from_utf8_lossy(&status.stderr);
