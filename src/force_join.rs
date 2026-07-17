@@ -373,26 +373,36 @@ pub async fn cache_status(lock_id: i64, user_id: i64, joined: bool) {
         .await;
 
     let ckey = counted_key(lock_id, user_id);
-    let prev: Option<String> = redis::cmd("GET").arg(&ckey).query_async(&mut c).await.ok().flatten();
-    match (prev.as_deref(), joined) {
-        (None, true) => {
-            let _: Result<(), _> = redis::cmd("SET").arg(&ckey).arg("already").query_async::<()>(&mut c).await;
-            let _: Result<i64, _> = redis::cmd("INCR").arg(already_count_key(lock_id)).query_async(&mut c).await;
-        }
-        (None, false) => {
-            let _: Result<(), _> = redis::cmd("SET").arg(&ckey).arg("pending").query_async::<()>(&mut c).await;
-        }
-        (Some("pending"), true) => {
-            let _: Result<(), _> = redis::cmd("SET").arg(&ckey).arg("linked").query_async::<()>(&mut c).await;
-            let _: Result<i64, _> = redis::cmd("INCR").arg(linked_count_key(lock_id)).query_async(&mut c).await;
-        }
-        (Some("linked"), false) => {
-            let _: Result<(), _> = redis::cmd("SET").arg(&ckey).arg("pending").query_async::<()>(&mut c).await;
-            let _: Result<i64, _> = redis::cmd("DECR").arg(linked_count_key(lock_id)).query_async(&mut c).await;
-        }
-        // ponytail: کاربرانی که "قبلاً عضو بودند" و بعد لفت دادند، در همون سطل باقی می‌مونن.
-        _ => {}
-    }
+    let script = r#"
+        local prev = redis.call('GET', KEYS[1])
+        local joined = ARGV[1]
+        local already_key = KEYS[2]
+        local linked_key = KEYS[3]
+        if not prev then
+            if joined == '1' then
+                redis.call('SET', KEYS[1], 'already')
+                redis.call('INCR', already_key)
+            else
+                redis.call('SET', KEYS[1], 'pending')
+            end
+        elseif prev == 'pending' and joined == '1' then
+            redis.call('SET', KEYS[1], 'linked')
+            redis.call('INCR', linked_key)
+        elseif prev == 'linked' and joined == '0' then
+            redis.call('SET', KEYS[1], 'pending')
+            redis.call('DECR', linked_key)
+        end
+    "#;
+    let joined_arg = if joined { "1" } else { "0" };
+    let _: Result<(), _> = redis::cmd("EVAL")
+        .arg(script)
+        .arg(3)
+        .arg(&ckey)
+        .arg(already_count_key(lock_id))
+        .arg(linked_count_key(lock_id))
+        .arg(joined_arg)
+        .query_async(&mut c)
+        .await;
 }
 
 async fn check_lock_membership(api: &Bot, lock: &Lock, user_id: i64, force: bool) -> bool {
