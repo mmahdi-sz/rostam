@@ -21,6 +21,8 @@ libc = "0.2"
 redis = { version = "0.27", features = ["tokio-comp"] }
 ort = "=2.0.0-rc.12"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "bmp"] }
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+
 
 [profile.dev]
 opt-level = 0
