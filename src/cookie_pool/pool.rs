@@ -129,3 +129,60 @@ impl CookiePool {
         (nanos ^ self.random_counter.rotate_left(13)) as usize % len
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn dummy_cookie(id: &str) -> CookieSource {
+        CookieSource {
+            id: id.to_string(),
+            profile_name: format!("Profile {id}"),
+            profile_dir: PathBuf::from(format!("/tmp/profile_{id}")),
+            cookies_sqlite: PathBuf::from(format!("/tmp/profile_{id}/cookies.sqlite")),
+            source_profile_dir: PathBuf::from(format!("/tmp/source_{id}")),
+        }
+    }
+
+    #[test]
+    fn test_single_cookie_pool_selection() {
+        let mut pool = CookiePool {
+            available_cookies: vec![dummy_cookie("cookie-1")],
+            last_used_cookie: None,
+            cooldown_list: Vec::new(),
+            cooldown: DEFAULT_COOLDOWN,
+            random_counter: 0,
+        };
+
+        // First call selects cookie-1
+        let first = pool.next_cookie();
+        assert!(first.is_some());
+        assert_eq!(first.unwrap().id, "cookie-1");
+        assert_eq!(pool.last_used_cookie.as_deref(), Some("cookie-1"));
+
+        // Second call on single-cookie pool MUST still select cookie-1 (does not return None)
+        let second = pool.next_cookie();
+        assert!(second.is_some());
+        assert_eq!(second.unwrap().id, "cookie-1");
+    }
+
+    #[test]
+    fn test_multi_cookie_pool_selection() {
+        let mut pool = CookiePool {
+            available_cookies: vec![dummy_cookie("cookie-1"), dummy_cookie("cookie-2")],
+            last_used_cookie: None,
+            cooldown_list: Vec::new(),
+            cooldown: DEFAULT_COOLDOWN,
+            random_counter: 0,
+        };
+
+        let _first = pool.next_cookie().unwrap();
+        let last_id = pool.last_used_cookie.clone().unwrap();
+
+        // In a multi-cookie pool, the last used cookie should be excluded from selectable indexes
+        let selectable = pool.selectable_indexes();
+        assert_eq!(selectable.len(), 1);
+        assert_ne!(pool.available_cookies[selectable[0]].id, last_id);
+    }
+}
