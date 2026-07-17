@@ -4,12 +4,15 @@
 //! care whether the caller runs a subprocess or, as here, pins its own
 //! blocking-task thread before running ONNX inference on it.
 
+use std::sync::OnceLock;
 use std::time::Duration;
+
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 const SEP_BASE: &str = "http://127.0.0.1:6589";
 
 pub async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
     let res = client
         .post(format!("{SEP_BASE}/cpu/acquire"))
         .form(&[("user_id", user_id.to_string()), ("is_vip", "false".to_string())])
@@ -37,7 +40,7 @@ pub async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
     if cores.is_empty() {
         return;
     }
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
     let body = serde_json::json!({ "cores": cores });
     let r = client
         .post(format!("{SEP_BASE}/cpu/release"))

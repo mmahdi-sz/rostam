@@ -23,6 +23,8 @@ const UPSCALE_BIN: &str = "files/realesrgan/realesrgan-ncnn-vulkan";
 const MODEL_DIR: &str = "files/realesrgan/models";
 const SEP_BASE: &str = "http://127.0.0.1:6589";
 
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
 pub const CB_UPSCALE_CANCEL: &str = "upscale:cancel";
 pub const CB_UPSCALE_MODEL_PREFIX: &str = "upscale:model:";
 pub const CB_UPSCALE_ANIME_TOGGLE: &str = "upscale:anime_toggle";
@@ -63,7 +65,7 @@ pub fn cancel_upscale(user_id: i64) -> bool {
 // ── CPU broker ────────────────────────────────────────────────────────────────
 
 async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
     let res = client
         .post(format!("{SEP_BASE}/cpu/acquire"))
         .form(&[("user_id", user_id.to_string()), ("is_vip", "false".to_string())])
@@ -89,7 +91,7 @@ async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
 
 async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
     if cores.is_empty() { return; }
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
     let body = serde_json::json!({ "cores": cores });
     let r = client
         .post(format!("{SEP_BASE}/cpu/release"))

@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use frankenstein::{
@@ -407,8 +408,10 @@ async fn download_file(api: &Bot, file_id: &str, dest: &std::path::Path) -> Resu
 
 // ── CPU broker (same pattern as upscale/asr) ────────────────────────────────────
 
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
 async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
     let res = client
         .post(format!("{SEP_BASE}/cpu/acquire"))
         .form(&[("user_id", user_id.to_string()), ("is_vip", "false".to_string())])
@@ -434,7 +437,7 @@ async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
 
 async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
     if cores.is_empty() { return; }
-    let client = reqwest::Client::new();
+    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
     let body = serde_json::json!({ "cores": cores });
     let r = client
         .post(format!("{SEP_BASE}/cpu/release"))
