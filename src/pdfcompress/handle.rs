@@ -349,10 +349,17 @@ async fn run_gs(
     Ok(())
 }
 
-fn pin_pid_to_cores(_pid: u32, _cores: &[i32], _trace_id: u64) {
-    // ponytail: gs is short-lived and single-threaded for pdfwrite; core pinning
-    // (like upscale does for realesrgan) isn't worth the sched_setaffinity plumbing
-    // here. Add if profiling shows CPU Broker reservations aren't being honored.
+fn pin_pid_to_cores(pid: u32, cores: &[i32], trace_id: u64) {
+    if cores.is_empty() { return; }
+    let cores_str = cores.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",");
+    let status = std::process::Command::new("taskset")
+        .arg("-cp")
+        .arg(&cores_str)
+        .arg(pid.to_string())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    log_ev!("pdfcompress", trace_id, "pin_pid", "pid" => pid, "cores" => &cores_str, "status" => status.is_ok());
 }
 
 fn starts_with_pdf_magic(path: &std::path::Path) -> bool {
