@@ -12,6 +12,19 @@ use frankenstein::{
     types::{Chat, ChatId, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, ReplyMarkup},
 };
 use redis::aio::MultiplexedConnection;
+use tokio::sync::OnceCell;
+
+static REDIS_CONN: OnceCell<MultiplexedConnection> = OnceCell::const_new();
+
+async fn conn() -> redis::RedisResult<MultiplexedConnection> {
+    REDIS_CONN
+        .get_or_try_init(|| async {
+            let client = redis::Client::open(config::redis_url())?;
+            client.get_multiplexed_async_connection().await
+        })
+        .await
+        .cloned()
+}
 use std::collections::HashMap;
 
 use crate::config;
@@ -137,11 +150,6 @@ async fn edit_text_np(api: &Bot, chat_id: i64, message_id: i32, text: &str, kb: 
 async fn send_text_np(api: &Bot, chat_id: i64, text: &str) {
     let params = SendMessageParams::builder().chat_id(chat_id).text(text).link_preview_options(no_preview()).build();
     let _ = api.send_message(&params).await;
-}
-
-async fn conn() -> redis::RedisResult<MultiplexedConnection> {
-    let client = redis::Client::open(config::redis_url())?;
-    client.get_multiplexed_async_connection().await
 }
 
 fn is_member_status(m: &ChatMember) -> bool {
