@@ -234,7 +234,7 @@ async fn handle_message(
     state: &mut AppState,
     message: frankenstein::types::Message,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let AppState { api, cookie_pool, database, flow_manager, rate_limit_tx, flow_clear_tx: _ } = state;
+    let AppState { api, cookie_pool, database, flow_manager, rate_limit_tx, flow_clear_tx } = state;
     let user_id = message.from.as_ref().map(|u| u.id as i64);
     let msg_text = message.text.as_deref().unwrap_or("");
     if let Some(u) = message.from.as_ref() {
@@ -358,8 +358,16 @@ async fn handle_message(
                         let api2 = api.clone();
                         let chat_id2 = message.chat.id;
                         let db2 = database.clone();
+                        let tx2 = flow_clear_tx.clone();
                         // Spawn so the event loop stays free during STT (minutes-long operation)
                         tokio::spawn(async move {
+                            struct SttFlowGuard(tokio::sync::mpsc::UnboundedSender<i64>, i64);
+                            impl Drop for SttFlowGuard {
+                                fn drop(&mut self) {
+                                    let _ = self.0.send(self.1);
+                                }
+                            }
+                            let _guard = SttFlowGuard(tx2, uid);
                             handle_stt_audio(&api2, chat_id2, &fid, uid, &config, db2).await;
                         });
                     }

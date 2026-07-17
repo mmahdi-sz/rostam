@@ -213,3 +213,43 @@ pub async fn add_usage(
 
     Ok(())
 }
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quota_kind_as_str() {
+        assert_eq!(QuotaKind::TrafficDaily.as_str(), "traffic_daily");
+        assert_eq!(QuotaKind::TrafficMonthly.as_str(), "traffic_monthly");
+        assert_eq!(QuotaKind::SttWeekly.as_str(), "stt_weekly");
+        assert_eq!(QuotaKind::Upscale2xWeekly.as_str(), "upscale_2x_weekly");
+        assert_eq!(QuotaKind::Upscale3xWeekly.as_str(), "upscale_3x_weekly");
+        assert_eq!(QuotaKind::Upscale4xWeekly.as_str(), "upscale_4x_weekly");
+        assert_eq!(QuotaKind::AiChatMonthly.as_str(), "ai_chat_monthly");
+        assert_eq!(QuotaKind::DenoiseDaily.as_str(), "denoise_daily");
+        assert_eq!(QuotaKind::DenoiseWeekly.as_str(), "denoise_weekly");
+        assert_eq!(QuotaKind::SttFastDaily.as_str(), "stt_fast_daily");
+        assert_eq!(QuotaKind::SttFastWeekly.as_str(), "stt_fast_weekly");
+        assert_eq!(QuotaKind::SttAccurateDaily.as_str(), "stt_accurate_daily");
+        assert_eq!(QuotaKind::SttAccurateWeekly.as_str(), "stt_accurate_weekly");
+        assert_eq!(QuotaKind::SeparationDaily.as_str(), "separation_daily");
+        assert_eq!(QuotaKind::SeparationWeekly.as_str(), "separation_weekly");
+    }
+
+    #[test]
+    fn test_monthly_window_start() {
+        let first_upload = 1_000_000;
+        let window_start = monthly_window_start(first_upload);
+        assert!(window_start <= now_epoch());
+        assert!((now_epoch() - window_start) < 30 * 86_400);
+    }
+
+    #[test]
+    fn test_today_start_tehran() {
+        let start = today_start_tehran();
+        let now = now_epoch();
+        assert!(start <= now);
+        assert!(now - start < 86_400);
+    }
+}

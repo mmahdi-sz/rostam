@@ -171,3 +171,25 @@ pub async fn plan_activation(client: &Client, user_id: i64, tier_rank: Rank) -> 
     let total_days = ACTIVATION_DAYS + converted;
     ActivationPlan::Apply { rank: tier_rank, expires_at: now + total_days * 86_400 }
 }
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tier_position() {
+        assert_eq!(tier_position(Rank::Sohrab), 0);
+        assert_eq!(tier_position(Rank::Esfandyar), 1);
+        assert_eq!(tier_position(Rank::Rostam), 2);
+        assert_eq!(tier_position(Rank::Dalavar), -1);
+        assert_eq!(tier_position(Rank::Sepahbod), -1);
+    }
+
+    #[test]
+    fn test_tiers_order_and_counts() {
+        assert_eq!(TIERS.len(), 3);
+        assert_eq!(TIERS[0], (10, Rank::Sohrab));
+        assert_eq!(TIERS[1], (20, Rank::Esfandyar));
+        assert_eq!(TIERS[2], (50, Rank::Rostam));
+    }
+}

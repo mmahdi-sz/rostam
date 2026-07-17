@@ -8,8 +8,9 @@ fn main() {
         println!("cargo:rustc-link-search={}", runtime.display());
         // Embed rpath so the dynamic linker finds libvosk.so at runtime
         // Binary is at target/debug/ → need 2 levels up to reach project root
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{}", runtime.display());
         println!(
-            "cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../../files/runtime"
+            "cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../../files/runtime:$ORIGIN/files/runtime:/usr/local/lib"
         );
     }
 }
