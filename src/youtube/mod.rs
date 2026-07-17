@@ -9,6 +9,7 @@ mod quality_keyboard;
 mod selection;
 pub mod trace;
 mod handle;
+pub mod translator;
 
 pub use extract::extract_youtube_urls;
 pub use format::escape_markdown_v2;
