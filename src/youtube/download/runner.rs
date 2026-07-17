@@ -297,6 +297,10 @@ async fn download_single_playlist_item(
         return Err(t("youtube.download.playlist.reason_no_file"));
     };
 
+    if selection.subtitle_mode == SubtitleMode::Embedded && !selection.subtitle_langs.is_empty() {
+        super::helpers::fix_embedded_subtitle_flags(&path, trace_id).await;
+    }
+
     let file_size_bytes = tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0);
 
     // کپشن مثل دانلود تکی
@@ -546,6 +550,10 @@ async fn run_download(
     };
 
     log_trace(trace_id, "download_complete", &format!("path={path}"));
+
+    if selection.subtitle_mode == SubtitleMode::Embedded && !selection.subtitle_langs.is_empty() {
+        super::helpers::fix_embedded_subtitle_flags(&path, trace_id).await;
+    }
 
     let file_size_bytes = tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0);
     if let Some(jid) = stats_job_id {
