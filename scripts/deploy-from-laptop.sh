@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-REPO_DIR="/home/mmahdi-sz/Desktop/codes/rostam"
-SERVER="mahdi"
+REPO_DIR="${REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo "/home/mmahdi-sz/Desktop/codes/rostam")}"
+SERVER="${SERVER:-mahdi}"
 SERVER_DEPLOY_DIR="/mnt/data/mahdidev/ros"
 
 cd "$REPO_DIR"
