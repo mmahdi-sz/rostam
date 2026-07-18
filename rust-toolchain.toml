@@ -1,3 +1,5 @@
 [toolchain]
-channel = "1.85"
+# 1.88 is the floor for the current dependency tree (ort, image, serde_with,
+# darling via frankenstein all require >= 1.88; icu requires >= 1.86).
+channel = "1.88"
 components = ["rustfmt", "clippy"]
