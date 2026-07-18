@@ -1,6 +1,23 @@
+//! ترجمه‌ی زیرنویس SRT با مدل محلی NLLB از طریق CTranslate2 (کریت `ct2rs`).
+//!
+//! مدل به فرمت CTranslate2 در `files/models/nllb/` است و باید کنارش
+//! `tokenizer.json` داشته باشد (tokenizer داخل خود ct2rs بارگذاری می‌شود).
+//! مدل ~۶۲۲MB است، پس یک بار لود و با `OnceLock` کش می‌شود.
+
 use std::path::Path;
-use ort::session::{builder::GraphOptimizationLevel, Session};
-use tokenizers::Tokenizer;
+use std::sync::OnceLock;
+
+use ct2rs::{Config, Translator};
+
+/// نوع مترجم با tokenizer پیش‌فرض ct2rs (که `tokenizer.json` را می‌خواند).
+type NllbTranslator = Translator<ct2rs::tokenizers::auto::Tokenizer>;
+
+/// مسیر پوشه‌ی مدل NLLB (نسبت به دایرکتوری کاری ربات، مثل بقیه‌ی مدل‌ها).
+const MODEL_DIR: &str = "files/models/nllb";
+
+/// مترجم کش‌شده — لود مدل گران است، پس فقط بار اول ساخته می‌شود.
+/// `Translator` داخل ct2rs از نظر thread امن است (`Send + Sync`).
+static TRANSLATOR: OnceLock<Result<NllbTranslator, String>> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SrtItem {
@@ -40,6 +57,7 @@ pub fn format_srt(items: &[SrtItem]) -> String {
     out
 }
 
+/// نگاشت کد زبانِ زیرنویس (مثل `fa`) به کد NLLB (مثل `pes_Arab`).
 pub fn map_language_code(tgt: &str) -> Option<&'static str> {
     match tgt {
         "fa" => Some("pes_Arab"),
@@ -56,60 +74,57 @@ pub fn map_language_code(tgt: &str) -> Option<&'static str> {
     }
 }
 
-pub struct NllbTranslator {
-    tokenizer: Tokenizer,
-    session: Session,
+/// مترجم کش‌شده را برمی‌گرداند (بار اول مدل را لود می‌کند).
+fn translator() -> Result<&'static NllbTranslator, String> {
+    TRANSLATOR
+        .get_or_init(|| {
+            let dir = Path::new(MODEL_DIR);
+            if !dir.join("model.bin").exists() {
+                return Err(format!(
+                    "NLLB model not found at {MODEL_DIR}/model.bin (deploy copies files/models/)"
+                ));
+            }
+            Translator::new(dir, &Config::default())
+                .map_err(|e| format!("Failed to load NLLB translator from {MODEL_DIR}: {e}"))
+        })
+        .as_ref()
+        .map_err(|e| e.clone())
 }
 
-impl NllbTranslator {
-    pub fn new(model_dir: &Path, threads: usize) -> Result<Self, String> {
-        let tokenizer_path = model_dir.join("tokenizer.json");
-        let tokenizer = Tokenizer::from_file(&tokenizer_path)
-            .map_err(|e| format!("Failed to load tokenizer from {tokenizer_path:?}: {e}"))?;
-
-        let model_path = model_dir.join("nllb200_600m.onnx");
-        let session = Session::builder()
-            .map_err(|e| format!("{e}"))?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .map_err(|e| format!("{e}"))?
-            .with_intra_threads(threads)
-            .map_err(|e| format!("{e}"))?
-            .commit_from_file(&model_path)
-            .map_err(|e| format!("Failed to load ONNX model from {model_path:?}: {e}"))?;
-
-        Ok(Self { tokenizer, session })
+/// دسته‌ای از متن‌ها را به `target_lang` (کد NLLB مثل `pes_Arab`) ترجمه می‌کند.
+/// بلوکینگ است (CPU-bound)، پس باید داخل `spawn_blocking` صدا زده شود.
+fn translate_batch_blocking(texts: &[String], target_lang: &str) -> Result<Vec<String>, String> {
+    if texts.is_empty() {
+        return Ok(Vec::new());
     }
+    let t = translator()?;
 
-    pub fn translate_batch(&self, texts: &[String], target_lang: &str) -> Result<Vec<String>, String> {
-        if texts.is_empty() {
-            return Ok(Vec::new());
-        }
+    // زیرنویس‌های چندخطی: خط‌ها را با فاصله یکی می‌کنیم (مثل نسخه‌ی پایتونی).
+    let sources: Vec<String> = texts
+        .iter()
+        .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect();
 
-        let cleaned: Vec<String> = texts
-            .iter()
-            .map(|t| t.split_whitespace().collect::<Vec<_>>().join(" "))
-            .collect();
+    // NLLB زبان مقصد را به‌صورت target-prefix می‌گیرد.
+    let prefixes: Vec<Vec<String>> = sources.iter().map(|_| vec![target_lang.to_string()]).collect();
 
-        // Encoding input texts
-        let encodings = self
-            .tokenizer
-            .encode_batch(cleaned, true)
-            .map_err(|e| format!("Tokenization failed: {e}"))?;
+    let results = t
+        .translate_batch_with_target_prefix(&sources, &prefixes, &Default::default(), None)
+        .map_err(|e| format!("translate_batch failed: {e}"))?;
 
-        let mut out_texts = Vec::with_capacity(texts.len());
-        for _ in 0..encodings.len() {
-            out_texts.push(format!("[{target_lang}] translated"));
-        }
-
-        Ok(out_texts)
-    }
+    Ok(results.into_iter().map(|(text, _score)| text).collect())
 }
 
+/// یک فایل SRT انگلیسی را می‌خواند، متن‌ها را به `target_lang` (کد NLLB) ترجمه
+/// می‌کند، و با حفظ تایم‌کدها در `output_path` می‌نویسد.
+///
+/// `threads` نگه داشته شده برای سازگاری امضا؛ ct2rs تعداد thread را از Config
+/// می‌گیرد (فعلاً پیش‌فرض). کار CPU-bound داخل `spawn_blocking` اجرا می‌شود.
 pub async fn translate_srt(
     input_path: &Path,
     output_path: &Path,
     target_lang: &str,
-    threads: usize,
+    _threads: usize,
 ) -> Result<(), String> {
     let content = tokio::fs::read_to_string(input_path)
         .await
@@ -123,19 +138,23 @@ pub async fn translate_srt(
         return Ok(());
     }
 
-    let model_dir = Path::new("files/models/nllb");
-    let translator = NllbTranslator::new(model_dir, threads)?;
-
-    let batch_size = 32;
-    for chunk in items.chunks_mut(batch_size) {
-        let texts: Vec<String> = chunk.iter().map(|item| item.text.clone()).collect();
-        let translated = translator.translate_batch(&texts, target_lang)?;
-        for (item, t) in chunk.iter_mut().zip(translated) {
-            item.text = t;
+    let target_lang = target_lang.to_string();
+    // ترجمه CPU-bound است و مدل بلوکینگ؛ روی runtime async اجرا نکن.
+    let translated_items = tokio::task::spawn_blocking(move || -> Result<Vec<SrtItem>, String> {
+        let batch_size = 32;
+        for chunk in items.chunks_mut(batch_size) {
+            let texts: Vec<String> = chunk.iter().map(|item| item.text.clone()).collect();
+            let translated = translate_batch_blocking(&texts, &target_lang)?;
+            for (item, t) in chunk.iter_mut().zip(translated) {
+                item.text = t;
+            }
         }
-    }
+        Ok(items)
+    })
+    .await
+    .map_err(|e| format!("translate task panicked: {e}"))??;
 
-    let out_content = format_srt(&items);
+    let out_content = format_srt(&translated_items);
     tokio::fs::write(output_path, out_content)
         .await
         .map_err(|e| format!("Failed to write srt output file: {e}"))?;
@@ -172,5 +191,33 @@ mod tests {
         assert_eq!(map_language_code("hi"), Some("hin_Deva"));
         assert_eq!(map_language_code("tr"), Some("tur_Latn"));
         assert_eq!(map_language_code("unknown"), None);
+    }
+
+    /// تست واقعیِ ترجمه با مدل NLLB. نیاز به files/models/nllb روی دیسک دارد و
+    /// کند است، پس ignored — با `cargo test real_translation -- --ignored` اجرا شود.
+    #[tokio::test]
+    #[ignore]
+    async fn test_real_translation_en_to_fa() {
+        let dir = std::env::temp_dir().join(format!("nllb_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("in.srt");
+        let output = dir.join("out.srt");
+        std::fs::write(
+            &input,
+            "1\n00:00:01,000 --> 00:00:03,000\nHello, how are you?\n\n2\n00:00:04,000 --> 00:00:06,000\nThis is a test.\n\n",
+        )
+        .unwrap();
+
+        translate_srt(&input, &output, "pes_Arab", 4).await.expect("translation failed");
+
+        let result = std::fs::read_to_string(&output).unwrap();
+        let items = parse_srt(&result);
+        assert_eq!(items.len(), 2, "should keep both entries");
+        assert_eq!(items[0].timestamp, "00:00:01,000 --> 00:00:03,000", "timing preserved");
+        // خروجی باید فارسی (غیر لاتین) باشد و با انگلیسی ورودی فرق کند.
+        assert!(items[0].text.chars().any(|c| ('\u{0600}'..='\u{06FF}').contains(&c)), "expected Persian text, got: {}", items[0].text);
+        assert_ne!(items[0].text, "Hello, how are you?", "must be translated");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

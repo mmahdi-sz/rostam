@@ -538,7 +538,7 @@ async fn run_download(
         return;
     }
 
-    let path = match filepath.or_else(|| pick_largest_file(&dir)) {
+    let mut path = match filepath.or_else(|| pick_largest_file(&dir)) {
         Some(p) => p,
         None => {
             log_trace(trace_id, "download_no_filepath", "no output file located");
@@ -551,7 +551,27 @@ async fn run_download(
 
     log_trace(trace_id, "download_complete", &format!("path={path}"));
 
+    // مرحله‌ی ترجمه (مستقل از حالت تحویل): اگر کاربر زبانی خواسته که یوتیوب
+    // نداشته، انگلیسی را جدا می‌گیریم و به‌صورت محلی (NLLB) ترجمه می‌کنیم.
+    // خروجی translated_<lang>.srt در پوشه می‌ماند تا در مرحله‌ی تحویل استفاده شود.
+    if !selection.subtitle_langs.is_empty() {
+        super::helpers::ensure_translated_subtitles(
+            &api, &req.cookie_spec, &req.webpage_url,
+            status_chat_id, status_message_id, &dir, &selection.subtitle_langs, trace_id,
+        ).await;
+    }
+
     if selection.subtitle_mode == SubtitleMode::Embedded && !selection.subtitle_langs.is_empty() {
+        // زیرنویس‌های ترجمه‌شده را هم داخل mp4 می‌گذاریم (yt-dlp فقط زیرنویس اصلی
+        // را embed کرده). اگر srt جدیدی نباشد، embed_subtitles همان مسیر را برمی‌گرداند.
+        match super::helpers::embed_subtitles(&dir, &path, trace_id).await {
+            Ok(new_path) if new_path != path => {
+                log_trace(trace_id, "embed_subtitles_remuxed", &format!("path={new_path}"));
+                path = new_path;
+            }
+            Ok(_) => {}
+            Err(e) => log_trace(trace_id, "embed_subtitles_failed", &format!("err={e}")),
+        }
         super::helpers::fix_embedded_subtitle_flags(&path, trace_id).await;
     }
 
@@ -643,6 +663,8 @@ async fn run_download(
 
     // In File mode, deliver the standalone subtitle file(s) as documents.
     // (Embedded mode bakes them into the mp4 and needs no separate upload.)
+    // زیرنویس‌های ترجمه‌شده (translated_<lang>.srt) در مرحله‌ی ترجمه‌ی پیش از
+    // این ساخته شده‌اند و همین‌جا کنار بقیه فرستاده می‌شوند.
     if upload_ok && selection.subtitle_mode == SubtitleMode::File && !selection.subtitle_langs.is_empty() {
         let count = send_subtitle_files(&api, &dir, req.chat_id, &req.title, trace_id).await;
         log_trace(trace_id, "subtitle_upload_done", &format!("files_sent={count}"));

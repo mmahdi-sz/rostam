@@ -21,7 +21,11 @@ libc = "0.2"
 redis = { version = "0.27", features = ["tokio-comp"] }
 ort = "=2.0.0-rc.12"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "bmp"] }
-tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+# ترجمه‌ی زیرنویس: بایندینگ Rust برای CTranslate2 (مدل NLLB در files/models/nllb/).
+# tokenizer داخل خود ct2rs است (فقط feature "tokenizers" برای خواندن tokenizer.json).
+# sentencepiece را عمداً خاموش کرده‌ایم: protobuf استاتیکش با ort (moebius) تداخل
+# لینک می‌سازد و NLLB به آن نیازی ندارد.
+ct2rs = { version = "0.9.21", default-features = false, features = ["tokenizers", "ruy"] }
 
 
 [profile.dev]

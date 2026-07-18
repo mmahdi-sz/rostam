@@ -189,21 +189,9 @@ pub async fn translate_subtitles(
     
     for tgt in target_langs {
         if tgt == "en" || tgt.starts_with("en-") { continue; }
-        
-        let nllb_lang = match tgt.as_str() {
-            "fa" => "pes_Arab",
-            "en" => "eng_Latn",
-            "it" => "ita_Latn",
-            "fr" => "fra_Latn",
-            "de" => "deu_Latn",
-            "ru" => "rus_Cyrl",
-            "es" => "spa_Latn",
-            "ar" => "arb_Arab",
-            "hi" => "hin_Deva",
-            "tr" => "tur_Latn",
-            _ => continue,
-        };
-        
+
+        let Some(nllb_lang) = crate::youtube::translator::map_language_code(tgt) else { continue; };
+
         let out_path = dir.join(format!("translated_{}.srt", tgt));
 
         let cores = acquire_cpu(0, trace_id).await;
@@ -228,6 +216,39 @@ pub async fn translate_subtitles(
         }
     }
     Ok(())
+}
+
+/// تضمین می‌کند که برای زبان‌های مقصدِ خواسته‌شده زیرنویس وجود دارد — مستقل از
+/// حالت تحویل (File یا Embedded). اگر کاربر زبانی (مثل fa) خواسته که یوتیوب
+/// نداشته، انگلیسی را جدا دانلود و به‌صورت محلی (NLLB) ترجمه می‌کند. خروجی
+/// فایل‌های `translated_<lang>.srt` در همان پوشه است. اگر زیرنویس مقصد از قبل
+/// موجود باشد یا زبان غیرقابل‌ترجمه باشد، عملاً no-op است.
+///
+/// این تابع «مرحله‌ی ترجمه» است؛ تقسیم به File/Embedded بعد از آن انجام می‌شود.
+pub async fn ensure_translated_subtitles(
+    api: &Bot,
+    cookie_spec: &str,
+    webpage_url: &str,
+    chat_id: i64,
+    msg_id: i32,
+    dir: &std::path::Path,
+    target_langs: &[String],
+    trace_id: u64,
+) {
+    // فقط وقتی کاری داریم که زبان غیرانگلیسیِ قابل‌ترجمه‌ای خواسته شده باشد.
+    let needs = target_langs
+        .iter()
+        .any(|l| l != "en" && !l.starts_with("en-") && crate::youtube::translator::map_language_code(l).is_some());
+    if !needs {
+        return;
+    }
+
+    // انگلیسی را (در کنار زبان‌های خواسته‌شده) جدا می‌گیریم تا مبنای ترجمه باشد.
+    download_subtitles_separately(cookie_spec, webpage_url, dir, target_langs, trace_id).await;
+
+    if let Err(e) = translate_subtitles(api, chat_id, msg_id, trace_id, dir, target_langs).await {
+        crate::youtube::trace::log_trace(trace_id, "ensure_translate_failed", &format!("err={e}"));
+    }
 }
 
 pub async fn embed_subtitles(
