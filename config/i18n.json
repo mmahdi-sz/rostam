@@ -16,7 +16,6 @@
       "ai_sep_button": "جداسازی خواننده و موزیک",
       "ai_gwm_button": "حذف واترمارک Gemini",
       "admin_button": "پنل ادمین",
-      "ai_asr_button": "جادو ✨",
       "panel_button": "پنل کاربری",
       "tools_button": "🧰 ابزار های کاربردی",
       "tools_title": "🧰 *ابزار های کاربردی*\n\nیکی از ابزارها رو انتخاب کن:"
@@ -640,7 +639,6 @@
           "upscale": "افزایش کیفیت تصویر",
           "separation": "جداسازی موزیک",
           "gwm": "حذف واترمارک",
-          "asr": "جادو (ASR)",
           "youtube": "یوتیوب"
         },
         "more": {
@@ -661,29 +659,6 @@
       "no_errors": "✅ در ۲۴ ساعت گذشته خطایی ثبت نشده.",
       "errors_fetch_error": "خطا در دریافت لیست خطاها",
       "errors_header": "🐞 خطاهای ۲۴ ساعت گذشته: {count}\n"
-    },
-    "asr": {
-      "send_audio_prompt": "🪄 جادو — تبدیل گفتار به متن\n\nیک فایل صوتی، ویس یا ویدیو بفرست تا متنش رو برات بنویسم.\n\n📋 فرمت‌های پشتیبانی‌شده:\nOGG ، MP3 ، WAV ، M4A ، FLAC ، OPUS ، AAC\nMP4 ، MKV ، AVI ، MOV ، WEBM",
-      "confirm_prompt": "📊 اطلاعات فایل:\n\n⏱ مدت: {duration}\n🖥 هسته‌های آزاد: {cores}\n⏳ زمان تخمینی: {estimated}\n\nادامه می‌دی؟",
-      "queue_prompt": "📊 اطلاعات فایل:\n\n⏱ مدت: {duration}\n🖥 هسته‌های آزاد: ۰ (سرور مشغوله)\n\nوقتی سرور آزاد شد به صورت خودکار پردازش و برات ارسال بشه؟",
-      "queue_button": "✅ بله، صف بندی کن",
-      "queued_waiting": "⏳ در صف انتظار... وقتی نوبتت رسید شروع می‌کنم.",
-      "processing": "⏳ در حال پردازش... {seconds} ثانیه",
-      "confirm_button": "✅ بله، شروع کن",
-      "cancel_button": "لغو",
-      "result": "✅ متن تشخیص داده‌شده:\n\n{text}\n\n🌐 زبان: {language}\n⏱ مدت صدا: {audio_duration} | پردازش: {elapsed}",
-      "srt_caption": "📄 فایل زیرنویس SRT",
-      "error": {
-        "access_denied": "🚫 این قابلیت فقط برای ادمین در دسترسه.",
-        "invalid_audio": "❌ فایل صوتی یا ویدیو معتبر نیست.",
-        "download_failed": "❌ دانلود فایل ناموفق بود.",
-        "service_unavailable": "❌ سرویس تشخیص گفتار در دسترس نیست.",
-        "timeout": "❌ زمان پردازش به پایان رسید.",
-        "processing_failed": "❌ خطا در پردازش فایل.",
-        "duration_failed": "❌ نتونستم مدت فایل رو بخونم."
-      },
-      "duration_unknown": "نامشخص",
-      "estimated_unknown": "نامشخص"
     },
     "redeem": {
       "success": "🎉 تبریک! مقام «{rank}» برای شما فعال شد.\n📅 اعتبار تا: {date}\n⏳ مجموع: {days} روز",
@@ -948,7 +923,6 @@
       "ai_sep_button": "Vocal Separation",
       "ai_gwm_button": "Gemini Watermark Removal",
       "admin_button": "Admin Panel",
-      "ai_asr_button": "Magic ✨",
       "panel_button": "My Account",
       "tools_button": "🧰 Tools",
       "tools_title": "🧰 *Tools*\n\nPick one of the tools below:"
@@ -1571,7 +1545,6 @@
           "upscale": "Image Upscaling",
           "separation": "Vocal Separation",
           "gwm": "Watermark Removal",
-          "asr": "Magic (ASR)",
           "youtube": "YouTube"
         },
         "more": {
@@ -1593,29 +1566,6 @@
       "stats_no_data": "— no data —\n",
       "stats_users_error": "Failed to fetch active-user stats",
       "force_join_button": "Mandatory Join 🔒"
-    },
-    "asr": {
-      "send_audio_prompt": "🪄 Magic — Speech to Text\n\nSend an audio file, voice message or video and I'll transcribe it for you.\n\n📋 Supported formats:\nOGG, MP3, WAV, M4A, FLAC, OPUS, AAC\nMP4, MKV, AVI, MOV, WEBM",
-      "confirm_prompt": "📊 File info:\n\n⏱ Duration: {duration}\n🖥 Free cores: {cores}\n⏳ Estimated time: {estimated}\n\nContinue?",
-      "queue_prompt": "📊 File info:\n\n⏱ Duration: {duration}\n🖥 Free cores: 0 (server busy)\n\nShall I process and send it automatically when the server is free?",
-      "queue_button": "✅ Yes, queue it",
-      "queued_waiting": "⏳ In queue... I'll start when it's your turn.",
-      "processing": "⏳ Processing... {seconds}s",
-      "confirm_button": "✅ Yes, start",
-      "cancel_button": "Cancel",
-      "result": "✅ Recognized text:\n\n{text}\n\n🌐 Language: {language}\n⏱ Audio duration: {audio_duration} | Processing: {elapsed}",
-      "srt_caption": "📄 SRT Subtitle File",
-      "error": {
-        "access_denied": "🚫 This feature is only available for admins.",
-        "invalid_audio": "❌ Invalid audio or video file.",
-        "download_failed": "❌ File download failed.",
-        "service_unavailable": "❌ Speech recognition service unavailable.",
-        "timeout": "❌ Processing timed out.",
-        "processing_failed": "❌ Error processing file.",
-        "duration_failed": "❌ Could not read file duration."
-      },
-      "duration_unknown": "Unknown",
-      "estimated_unknown": "Unknown"
     },
     "redeem": {
       "success": "🎉 Congratulations! Rank «{rank}» has been activated.\n📅 Valid until: {date}\n⏳ Total: {days} days",
@@ -1880,7 +1830,6 @@
       "ai_sep_button": "Separazione Vocale",
       "ai_gwm_button": "Rimozione Filigrana Gemini",
       "admin_button": "Pannello Admin",
-      "ai_asr_button": "Magia ✨",
       "panel_button": "Il mio account",
       "tools_button": "🧰 Strumenti",
       "tools_title": "🧰 *Strumenti*\n\nScegli uno degli strumenti qui sotto:"
@@ -2503,7 +2452,6 @@
           "upscale": "Miglioramento Immagini",
           "separation": "Separazione Vocale",
           "gwm": "Rimozione Filigrana",
-          "asr": "Magia (ASR)",
           "youtube": "YouTube"
         },
         "more": {
@@ -2525,29 +2473,6 @@
       "stats_no_data": "— nessun dato —\n",
       "stats_users_error": "Impossibile recuperare le statistiche utenti attivi",
       "force_join_button": "Mandatory Join 🔒"
-    },
-    "asr": {
-      "send_audio_prompt": "🪄 Magia — Testo da Voce\n\nInvia un file audio, messaggio vocale o video e lo trascrivo per te.\n\n📋 Formati supportati:\nOGG, MP3, WAV, M4A, FLAC, OPUS, AAC\nMP4, MKV, AVI, MOV, WEBM",
-      "confirm_prompt": "📊 Info file:\n\n⏱ Durata: {duration}\n🖥 Core liberi: {cores}\n⏳ Tempo stimato: {estimated}\n\nContinuare?",
-      "queue_prompt": "📊 Info file:\n\n⏱ Durata: {duration}\n🖥 Core liberi: 0 (server occupato)\n\nVuoi che venga elaborato e inviato automaticamente quando il server è libero?",
-      "queue_button": "✅ Sì, metti in coda",
-      "queued_waiting": "⏳ In coda... Inizierò quando sarà il tuo turno.",
-      "processing": "⏳ Elaborazione... {seconds}s",
-      "confirm_button": "✅ Sì, inizia",
-      "cancel_button": "Annulla",
-      "result": "✅ Testo riconosciuto:\n\n{text}\n\n🌐 Lingua: {language}\n⏱ Durata audio: {audio_duration} | Elaborazione: {elapsed}",
-      "srt_caption": "📄 File Sottotitoli SRT",
-      "error": {
-        "access_denied": "🚫 Questa funzione è disponibile solo per gli admin.",
-        "invalid_audio": "❌ File audio o video non valido.",
-        "download_failed": "❌ Download file fallito.",
-        "service_unavailable": "❌ Servizio di riconoscimento vocale non disponibile.",
-        "timeout": "❌ Tempo di elaborazione scaduto.",
-        "processing_failed": "❌ Errore nell'elaborazione del file.",
-        "duration_failed": "❌ Impossibile leggere la durata del file."
-      },
-      "duration_unknown": "Sconosciuto",
-      "estimated_unknown": "Sconosciuto"
     },
     "redeem": {
       "success": "🎉 Congratulazioni! Rango «{rank}» attivato.\n📅 Valido fino al: {date}\n⏳ Totale: {days} giorni",

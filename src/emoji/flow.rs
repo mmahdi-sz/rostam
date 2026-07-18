@@ -39,9 +39,6 @@ pub enum FlowState {
     AwaitingSurgeUrlInput,
     AwaitingSurgeConfirm { url: String, filename: String },
     AwaitingSurgeRenameInput { url: String, original_filename: String, prompt_message_id: i32 },
-    AwaitingAsrAudio,
-    AwaitingAsrConfirm { file_id: String, filename: String, duration_secs: f64 },
-    AwaitingAsrQueued { file_id: String, filename: String, duration_secs: f64 },
     /// ادمین دکمه‌ی ساخت کد را زده و منتظر آرگومان‌ها (مثل `30d es 1u`) هستیم
     #[allow(dead_code)]
     AwaitingRedeemGenArgs,

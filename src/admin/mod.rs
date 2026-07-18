@@ -7,14 +7,13 @@ use crate::stats::{
 use tokio_postgres::Client;
 
 // فیچرهای AI که در پنل آمار اصلی نشون داده می‌شن: (feature_key, نام i18n, آیا مدت زمان داره).
-// مدت‌دارها amount=ثانیه ثبت می‌کنن (stt/denoise/separation/asr)؛ بقیه amount=تعداد.
+// مدت‌دارها amount=ثانیه ثبت می‌کنن (stt/denoise/separation)؛ بقیه amount=تعداد.
 const AI_FEATURES: &[(&str, &str, bool)] = &[
     ("stt",        "admin.stats.names.stt",        true),
     ("denoise",    "admin.stats.names.denoise",    true),
     ("upscale",    "admin.stats.names.upscale",    false),
     ("separation", "admin.stats.names.separation", true),
     ("gwm",        "admin.stats.names.gwm",        false),
-    ("asr",        "admin.stats.names.asr",        true),
 ];
 
 // نام raw فیچر → نام فارسی برای «پرمصرف‌ترین فیچر». youtube جداست (در stats_downloads).
@@ -25,7 +24,6 @@ fn feature_label(raw: &str) -> String {
         "upscale"    => "admin.stats.names.upscale",
         "separation" => "admin.stats.names.separation",
         "gwm"        => "admin.stats.names.gwm",
-        "asr"        => "admin.stats.names.asr",
         "youtube"    => "admin.stats.names.youtube",
         _            => return raw.to_string(),
     };

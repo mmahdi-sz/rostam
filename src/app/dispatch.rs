@@ -9,14 +9,13 @@ use crate::bot::{send_start_menu, edit_to_start_menu, edit_to_ai_lab, edit_to_to
 use crate::bot::{
     CB_LANG_SET,
     CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB, CB_START_TOOLS, CB_USER_PANEL,
-    CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_AI_SEP, CB_AI_GWM, CB_AI_ASR, CB_DENOISE_CANCEL,
+    CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_AI_SEP, CB_AI_GWM, CB_DENOISE_CANCEL,
     CB_ADMIN_PANEL, CB_ADMIN_STATS, CB_ADMIN_STATS_MORE, CB_ADMIN_ERRORS, CB_ADMIN_FORCE_JOIN, CB_ADMIN_GEN_CODE,
 };
 use crate::pdfcompress::{
     enter_pdf_compress, handle_pdf_mode_simple, handle_pdf_cancel, handle_pdf_file, handle_pdf_level,
     CB_TOOLS_PDF_COMPRESS, CB_PDF_MODE_SIMPLE, CB_PDF_MODE_ADVANCED, CB_PDF_LEVEL_PREFIX, CB_PDF_CANCEL,
 };
-use crate::asr::{enter_asr, handle_asr_audio, handle_asr_cancel, handle_asr_confirm, CB_ASR_CANCEL, CB_ASR_CONFIRM, CB_ASR_QUEUE};
 use crate::config;
 use crate::denoise;
 use crate::emoji::{FlowState, handler as emoji_handler, panel::CB_START_PANEL};
@@ -458,18 +457,6 @@ async fn handle_message(
                     handle_surge_rename_text(api, &message, uid, flow_manager).await;
                 }
                 return Ok(());
-            }
-
-            if matches!(flow_manager.get(uid), FlowState::AwaitingAsrAudio) {
-                if message.voice.is_some() || message.audio.is_some() || message.document.is_some()
-                    || message.video.is_some() || message.video_note.is_some() {
-                    let trace_id = next_trace_id();
-                    log_trace(trace_id, "asr_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
-                    flow_manager.clear(uid);
-                    // Runs fast (just CPU status check + send message), safe to await directly
-                    handle_asr_audio(api, &message, uid, flow_manager).await;
-                    return Ok(());
-                }
             }
         }
     }
@@ -998,54 +985,6 @@ async fn handle_callback(
         ).await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             handle_gwm_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == CB_AI_ASR {
-        let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ai_asr_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            enter_asr(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == CB_ASR_CANCEL {
-        let trace_id = next_trace_id();
-        log_trace(trace_id, "asr_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_asr_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == CB_ASR_CONFIRM {
-        let trace_id = next_trace_id();
-        log_trace(trace_id, "asr_confirm", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_asr_confirm(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager, false).await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == CB_ASR_QUEUE {
-        let trace_id = next_trace_id();
-        log_trace(trace_id, "asr_queue_confirm", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_asr_confirm(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager, true).await;
         }
         return Ok(());
     }

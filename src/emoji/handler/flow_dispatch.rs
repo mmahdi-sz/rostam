@@ -95,12 +95,6 @@ pub async fn handle_emoji_flow_message(
             eprintln!("[emoji_msg trace={trace_id} event=surge_dl_skip] — handled in main");
             false
         }
-        FlowState::AwaitingAsrAudio
-        | FlowState::AwaitingAsrConfirm { .. }
-        | FlowState::AwaitingAsrQueued { .. } => {
-            eprintln!("[emoji_msg trace={trace_id} event=asr_skip] — handled in main");
-            false
-        }
         FlowState::AwaitingRedeemGenArgs => {
             eprintln!("[emoji_msg trace={trace_id} event=redeem_gen_skip] — handled in main");
             false
@@ -137,9 +131,6 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingSurgeUrlInput => "AwaitingSurgeUrlInput",
         FlowState::AwaitingSurgeConfirm { .. } => "AwaitingSurgeConfirm",
         FlowState::AwaitingSurgeRenameInput { .. } => "AwaitingSurgeRenameInput",
-        FlowState::AwaitingAsrAudio => "AwaitingAsrAudio",
-        FlowState::AwaitingAsrConfirm { .. } => "AwaitingAsrConfirm",
-        FlowState::AwaitingAsrQueued { .. } => "AwaitingAsrQueued",
         FlowState::AwaitingRedeemGenArgs => "AwaitingRedeemGenArgs",
         FlowState::AwaitingForceJoinLink => "AwaitingForceJoinLink",
         FlowState::AwaitingForceJoinPrivateInfo { .. } => "AwaitingForceJoinPrivateInfo",

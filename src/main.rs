@@ -3,7 +3,6 @@ mod log;
 mod admin;
 mod app;
 mod rank;
-mod asr;
 mod bot;
 mod config;
 mod cookie_pool;

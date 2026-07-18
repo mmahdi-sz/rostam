@@ -9,7 +9,6 @@ pub const CB_AI_UPSCALE: &str = "ai:upscale";
 pub const CB_AI_STT: &str = "ai:stt";
 pub const CB_AI_SEP: &str = "ai:sep";
 pub const CB_AI_GWM: &str = "ai:gwm";
-pub const CB_AI_ASR: &str = "ai:asr";
 pub const CB_DENOISE_CANCEL: &str = "denoise:cancel";
 pub const CB_ADMIN_PANEL: &str = "admin:panel";
 pub const CB_ADMIN_STATS: &str = "admin:stats";
