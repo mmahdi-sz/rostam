@@ -217,6 +217,15 @@ pub async fn handle_surge_rename_text(
         return;
     };
 
+    // Reduce to a bare filename — drops any path separators or `..` so the rename
+    // can't escape the per-user download dir (with_file_name runs as root).
+    let Some(typed) = sanitize_rename(typed) else {
+        log_ev!("surge_dl", trace_id, "rename_rejected", "=>" => "invalid_name");
+        let _ = crate::bot::send_text(api, chat_id, &t("surge.error.invalid_name")).await;
+        return;
+    };
+    let typed = typed.as_str();
+
     let new_name = if typed.contains('.') {
         typed.to_string()
     } else {
@@ -653,4 +662,37 @@ async fn fetch_detail(id: &str) -> Option<SurgeDetail> {
         avg_speed: json.get("avg_speed").and_then(|v| v.as_f64()).unwrap_or(0.0),
         status: json.get("status")?.as_str()?.to_string(),
     })
+}
+
+/// Reduces user rename input to a bare filename, rejecting anything that could
+/// escape the download dir (path separators, `.`/`..`). Returns None if nothing
+/// safe remains — the caller then aborts the rename.
+fn sanitize_rename(typed: &str) -> Option<String> {
+    std::path::Path::new(typed)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.is_empty() && *n != "." && *n != "..")
+        .map(|n| n.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_rename;
+
+    #[test]
+    fn keeps_plain_names() {
+        assert_eq!(sanitize_rename("movie.mp4").as_deref(), Some("movie.mp4"));
+        assert_eq!(sanitize_rename("my file").as_deref(), Some("my file"));
+    }
+
+    #[test]
+    fn strips_traversal() {
+        // Path separators and parent refs are stripped to the trailing component…
+        assert_eq!(sanitize_rename("../../etc/passwd").as_deref(), Some("passwd"));
+        assert_eq!(sanitize_rename("/etc/cron.d/x").as_deref(), Some("x"));
+        // …and inputs that reduce to nothing safe are rejected outright.
+        assert_eq!(sanitize_rename(".."), None);
+        assert_eq!(sanitize_rename("../.."), None);
+        assert_eq!(sanitize_rename("/"), None);
+    }
 }

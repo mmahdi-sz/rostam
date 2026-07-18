@@ -902,7 +902,8 @@
       "size_unknown": "نامشخص",
       "error": {
         "download_failed": "دانلود با مشکل مواجه شد، دوباره امتحان کن.",
-        "send_failed": "فایل دانلود شد ولی ارسالش به مشکل خورد، دوباره امتحان کن."
+        "send_failed": "فایل دانلود شد ولی ارسالش به مشکل خورد، دوباره امتحان کن.",
+        "invalid_name": "این اسم فایل معتبر نیست، یک اسم دیگه بفرست."
       }
     }
   },
@@ -1809,7 +1810,8 @@
       "size_unknown": "unknown",
       "error": {
         "download_failed": "The download failed, try again.",
-        "send_failed": "The file was downloaded but sending it failed, try again."
+        "send_failed": "The file was downloaded but sending it failed, try again.",
+        "invalid_name": "That file name is not valid, send another one."
       }
     }
   },
@@ -2716,7 +2718,8 @@
       "size_unknown": "sconosciuto",
       "error": {
         "download_failed": "Il download non è riuscito, riprova.",
-        "send_failed": "Il file è stato scaricato ma l'invio è fallito, riprova."
+        "send_failed": "Il file è stato scaricato ma l'invio è fallito, riprova.",
+        "invalid_name": "Questo nome file non è valido, inviane un altro."
       }
     }
   }
