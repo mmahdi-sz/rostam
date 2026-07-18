@@ -23,7 +23,7 @@ The installer auto-elevates with `sudo`, clones the repo to `/opt/rostam`, and
 provisions the whole stack. It is **idempotent** — safe to re-run. It will prompt
 for your `BOT_TOKEN` (and, for the local Bot API, Telegram `api_id`/`api_hash`).
 
-> The installer downloads ~4.2 GB of models plus a ~1.5 GB ASR model, and builds
+> The installer downloads ~4.2 GB of models, and builds
 > the Rust bot (and optionally the Telegram Bot API server) from source — the
 > first run takes a while and needs ~12 GB free disk.
 
@@ -33,7 +33,6 @@ for your `BOT_TOKEN` (and, for the local Bot API, Telegram `api_id`/`api_hash`).
 --dir <path>      install location (default /opt/rostam)
 --branch <name>   git branch (default master)
 --skip-bot-api    skip building the local Telegram Bot API server
---skip-asr        skip the ASR service (:8765)
 --skip-firefox    skip Firefox (cookie-pool refresher)
 --fresh           re-clone / rebuild from scratch
 ```
@@ -52,7 +51,6 @@ for your `BOT_TOKEN` (and, for the local Bot API, Telegram `api_id`/`api_hash`).
 | **PostgreSQL** | creates DB `ros_telegram_bot` (bot creates its own tables on first start) |
 | **The bot** | `cargo build --release` → `rostam.service` |
 | **separation-service** | vocal/instrumental split (:6589), auto-downloads its model |
-| **ASR service** | Nemotron speech-to-text (:8765), ~1.5 GB model to `/opt/asr_model` |
 | **surge** | [SurgeDM/Surge](https://github.com/SurgeDM/Surge) parallel download manager daemon (:1700), latest release binary → `surge.service` |
 | **Local Telegram Bot API** | built from tdlib source (:8081) — raises the upload cap to 2 GB |
 
@@ -74,11 +72,11 @@ for your `BOT_TOKEN` (and, for the local Bot API, Telegram `api_id`/`api_hash`).
       │ PostgreSQL  │          │   Redis     │       │  sidecars    │
       │  :5432      │          │   :6379     │◄──────│  CPU broker  │
       └─────────────┘          └─────────────┘       └──────┬───────┘
-                                              ┌─────────────┼─────────────┐
-                                     ┌────────▼───┐  ┌───────▼────┐ ┌──────▼─────┐
-                                     │ separation │  │    ASR     │ │  surge dl  │
-                                     │   :6589    │  │   :8765    │ │   :1700    │
-                                     └────────────┘  └────────────┘ └────────────┘
+                                                    ┌────────┴────────┐
+                                            ┌───────▼────┐  ┌─────────▼──┐
+                                            │ separation │  │  surge dl  │
+                                            │   :6589    │  │   :1700    │
+                                            └────────────┘  └────────────┘
 ```
 
 The bot connects to Postgres, Redis and the sidecars **lazily** — none is
@@ -91,7 +89,7 @@ startup requirement is `BOT_TOKEN`.
 ## Features
 
 YouTube download (quality/subtitle/traffic paywalls) · vocal/instrumental
-separation · speech-to-text (Vosk + Nemotron ASR) · audio denoise (DeepFilterNet)
+separation · speech-to-text (Vosk) · audio denoise (DeepFilterNet)
 · image upscale (Real-ESRGAN) · watermark removal (Moebius ONNX, in-process) ·
 PDF compression (Ghostscript) · fast parallel direct-link downloads (Surge) ·
 IP lookup · custom emoji packs · ranks & paywall · referrals · admin stats panel.
@@ -126,7 +124,6 @@ to the bot's working directory** (`/opt/rostam`), so the systemd unit sets
 |---|---|---|
 | Bot | `rostam.service` | — |
 | Separation | `separation.service` | 6589 |
-| ASR | `asr.service` | 8765 |
 | Surge (downloads) | `surge.service` | 1700 |
 | Local Bot API | `telegram-bot-api.service` | 8081 |
 | PostgreSQL | `postgresql.service` | 5432 |
@@ -135,7 +132,6 @@ to the bot's working directory** (`/opt/rostam`), so the systemd unit sets
 ```bash
 journalctl -u rostam -f                 # bot logs
 curl http://127.0.0.1:6589/health       # separation
-curl http://127.0.0.1:8765/health       # ASR
 ```
 
 ---

@@ -24,7 +24,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/mmahdi-sz/rostam/master/instal
 و کل پشته را برپا می‌سازد. **idempotent** است — اجرای دوباره‌اش امن است. هنگام نصب،
 `BOT_TOKEN` (و برای Bot API محلی، `api_id`/`api_hash` تلگرام) را از شما می‌پرسد.
 
-> نصب‌کننده حدود ۴.۲ گیگابایت مدل به‌علاوه‌ی یک مدل ASR حدود ۱.۵ گیگابایتی دانلود
+> نصب‌کننده حدود ۴.۲ گیگابایت مدل دانلود
 > می‌کند و ربات Rust (و اختیاراً سرور Telegram Bot API) را از سورس می‌سازد — اجرای
 > اول کمی طول می‌کشد و به حدود ۱۲ گیگابایت فضای خالی نیاز دارد.
 
@@ -34,7 +34,6 @@ bash <(curl -Ls https://raw.githubusercontent.com/mmahdi-sz/rostam/master/instal
 --dir <path>      محل نصب (پیش‌فرض /opt/rostam)
 --branch <name>   شاخه‌ی گیت (پیش‌فرض master)
 --skip-bot-api    از ساختن سرور Telegram Bot API محلی صرف‌نظر کن
---skip-asr        سرویس ASR (پورت ۸۷۶۵) را نصب نکن
 --skip-firefox    فایرفاکس (رفرش‌کننده‌ی cookie-pool) را نصب نکن
 --fresh           از صفر دوباره کلون/بیلد کن
 ```
@@ -53,7 +52,6 @@ bash <(curl -Ls https://raw.githubusercontent.com/mmahdi-sz/rostam/master/instal
 | **PostgreSQL** | دیتابیس `ros_telegram_bot` را می‌سازد (ربات جدول‌های خودش را در اولین اجرا می‌سازد) |
 | **خودِ ربات** | `cargo build --release` → `rostam.service` |
 | **سرویس separation** | جداسازی وکال/موسیقی (پورت ۶۵۸۹)، مدلش را خودش دانلود می‌کند |
-| **سرویس ASR** | تبدیل گفتار به متن Nemotron (پورت ۸۷۶۵)، مدل ~۱.۵ گیگابایتی در `/opt/asr_model` |
 | **surge** | دیمِنِ دانلودمنیجرِ موازی [SurgeDM/Surge](https://github.com/SurgeDM/Surge) (پورت ۱۷۰۰)، باینری آخرین ریلیز → `surge.service` |
 | **Telegram Bot API محلی** | از سورس tdlib بیلد می‌شود (پورت ۸۰۸۱) — سقف آپلود را به ۲ گیگابایت می‌رساند |
 
@@ -77,11 +75,11 @@ bash <(curl -Ls https://raw.githubusercontent.com/mmahdi-sz/rostam/master/instal
       │ PostgreSQL  │          │   Redis     │       │  sidecars    │
       │  :5432      │          │   :6379     │◄──────│  CPU broker  │
       └─────────────┘          └─────────────┘       └──────┬───────┘
-                                              ┌─────────────┼─────────────┐
-                                     ┌────────▼───┐  ┌───────▼────┐ ┌──────▼─────┐
-                                     │ separation │  │    ASR     │ │  surge dl  │
-                                     │   :6589    │  │   :8765    │ │   :1700    │
-                                     └────────────┘  └────────────┘ └────────────┘
+                                                    ┌────────┴────────┐
+                                            ┌───────▼────┐  ┌─────────▼──┐
+                                            │ separation │  │  surge dl  │
+                                            │   :6589    │  │   :1700    │
+                                            └────────────┘  └────────────┘
 ```
 
 ربات به Postgres، Redis و سرویس‌های جانبی **با تنبلی (lazy)** وصل می‌شود — هیچ‌کدام
@@ -94,7 +92,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/mmahdi-sz/rostam/master/instal
 ## قابلیت‌ها
 
 دانلود یوتیوب (پی‌وال روی کیفیت/زیرنویس/ترافیک) · جداسازی وکال/موسیقی · تبدیل گفتار
-به متن (Vosk + Nemotron ASR) · حذف نویز صدا (DeepFilterNet) · بزرگ‌نمایی تصویر
+به متن (Vosk) · حذف نویز صدا (DeepFilterNet) · بزرگ‌نمایی تصویر
 (Real-ESRGAN) · حذف واترمارک (Moebius ONNX، درون‌فرایندی) · فشرده‌سازی PDF
 (Ghostscript) · دانلود مستقیمِ سریع و موازیِ لینک (Surge) · جست‌وجوی IP · بسته‌های
 ایموجی سفارشی · رتبه‌ها و پی‌وال · سیستم دعوت (رفرال) · پنل آمار ادمین.
@@ -129,7 +127,6 @@ bash <(curl -Ls https://raw.githubusercontent.com/mmahdi-sz/rostam/master/instal
 |---|---|---|
 | ربات | `rostam.service` | — |
 | Separation | `separation.service` | 6589 |
-| ASR | `asr.service` | 8765 |
 | Surge (دانلودها) | `surge.service` | 1700 |
 | Bot API محلی | `telegram-bot-api.service` | 8081 |
 | PostgreSQL | `postgresql.service` | 5432 |
@@ -138,7 +135,6 @@ bash <(curl -Ls https://raw.githubusercontent.com/mmahdi-sz/rostam/master/instal
 ```bash
 journalctl -u rostam -f                 # لاگ‌های ربات
 curl http://127.0.0.1:6589/health       # separation
-curl http://127.0.0.1:8765/health       # ASR
 ```
 
 ---
