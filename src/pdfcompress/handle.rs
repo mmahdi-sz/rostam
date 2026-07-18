@@ -394,26 +394,9 @@ async fn edit_status(api: &Bot, chat_id: i64, message_id: i32, text: &str) {
     let _ = api.edit_message_text(&params).await;
 }
 
-async fn download_file(api: &Bot, file_id: &str, dest: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    use frankenstein::methods::GetFileParams;
-    let file_info = api.get_file(&GetFileParams::builder().file_id(file_id).build()).await?;
-    let file_path = file_info.result.file_path.ok_or("no file_path")?;
-    if file_path.starts_with('/') {
-        std::fs::copy(&file_path, dest)?;
-        return Ok(());
-    }
-    let url = if let Some(base) = crate::config::bot_api_base_url() {
-        let base = base.trim_end_matches('/');
-        format!("{base}/file/bot{}/{file_path}", crate::config::bot_token()?)
-    } else {
-        format!("https://api.telegram.org/file/bot{}/{file_path}", crate::config::bot_token()?)
-    };
-    let bytes = reqwest::get(&url).await?.bytes().await?;
-    std::fs::write(dest, &bytes)?;
-    Ok(())
-}
+use crate::bot::download_telegram_file as download_file;
 
-// ── CPU broker (same pattern as upscale/asr) ────────────────────────────────────
+// ── CPU broker (same pattern as upscale) ────────────────────────────────────────
 
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 

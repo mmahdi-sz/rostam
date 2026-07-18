@@ -219,33 +219,7 @@ async fn download_file(
     file_id: &str,
     dest: &str,
     trace_id: u64,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use frankenstein::methods::GetFileParams;
-
-    let file_info = api.get_file(&GetFileParams::builder().file_id(file_id).build()).await?;
-    let file_path = file_info.result.file_path.ok_or("no file_path")?;
-
-    log_ev!("gwm", trace_id, "file_path", "raw" => "file_path={file_path}");
-
-    if file_path.starts_with('/') {
-        std::fs::copy(&file_path, dest)?;
-        let size = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0);
-        log_ev!("gwm", trace_id, "local_copy", "raw" => format!("size={size}"));
-        return Ok(());
-    }
-
-    let url = if let Some(base) = crate::config::bot_api_base_url() {
-        let base = base.trim_end_matches('/');
-        format!("{base}/file/bot{}/{file_path}", crate::config::bot_token()?)
-    } else {
-        format!("https://api.telegram.org/file/bot{}/{file_path}", crate::config::bot_token()?)
-    };
-
-    log_ev!("gwm", trace_id, "http_download", "raw" => format!("url_prefix={}", &url[..url.len().min(60)]));
-    let response = reqwest::get(&url).await?;
-    let status = response.status();
-    let bytes = response.bytes().await?;
-    log_ev!("gwm", trace_id, "http_done", "raw" => format!("status={status} bytes={}", bytes.len()));
-    std::fs::write(dest, &bytes)?;
-    Ok(())
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    log_ev!("gwm", trace_id, "download_start", "raw" => format!("file_id={file_id}"));
+    crate::bot::download_telegram_file(api, file_id, dest).await
 }

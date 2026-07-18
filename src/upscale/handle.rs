@@ -549,24 +549,7 @@ fn detect_doc_ext(message: &Message) -> String {
     "jpg".to_string()
 }
 
-async fn download_file(api: &Bot, file_id: &str, dest: &str) -> Result<(), Box<dyn std::error::Error>> {
-    use frankenstein::methods::GetFileParams;
-    let file_info = api.get_file(&GetFileParams::builder().file_id(file_id).build()).await?;
-    let file_path = file_info.result.file_path.ok_or("no file_path")?;
-    if file_path.starts_with('/') {
-        std::fs::copy(&file_path, dest)?;
-        return Ok(());
-    }
-    let url = if let Some(base) = crate::config::bot_api_base_url() {
-        let base = base.trim_end_matches('/');
-        format!("{base}/file/bot{}/{file_path}", crate::config::bot_token()?)
-    } else {
-        format!("https://api.telegram.org/file/bot{}/{file_path}", crate::config::bot_token()?)
-    };
-    let bytes = reqwest::get(&url).await?.bytes().await?;
-    std::fs::write(dest, &bytes)?;
-    Ok(())
-}
+use crate::bot::download_telegram_file as download_file;
 
 fn escape_md(s: &str) -> String {
     s.chars().map(|c| match c {

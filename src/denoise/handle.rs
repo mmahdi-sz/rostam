@@ -392,34 +392,7 @@ fn wav_duration(path: &str) -> Result<f64, Box<dyn std::error::Error>> {
     Ok(s.parse()?)
 }
 
-async fn download_file(api: &Bot, file_id: &str, dest: &str) -> Result<(), Box<dyn std::error::Error>> {
-    use frankenstein::methods::GetFileParams;
-
-    let file_info = api.get_file(&GetFileParams::builder().file_id(file_id).build()).await?;
-    let file_path = file_info.result.file_path.ok_or("no file_path")?;
-
-    log_trace(next_trace_id(), "denoise_file_path", &format!("file_path={file_path}"));
-
-    // Local Bot API returns an absolute filesystem path in --local mode.
-    // In that case, copy directly from the filesystem.
-    if file_path.starts_with('/') {
-        std::fs::copy(&file_path, dest)?;
-        log_trace(next_trace_id(), "denoise_file_local_copy", &format!("size={}", std::fs::metadata(dest).map(|m| m.len()).unwrap_or(0)));
-        return Ok(());
-    }
-
-    let url = if let Some(base) = crate::config::bot_api_base_url() {
-        let base = base.trim_end_matches('/');
-        format!("{base}/file/bot{}/{file_path}", crate::config::bot_token()?)
-    } else {
-        format!("https://api.telegram.org/file/bot{}/{file_path}", crate::config::bot_token()?)
-    };
-
-    let response = reqwest::get(&url).await?;
-    let bytes = response.bytes().await?;
-    std::fs::write(dest, &bytes)?;
-    Ok(())
-}
+use crate::bot::download_telegram_file as download_file;
 
 /// Escape MarkdownV2 special characters in dynamic text.
 /// Does NOT touch `*` since those may be formatting markers in the i18n template.

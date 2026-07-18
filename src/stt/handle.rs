@@ -226,39 +226,7 @@ fn convert_to_wav(input: &str, output: &str) -> Result<(), Box<dyn std::error::E
 }
 
 /// Downloads a Telegram file by file_id to a local path.
-async fn download_file(api: &Bot, file_id: &str, dest: &str) -> Result<(), Box<dyn std::error::Error>> {
-    use frankenstein::methods::GetFileParams;
-
-    let file_info = api.get_file(&GetFileParams::builder().file_id(file_id).build()).await?;
-    let file_path = file_info.result.file_path.ok_or("no file_path")?;
-
-    // Local Bot API returns an absolute filesystem path in --local mode.
-    // In that case, copy directly from the filesystem.
-    if file_path.starts_with('/') {
-        let allowed_prefix = std::env::var("TELEGRAM_LOCAL_STORAGE_DIR")
-            .unwrap_or_else(|_| "/var/lib/telegram-bot-api".to_string());
-        let canonical = std::path::Path::new(&file_path).canonicalize().ok();
-        let is_safe = canonical.as_ref().map_or(false, |p| p.starts_with(&allowed_prefix))
-            || file_path.starts_with(&allowed_prefix);
-        if !is_safe {
-            return Err("file path outside allowed local directory".into());
-        }
-        std::fs::copy(&file_path, dest)?;
-        return Ok(());
-    }
-
-    let url = if let Some(base) = crate::config::bot_api_base_url() {
-        let base = base.trim_end_matches('/');
-        format!("{base}/file/bot{}/{file_path}", crate::config::bot_token()?)
-    } else {
-        format!("https://api.telegram.org/file/bot{}/{file_path}", crate::config::bot_token()?)
-    };
-
-    let response = reqwest::get(&url).await?;
-    let bytes = response.bytes().await?;
-    std::fs::write(dest, &bytes)?;
-    Ok(())
-}
+use crate::bot::download_telegram_file as download_file;
 
 /// Processes an audio message (voice or audio file) when the user is in AwaitingSttAudio.
 /// Takes chat_id and file_id directly (already extracted in dispatch)
