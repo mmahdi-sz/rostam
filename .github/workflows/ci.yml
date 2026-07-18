@@ -5,6 +5,9 @@ on:
     branches: [ main, master, dev, "advisor/*" ]
   pull_request:
     branches: [ main, master, dev ]
+  schedule:
+    # Weekly re-audit so newly-disclosed CVEs are caught even without a push.
+    - cron: "17 4 * * 1"
 
 env:
   CARGO_TERM_COLOR: always
@@ -34,3 +37,15 @@ jobs:
 
       - name: Cargo clippy
         run: cargo clippy -- -D warnings
+
+  security-audit:
+    # Scans the dependency tree against the RustSec advisory DB for known
+    # vulnerabilities. Separate job so a CVE disclosure surfaces without
+    # blocking build/test feedback.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit dependencies for known vulnerabilities
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
