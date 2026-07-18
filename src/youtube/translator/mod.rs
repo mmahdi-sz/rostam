@@ -112,7 +112,37 @@ fn translate_batch_blocking(texts: &[String], target_lang: &str) -> Result<Vec<S
         .translate_batch_with_target_prefix(&sources, &prefixes, &Default::default(), None)
         .map_err(|e| format!("translate_batch failed: {e}"))?;
 
-    Ok(results.into_iter().map(|(text, _score)| text).collect())
+    Ok(results
+        .into_iter()
+        .map(|(text, _score)| clean_special_tokens(&text))
+        .collect())
+}
+
+/// توکن‌های ویژه‌ی NLLB را که گاهی در خروجی decode باقی می‌مانند حذف می‌کند
+/// (مثل `<unk>`, `</s>`, تگ زبان `pes_Arab`). tokenizer داخلی ct2rs در این نسخه
+/// special tokenها را skip نمی‌کند، پس دستی تمیز می‌کنیم.
+fn clean_special_tokens(text: &str) -> String {
+    let mut out = text.to_string();
+    for tok in ["<unk>", "<s>", "</s>", "<pad>", "<mask>"] {
+        out = out.replace(tok, "");
+    }
+    // تگ‌های زبان NLLB به شکل xxx_Yyyy هستند (مثل pes_Arab, eng_Latn).
+    out = out
+        .split_whitespace()
+        .filter(|w| !is_nllb_lang_tag(w))
+        .collect::<Vec<_>>()
+        .join(" ");
+    out.trim().to_string()
+}
+
+/// آیا کلمه یک تگ زبان NLLB است (سه حرف کوچک + `_` + چهار حرف با حرف اول بزرگ).
+fn is_nllb_lang_tag(w: &str) -> bool {
+    let bytes = w.as_bytes();
+    bytes.len() == 8
+        && bytes[3] == b'_'
+        && bytes[..3].iter().all(|c| c.is_ascii_lowercase())
+        && bytes[4].is_ascii_uppercase()
+        && bytes[5..].iter().all(|c| c.is_ascii_lowercase())
 }
 
 /// یک فایل SRT انگلیسی را می‌خواند، متن‌ها را به `target_lang` (کد NLLB) ترجمه
@@ -193,6 +223,16 @@ mod tests {
         assert_eq!(map_language_code("unknown"), None);
     }
 
+    #[test]
+    fn test_clean_special_tokens() {
+        assert_eq!(clean_special_tokens("این یک آزمایش است.<unk>"), "این یک آزمایش است.");
+        assert_eq!(clean_special_tokens("pes_Arab سلام دنیا"), "سلام دنیا");
+        assert_eq!(clean_special_tokens("متن</s> بعدی"), "متن بعدی");
+        assert_eq!(clean_special_tokens("متن عادی بدون توکن"), "متن عادی بدون توکن");
+        // کلمه‌ی معمولی نباید اشتباهاً تگ زبان تشخیص داده شود.
+        assert_eq!(clean_special_tokens("testing"), "testing");
+    }
+
     /// تست واقعیِ ترجمه با مدل NLLB. نیاز به files/models/nllb روی دیسک دارد و
     /// کند است، پس ignored — با `cargo test real_translation -- --ignored` اجرا شود.
     #[tokio::test]
@@ -214,6 +254,10 @@ mod tests {
         let items = parse_srt(&result);
         assert_eq!(items.len(), 2, "should keep both entries");
         assert_eq!(items[0].timestamp, "00:00:01,000 --> 00:00:03,000", "timing preserved");
+        // خروجی باید فارسی (غیر لاتین) و بدون توکن ویژه باشد و با انگلیسی فرق کند.
+        assert!(items[0].text.chars().any(|c| ('\u{0600}'..='\u{06FF}').contains(&c)), "expected Persian text, got: {}", items[0].text);
+        assert!(!items[0].text.contains("<unk>") && !items[0].text.contains("</s>"), "special tokens must be stripped: {}", items[0].text);
+        assert_ne!(items[0].text, "Hello, how are you?", "must be translated");
         // خروجی باید فارسی (غیر لاتین) باشد و با انگلیسی ورودی فرق کند.
         assert!(items[0].text.chars().any(|c| ('\u{0600}'..='\u{06FF}').contains(&c)), "expected Persian text, got: {}", items[0].text);
         assert_ne!(items[0].text, "Hello, how are you?", "must be translated");
