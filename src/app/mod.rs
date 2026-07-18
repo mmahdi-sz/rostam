@@ -55,7 +55,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut state = AppState {
         api: api.clone(),
-        cookie_pool,
+        cookie_pool: std::sync::Arc::new(tokio::sync::Mutex::new(cookie_pool)),
         database,
         flow_manager: FlowManager::new(),
         rate_limit_tx,
@@ -87,7 +87,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         while let Ok(cookie_id) = cooldown_done_rx.try_recv() {
             println!("[cookie_refresher] cooldown refresh done, re-adding cookie_id={cookie_id} to pool");
-            state.cookie_pool.remove_from_cooldown(&cookie_id);
+            state.cookie_pool.lock().await.remove_from_cooldown(&cookie_id);
         }
 
         while let Ok(user_id) = flow_clear_rx.try_recv() {

@@ -74,11 +74,9 @@ pub async fn handle_denoise_audio(
     api: &Bot,
     message: &Message,
     user_id: i64,
-    flow_manager: &mut FlowManager,
     database: &Option<PostgresDatabase>,
 ) {
-    // Clear denoise flow state — user sent audio, processing begins
-    flow_manager.clear(user_id);
+    // Flow state is cleared by the dispatcher before spawning this task.
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
     log_actor_id!("denoise", trace_id, user_id, "clicked" => "audio/voice");
@@ -145,7 +143,15 @@ pub async fn handle_denoise_audio(
     log_trace(trace_id, "denoise_downloaded", &format!("size={file_size}"));
 
     // 2. Convert to 48kHz mono 16-bit PCM WAV (DeepFilterNet optimal sample rate)
-    if let Err(e) = convert_to_wav(input_str, wav_str, 48000) {
+    // Blocking (std::process::Command) — run on the blocking thread pool.
+    let convert_res = {
+        let inp = input_str.to_string();
+        let outp = wav_str.to_string();
+        tokio::task::spawn_blocking(move || convert_to_wav(&inp, &outp, 48000).map_err(|e| e.to_string()))
+            .await
+            .unwrap_or_else(|e| Err(format!("convert task panicked: {e}")))
+    };
+    if let Err(e) = convert_res {
         log_trace(trace_id, "denoise_convert_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "denoise", "", "fail", 0).await;
         crate::stats::record_error_global("denoise", &format!("convert failed: {e}")).await;
@@ -212,8 +218,15 @@ pub async fn handle_denoise_audio(
         }
     }
 
-    // 3. Denoise via DeepFilterNet
-    let processing_secs = match deepfilter::denoise(wav_str, denoised_str) {
+    // 3. Denoise via DeepFilterNet — blocking (std::process::Command), run on thread pool.
+    let denoise_res = {
+        let wav_in = wav_str.to_string();
+        let wav_out = denoised_str.to_string();
+        tokio::task::spawn_blocking(move || deepfilter::denoise(&wav_in, &wav_out).map_err(|e| e.to_string()))
+            .await
+            .unwrap_or_else(|e| Err(format!("denoise task panicked: {e}")))
+    };
+    let processing_secs = match denoise_res {
         Ok(s) => {
             log_trace(trace_id, "denoise_done", &format!("elapsed={s:.1}s"));
             s
@@ -228,8 +241,16 @@ pub async fn handle_denoise_audio(
         }
     };
 
-    // 4. Convert back to original format
-    if let Err(e) = convert_from_wav(denoised_str, output_str, &orig_ext) {
+    // 4. Convert back to original format — blocking, run on thread pool.
+    let reconvert_res = {
+        let inp = denoised_str.to_string();
+        let outp = output_str.to_string();
+        let ext = orig_ext.clone();
+        tokio::task::spawn_blocking(move || convert_from_wav(&inp, &outp, &ext).map_err(|e| e.to_string()))
+            .await
+            .unwrap_or_else(|e| Err(format!("reconvert task panicked: {e}")))
+    };
+    if let Err(e) = reconvert_res {
         log_trace(trace_id, "denoise_reconvert_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "denoise", "", "fail", duration_secs as i64).await;
         crate::stats::record_error_global("denoise", &format!("reconvert failed: {e}")).await;

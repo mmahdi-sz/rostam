@@ -76,7 +76,6 @@ pub async fn handle_gwm_image(
     api: &Bot,
     message: &Message,
     user_id: i64,
-    flow_manager: &mut FlowManager,
 ) {
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
@@ -100,8 +99,7 @@ pub async fn handle_gwm_image(
     let ext = detect_ext(message);
     log_ev!("gwm", trace_id, "file_info", "raw" => "file_id={file_id} ext={ext}");
 
-    flow_manager.clear(user_id);
-
+    // Flow state is cleared by the dispatcher before spawning this task.
     let _ = send_text(api, chat_id, &t("gemini_wm.processing")).await;
 
     // Download image.

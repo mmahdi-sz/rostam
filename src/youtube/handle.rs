@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
@@ -7,6 +8,7 @@ use frankenstein::{
     methods::{DeleteMessageParams, SendMessageParams, SendPhotoParams},
     types::{LinkPreviewOptions, ReplyParameters},
 };
+use tokio::sync::Mutex;
 
 use crate::bot::send_text;
 use crate::cookie_pool::{CookiePool, CookieSource, format_no_cookie_available, save_snapshot};
@@ -26,7 +28,7 @@ pub async fn handle_youtube_url(
     user_id: Option<i64>,
     trace_id: u64,
     url: &str,
-    cookie_pool: &mut CookiePool,
+    cookie_pool: Arc<Mutex<CookiePool>>,
     database: &Option<PostgresDatabase>,
     rate_limit_tx: &tokio::sync::mpsc::UnboundedSender<CookieSource>,
 ) {
@@ -58,24 +60,30 @@ pub async fn handle_youtube_url(
     };
     let mut tried: HashSet<String> = HashSet::new();
     loop {
-        let cookie = match cookie_pool.next_cookie() {
-            Some(c) => c,
-            None => {
-                let status = cookie_pool.status();
-                log_trace(trace_id, "cookie_none", &format!("status selectable={} cooldown={}", status.selectable_cookies, status.cooldown_cookies));
+        // Lock only around pool selection/snapshot; released before the network fetch
+        // so other users' YouTube requests aren't serialized behind this one.
+        let cookie = {
+            let mut pool = cookie_pool.lock().await;
+            let cookie = match pool.next_cookie() {
+                Some(c) => c,
+                None => {
+                    let status = pool.status();
+                    log_trace(trace_id, "cookie_none", &format!("status selectable={} cooldown={}", status.selectable_cookies, status.cooldown_cookies));
+                    let _ = send_text(api, chat_id, &format_no_cookie_available(&status)).await;
+                    return;
+                }
+            };
+            if tried.contains(&cookie.id) {
+                let status = pool.status();
+                log_trace(trace_id, "cookie_retry_exhausted", &format!("tried={tried:?} selectable={} cooldown={}", status.selectable_cookies, status.cooldown_cookies));
                 let _ = send_text(api, chat_id, &format_no_cookie_available(&status)).await;
                 return;
             }
+            tried.insert(cookie.id.clone());
+            log_trace(trace_id, "cookie_selected", &format!("cookie_id={} profile={}", cookie.id, cookie.profile_name));
+            save_snapshot(database, &mut pool).await;
+            cookie
         };
-        if tried.contains(&cookie.id) {
-            let status = cookie_pool.status();
-            log_trace(trace_id, "cookie_retry_exhausted", &format!("tried={tried:?} selectable={} cooldown={}", status.selectable_cookies, status.cooldown_cookies));
-            let _ = send_text(api, chat_id, &format_no_cookie_available(&status)).await;
-            return;
-        }
-        tried.insert(cookie.id.clone());
-        log_trace(trace_id, "cookie_selected", &format!("cookie_id={} profile={}", cookie.id, cookie.profile_name));
-        save_snapshot(database, cookie_pool).await;
 
         match fetch_video_info(trace_id, url, &cookie.yt_dlp_browser_spec).await {
             Ok(info) => {
@@ -119,7 +127,7 @@ pub async fn handle_youtube_url(
                         }
                     }
                 }
-                if let Err(error) = send_quality_prompt(
+                let prompt_res = send_quality_prompt(
                     trace_id,
                     api,
                     chat_id,
@@ -128,16 +136,24 @@ pub async fn handle_youtube_url(
                     &info,
                 )
                 .await
-                {
+                .map_err(|e| e.to_string());
+                if let Err(error) = prompt_res {
                     eprintln!("send quality prompt failed: {error}");
-                    log_trace(trace_id, "quality_prompt_failed", &error.to_string());
-                    let _ = send_text(api, chat_id, &tf("youtube.quality.send_failed", &[("error", &error.to_string())])).await;
+                    log_trace(trace_id, "quality_prompt_failed", &error);
+                    let _ = send_text(api, chat_id, &tf("youtube.quality.send_failed", &[("error", &error)])).await;
                 }
                 return;
             }
             Err(FetchError::RateLimited) => {
-                if let Some(source) = cookie_pool.mark_last_rate_limited() {
-                    save_snapshot(database, cookie_pool).await;
+                let source = {
+                    let mut pool = cookie_pool.lock().await;
+                    let source = pool.mark_last_rate_limited();
+                    if source.is_some() {
+                        save_snapshot(database, &mut pool).await;
+                    }
+                    source
+                };
+                if let Some(source) = source {
                     let p = source.profile_name.clone();
                     println!("[cookie_refresh profile={p} event=cooldown_refresh_scheduled] cookie_id={} waiting 30min then refresh", source.id);
                     let _ = rate_limit_tx.send(source);

@@ -378,7 +378,14 @@ async fn handle_message(
                 if message.voice.is_some() || message.audio.is_some() || message.document.is_some() {
                     let trace_id = next_trace_id();
                     log_trace(trace_id, "denoise_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
-                    denoise::handle_denoise_audio(api, &message, uid, flow_manager, database).await;
+                    // Spawn so the event loop stays free during denoise (minutes-long operation).
+                    flow_manager.clear(uid);
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    let db2 = database.clone();
+                    tokio::spawn(async move {
+                        denoise::handle_denoise_audio(&api2, &msg2, uid, &db2).await;
+                    });
                     return Ok(());
                 }
             }
@@ -411,7 +418,13 @@ async fn handle_message(
                 if message.photo.is_some() || message.document.is_some() {
                     let trace_id = next_trace_id();
                     log_trace(trace_id, "gwm_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
-                    handle_gwm_image(api, &message, uid, flow_manager).await;
+                    // Spawn so the event loop stays free during watermark removal.
+                    flow_manager.clear(uid);
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    tokio::spawn(async move {
+                        handle_gwm_image(&api2, &msg2, uid).await;
+                    });
                     return Ok(());
                 }
             }
@@ -530,10 +543,20 @@ async fn handle_message(
                         log_trace(trace_id, "route_youtube_url", &format!(
                             "user_id={user_id:?} chat_id={} url={url}", message.chat.id
                         ));
-                        handle_youtube_url(
-                            api, message.chat.id, message.message_id,
-                            user_id, trace_id, &url, cookie_pool, database, rate_limit_tx,
-                        ).await;
+                        // Spawn so a slow yt-dlp fetch doesn't freeze the whole event loop.
+                        let api2 = api.clone();
+                        let chat_id2 = message.chat.id;
+                        let msg_id2 = message.message_id;
+                        let pool2 = cookie_pool.clone();
+                        let db2 = database.clone();
+                        let rl_tx2 = rate_limit_tx.clone();
+                        let url_owned = url.to_string();
+                        tokio::spawn(async move {
+                            handle_youtube_url(
+                                &api2, chat_id2, msg_id2,
+                                user_id, trace_id, &url_owned, pool2, &db2, &rl_tx2,
+                            ).await;
+                        });
                     }
                 } else if let Some(uid) = user_id {
                     if crate::surge_dl::is_direct_link(text) {
