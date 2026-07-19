@@ -10,6 +10,7 @@ pub const CB_STT_EN_SMALL: &str = "stt:en_small";
 pub const CB_STT_TOGGLE_DENOISE: &str = "stt:toggle_denoise";
 pub const CB_STT_BACK: &str = "stt:back";
 pub const CB_STT_CANCEL: &str = "stt:cancel";
+pub const CB_STT_JOB_CANCEL: &str = "stt:job_cancel";
 pub const CB_STT_MAIN_MENU: &str = "stt:main_menu";
 
 /// Build the language/quality selection keyboard.
@@ -45,6 +46,17 @@ pub fn ready_keyboard() -> InlineKeyboardMarkup {
             vec![
                 btn_icon(&t("stt.cancel_button"), CB_STT_CANCEL, "cancel"),
                 btn_icon(&t("start.main_menu"), CB_STT_MAIN_MENU, "panel"),
+            ],
+        ])
+        .build()
+}
+
+/// Build the cancel keyboard for an active processing job.
+pub fn cancel_job_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![
+            vec![
+                btn_icon(&t("stt.cancel_button"), CB_STT_JOB_CANCEL, "cancel"),
             ],
         ])
         .build()

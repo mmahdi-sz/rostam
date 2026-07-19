@@ -86,3 +86,18 @@ pub fn btn_icon_plain(text: &str, callback_data: &str, icon_key: &str) -> Inline
         callback_game: None, pay: None,
     }
 }
+
+pub fn btn_icon_url(text: &str, url: &str, icon_key: &str) -> InlineKeyboardButton {
+    let icon_id = resolve_icon(icon_key);
+    InlineKeyboardButton {
+        text: text.to_string(),
+        icon_custom_emoji_id: icon_id,
+        url: Some(url.to_string()),
+        callback_data: None,
+        style: None,
+        login_url: None, web_app: None,
+        switch_inline_query: None, switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None, copy_text: None,
+        callback_game: None, pay: None,
+    }
+}

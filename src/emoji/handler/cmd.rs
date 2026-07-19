@@ -40,6 +40,7 @@ pub async fn open_emoji_panel(
     if let Err(e) = r { eprintln!("[emoji_open trace={trace_id} event=panel_send_failed] err={e}"); }
 }
 
+#[allow(dead_code)]
 pub async fn handle_emoji_command(
     api: &Bot,
     message: &Message,
@@ -73,6 +74,7 @@ pub async fn handle_emoji_command(
     if let Err(e) = r { eprintln!("[emoji_cmd trace={trace_id} event=panel_send_failed] err={e}"); }
 }
 
+#[allow(dead_code)]
 pub async fn handle_se_command(
     api: &Bot,
     message: &Message,

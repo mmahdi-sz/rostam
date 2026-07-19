@@ -13,7 +13,7 @@ use frankenstein::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::bot::{send_text, edit_to_ai_lab};
+use crate::bot::{send_text, send_text_with_back, edit_to_ai_lab};
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::emoji::panel::{btn_icon_success, btn_icon, btn_icon_danger};
@@ -116,7 +116,7 @@ pub async fn handle_separation_audio(
 
     let Some(file_id) = file_id else {
         log_trace(trace_id, "no_file_id", "");
-        let _ = send_text(api, chat_id, &t("separation.error.invalid_audio")).await;
+        let _ = send_text_with_back(api, chat_id, &t("separation.error.invalid_audio")).await;
         return;
     };
 
@@ -223,7 +223,7 @@ pub async fn handle_separation_callback(
         FlowState::AwaitingSeparationMode { file_id, filename, is_video, .. } => (file_id, filename, is_video),
         other => {
             log_trace(trace_id, "wrong_state", &format!("state={other:?}"));
-            let _ = send_text(api, chat_id, &t("separation.error.service_unavailable")).await;
+            let _ = send_text_with_back(api, chat_id, &t("separation.error.service_unavailable")).await;
             return;
         }
     };
@@ -255,7 +255,7 @@ pub async fn handle_separation_callback(
             log_trace(trace_id, "download_failed", &format!("err={e}"));
             crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
             crate::stats::record_error_global("separation", &format!("download failed: {e}")).await;
-            let _ = send_text(api, chat_id, &t("separation.error.service_unavailable")).await;
+            let _ = send_text_with_back(api, chat_id, &t("separation.error.service_unavailable")).await;
             let _ = delete_message(api, chat_id, message_id).await;
             return;
         }
@@ -273,7 +273,7 @@ pub async fn handle_separation_callback(
                 log_trace(trace_id, "extract_failed", &format!("err={e}"));
                 crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
                 crate::stats::record_error_global("separation", &format!("audio extraction failed: {e}")).await;
-                let _ = send_text(api, chat_id, &t("separation.error.audio_extraction_failed")).await;
+                let _ = send_text_with_back(api, chat_id, &t("separation.error.audio_extraction_failed")).await;
                 let _ = delete_message(api, chat_id, message_id).await;
                 std::fs::remove_dir_all(&tmp_dir).ok();
                 return;

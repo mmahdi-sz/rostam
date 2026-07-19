@@ -95,7 +95,7 @@ pub async fn handle_surge_text(
     let Some(url) = message.text.as_deref().map(str::trim) else { return };
     if !is_direct_link(url) {
         log_ev!("surge_dl", trace_id, "invalid_url", "input" => url, "=>" => "reject");
-        let _ = crate::bot::send_text(api, chat_id, &t("surge.invalid_url")).await;
+        let _ = crate::bot::send_text_with_back(api, chat_id, &t("surge.invalid_url")).await;
         return;
     }
 
@@ -221,7 +221,7 @@ pub async fn handle_surge_rename_text(
     // can't escape the per-user download dir (with_file_name runs as root).
     let Some(typed) = sanitize_rename(typed) else {
         log_ev!("surge_dl", trace_id, "rename_rejected", "=>" => "invalid_name");
-        let _ = crate::bot::send_text(api, chat_id, &t("surge.error.invalid_name")).await;
+        let _ = crate::bot::send_text_with_back(api, chat_id, &t("surge.error.invalid_name")).await;
         return;
     };
     let typed = typed.as_str();

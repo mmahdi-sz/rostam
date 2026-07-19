@@ -10,7 +10,7 @@ use frankenstein::{
     types::{InlineKeyboardMarkup, Message, ReplyMarkup},
 };
 
-use crate::bot::{edit_to_tools, send_text};
+use crate::bot::{edit_to_tools, send_text_with_back};
 use crate::emoji::panel::btn_icon;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{t, tf, apply_premium_to_md};
@@ -123,7 +123,7 @@ pub async fn handle_pdf_file(
 
     let Some((file_id, filename, size)) = looks_like_pdf_upload(message) else {
         log_ev!("pdfcompress", trace_id, "not_a_pdf", "=>" => "reject");
-        let _ = send_text(api, chat_id, &t("pdfcompress.error.invalid_file")).await;
+        let _ = send_text_with_back(api, chat_id, &t("pdfcompress.error.invalid_file")).await;
         return;
     };
 
@@ -131,7 +131,7 @@ pub async fn handle_pdf_file(
     if size > 0 && size > max_bytes {
         log_ev!("pdfcompress", trace_id, "too_large", "size" => size, "max" => max_bytes, "=>" => "reject");
         let text = tf("pdfcompress.error.too_large", &[("max", &fmt_bytes(max_bytes))]);
-        let _ = send_text(api, chat_id, &text).await;
+        let _ = send_text_with_back(api, chat_id, &text).await;
         return;
     }
 
@@ -389,8 +389,13 @@ fn fmt_bytes(bytes: u64) -> String {
 }
 
 async fn edit_status(api: &Bot, chat_id: i64, message_id: i32, text: &str) {
+    let kb = crate::bot::back_keyboard();
     let params = EditMessageTextParams::builder()
-        .chat_id(chat_id).message_id(message_id).text(text).build();
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(text)
+        .reply_markup(kb)
+        .build();
     let _ = api.edit_message_text(&params).await;
 }
 

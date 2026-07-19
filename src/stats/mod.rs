@@ -3,35 +3,144 @@ pub use query::{
     get_user_stats, get_download_stats, fmt_bytes, FeatureStats, get_feature_stats, get_active_users, fmt_secs, get_action_breakdown, get_recent_errors, count_recent_errors,
 };
 
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock, RwLock as StdRwLock};
+use redis::aio::MultiplexedConnection;
+use tokio::sync::{OnceCell, RwLock as TokioRwLock};
 use tokio_postgres::Client;
 
+use crate::config;
 use crate::rank::quota::add_traffic;
 
-// ── global client ─────────────────────────────────────────────────────────────
+// ── global client & URL ──────────────────────────────────────────────────────
 static DB: OnceLock<&'static Client> = OnceLock::new();
+static DB_URL: OnceLock<String> = OnceLock::new();
+static DB_CLIENT: OnceLock<Arc<TokioRwLock<Option<Arc<Client>>>>> = OnceLock::new();
+static LANG_CACHE: OnceLock<StdRwLock<HashMap<i64, String>>> = OnceLock::new();
+static REDIS_CONN: OnceCell<MultiplexedConnection> = OnceCell::const_new();
+
+fn lang_cache() -> &'static StdRwLock<HashMap<i64, String>> {
+    LANG_CACHE.get_or_init(|| StdRwLock::new(HashMap::new()))
+}
+
+async fn redis_conn() -> Option<MultiplexedConnection> {
+    REDIS_CONN
+        .get_or_try_init(|| async {
+            let client = redis::Client::open(config::redis_url())?;
+            client.get_multiplexed_async_connection().await
+        })
+        .await
+        .ok()
+        .cloned()
+}
 
 pub fn init(client: &'static Client) {
     let _ = DB.set(client);
 }
 
+pub fn init_url(url: &str) {
+    let _ = DB_URL.set(url.to_string());
+}
+
+pub async fn get_db_client() -> Option<Arc<Client>> {
+    let url = DB_URL.get().cloned().or_else(config::database_url)?;
+    let lock = DB_CLIENT.get_or_init(|| Arc::new(TokioRwLock::new(None)));
+
+    {
+        let guard = lock.read().await;
+        if let Some(ref client) = *guard {
+            if !client.is_closed() {
+                return Some(client.clone());
+            }
+        }
+    }
+
+    let mut guard = lock.write().await;
+    if let Some(ref client) = *guard {
+        if !client.is_closed() {
+            return Some(client.clone());
+        }
+    }
+
+    match tokio_postgres::connect(&url, tokio_postgres::NoTls).await {
+        Ok((client, conn)) => {
+            tokio::spawn(async move {
+                if let Err(e) = conn.await {
+                    eprintln!("[postgres event=connection_closed] {e}");
+                }
+            });
+            let client_arc = Arc::new(client);
+            *guard = Some(client_arc.clone());
+            println!("[postgres event=reconnected_successfully]");
+            Some(client_arc)
+        }
+        Err(e) => {
+            eprintln!("[postgres event=reconnect_failed] err={e}");
+            None
+        }
+    }
+}
+
 fn db() -> Option<&'static Client> {
-    DB.get().copied()
+    DB.get().copied().filter(|c| !c.is_closed())
 }
 
 // ── language ──────────────────────────────────────────────────────────────────
 
 pub async fn get_user_language(user_id: i64) -> Option<String> {
-    let client = db()?;
-    client
+    // 1. RAM Cache (0 ms)
+    if let Ok(guard) = lang_cache().read() {
+        if let Some(lang) = guard.get(&user_id) {
+            return Some(lang.clone());
+        }
+    }
+
+    // 2. Redis Persistent Cache
+    if let Some(mut c) = redis_conn().await {
+        let key = format!("user:lang:{user_id}");
+        let res: Option<String> = redis::cmd("GET").arg(&key).query_async(&mut c).await.ok().flatten();
+        if let Some(ref l) = res {
+            if let Ok(mut guard) = lang_cache().write() {
+                guard.insert(user_id, l.clone());
+            }
+            return Some(l.clone());
+        }
+    }
+
+    // 3. PostgreSQL Database
+    let client = get_db_client().await?;
+    let lang: Option<String> = client
         .query_opt("SELECT language FROM stats_users WHERE user_id = $1", &[&user_id])
         .await
         .ok()?
-        .and_then(|row| row.get(0))
+        .and_then(|row| row.get(0));
+
+    if let Some(ref l) = lang {
+        if let Ok(mut guard) = lang_cache().write() {
+            guard.insert(user_id, l.clone());
+        }
+        if let Some(mut c) = redis_conn().await {
+            let key = format!("user:lang:{user_id}");
+            let _: Result<(), _> = redis::cmd("SET").arg(&key).arg(l).query_async(&mut c).await;
+        }
+    }
+    lang
 }
 
 pub async fn set_user_language(user_id: i64, lang: &str) {
-    let Some(client) = db() else { return };
+    // 1. RAM Cache
+    if let Ok(mut guard) = lang_cache().write() {
+        guard.insert(user_id, lang.to_string());
+    }
+
+    // 2. Redis Persistent Cache
+    if let Some(mut c) = redis_conn().await {
+        let key = format!("user:lang:{user_id}");
+        let _: Result<(), _> = redis::cmd("SET").arg(&key).arg(lang).query_async(&mut c).await;
+    }
+
+    // 3. PostgreSQL Database
+    let Some(client) = get_db_client().await else { return };
     let r = client
         .execute(
             "INSERT INTO stats_users (user_id, first_seen, last_seen, language)

@@ -5,9 +5,105 @@ use frankenstein::{
     client_reqwest::Bot,
     input_file::{FileUpload, InputFile},
     methods::SendDocumentParams,
+    types::InlineKeyboardMarkup,
 };
 
 use crate::i18n::tf;
+
+use crate::emoji::panel::btn_icon_url;
+
+use frankenstein::methods::SendMessageParams;
+use redis::aio::MultiplexedConnection;
+use tokio::sync::OnceCell;
+
+static REDIS_CONN: OnceCell<MultiplexedConnection> = OnceCell::const_new();
+
+async fn redis_conn() -> Option<MultiplexedConnection> {
+    REDIS_CONN
+        .get_or_try_init(|| async {
+            let client = redis::Client::open(crate::config::redis_url())?;
+            client.get_multiplexed_async_connection().await
+        })
+        .await
+        .ok()
+        .cloned()
+}
+
+const VLC_NOTICE_TTL_SECS: u64 = 48 * 3600; // 48 hours TTL
+
+pub fn vlc_download_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![
+            vec![
+                btn_icon_url(
+                    "نسخه اندروید (Google Play)",
+                    "https://play.google.com/store/apps/details?id=org.videolan.vlc",
+                    "android_logo",
+                ),
+                btn_icon_url(
+                    "نسخه iOS (App Store)",
+                    "https://www.videolan.org/vlc/download-ios.html",
+                    "app_store",
+                ),
+            ],
+            vec![
+                btn_icon_url(
+                    "نسخه ویندوز",
+                    "https://get.videolan.org/vlc/3.0.23/win32/vlc-3.0.23-win32.exe",
+                    "windows_logo",
+                ),
+                btn_icon_url(
+                    "نسخه لینوکس",
+                    "https://www.videolan.org/vlc/#download",
+                    "linux_logo",
+                ),
+            ],
+        ])
+        .build()
+}
+
+pub async fn maybe_send_non_h264_notice(
+    api: &Bot,
+    chat_id: i64,
+    codec_name: &str,
+    trace_id: u64,
+) {
+    let key = format!("user:notice:vlc:{chat_id}");
+
+    if let Some(mut conn) = redis_conn().await {
+        let exists: u32 = redis::cmd("EXISTS")
+            .arg(&key)
+            .query_async(&mut conn)
+            .await
+            .unwrap_or(0);
+        if exists > 0 {
+            log_trace(trace_id, "vlc_notice_throttled", &format!("chat_id={chat_id} ttl=48h_active"));
+            return;
+        }
+
+        let _: Result<(), _> = redis::cmd("SET")
+            .arg(&key)
+            .arg("1")
+            .arg("EX")
+            .arg(VLC_NOTICE_TTL_SECS)
+            .query_async(&mut conn)
+            .await;
+    }
+
+    let notice = tf("youtube.download.non_h264_notice", &[("codec", codec_name)]);
+    let _ = api
+        .send_message(
+            &SendMessageParams::builder()
+                .chat_id(chat_id)
+                .text(notice)
+                .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(
+                    vlc_download_keyboard(),
+                ))
+                .build(),
+        )
+        .await;
+    log_trace(trace_id, "vlc_notice_sent", &format!("chat_id={chat_id} ttl=48h"));
+}
 
 use super::super::trace::log_trace;
 
@@ -589,4 +685,118 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
     }
+}
+
+/// Create a clean, safe OS filename for downloaded video files.
+/// Ensures technical info (e.g. [1080p AV1 1498kbps]) is strictly preserved,
+/// while the title is sanitized and truncated if the total byte length exceeds 245 bytes.
+pub fn sanitize_video_filename(
+    title: &str,
+    quality_label: &str,
+    codec_name: &str,
+    bitrate_str: &str,
+    ext: &str,
+) -> String {
+    let tech_info = if bitrate_str != "?" && !bitrate_str.is_empty() {
+        format!("[{quality_label} {codec_name} {bitrate_str}kbps]")
+    } else {
+        format!("[{quality_label} {codec_name}]")
+    };
+    let ext_with_dot = format!(".{ext}");
+    let suffix = format!(" {tech_info}{ext_with_dot}");
+
+    const MAX_TOTAL_BYTES: usize = 245;
+    let suffix_bytes = suffix.len();
+    let max_title_bytes = if MAX_TOTAL_BYTES > suffix_bytes {
+        MAX_TOTAL_BYTES - suffix_bytes
+    } else {
+        50
+    };
+
+    let mut clean_title = String::with_capacity(title.len());
+    for c in title.chars() {
+        match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\0' => {
+                clean_title.push(' ');
+            }
+            _ => clean_title.push(c),
+        }
+    }
+
+    let mut normalized_title = clean_title.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized_title.is_empty() {
+        normalized_title = "video".to_string();
+    }
+
+    if normalized_title.len() > max_title_bytes {
+        let mut byte_count = 0;
+        let mut cutoff = normalized_title.len();
+
+        for (idx, ch) in normalized_title.char_indices() {
+            let ch_len = ch.len_utf8();
+            if byte_count + ch_len > max_title_bytes {
+                cutoff = idx;
+                break;
+            }
+            byte_count += ch_len;
+        }
+
+        normalized_title.truncate(cutoff);
+        normalized_title = normalized_title.trim_end().to_string();
+    }
+
+    format!("{normalized_title}{suffix}")
+}
+
+/// Create a clean, safe OS filename for downloaded audio files.
+pub fn sanitize_audio_filename(
+    title: &str,
+    quality_label: &str,
+    ext: &str,
+) -> String {
+    let tech_info = format!("[{quality_label}]");
+    let ext_with_dot = format!(".{ext}");
+    let suffix = format!(" {tech_info}{ext_with_dot}");
+
+    const MAX_TOTAL_BYTES: usize = 245;
+    let suffix_bytes = suffix.len();
+    let max_title_bytes = if MAX_TOTAL_BYTES > suffix_bytes {
+        MAX_TOTAL_BYTES - suffix_bytes
+    } else {
+        50
+    };
+
+    let mut clean_title = String::with_capacity(title.len());
+    for c in title.chars() {
+        match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\0' => {
+                clean_title.push(' ');
+            }
+            _ => clean_title.push(c),
+        }
+    }
+
+    let mut normalized_title = clean_title.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized_title.is_empty() {
+        normalized_title = "audio".to_string();
+    }
+
+    if normalized_title.len() > max_title_bytes {
+        let mut byte_count = 0;
+        let mut cutoff = normalized_title.len();
+
+        for (idx, ch) in normalized_title.char_indices() {
+            let ch_len = ch.len_utf8();
+            if byte_count + ch_len > max_title_bytes {
+                cutoff = idx;
+                break;
+            }
+            byte_count += ch_len;
+        }
+
+        normalized_title.truncate(cutoff);
+        normalized_title = normalized_title.trim_end().to_string();
+    }
+
+    format!("{normalized_title}{suffix}")
 }

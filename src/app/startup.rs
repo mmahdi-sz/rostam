@@ -360,7 +360,20 @@ pub async fn set_bot_commands(api: &Bot) {
         Err(e) => eprintln!("Failed to set chat menu button: {e}"),
     }
 
-    // ponytail: یه بار برای هر زبان صدا می‌زنیم؛ تلگرام خودش بر اساس زبان اپ کاربر match می‌کنه
+    // ۱. ابتدا برای حالت پیش‌فرض (بدون language_code) ست می‌کنیم تا برای همه کاربران نمایش داده شود
+    let default_cmds = vec![
+        BotCommand { command: "start".to_string(),    description: t("commands.start") },
+        BotCommand { command: "panel".to_string(),   description: t("commands.panel") },
+        BotCommand { command: "language".to_string(), description: t("commands.language") },
+        BotCommand { command: "rank".to_string(),     description: t("commands.rank") },
+        BotCommand { command: "ref".to_string(),      description: t("commands.ref") },
+    ];
+    match api.set_my_commands(&SetMyCommandsParams::builder().commands(default_cmds).build()).await {
+        Ok(_) => println!("Default bot commands set."),
+        Err(e) => eprintln!("Failed to set default bot commands: {e}"),
+    }
+
+    // ۲. ست کردن اختصاصی برای هر زبان
     for lang in ["fa", "en", "it"] {
         let commands = LANG.scope(lang.to_owned(), async {
             vec![
@@ -368,8 +381,7 @@ pub async fn set_bot_commands(api: &Bot) {
                 BotCommand { command: "panel".to_string(),   description: t("commands.panel") },
                 BotCommand { command: "language".to_string(), description: t("commands.language") },
                 BotCommand { command: "rank".to_string(),     description: t("commands.rank") },
-                BotCommand { command: "emoji".to_string(),    description: t("commands.emoji") },
-                BotCommand { command: "se".to_string(),       description: t("commands.se") },
+                BotCommand { command: "ref".to_string(),      description: t("commands.ref") },
             ]
         }).await;
 

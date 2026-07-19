@@ -83,11 +83,21 @@ pub fn start_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup {
         vec![btn_icon_success(&t("start.panel_button"), CB_USER_PANEL, "user")],
     ];
     if is_admin {
-        // emoji management hidden until a premium account is connected — admin-only for now
-        rows.push(vec![btn_icon(&t("start.emoji_button"), CB_START_EMOJI, "panel")]);
         rows.push(vec![btn_icon(&t("start.admin_button"), CB_ADMIN_PANEL, "stats")]);
     }
     InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
+}
+
+pub fn back_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")]])
+        .build()
+}
+
+pub fn ai_lab_back_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn_icon(&t("start.back"), CB_START_AI_LAB, "back")]])
+        .build()
 }
 
 pub fn ai_lab_keyboard() -> InlineKeyboardMarkup {

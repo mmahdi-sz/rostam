@@ -16,7 +16,10 @@ use crate::stats;
 
 use super::super::trace::log_trace;
 use super::cancel::{register_cancel, unregister_cancel, UnregisterGuard};
-use super::helpers::{cleanup_dir, fetch_thumbnail, pick_largest_file, quality_label_for, send_subtitle_files};
+use super::helpers::{
+    cleanup_dir, fetch_thumbnail, pick_largest_file, quality_label_for, send_subtitle_files,
+    sanitize_video_filename, sanitize_audio_filename, maybe_send_non_h264_notice,
+};
 use super::progress::{format_progress_body, parse_progress_line, ProgressSnapshot};
 use super::selection_helpers::find_format;
 use super::split::split_video;
@@ -24,7 +27,10 @@ use super::status::{edit_progress_status, edit_status};
 use super::store::take_request;
 use super::types::{Selection, SubtitleMode};
 use super::types::AudioQuality;
-use super::upload::{build_part_params, build_single_params, send_audio_file, send_video_with_progress};
+use super::upload::{
+    build_part_doc_params, build_part_params, build_single_doc_params, build_single_params,
+    send_audio_file, send_media_with_progress, MediaPayload,
+};
 
 pub const EDIT_THROTTLE: Duration = Duration::from_secs(1);
 const MAX_SIZE_MB: u64 = 2000;
@@ -175,6 +181,12 @@ async fn run_playlist_download(
     ));
     edit_status(&api, status_chat_id, status_message_id, lines.join("\n")).await;
 
+    let is_h264 = selection.codec == crate::youtube::types::VideoCodec::H264;
+    if sent > 0 && !is_h264 {
+        let codec_name = t(selection.codec.label_key());
+        maybe_send_non_h264_notice(&api, req.chat_id, &codec_name, trace_id).await;
+    }
+
     // آنپین پیام وضعیت — کار تمام شده و گزارش نهایی روی همان پیام است.
     let _ = api.unpin_chat_message(
         &UnpinChatMessageParams::builder()
@@ -224,6 +236,8 @@ async fn download_single_playlist_item(
         super::super::types::VideoCodec::Vp9 => "vp9",
         super::super::types::VideoCodec::Av1 => "av01",
     };
+    let is_h264 = codec == super::super::types::VideoCodec::H264;
+    let merge_format = if is_h264 { "mp4" } else { "mkv" };
     let format_spec = format!(
         "bestvideo[height<={height}][vcodec^={vcodec_prefix}]+bestaudio/bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
     );
@@ -234,7 +248,7 @@ async fn download_single_playlist_item(
         .arg("--cookies-from-browser").arg(&req.cookie_spec)
         .arg("--no-warnings").arg("--no-playlist")
         .arg("-f").arg(&format_spec)
-        .arg("--merge-output-format").arg("mp4")
+        .arg("--merge-output-format").arg(merge_format)
         .arg("--print").arg("after_move:filepath")
         .arg("-o").arg(&output_template);
 
@@ -311,6 +325,14 @@ async fn download_single_playlist_item(
         .map(|b| format!("{b:.0}"))
         .unwrap_or_else(|| "?".to_string());
     let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
+
+    let clean_name = sanitize_video_filename(item_title, &quality_label, &codec_name, &bitrate_str, merge_format);
+    let new_path = dir.join(&clean_name);
+    let path = if tokio::fs::rename(&path, &new_path).await.is_ok() {
+        new_path.to_string_lossy().into_owned()
+    } else {
+        path
+    };
     let bot_username = crate::config::bot_username().to_string();
     let width = total_videos.to_string().len();
     let caption = tf("youtube.download.playlist.caption", &[
@@ -321,14 +343,21 @@ async fn download_single_playlist_item(
         ("codec", &codec_name),
         ("bitrate", &bitrate_str),
         ("username", &bot_username),
+        ("url", video_url),
     ]);
     let caption_entities = entities_for_text(&caption);
-    let params = build_single_params(
-        &path, req.chat_id, &thumb_path, caption, caption_entities, height, None,
-    );
+    let send_res = if is_h264 {
+        let params = build_single_params(
+            &path, req.chat_id, &thumb_path, caption, caption_entities, height, None,
+        );
+        api.send_video(&params).await.map(|_| ())
+    } else {
+        let params = build_single_doc_params(
+            &path, req.chat_id, &thumb_path, caption, caption_entities,
+        );
+        api.send_document(&params).await.map(|_| ())
+    };
 
-    log_trace(trace_id, "playlist_item_upload_start", &format!("num={video_num} path={path} size={file_size_bytes}"));
-    let send_res = api.send_video(&params).await;
     cleanup_dir(&dir, trace_id).await;
     match send_res {
         Ok(_) => {
@@ -394,7 +423,12 @@ async fn run_download(
     }
 
     let output_template = format!("{}/%(id)s.%(ext)s", dir.display());
-    let format_spec = format!("{format_id}+bestaudio/best");
+    let is_h264 = codec == super::super::types::VideoCodec::H264;
+    let merge_format = if is_h264 { "mp4" } else { "mkv" };
+    let format_spec = match codec {
+        super::super::types::VideoCodec::H264 => format!("{format_id}+bestaudio/best"),
+        _ => format!("{format_id}+bestaudio/{format_id}/bestvideo[height<={height}]+bestaudio/best"),
+    };
     let progress_template = format!(
         "YT_PROGRESS|%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
     );
@@ -412,7 +446,7 @@ async fn run_download(
         .arg("--cookies-from-browser").arg(&req.cookie_spec)
         .arg("--no-warnings").arg("--no-playlist").arg("--progress")
         .arg("--no-color").arg("-f").arg(&format_spec)
-        .arg("--merge-output-format").arg("mp4")
+        .arg("--merge-output-format").arg(merge_format)
         .arg("--newline")
         .arg("--progress-template").arg(format!("download:{progress_template}"))
         .arg("--progress-template").arg(format!("postprocess:{postprocess_template}"))
@@ -587,6 +621,13 @@ async fn run_download(
         .unwrap_or_else(|| "?".to_string());
     let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
 
+    let clean_name = sanitize_video_filename(&req.title, &quality_label, &codec_name, &bitrate_str, merge_format);
+    let new_path = dir.join(&clean_name);
+    if tokio::fs::rename(&path, &new_path).await.is_ok() {
+        log_trace(trace_id, "download_renamed", &format!("old={path} new={}", new_path.display()));
+        path = new_path.to_string_lossy().into_owned();
+    }
+
     let file_size_mb = file_size_bytes / (1024 * 1024);
     log_trace(trace_id, "upload_size_check", &format!("size_mb={file_size_mb} max_mb={MAX_SIZE_MB}"));
 
@@ -632,14 +673,21 @@ async fn run_download(
                 ("title", &req.title), ("quality", &quality_label),
                 ("codec", &codec_name), ("bitrate", &bitrate_str),
                 ("part", &part_num.to_string()), ("total", &total.to_string()),
-                ("username", &bot_username),
+                ("username", &bot_username), ("url", &req.webpage_url),
             ]);
             let caption_entities = entities_for_text(&caption);
-            let params = build_part_params(part_path, req.chat_id, &thumb_path,
-                caption, caption_entities, height);
+            let payload = if is_h264 {
+                let params = build_part_params(part_path, req.chat_id, &thumb_path,
+                    caption, caption_entities, height);
+                MediaPayload::Video(params)
+            } else {
+                let params = build_part_doc_params(part_path, req.chat_id, &thumb_path,
+                    caption, caption_entities);
+                MediaPayload::Document(params)
+            };
 
             log_trace(trace_id, "upload_part_start", &format!("part={part_num}/{total} path={part_path}"));
-            let ok = send_video_with_progress(&api, params, req.chat_id, status_chat_id,
+            let ok = send_media_with_progress(&api, payload, req.chat_id, status_chat_id,
                 status_message_id, request_id, &quality_label, &mut cancel_fut, trace_id).await;
             if !ok { all_ok = false; break; }
             log_trace(trace_id, "upload_part_ok", &format!("part={part_num}/{total}"));
@@ -651,13 +699,20 @@ async fn run_download(
         let caption = tf("youtube.download.caption", &[
             ("title", &req.title), ("quality", &quality_label),
             ("codec", &codec_name), ("bitrate", &bitrate_str),
-            ("username", &bot_username),
+            ("username", &bot_username), ("url", &req.webpage_url),
         ]);
         let caption_entities = entities_for_text(&caption);
-        let params = build_single_params(&path, req.chat_id, &thumb_path,
-            caption, caption_entities, height, req.duration);
+        let payload = if is_h264 {
+            let params = build_single_params(&path, req.chat_id, &thumb_path,
+                caption, caption_entities, height, req.duration);
+            MediaPayload::Video(params)
+        } else {
+            let params = build_single_doc_params(&path, req.chat_id, &thumb_path,
+                caption, caption_entities);
+            MediaPayload::Document(params)
+        };
         log_trace(trace_id, "upload_start", &format!("path={path}"));
-        send_video_with_progress(&api, params, req.chat_id, status_chat_id,
+        send_media_with_progress(&api, payload, req.chat_id, status_chat_id,
             status_message_id, request_id, &quality_label, &mut cancel_fut, trace_id).await
     };
 
@@ -671,6 +726,9 @@ async fn run_download(
     }
 
     if upload_ok {
+        if !is_h264 {
+            maybe_send_non_h264_notice(&api, req.chat_id, &codec_name, trace_id).await;
+        }
         if let Some(jid) = stats_job_id {
             stats::record_upload_done(jid, user_id, file_size_bytes as i64).await;
         }
@@ -804,9 +862,17 @@ async fn run_audio_download(
     }
     edit_status(&api, status_chat_id, status_message_id, t("youtube.audio.uploading")).await;
     let quality_label = t(audio_quality.label_key());
+    let clean_audio_name = sanitize_audio_filename(&req.title, &quality_label, "mp3");
+    let new_audio_path = dir.join(&clean_audio_name);
+    let path = if tokio::fs::rename(&path, &new_audio_path).await.is_ok() {
+        new_audio_path.to_string_lossy().into_owned()
+    } else {
+        path
+    };
     let bot_username = crate::config::bot_username().to_string();
     let caption = tf("youtube.audio.caption", &[
         ("title", &req.title), ("quality", &quality_label), ("username", &bot_username),
+        ("url", &req.webpage_url),
     ]);
     let caption_entities = entities_for_text(&caption);
     let upload_ok = send_audio_file(

@@ -478,11 +478,9 @@ async fn handle_message(
     if let Some(text) = message.text.as_deref() {
         let cmd = text.split('@').next().unwrap_or(text);
         eprintln!("[dispatch event=cmd] user_id={user_id:?} cmd={cmd:?}");
-        if cmd == "/emoji" {
-            // emoji management admin-only for now (no premium account connected yet)
-            let is_admin = config::admin_user_id().map(|id| Some(id) == user_id).unwrap_or(false);
-            if is_admin {
-                emoji_handler::handle_emoji_command(api, &message, flow_manager, database).await;
+        if cmd == "/ref" || cmd == "/referral" {
+            if let Some(uid) = user_id {
+                crate::rank::panel::send_referral(api, message.chat.id, uid, database).await;
             }
             return Ok(());
         }
@@ -507,18 +505,15 @@ async fn handle_message(
             }
             return Ok(());
         }
-        // ساخت کد هدیه (فقط ادمین): /re 30d es 1u
-        if let Some(rest) = text.strip_prefix("/re ") {
+        // ساخت کد هدیه (فقط ادمین): /re 30d es 1u یا /re
+        if cmd == "/re" || text.starts_with("/re ") {
             let is_admin = config::admin_user_id().map(|id| Some(id) == user_id).unwrap_or(false);
             if is_admin {
                 if let Some(uid) = user_id {
+                    let rest = text.split_once(' ').map(|(_, r)| r.trim()).unwrap_or("");
                     crate::redeem::handle::handle_generate(api, message.chat.id, uid, rest, database).await;
                 }
             }
-            return Ok(());
-        }
-        if let Some(rest) = text.strip_prefix("/se") {
-            emoji_handler::handle_se_command(api, &message, rest, database).await;
             return Ok(());
         }
         match text {

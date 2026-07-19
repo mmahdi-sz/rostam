@@ -483,12 +483,17 @@ pub async fn handle_upscale_image(
 // ── small helpers ─────────────────────────────────────────────────────────────
 
 async fn edit_or_send(api: &Bot, chat_id: i64, msg_id: Option<i32>, text: &str) {
+    let kb = crate::bot::back_keyboard();
     if let Some(mid) = msg_id {
         let params = EditMessageTextParams::builder()
-            .chat_id(chat_id).message_id(mid).text(text).build();
+            .chat_id(chat_id)
+            .message_id(mid)
+            .text(text)
+            .reply_markup(kb)
+            .build();
         let _ = api.edit_message_text(&params).await;
     } else {
-        let _ = send_text(api, chat_id, text).await;
+        let _ = crate::bot::send_text_with_keyboard(api, chat_id, text, kb).await;
     }
 }
 

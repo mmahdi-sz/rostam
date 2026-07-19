@@ -1,7 +1,7 @@
 {
   "fa": {
     "start": {
-      "welcome": "*به ربات خوش آمدید 👋*\n\n🎬 *دانلود یوتیوب* — دانلود ویدیو و صدا با انتخاب کیفیت\n🧪 *آزمایشگاه هوش مصنوعی* — تبدیل صدا، حذف نویز، افزایش کیفیت عکس و بیشتر\n👤 *پنل کاربری* — مشاهده مقام، ترافیک و سهمیه‌های باقی‌مانده",
+      "welcome": "👋 *به ربات رستم خوش آمدید\\!*\nمرجع جامع ابزارهای هوشمند رسانه و پردازش هوش مصنوعی\\.\n\n✨ *امکانات و ابزارهای ربات:*\n\n🎬 *دانلودر یوتیوب*\n╝ دانلود ویدیو و صوتی با تمامی کیفیت‌ها، انتخاب کدک \\(AV1/VP9/H264\\) و ترجمه زیرنویس\n\n🧪 *آزمایشگاه هوش مصنوعی \\(AI Lab\\)*\n╣ 🎙️ تبدیل گفتار به متن \\(فارسی و انگلیسی\\)\n╣ 🔇 حذف نویز صدا با شبکه عصبی\n╣ 🎵 تفکیک صدای خواننده و موزیک\n╣ 🖼️ ارتقا کیفیت تصویر \\(تا ۴ برابر\\)\n╝ ✨ حذف واترمارک هوش مصنوعی\n\n🧰 *جعبه‌ابزار کاربردی*\n╣ 📄 فشرده‌سازی حرفه‌ای PDF\n╣ ⚡ دانلود مستقیم لینک‌های حجیم\n╝ 🌐 استعلام و تحلیل آدرس IP\n\n👤 *پنل کاربری و اشتراک*\n╝ مدیریت رتبه، بررسی سهمیه ترافیک و ثبت کدهای هدیه\n\n👇 *برای شروع، یکی از گزینه‌های منوی زیر را انتخاب کنید:*",
       "emoji_button": "پنل ایموجی",
       "youtube_button": "دانلود یوتیوب",
       "back": "منوی اصلی",
@@ -32,10 +32,15 @@
       "ready_title": "مدل {model} — آماده است.\n\nفایل صوتی یا صدای خود را ارسال کنید.\nفرمتهای پشتیبانیشده: OGG, MP3, WAV, M4A",
       "cancel_button": "لغو عملیات",
       "preparing": "فایل دریافت شد. در حال آمادهسازی...",
+      "stage_downloading": "📥 در حال دریافت فایل از تلگرام...",
+      "stage_converting": "🔄 در حال تبدیل فرمت صوتی...",
+      "stage_denoising": "🧹 در حال حذف نویز پس‌زمینه...",
+      "stage_transcribing": "🧠 در حال رونویسی هوش مصنوعی...\n⏱ طول فایل: {duration}\n⏳ زمان سپری‌شده: {elapsed} ثانیه",
       "unsupported_format": "فرمت فایل پشتیبانی نمیشود. لطفاً یک فایل صوتی (OGG, MP3, WAV, M4A) ارسال کنید.",
       "download_failed": "دانلود فایل با خطا مواجه شد. دوباره تلاش کنید.",
       "convert_failed": "تبدیل فایل صوتی با خطا مواجه شد.",
       "transcribe_failed": "رونویسی با خطا مواجه شد. دوباره تلاش کنید.",
+      "job_cancelled": "🚫 عملیات رونویسی صوتی توسط شما لغو شد.",
       "denoise_on": "فعال",
       "denoise_off": "غیرفعال",
       "denoise_feature_name": "بهبود خودکار صدا",
@@ -176,6 +181,10 @@
           "headphones": "5933749305155260825",
           "soundwave": "5418000793208896425",
           "quality_high": "5462902520215002477",
+          "windows_logo": "4994997504404619799",
+          "app_store": "6068909301735360991",
+          "android_logo": "5897540239768948011",
+          "linux_logo": "5850237475720532199",
           "speed_fast": "5215203703190989803",
           "flag_ir": "5271878966347601947",
           "flag_us": "5927292517610426176",
@@ -511,8 +520,8 @@
       "download": {
         "starting": "⏳ شروع دانلود ویدیو ({quality})...",
         "progress": {
-          "body": "⏳ در حال دانلود...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} از {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
-          "upload_body": "📤 در حال آپلود به تلگرام...\n🎬 {quality}\n🔘 ●●●●●●●●●●  ۱۰۰%\n⏱️ {elapsed}"
+          "body": "⏳ در حال دانلود...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
+          "upload_body": "📤 در حال آپلود به تلگرام...\n🎬 {quality}\n🔘 ●●●●●●●●●●  100%\n⏱️ {elapsed}"
         },
         "uploading": "✅ دانلود کامل شد. در حال آپلود به تلگرام...",
         "splitting": "✂️ فایل بزرگ‌تر از ۲ گیگابایت است. در حال تقسیم به {parts} قسمت...",
@@ -522,10 +531,11 @@
         "failed": "❌ دانلود ناموفق بود: {error}",
         "upload_failed": "❌ ارسال فایل ناموفق بود: {error}",
         "request_expired": "این درخواست منقضی شده. لطفاً لینک را دوباره بفرستید.",
-        "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n🤖 @{username}",
-        "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 قسمت {part} از {total}\n🤖 @{username}",
+        "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n🔗 LINK: {url}\n🤖 @{username}",
+        "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 قسمت {part} از {total}\n🔗 LINK: {url}\n🤖 @{username}",
         "cancel_button": "لغو دانلود",
         "cancelled": "❌ دانلود لغو شد.",
+        "non_h264_notice": "💡 این ویدیو با کدک {codec} جهت دسترسی به کمترین حجم به صورت فایل ارسال شد. برای پخش آن می‌توانید از پلیرهایی مثل VLC یا MX Player استفاده کنید.\n\nجهت دانلود VLC ترجیحاً با VPN روشن روی دکمه‌های زیر بزنید👇",
         "translating_subtitle": "⏳ در حال ترجمه زیرنویس...",
         "subtitle_caption": "📄 زیرنویس {lang}\n{title}",
         "playlist": {
@@ -538,7 +548,7 @@
           "part_line": "part {sent}/{total}",
           "reason_no_format": "کیفیت انتخاب‌شده برای این ویدیو موجود نیست",
           "reason_no_file": "فایلی تولید نشد",
-          "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps\n🤖 @{username}",
+          "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps\n🔗 LINK: {url}\n🤖 @{username}",
           "reason_members_only": "ویدیوی ویژه‌ی اعضای کانال — قابل دانلود نیست"
         }
       },
@@ -556,13 +566,13 @@
           "low": "کیفیت پایین"
         },
         "uploading": "در حال آپلود فایل صوتی...",
-        "caption": "🎵 {title}\n\n🔊 کیفیت: {quality}\n\n📤 @{username}",
+        "caption": "🎵 {title}\n\n🔊 کیفیت: {quality}\n\n🔗 LINK: {url}\n📤 @{username}",
         "starting": "⏳ شروع دانلود صوت ({quality})..."
       },
       "unit_gb": "گیگابایت",
       "unit_mb": "مگابایت",
-      "progress_default_percent": "۰٪",
-      "progress_default_elapsed": "۰۰:۰۰"
+      "progress_default_percent": "0.0%",
+      "progress_default_elapsed": "00:00"
     },
     "gemini_wm": {
       "prompt": "🖼️ تصویر مورد نظر را ارسال کنید تا واترمارک Gemini از آن حذف شود:",
@@ -712,8 +722,8 @@
       "start": "منوی اصلی",
       "language": "تغییر زبان",
       "rank": "مشاهده پلن‌ها و ارتقای اشتراک",
-      "emoji": "پنل مدیریت ایموجی",
-      "se": "تنظیم لقب ایموجی",
+      "ref": "زیرمجموعه‌گیری و دریافت لینک دعوت",
+      "re": "ساخت کد هدیه (ادمین)",
       "panel": "پنل کاربری — مقام، ترافیک و سهمیه‌ها"
     },
     "panel": {
@@ -891,7 +901,7 @@
       "prompt": "لینک مستقیم فایل رو بفرست تا با حداکثر سرعت دانلودش کنم 📥",
       "invalid_url": "این یه لینک معتبر نیست 😅 یه لینک مستقیم که با http یا https شروع بشه بفرست.",
       "queued": "⏳ دانلود به صف اضافه شد...",
-      "progress": "⏳ در حال دانلود...\n📁 {name}\n🔘 {bar}  {percent}٪\n📥 {downloaded} از {total}\n🚀 {speed}",
+      "progress": "⏳ در حال دانلود...\n📁 {name}\n🔘 {bar}  {percent}%\n📥 {downloaded} / {total}\n🚀 {speed}",
       "done": "✅ دانلود تموم شد، دارم برات می‌فرستم...",
       "sent": "✅ فایل شما ارسال شد.\n\n📥 دانلود: {download_time} ({download_speed})\n📤 آپلود: {upload_time} ({upload_speed})",
       "sending_part": "📦 ارسال بخش {n} از {total}...",
@@ -909,7 +919,7 @@
   },
   "en": {
     "start": {
-      "welcome": "*Welcome to the bot 👋*\n\n🎬 *YouTube Download* — Download video and audio with quality selection\n🧪 *AI Lab* — Speech to text, noise removal, image upscaling and more\n👤 *My Account* — View your rank, traffic and remaining quotas",
+      "welcome": "👋 *Welcome to Rostam Bot\\!*\nYour comprehensive AI media and utility suite\\.\n\n✨ *Features & Tools:*\n\n🎬 *YouTube Downloader*\n└ Download video and audio in all qualities, select codecs \\(AV1/VP9/H264\\), and translate subtitles\n\n🧪 *AI Laboratory*\n├ 🎙️ Speech to Text \\(Persian & English\\)\n├ 🔇 Neural Audio Denoise\n├ 🎵 Vocal & Music Separation\n├ 🖼️ Image Upscale \\(up to 4x\\)\n└ ✨ AI Watermark Removal\n\n🧰 *Utility Toolbox*\n├ 📄 PDF Compression\n├ ⚡ High-speed Direct Download\n└ 🌐 IP Address Intelligence\n\n👤 *User Account & Ranks*\n└ Manage rank, traffic quota, and redeem codes\n\n👇 *Select an option from the menu below:*",
       "emoji_button": "Emoji Panel",
       "youtube_button": "YouTube Download",
       "back": "Main Menu",
@@ -940,10 +950,15 @@
       "ready_title": "Model {model} — ready.\n\nSend your audio file or voice message.\nSupported formats: OGG, MP3, WAV, M4A",
       "cancel_button": "Cancel",
       "preparing": "File received. Preparing...",
+      "stage_downloading": "📥 Downloading file from Telegram...",
+      "stage_converting": "🔄 Converting audio format...",
+      "stage_denoising": "🧹 Removing background noise...",
+      "stage_transcribing": "🧠 AI transcription in progress...\n⏱ File duration: {duration}\n⏳ Elapsed: {elapsed}s",
       "unsupported_format": "Unsupported file format. Please send an audio file (OGG, MP3, WAV, M4A).",
       "download_failed": "File download failed. Please try again.",
       "convert_failed": "Audio conversion failed.",
       "transcribe_failed": "Transcription failed. Please try again.",
+      "job_cancelled": "🚫 Audio transcription task was cancelled.",
       "denoise_on": "On",
       "denoise_off": "Off",
       "denoise_feature_name": "Auto noise reduction",
@@ -1084,6 +1099,10 @@
           "headphones": "5933749305155260825",
           "soundwave": "5418000793208896425",
           "quality_high": "5462902520215002477",
+          "windows_logo": "4994997504404619799",
+          "app_store": "6068909301735360991",
+          "android_logo": "5897540239768948011",
+          "linux_logo": "5850237475720532199",
           "speed_fast": "5215203703190989803",
           "flag_ir": "5271878966347601947",
           "flag_us": "5927292517610426176",
@@ -1430,10 +1449,11 @@
         "failed": "❌ Download failed: {error}",
         "upload_failed": "❌ Failed to send file: {error}",
         "request_expired": "This request has expired. Please send the link again.",
-        "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n🤖 @{username}",
-        "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 Part {part} of {total}\n🤖 @{username}",
+        "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n🔗 LINK: {url}\n🤖 @{username}",
+        "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 Part {part} of {total}\n🔗 LINK: {url}\n🤖 @{username}",
         "cancel_button": "Cancel Download",
         "cancelled": "❌ Download cancelled.",
+        "non_h264_notice": "💡 Sent as a file with {codec} codec for maximum compression and smallest size. To play it, use players like VLC or MX Player.\n\nTo download VLC, preferably turn on VPN and click the buttons below👇",
         "translating_subtitle": "⏳ Translating subtitle...",
         "subtitle_caption": "📄 Subtitle {lang}\n{title}",
         "playlist": {
@@ -1446,7 +1466,7 @@
           "part_line": "part {sent}/{total}",
           "reason_no_format": "Selected quality is not available for this video",
           "reason_no_file": "No file was produced",
-          "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps\n🤖 @{username}",
+          "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps\n🔗 LINK: {url}\n🤖 @{username}",
           "reason_members_only": "Members-only video — cannot be downloaded"
         }
       },
@@ -1464,7 +1484,7 @@
           "low": "Low quality"
         },
         "uploading": "Uploading audio file...",
-        "caption": "🎵 {title}\n\n🔊 Quality: {quality}\n\n📤 @{username}",
+        "caption": "🎵 {title}\n\n🔊 Quality: {quality}\n\n🔗 LINK: {url}\n📤 @{username}",
         "starting": "⏳ Starting audio download ({quality})..."
       },
       "progress_default_elapsed": "00:00",
@@ -1620,8 +1640,8 @@
       "start": "Main menu",
       "language": "Change language",
       "rank": "View plans & upgrade subscription",
-      "emoji": "Emoji management panel",
-      "se": "Set emoji alias",
+      "ref": "Referral program & invite link",
+      "re": "Generate redeem code (Admin)",
       "panel": "My account — rank, traffic and quotas"
     },
     "panel": {
@@ -1848,10 +1868,15 @@
       "ready_title": "Modello {model} — pronto.\n\nInvia il tuo file audio o messaggio vocale.\nFormati supportati: OGG, MP3, WAV, M4A",
       "cancel_button": "Annulla",
       "preparing": "File ricevuto. Preparazione in corso...",
+      "stage_downloading": "📥 Download del file da Telegram...",
+      "stage_converting": "🔄 Conversione del formato audio...",
+      "stage_denoising": "🧹 Rimozione del rumore di fondo...",
+      "stage_transcribing": "🧠 Trascrizione AI in corso...\n⏱ Durata file: {duration}\n⏳ Tempo trascorso: {elapsed}s",
       "unsupported_format": "Formato non supportato. Invia un file audio (OGG, MP3, WAV, M4A).",
       "download_failed": "Download fallito. Riprova.",
       "convert_failed": "Conversione audio fallita.",
       "transcribe_failed": "Trascrizione fallita. Riprova.",
+      "job_cancelled": "🚫 Operazione di trascrizione audio annullata.",
       "denoise_on": "Attivo",
       "denoise_off": "Disattivo",
       "denoise_feature_name": "Riduzione automatica del rumore",
@@ -1992,6 +2017,10 @@
           "headphones": "5933749305155260825",
           "soundwave": "5418000793208896425",
           "quality_high": "5462902520215002477",
+          "windows_logo": "4994997504404619799",
+          "app_store": "6068909301735360991",
+          "android_logo": "5897540239768948011",
+          "linux_logo": "5850237475720532199",
           "speed_fast": "5215203703190989803",
           "flag_ir": "5271878966347601947",
           "flag_us": "5927292517610426176",
@@ -2338,10 +2367,11 @@
         "failed": "❌ Download fallito: {error}",
         "upload_failed": "❌ Invio file fallito: {error}",
         "request_expired": "Questa richiesta è scaduta. Invia di nuovo il link.",
-        "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n🤖 @{username}",
-        "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 Parte {part} di {total}\n🤖 @{username}",
+        "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n🔗 LINK: {url}\n🤖 @{username}",
+        "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 Parte {part} di {total}\n🔗 LINK: {url}\n🤖 @{username}",
         "cancel_button": "Annulla Download",
         "cancelled": "❌ Download annullato.",
+        "non_h264_notice": "💡 Inviato come file con codec {codec} per la massima compressione. Usa VLC o MX Player per riprodurlo.\n\nPer scaricare VLC, usa preferibilmente una VPN e clicca sui pulsanti sottostanti👇",
         "translating_subtitle": "⏳ Traduzione dei sottotitoli in corso...",
         "subtitle_caption": "📄 Sottotitoli {lang}\n{title}",
         "playlist": {
@@ -2354,7 +2384,7 @@
           "part_line": "part {sent}/{total}",
           "reason_no_format": "La qualità selezionata non è disponibile per questo video",
           "reason_no_file": "Nessun file prodotto",
-          "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps\n🤖 @{username}",
+          "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps\n🔗 LINK: {url}\n🤖 @{username}",
           "reason_members_only": "Video riservato ai membri — impossibile scaricare"
         }
       },
@@ -2372,7 +2402,7 @@
           "low": "Qualità bassa"
         },
         "uploading": "Caricamento file audio...",
-        "caption": "🎵 {title}\n\n🔊 Qualità: {quality}\n\n📤 @{username}",
+        "caption": "🎵 {title}\n\n🔊 Qualità: {quality}\n\n🔗 LINK: {url}\n📤 @{username}",
         "starting": "⏳ Avvio download audio ({quality})..."
       },
       "progress_default_elapsed": "00:00",
@@ -2528,8 +2558,8 @@
       "start": "Menu principale",
       "language": "Cambia lingua",
       "rank": "Visualizza piani e aggiorna abbonamento",
-      "emoji": "Pannello gestione emoji",
-      "se": "Imposta alias emoji",
+      "ref": "Programma referral e link di invito",
+      "re": "Genera codice di riscatto (Admin)",
       "panel": "Il mio account — rango, traffico e quote"
     },
     "panel": {

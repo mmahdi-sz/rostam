@@ -57,7 +57,7 @@ pub fn build_bar(percent: f32) -> String {
 
 fn clean_val<'a>(s: &'a str, fallback: &'a str) -> &'a str {
     let s = s.trim();
-    if s.is_empty() || s == "N/A" || s == "?" || s.starts_with("Unknown") {
+    if s.is_empty() || s == "N/A" || s == "NA" || s == "?" || s.starts_with("Unknown") {
         fallback
     } else {
         s
@@ -74,12 +74,22 @@ pub fn format_progress_body(snap: &ProgressSnapshot, quality_label: &str) -> Str
     let bar = build_bar(percent_f);
     let default_percent = crate::i18n::t("youtube.progress_default_percent");
     let percent = clean_val(&snap.percent, &default_percent);
-    let downloaded = clean_val(&snap.downloaded, "-");
+    let mut downloaded = clean_val(&snap.downloaded, "-");
     let total = clean_val(&snap.total, "-");
     let speed = clean_val(&snap.speed, "...");
-    let eta = clean_val(&snap.eta, "...");
+    let mut eta = clean_val(&snap.eta, "...");
     let default_elapsed = crate::i18n::t("youtube.progress_default_elapsed");
     let elapsed = clean_val(&snap.elapsed, &default_elapsed);
+
+    if percent_f >= 99.9 {
+        if (downloaded == "-" || downloaded.is_empty()) && total != "-" {
+            downloaded = total;
+        }
+        if eta == "..." {
+            eta = "00:00";
+        }
+    }
+
     tf(
         "youtube.download.progress.body",
         &[

@@ -7,7 +7,7 @@ use frankenstein::{
     types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, Message},
 };
 
-use crate::bot::{send_text, edit_to_ai_lab};
+use crate::bot::{send_text, send_text_with_back, edit_to_ai_lab};
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::t;
 use crate::log::next_trace_id;
@@ -92,7 +92,7 @@ pub async fn handle_gwm_image(
 
     let Some(file_id) = file_id else {
         log_ev!("gwm", trace_id, "no_file_id");
-        let _ = send_text(api, chat_id, &t("gemini_wm.error.invalid_image")).await;
+        let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.invalid_image")).await;
         return;
     };
 
@@ -112,7 +112,7 @@ pub async fn handle_gwm_image(
         log_ev!("gwm", trace_id, "download_failed", "raw" => "err={e}");
         crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
         crate::stats::record_error_global("gwm", &format!("download failed: {e}")).await;
-        let _ = send_text(api, chat_id, &t("gemini_wm.error.download_failed")).await;
+        let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.download_failed")).await;
         std::fs::remove_dir_all(&work_dir).ok();
         return;
     }
@@ -125,7 +125,7 @@ pub async fn handle_gwm_image(
             log_ev!("gwm", trace_id, "read_failed", "raw" => "err={e}");
             crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
             crate::stats::record_error_global("gwm", &format!("read failed: {e}")).await;
-            let _ = send_text(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
+            let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
             std::fs::remove_dir_all(&work_dir).ok();
             return;
         }
@@ -144,7 +144,7 @@ pub async fn handle_gwm_image(
             let elapsed = t_start.elapsed().as_secs_f64();
             log_ev!("gwm", trace_id, "no_watermark", "raw" => format!("elapsed={elapsed:.2}s"));
             crate::stats::record_event_user(user_id, "gwm", "", "no_watermark", 0).await;
-            let _ = send_text(api, chat_id, &t("gemini_wm.error.no_watermark")).await;
+            let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.no_watermark")).await;
             return;
         }
         Err(e) => {
@@ -152,7 +152,7 @@ pub async fn handle_gwm_image(
             log_ev!("gwm", trace_id, "remove_failed", "raw" => format!("elapsed={elapsed:.2}s err={e}"));
             crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
             crate::stats::record_error_global("gwm", &format!("remove failed: {e}")).await;
-            let _ = send_text(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
+            let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
             return;
         }
     };
@@ -166,7 +166,7 @@ pub async fn handle_gwm_image(
         log_ev!("gwm", trace_id, "write_failed", "raw" => "err={e}");
         crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
         crate::stats::record_error_global("gwm", &format!("write failed: {e}")).await;
-        let _ = send_text(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
+        let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
         return;
     }
 

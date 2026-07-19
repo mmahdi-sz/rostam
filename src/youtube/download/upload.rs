@@ -5,7 +5,7 @@ use frankenstein::{
     AsyncTelegramApi,
     client_reqwest::Bot,
     input_file::{FileUpload, InputFile},
-    methods::{SendAudioParams, SendMessageParams, SendVideoParams},
+    methods::{SendAudioParams, SendDocumentParams, SendMessageParams, SendVideoParams},
 };
 
 use crate::i18n::{t, tf};
@@ -15,11 +15,16 @@ use super::progress::format_upload_body;
 use super::status::{edit_progress_status, edit_status};
 use super::runner::EDIT_THROTTLE;
 
-/// Runs the send_video call with progress ticks and cancel support.
+pub enum MediaPayload {
+    Video(SendVideoParams),
+    Document(SendDocumentParams),
+}
+
+/// Runs the send_video or send_document call with progress ticks and cancel support.
 /// Returns `true` on success, `false` if cancelled or failed.
-pub async fn send_video_with_progress(
+pub async fn send_media_with_progress(
     api: &Bot,
-    params: SendVideoParams,
+    payload: MediaPayload,
     chat_id: i64,
     status_chat_id: i64,
     status_message_id: i32,
@@ -29,7 +34,12 @@ pub async fn send_video_with_progress(
     trace_id: u64,
 ) -> bool {
     let api_for_send = api.clone();
-    let mut send_task = tokio::spawn(async move { api_for_send.send_video(&params).await });
+    let mut send_task = tokio::spawn(async move {
+        match payload {
+            MediaPayload::Video(params) => api_for_send.send_video(&params).await.map(|_| ()),
+            MediaPayload::Document(params) => api_for_send.send_document(&params).await.map(|_| ()),
+        }
+    });
     let upload_start = Instant::now();
     let mut interval = tokio::time::interval(EDIT_THROTTLE);
     interval.tick().await;
@@ -72,6 +82,33 @@ pub async fn send_video_with_progress(
             false
         }
     }
+}
+
+/// Runs the send_video call with progress ticks and cancel support.
+/// Returns `true` on success, `false` if cancelled or failed.
+#[allow(dead_code)]
+pub async fn send_video_with_progress(
+    api: &Bot,
+    params: SendVideoParams,
+    chat_id: i64,
+    status_chat_id: i64,
+    status_message_id: i32,
+    request_id: u64,
+    quality_label: &str,
+    cancel_fut: &mut std::pin::Pin<&mut impl std::future::Future<Output = ()>>,
+    trace_id: u64,
+) -> bool {
+    send_media_with_progress(
+        api,
+        MediaPayload::Video(params),
+        chat_id,
+        status_chat_id,
+        status_message_id,
+        request_id,
+        quality_label,
+        cancel_fut,
+        trace_id,
+    ).await
 }
 
 pub async fn send_audio_file(
@@ -192,3 +229,42 @@ pub fn build_part_params(
     params.width = Some(height * 16 / 9);
     params
 }
+
+pub fn build_single_doc_params(
+    path: &str,
+    chat_id: i64,
+    thumb_path: &Option<String>,
+    caption: String,
+    caption_entities: Vec<frankenstein::types::MessageEntity>,
+) -> SendDocumentParams {
+    let mut params = SendDocumentParams::builder()
+        .chat_id(chat_id)
+        .document(FileUpload::InputFile(InputFile { path: PathBuf::from(path) }))
+        .caption(caption)
+        .build();
+    if !caption_entities.is_empty() { params.caption_entities = Some(caption_entities); }
+    if let Some(tp) = thumb_path {
+        params.thumbnail = Some(FileUpload::InputFile(InputFile { path: PathBuf::from(tp) }));
+    }
+    params
+}
+
+pub fn build_part_doc_params(
+    part_path: &str,
+    chat_id: i64,
+    thumb_path: &Option<String>,
+    caption: String,
+    caption_entities: Vec<frankenstein::types::MessageEntity>,
+) -> SendDocumentParams {
+    let mut params = SendDocumentParams::builder()
+        .chat_id(chat_id)
+        .document(FileUpload::InputFile(InputFile { path: PathBuf::from(part_path) }))
+        .caption(caption)
+        .build();
+    if !caption_entities.is_empty() { params.caption_entities = Some(caption_entities); }
+    if let Some(tp) = thumb_path {
+        params.thumbnail = Some(FileUpload::InputFile(InputFile { path: PathBuf::from(tp) }));
+    }
+    params
+}
+

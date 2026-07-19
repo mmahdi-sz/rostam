@@ -2,7 +2,7 @@ use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     methods::{EditMessageTextParams, SendMessageParams},
-    types::{InlineKeyboardMarkup, MessageEntity},
+    types::{InlineKeyboardMarkup, MessageEntity, ReplyMarkup},
 };
 
 use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
@@ -198,3 +198,58 @@ pub async fn send_text_md(
     .await?;
     Ok(())
 }
+
+pub async fn send_text_md_with_keyboard(
+    api: &Bot,
+    chat_id: i64,
+    text: &str,
+    reply_markup: InlineKeyboardMarkup,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let markup = ReplyMarkup::InlineKeyboardMarkup(reply_markup);
+    api.send_message(
+        &SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(text)
+            .parse_mode(ParseMode::MarkdownV2)
+            .reply_markup(markup)
+            .build(),
+    )
+    .await?;
+    Ok(())
+}
+
+pub async fn send_text_with_keyboard(
+    api: &Bot,
+    chat_id: i64,
+    text: &str,
+    reply_markup: InlineKeyboardMarkup,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (rendered, entities, _) = expand_and_entify(text, chat_id).await;
+    let markup = ReplyMarkup::InlineKeyboardMarkup(reply_markup);
+    let params = if entities.is_empty() {
+        SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(&rendered)
+            .reply_markup(markup)
+            .build()
+    } else {
+        SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(&rendered)
+            .entities(entities)
+            .reply_markup(markup)
+            .build()
+    };
+    api.send_message(&params).await?;
+    Ok(())
+}
+
+pub async fn send_text_with_back(
+    api: &Bot,
+    chat_id: i64,
+    text: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let kb = super::keyboards::back_keyboard();
+    send_text_with_keyboard(api, chat_id, text, kb).await
+}
+

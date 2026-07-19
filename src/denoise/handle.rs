@@ -7,7 +7,7 @@ use frankenstein::{
     types::{InlineKeyboardMarkup, Message},
 };
 
-use crate::bot::{send_text, send_text_md, CB_DENOISE_CANCEL};
+use crate::bot::{send_text, send_text_with_back, send_text_md_with_keyboard, ai_lab_back_keyboard, CB_DENOISE_CANCEL};
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::emoji::panel::btn_icon_danger;
@@ -135,7 +135,7 @@ pub async fn handle_denoise_audio(
         log_trace(trace_id, "denoise_download_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "denoise", "", "fail", 0).await;
         crate::stats::record_error_global("denoise", &format!("download failed: {e}")).await;
-        let _ = send_text(api, chat_id, &t("denoise.download_failed")).await;
+        let _ = send_text_with_back(api, chat_id, &t("denoise.download_failed")).await;
         clean_up(&work_dir);
         return;
     }
@@ -155,7 +155,7 @@ pub async fn handle_denoise_audio(
         log_trace(trace_id, "denoise_convert_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "denoise", "", "fail", 0).await;
         crate::stats::record_error_global("denoise", &format!("convert failed: {e}")).await;
-        let _ = send_text(api, chat_id, &t("denoise.convert_failed")).await;
+        let _ = send_text_with_back(api, chat_id, &t("denoise.convert_failed")).await;
         clean_up(&work_dir);
         return;
     }
@@ -185,7 +185,7 @@ pub async fn handle_denoise_audio(
             if let Some(min_rank) = next {
                 crate::rank::paywall::block_limit(api, chat_id, &limit_label, min_rank).await;
             } else {
-                let _ = send_text(api, chat_id, &tf("denoise.quota_daily_exceeded", &[("limit", &limit_str)])).await;
+                let _ = send_text_with_back(api, chat_id, &tf("denoise.quota_daily_exceeded", &[("limit", &limit_str)])).await;
             }
             return;
         }
@@ -198,7 +198,7 @@ pub async fn handle_denoise_audio(
             if let Some(min_rank) = next {
                 crate::rank::paywall::block_limit(api, chat_id, &limit_label, min_rank).await;
             } else {
-                let _ = send_text(api, chat_id, &tf("denoise.quota_weekly_exceeded", &[("limit", &limit_str)])).await;
+                let _ = send_text_with_back(api, chat_id, &tf("denoise.quota_weekly_exceeded", &[("limit", &limit_str)])).await;
             }
             return;
         }
@@ -212,7 +212,7 @@ pub async fn handle_denoise_audio(
             if let Some(min_rank) = next {
                 crate::rank::paywall::block_limit(api, chat_id, &remaining_label, min_rank).await;
             } else {
-                let _ = send_text(api, chat_id, &tf("denoise.quota_file_too_long", &[("remaining", &remaining_str)])).await;
+                let _ = send_text_with_back(api, chat_id, &tf("denoise.quota_file_too_long", &[("remaining", &remaining_str)])).await;
             }
             return;
         }
@@ -235,7 +235,7 @@ pub async fn handle_denoise_audio(
             log_trace(trace_id, "denoise_failed", &format!("err={e}"));
             crate::stats::record_event_user(user_id, "denoise", "", "fail", duration_secs as i64).await;
             crate::stats::record_error_global("denoise", &format!("denoise failed: {e}")).await;
-            let _ = send_text(api, chat_id, &t("denoise.denoise_failed")).await;
+            let _ = send_text_with_back(api, chat_id, &t("denoise.denoise_failed")).await;
             clean_up(&work_dir);
             return;
         }
@@ -254,7 +254,7 @@ pub async fn handle_denoise_audio(
         log_trace(trace_id, "denoise_reconvert_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "denoise", "", "fail", duration_secs as i64).await;
         crate::stats::record_error_global("denoise", &format!("reconvert failed: {e}")).await;
-        let _ = send_text(api, chat_id, &t("denoise.convert_failed")).await;
+        let _ = send_text_with_back(api, chat_id, &t("denoise.convert_failed")).await;
         clean_up(&work_dir);
         return;
     }
@@ -301,7 +301,8 @@ pub async fn handle_denoise_audio(
         ("processing", &processing_str),
         ("ratio", &ratio_str),
     ]));
-    let _ = send_text_md(api, chat_id, &report).await;
+    let kb = ai_lab_back_keyboard();
+    let _ = send_text_md_with_keyboard(api, chat_id, &report, kb).await;
     log_trace(trace_id, "denoise_report_sent", &format!("duration={audio_duration:.1}s processing={processing_secs:.1}s"));
     crate::stats::record_event_user(user_id, "denoise", "", "ok", duration_secs as i64).await;
 

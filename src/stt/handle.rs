@@ -6,7 +6,7 @@ use frankenstein::{
     methods::EditMessageTextParams,
 };
 
-use crate::bot::{edit_to_start_menu, send_text, send_long_text};
+use crate::bot::{edit_to_start_menu, send_text, send_long_text, send_text_with_back};
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{t, tf};
@@ -16,6 +16,13 @@ use crate::stt::deepfilter;
 use crate::stt::types::{SttConfig, SttLang, SttModelSize};
 use crate::stt::vosk;
 use crate::log::next_trace_id;
+
+use std::sync::{Arc, Mutex, LazyLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+
+// Global map tracking active STT jobs per user_id: user_id -> cancel_flag
+static ACTIVE_STT_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 // ponytail: thin shim — existing log_trace() calls below keep working with correct domain.
 fn log_trace(trace_id: u64, event: &str, details: &str) {
@@ -197,6 +204,23 @@ pub async fn handle_stt_callback(
             log_trace(trace_id, "stt_cancel_done", &format!("ok={}", r.is_ok()));
             true
         }
+        CB_STT_JOB_CANCEL => {
+            log_trace(trace_id, "stt_job_cancel", &format!("user_id={user_id}"));
+            if let Ok(mut jobs) = ACTIVE_STT_JOBS.lock() {
+                if let Some(cancel_flag) = jobs.remove(&user_id) {
+                    cancel_flag.store(true, Ordering::Relaxed);
+                }
+            }
+            flow_manager.clear(user_id);
+            let _ = api.delete_message(
+                &frankenstein::methods::DeleteMessageParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(message_id)
+                    .build()
+            ).await;
+            let _ = send_text_with_back(api, chat_id, &t("stt.job_cancelled")).await;
+            true
+        }
         CB_STT_MAIN_MENU => {
             log_trace(trace_id, "stt_main_menu", &format!("user_id={user_id}"));
             flow_manager.clear(user_id);
@@ -225,6 +249,12 @@ fn convert_to_wav(input: &str, output: &str) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
+fn remove_active_stt_job(user_id: i64) {
+    if let Ok(mut jobs) = ACTIVE_STT_JOBS.lock() {
+        jobs.remove(&user_id);
+    }
+}
+
 /// Downloads a Telegram file by file_id to a local path.
 use crate::bot::download_telegram_file as download_file;
 
@@ -243,7 +273,23 @@ pub async fn handle_stt_audio(
     log_actor_id!("stt", trace_id, user_id, "clicked" => "audio/voice");
     log_trace(trace_id, "stt_audio_received", &format!("user_id={user_id} chat_id={chat_id}"));
 
-    let _ = send_text(api, chat_id, &t("stt.preparing")).await;
+    // Register cancel flag for this user
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    if let Ok(mut jobs) = ACTIVE_STT_JOBS.lock() {
+        jobs.insert(user_id, cancel_flag.clone());
+    }
+
+    // ── Stage 1: Send initial status message & capture message_id ──
+    let status_msg_id = match api.send_message(
+        &frankenstein::methods::SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(&t("stt.stage_downloading"))
+            .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(cancel_job_keyboard()))
+            .build(),
+    ).await {
+        Ok(resp) => Some(resp.result.message_id),
+        Err(_) => None,
+    };
 
     let work_dir = std::env::temp_dir().join(format!("stt_{trace_id}"));
     std::fs::create_dir_all(&work_dir).ok();
@@ -255,37 +301,58 @@ pub async fn handle_stt_audio(
     let (Some(input_str), Some(wav_str), Some(denoised_str)) =
         (input_path.to_str(), wav_path.to_str(), denoised_path.to_str()) else {
         log_trace(trace_id, "stt_invalid_path", "invalid UTF-8 path");
+        remove_active_stt_job(user_id);
         clean_up(&work_dir);
         return;
     };
 
     let overall_start = Instant::now();
 
-    // 1. Download
+    // ── Stage 1: Download ──
     if let Err(e) = download_file(api, file_id, input_str).await.map_err(|e| e.to_string()) {
+        remove_active_stt_job(user_id);
         log_trace(trace_id, "stt_download_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
         crate::stats::record_error_global("stt", &format!("download failed: {e}")).await;
-        let _ = send_text(api, chat_id, &t("stt.download_failed")).await;
+        let _ = send_text_with_back(api, chat_id, &t("stt.download_failed")).await;
+        delete_status(api, chat_id, status_msg_id).await;
         clean_up(&work_dir);
         return;
     }
     log_trace(trace_id, "stt_downloaded", "");
 
-    // 2. Convert to WAV — blocking (std::process::Command), run on thread pool
+    if cancel_flag.load(Ordering::Relaxed) {
+        log_trace(trace_id, "stt_cancelled_after_download", "");
+        remove_active_stt_job(user_id);
+        clean_up(&work_dir);
+        return;
+    }
+
+    // ── Stage 2: Convert to WAV ──
+    edit_status(api, chat_id, status_msg_id, &t("stt.stage_converting")).await;
+
     let input_str_owned = input_str.to_string();
     let wav_str_owned = wav_str.to_string();
     if let Err(e) = tokio::task::spawn_blocking(move || {
         convert_to_wav(&input_str_owned, &wav_str_owned).map_err(|e| e.to_string())
     }).await.unwrap_or_else(|e| Err(e.to_string())) {
+        remove_active_stt_job(user_id);
         log_trace(trace_id, "stt_convert_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
         crate::stats::record_error_global("stt", &format!("convert failed: {e}")).await;
-        let _ = send_text(api, chat_id, &t("stt.convert_failed")).await;
+        let _ = send_text_with_back(api, chat_id, &t("stt.convert_failed")).await;
+        delete_status(api, chat_id, status_msg_id).await;
         clean_up(&work_dir);
         return;
     }
     log_trace(trace_id, "stt_converted", "");
+
+    if cancel_flag.load(Ordering::Relaxed) {
+        log_trace(trace_id, "stt_cancelled_after_convert", "");
+        remove_active_stt_job(user_id);
+        clean_up(&work_dir);
+        return;
+    }
 
     let audio_duration = wav_duration(wav_str).unwrap_or(0.0);
     let duration_secs = audio_duration.ceil() as u64;
@@ -322,9 +389,11 @@ pub async fn handle_stt_audio(
             let daily_used = get_usage(db.client(), user_id, daily_kind, 86400).await.unwrap_or(0) as u64;
             let daily_remaining = daily_limit.saturating_sub(daily_used);
             if daily_remaining == 0 {
+                remove_active_stt_job(user_id);
                 log_trace(trace_id, "stt_quota_daily", &format!("user_id={user_id} kind={daily_key} used={daily_used} limit={daily_limit}"));
                 let limit_str = format_duration_fa(daily_limit);
                 let label = tf(daily_limit_key, &[("limit", &limit_str)]);
+                delete_status(api, chat_id, status_msg_id).await;
                 clean_up(&work_dir);
                 let next = stt_next_rank(&user_rank);
                 if let Some(min_rank) = next {
@@ -338,9 +407,11 @@ pub async fn handle_stt_audio(
             let weekly_used = get_usage(db.client(), user_id, weekly_kind, 7 * 86400).await.unwrap_or(0) as u64;
             let weekly_remaining = weekly_limit.saturating_sub(weekly_used);
             if weekly_remaining == 0 {
+                remove_active_stt_job(user_id);
                 log_trace(trace_id, "stt_quota_weekly", &format!("user_id={user_id} kind={weekly_key} used={weekly_used} limit={weekly_limit}"));
                 let limit_str = format_duration_fa(weekly_limit);
                 let label = tf(weekly_limit_key, &[("limit", &limit_str)]);
+                delete_status(api, chat_id, status_msg_id).await;
                 clean_up(&work_dir);
                 let next = stt_next_rank(&user_rank);
                 if let Some(min_rank) = next {
@@ -352,9 +423,11 @@ pub async fn handle_stt_audio(
             }
             let remaining = daily_remaining.min(weekly_remaining);
             if duration_secs > remaining {
+                remove_active_stt_job(user_id);
                 log_trace(trace_id, "stt_quota_file_too_long", &format!("user_id={user_id} duration={duration_secs} remaining={remaining}"));
                 let rem_str = format_duration_fa(remaining);
                 let label = tf(file_key, &[("remaining", &rem_str)]);
+                delete_status(api, chat_id, status_msg_id).await;
                 clean_up(&work_dir);
                 let next = stt_next_rank(&user_rank);
                 if let Some(min_rank) = next {
@@ -367,8 +440,10 @@ pub async fn handle_stt_audio(
         }
     }
 
-    // 3. Optional denoise — blocking (std::process::Command), run on thread pool
+    // ── Stage 3: Optional denoise ──
     let denoise_secs = if config.denoise {
+        edit_status(api, chat_id, status_msg_id, &t("stt.stage_denoising")).await;
+
         let wav_in = wav_str.to_string();
         let wav_out = denoised_str.to_string();
         match tokio::task::spawn_blocking(move || {
@@ -389,6 +464,42 @@ pub async fn handle_stt_audio(
         0.0
     };
 
+    if cancel_flag.load(Ordering::Relaxed) {
+        log_trace(trace_id, "stt_cancelled_after_denoise", "");
+        remove_active_stt_job(user_id);
+        clean_up(&work_dir);
+        return;
+    }
+
+    // ── Stage 4: Transcribe with live timer ──
+    let duration_label = format_duration_hms(audio_duration);
+    let initial_text = tf("stt.stage_transcribing", &[
+        ("duration", &duration_label),
+        ("elapsed", "0"),
+    ]);
+    edit_status(api, chat_id, status_msg_id, &initial_text).await;
+
+    // Spawn live timer — edits status every 2 seconds
+    let timer_running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let timer_flag = timer_running.clone();
+    let cancel_timer_flag = cancel_flag.clone();
+    let api_timer = api.clone();
+    let timer_msg_id = status_msg_id;
+    let dur_label = duration_label.clone();
+    let timer_handle = tokio::spawn(async move {
+        let mut tick = 2u64;
+        while timer_flag.load(Ordering::Relaxed) && !cancel_timer_flag.load(Ordering::Relaxed) {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            if !timer_flag.load(Ordering::Relaxed) || cancel_timer_flag.load(Ordering::Relaxed) { break; }
+            let text = tf("stt.stage_transcribing", &[
+                ("duration", &dur_label),
+                ("elapsed", &tick.to_string()),
+            ]);
+            edit_status(&api_timer, chat_id, timer_msg_id, &text).await;
+            tick += 2;
+        }
+    });
+
     // 4. Transcribe — CPU-heavy blocking, run on thread pool
     let audio_source = if config.denoise {
         denoised_str.to_string()
@@ -401,14 +512,35 @@ pub async fn handle_stt_audio(
     }).await.unwrap_or_else(|e| Err(e.to_string())) {
         Ok(r) => r,
         Err(e) => {
+            // Stop the timer
+            timer_running.store(false, Ordering::Relaxed);
+            let _ = timer_handle.await;
+            remove_active_stt_job(user_id);
             log_trace(trace_id, "stt_transcribe_failed", &format!("err={e}"));
             crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", duration_secs as i64).await;
             crate::stats::record_error_global("stt", &format!("transcribe failed: {e}")).await;
-            let _ = send_text(api, chat_id, &t("stt.transcribe_failed")).await;
+            let _ = send_text_with_back(api, chat_id, &t("stt.transcribe_failed")).await;
+            delete_status(api, chat_id, status_msg_id).await;
             clean_up(&work_dir);
             return;
         }
     };
+
+    // Stop the timer
+    timer_running.store(false, Ordering::Relaxed);
+    let _ = timer_handle.await;
+
+    let was_cancelled = cancel_flag.load(Ordering::Relaxed);
+    remove_active_stt_job(user_id);
+
+    if was_cancelled {
+        log_trace(trace_id, "stt_cancelled_during_transcribe", "");
+        clean_up(&work_dir);
+        return;
+    }
+
+    // Delete status message — result will be sent as a new message
+    delete_status(api, chat_id, status_msg_id).await;
 
     log_trace(trace_id, "stt_transcribed", &format!("text_len={} elapsed={processing_secs:.1}s", text.len()));
 
@@ -477,5 +609,38 @@ fn stt_next_rank(rank: &rank::types::Rank) -> Option<rank::types::Rank> {
         rank::types::Rank::Dalavar | rank::types::Rank::Sepahbod | rank::types::Rank::Esfandyar => Some(rank::types::Rank::Sohrab),
         rank::types::Rank::Sohrab => Some(rank::types::Rank::Rostam),
         rank::types::Rank::Rostam => None,
+    }
+}
+
+async fn edit_status(api: &Bot, chat_id: i64, message_id: Option<i32>, text: &str) {
+    if let Some(msg_id) = message_id {
+        let params = EditMessageTextParams::builder()
+            .chat_id(chat_id)
+            .message_id(msg_id)
+            .text(text)
+            .reply_markup(cancel_job_keyboard())
+            .build();
+        let _ = api.edit_message_text(&params).await;
+    }
+}
+
+async fn delete_status(api: &Bot, chat_id: i64, message_id: Option<i32>) {
+    if let Some(msg_id) = message_id {
+        let params = frankenstein::methods::DeleteMessageParams::builder()
+            .chat_id(chat_id)
+            .message_id(msg_id)
+            .build();
+        let _ = api.delete_message(&params).await;
+    }
+}
+
+fn format_duration_hms(secs_f: f64) -> String {
+    let total_secs = secs_f.round() as u64;
+    let mins = total_secs / 60;
+    let secs = total_secs % 60;
+    if mins > 0 {
+        format!("{mins} دقیقه و {secs} ثانیه")
+    } else {
+        format!("{secs} ثانیه")
     }
 }
