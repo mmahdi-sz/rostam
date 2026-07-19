@@ -16,7 +16,7 @@ jobs:
   check-test-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.88
@@ -44,7 +44,7 @@ jobs:
     # blocking build/test feedback.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Audit dependencies for known vulnerabilities
         uses: rustsec/audit-check@v2.0.0
         with:
