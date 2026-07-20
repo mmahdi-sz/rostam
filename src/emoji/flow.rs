@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::{Arc, RwLock, atomic::AtomicBool};
 
 use crate::stt::types::SttConfig;
 
@@ -51,9 +51,9 @@ pub enum FlowState {
     AwaitingForceJoinField { lock_id: i64, field: String },
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct FlowManager {
-    states: HashMap<i64, FlowState>,
+    states: Arc<RwLock<HashMap<i64, FlowState>>>,
 }
 
 impl FlowManager {
@@ -62,18 +62,19 @@ impl FlowManager {
     }
 
     pub fn get(&self, user_id: i64) -> FlowState {
-        self.states.get(&user_id).cloned().unwrap_or_default()
+        self.states.read().unwrap().get(&user_id).cloned().unwrap_or_default()
     }
 
-    pub fn set(&mut self, user_id: i64, state: FlowState) {
+    pub fn set(&self, user_id: i64, state: FlowState) {
+        let mut map = self.states.write().unwrap();
         if matches!(state, FlowState::Idle) {
-            self.states.remove(&user_id);
+            map.remove(&user_id);
         } else {
-            self.states.insert(user_id, state);
+            map.insert(user_id, state);
         }
     }
 
-    pub fn clear(&mut self, user_id: i64) {
-        self.states.remove(&user_id);
+    pub fn clear(&self, user_id: i64) {
+        self.states.write().unwrap().remove(&user_id);
     }
 }

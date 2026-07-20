@@ -51,7 +51,7 @@ fn confirm_keyboard() -> InlineKeyboardMarkup {
 // ── menu entry ───────────────────────────────────────────────────────────────
 
 pub async fn enter_surge_dl(
-    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &mut FlowManager,
+    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &FlowManager,
 ) {
     let trace_id = next_trace_id();
     log_actor_id!("surge_dl", trace_id, user_id, "clicked" => CB_TOOLS_SURGE);
@@ -69,7 +69,7 @@ pub async fn enter_surge_dl(
 }
 
 pub async fn handle_surge_cancel(
-    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &mut FlowManager,
+    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &FlowManager,
 ) {
     let trace_id = next_trace_id();
     log_ev!("surge_dl", trace_id, "cancel", "user_id" => user_id);
@@ -85,7 +85,7 @@ pub fn is_direct_link(text: &str) -> bool {
 }
 
 pub async fn handle_surge_text(
-    api: &Bot, message: &Message, user_id: i64, flow_manager: &mut FlowManager,
+    api: &Bot, message: &Message, user_id: i64, flow_manager: &FlowManager,
     database: &Option<PostgresDatabase>,
 ) {
     let trace_id = next_trace_id();
@@ -171,7 +171,7 @@ async fn start_surge_job(
 }
 
 pub async fn handle_surge_confirm_original(
-    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &mut FlowManager,
+    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &FlowManager,
 ) {
     let trace_id = next_trace_id();
     log_actor_id!("surge_dl", trace_id, user_id, "clicked" => CB_SURGE_CONFIRM_ORIGINAL);
@@ -184,7 +184,7 @@ pub async fn handle_surge_confirm_original(
 }
 
 pub async fn handle_surge_confirm_rename(
-    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &mut FlowManager,
+    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &FlowManager,
 ) {
     let trace_id = next_trace_id();
     log_actor_id!("surge_dl", trace_id, user_id, "clicked" => CB_SURGE_CONFIRM_RENAME);
@@ -204,7 +204,7 @@ pub async fn handle_surge_confirm_rename(
 }
 
 pub async fn handle_surge_rename_text(
-    api: &Bot, message: &Message, user_id: i64, flow_manager: &mut FlowManager,
+    api: &Bot, message: &Message, user_id: i64, flow_manager: &FlowManager,
 ) {
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;

@@ -458,7 +458,14 @@ async fn handle_message(
                 if message.text.is_some() {
                     let trace_id = next_trace_id();
                     log_trace(trace_id, "surge_dl_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
-                    handle_surge_text(api, &message, uid, flow_manager, database).await;
+                    flow_manager.clear(uid);
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    let fm2 = flow_manager.clone();
+                    let db2 = database.clone();
+                    tokio::spawn(async move {
+                        handle_surge_text(&api2, &msg2, uid, &fm2, &db2).await;
+                    });
                 }
                 return Ok(());
             }
@@ -559,7 +566,13 @@ async fn handle_message(
                         log_trace(trace_id, "route_surge_dl_url", &format!(
                             "user_id={uid} chat_id={} url={text}", message.chat.id
                         ));
-                        handle_surge_text(api, &message, uid, flow_manager, database).await;
+                        let api2 = api.clone();
+                        let msg2 = message.clone();
+                        let fm2 = flow_manager.clone();
+                        let db2 = database.clone();
+                        tokio::spawn(async move {
+                            handle_surge_text(&api2, &msg2, uid, &fm2, &db2).await;
+                        });
                     }
                 }
             }
