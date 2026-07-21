@@ -140,7 +140,6 @@ impl Rank {
     }
 
     /// پلی‌لیست YouTube (None = نامحدود)
-    #[allow(dead_code)]
     pub fn playlist_limit(&self) -> Option<u32> {
         match self {
             Self::Dalavar | Self::Sohrab => Some(0), // ممنوع
@@ -290,4 +289,18 @@ impl Rank {
 pub fn ceil_div(a: i64, b: i64) -> i64 {
     if b <= 0 { return 0; }
     (a + b - 1) / b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_playlist_limit() {
+        assert_eq!(Rank::Dalavar.playlist_limit(), Some(0));
+        assert_eq!(Rank::Sohrab.playlist_limit(), Some(0));
+        assert_eq!(Rank::Sepahbod.playlist_limit(), Some(10));
+        assert_eq!(Rank::Esfandyar.playlist_limit(), None);
+        assert_eq!(Rank::Rostam.playlist_limit(), None);
+    }
 }

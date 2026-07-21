@@ -6,7 +6,7 @@ use std::time::Duration;
 use frankenstein::{
     AsyncTelegramApi,
     client_reqwest::Bot,
-    methods::{DeleteMessageParams, PinChatMessageParams, UnpinChatMessageParams},
+    methods::{DeleteMessageParams, PinChatMessageParams, SendMessageParams, UnpinChatMessageParams},
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Notify;
@@ -64,7 +64,7 @@ async fn run_playlist_download(
     status_message_id: i32,
     _cancel: Arc<Notify>,
 ) {
-    let Some(req) = super::store::take_request(request_id) else {
+    let Some(mut req) = super::store::take_request(request_id) else {
         edit_status(&api, status_chat_id, status_message_id, t("youtube.download.request_expired")).await;
         unregister_cancel(request_id);
         return;
@@ -73,6 +73,40 @@ async fn run_playlist_download(
     let trace_id = req.trace_id;
     let user_id = req.user_id.unwrap_or(0);
     let stats_job_id = stats::record_download_start(user_id).await;
+
+    let user_rank = if user_id > 0 {
+        if let Some(db) = stats::get_db_client().await {
+            crate::rank::effective_rank(&db, user_id).await
+        } else {
+            crate::rank::types::Rank::Dalavar
+        }
+    } else {
+        crate::rank::types::Rank::Dalavar
+    };
+
+    if let Some(limit) = user_rank.playlist_limit() {
+        let limit = limit as usize;
+        if req.playlist_items.len() > limit {
+            let original_count = req.playlist_items.len();
+            req.playlist_items.truncate(limit);
+            log_trace(trace_id, "playlist_items_truncated", &format!(
+                "user_id={user_id} rank={} original={original_count} limit={limit}",
+                user_rank.as_str()
+            ));
+            let note = if limit == 0 {
+                format!("⚠️ دانلود پلی‌لیست برای سطح کاربری شما ({}) غیرمجاز است.", user_rank.as_str())
+            } else {
+                format!("⚠️ به دلیل محدودیت سطح کاربری ({})، فقط {limit} ویدیوی اول از {original_count} ویدیو دانلود می‌شود.", user_rank.as_str())
+            };
+            let _ = api.send_message(
+                &SendMessageParams::builder()
+                    .chat_id(status_chat_id)
+                    .text(note)
+                    .build()
+            ).await;
+        }
+    }
+
     let total_videos = req.playlist_items.len();
 
     log_trace(trace_id, "playlist_download_begin", &format!(
