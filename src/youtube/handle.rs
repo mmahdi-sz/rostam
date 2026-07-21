@@ -62,7 +62,7 @@ pub async fn handle_youtube_url(
     loop {
         // Lock only around pool selection/snapshot; released before the network fetch
         // so other users' YouTube requests aren't serialized behind this one.
-        let cookie = {
+        let (cookie, snapshot) = {
             let mut pool = cookie_pool.lock().await;
             let cookie = match pool.next_cookie() {
                 Some(c) => c,
@@ -81,9 +81,11 @@ pub async fn handle_youtube_url(
             }
             tried.insert(cookie.id.clone());
             log_trace(trace_id, "cookie_selected", &format!("cookie_id={} profile={}", cookie.id, cookie.profile_name));
-            save_snapshot(database, &mut pool).await;
-            cookie
+            let snapshot = pool.snapshot();
+            (cookie, snapshot)
         };
+
+        save_snapshot(database, &snapshot).await;
 
         match fetch_video_info(trace_id, url, &cookie.yt_dlp_browser_spec).await {
             Ok(info) => {
@@ -145,14 +147,19 @@ pub async fn handle_youtube_url(
                 return;
             }
             Err(FetchError::RateLimited) => {
-                let source = {
+                let (source, snapshot) = {
                     let mut pool = cookie_pool.lock().await;
                     let source = pool.mark_last_rate_limited();
-                    if source.is_some() {
-                        save_snapshot(database, &mut pool).await;
-                    }
-                    source
+                    let snapshot = if source.is_some() {
+                        Some(pool.snapshot())
+                    } else {
+                        None
+                    };
+                    (source, snapshot)
                 };
+                if let Some(snapshot) = snapshot {
+                    save_snapshot(database, &snapshot).await;
+                }
                 if let Some(source) = source {
                     let p = source.profile_name.clone();
                     println!("[cookie_refresh profile={p} event=cooldown_refresh_scheduled] cookie_id={} waiting 30min then refresh", source.id);
