@@ -472,6 +472,110 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_looks_like_pdf_upload() {
+        use frankenstein::types::{Chat, ChatType, Document, Message};
+
+        let dummy_chat = Chat::builder().id(123).type_field(ChatType::Private).build();
+
+        // 1. Message without document
+        let msg_no_doc = Message::builder()
+            .message_id(1)
+            .date(0)
+            .chat(dummy_chat.clone())
+            .build();
+        assert!(looks_like_pdf_upload(&msg_no_doc).is_none());
+
+        // 2. Valid PDF by extension
+        let doc_pdf = Document::builder()
+            .file_id("id_pdf_1".to_string())
+            .file_unique_id("uid_1".to_string())
+            .file_name("report.pdf".to_string())
+            .file_size(1000u64)
+            .build();
+        let msg_pdf = Message::builder()
+            .message_id(2)
+            .date(0)
+            .chat(dummy_chat.clone())
+            .document(doc_pdf)
+            .build();
+        assert_eq!(
+            looks_like_pdf_upload(&msg_pdf),
+            Some(("id_pdf_1".to_string(), "report.pdf".to_string(), 1000))
+        );
+
+        // 3. Uppercase PDF extension
+        let doc_upper = Document::builder()
+            .file_id("id_pdf_2".to_string())
+            .file_unique_id("uid_2".to_string())
+            .file_name("SUMMARY.PDF".to_string())
+            .file_size(2000u64)
+            .build();
+        let msg_upper = Message::builder()
+            .message_id(3)
+            .date(0)
+            .chat(dummy_chat.clone())
+            .document(doc_upper)
+            .build();
+        assert_eq!(
+            looks_like_pdf_upload(&msg_upper),
+            Some(("id_pdf_2".to_string(), "SUMMARY.PDF".to_string(), 2000))
+        );
+
+        // 4. PDF by MIME type without .pdf extension
+        let doc_mime = Document::builder()
+            .file_id("id_pdf_3".to_string())
+            .file_unique_id("uid_3".to_string())
+            .file_name("my_doc".to_string())
+            .mime_type("application/pdf".to_string())
+            .file_size(500u64)
+            .build();
+        let msg_mime = Message::builder()
+            .message_id(4)
+            .date(0)
+            .chat(dummy_chat.clone())
+            .document(doc_mime)
+            .build();
+        assert_eq!(
+            looks_like_pdf_upload(&msg_mime),
+            Some(("id_pdf_3".to_string(), "my_doc".to_string(), 500))
+        );
+
+        // 5. Non-PDF document
+        let doc_txt = Document::builder()
+            .file_id("id_txt".to_string())
+            .file_unique_id("uid_4".to_string())
+            .file_name("notes.txt".to_string())
+            .mime_type("text/plain".to_string())
+            .file_size(300u64)
+            .build();
+        let msg_txt = Message::builder()
+            .message_id(5)
+            .date(0)
+            .chat(dummy_chat.clone())
+            .document(doc_txt)
+            .build();
+        assert!(looks_like_pdf_upload(&msg_txt).is_none());
+
+        // 6. Document with no file_name (defaults to "document.pdf")
+        let doc_no_name = Document::builder()
+            .file_id("id_no_name".to_string())
+            .file_unique_id("uid_5".to_string())
+            .mime_type("application/pdf".to_string())
+            .file_size(100u64)
+            .build();
+        let msg_no_name = Message::builder()
+            .message_id(6)
+            .date(0)
+            .chat(dummy_chat.clone())
+            .document(doc_no_name)
+            .build();
+        assert_eq!(
+            looks_like_pdf_upload(&msg_no_name),
+            Some(("id_no_name".to_string(), "document.pdf".to_string(), 100))
+        );
+    }
+
+    #[test]
     fn test_starts_with_pdf_magic() {
         let dir = std::env::temp_dir();
         let pdf_file = dir.join("test_magic.pdf");

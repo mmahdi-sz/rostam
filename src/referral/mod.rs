@@ -140,6 +140,27 @@ pub enum ActivationPlan {
     Apply { rank: Rank, expires_at: i64 },
 }
 
+/// موجودی امتیازهای زیرمجموعه‌گیری قابل خرج (تعداد کل - خرج شده)
+#[allow(dead_code)]
+pub fn available_points(total_referrals: i64, total_spent: i64) -> i64 {
+    total_referrals.saturating_sub(total_spent).max(0)
+}
+
+/// آیا موجودی کاربر برای دریافت یک آستانه (پلکان) کافی است؟
+#[allow(dead_code)]
+pub fn can_claim_tier(total_referrals: i64, total_spent: i64, tier_threshold: u32) -> bool {
+    available_points(total_referrals, total_spent) >= tier_threshold as i64
+}
+
+/// محاسبه‌ی روزهای تبدیل‌شده از رتبه‌ی قبلی به رتبه‌ی جدید با نسبت وزن‌ها
+pub fn calculate_converted_days(remaining_days: i64, cur_weight: i64, target_weight: i64) -> i64 {
+    if target_weight == cur_weight || target_weight == 0 {
+        remaining_days
+    } else {
+        ceil_div(remaining_days.saturating_mul(cur_weight), target_weight)
+    }
+}
+
 pub async fn plan_activation(client: &Client, user_id: i64, tier_rank: Rank) -> ActivationPlan {
     let now = now_epoch();
     let cur = crate::rank::store::get_user_rank(client, user_id).await.ok().flatten();
@@ -167,7 +188,7 @@ pub async fn plan_activation(client: &Client, user_id: i64, tier_rank: Rank) -> 
     let wc = cur.rank.weight();
     let wn = tier_rank.weight();
     let remaining_days = ceil_div((cur_exp - now).max(0), 86_400);
-    let converted = if wn == wc { remaining_days } else { ceil_div(remaining_days.saturating_mul(wc), wn) };
+    let converted = calculate_converted_days(remaining_days, wc, wn);
     let total_days = ACTIVATION_DAYS + converted;
     ActivationPlan::Apply { rank: tier_rank, expires_at: now + total_days * 86_400 }
 }
@@ -191,5 +212,37 @@ pub mod tests {
         assert_eq!(TIERS[0], (10, Rank::Sohrab));
         assert_eq!(TIERS[1], (20, Rank::Esfandyar));
         assert_eq!(TIERS[2], (50, Rank::Rostam));
+    }
+
+    #[test]
+    fn test_available_points() {
+        assert_eq!(available_points(15, 10), 5);
+        assert_eq!(available_points(10, 10), 0);
+        assert_eq!(available_points(5, 10), 0);
+    }
+
+    #[test]
+    fn test_can_claim_tier() {
+        assert!(can_claim_tier(20, 10, 10)); // 10 points left, cost 10 -> ok
+        assert!(!can_claim_tier(15, 10, 10)); // 5 points left, cost 10 -> insufficient
+        assert!(can_claim_tier(50, 0, 50)); // 50 points left, cost 50 -> ok
+        assert!(!can_claim_tier(49, 0, 50)); // 49 points left, cost 50 -> insufficient
+    }
+
+    #[test]
+    fn test_calculate_converted_days() {
+        // Same weight
+        assert_eq!(calculate_converted_days(10, 5, 5), 10);
+        // Upgrade from weight 5 to 10
+        assert_eq!(calculate_converted_days(10, 5, 10), 5); // 10 * 5 / 10 = 5
+        assert_eq!(calculate_converted_days(7, 5, 10), 4);  // ceil(35 / 10) = 4
+        // Edge cases
+        assert_eq!(calculate_converted_days(0, 5, 10), 0);
+    }
+
+    #[test]
+    fn test_referral_constants() {
+        assert_eq!(PENDING_DAYS, 2);
+        assert_eq!(ACTIVATION_DAYS, 31);
     }
 }
