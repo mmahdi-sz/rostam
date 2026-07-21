@@ -296,9 +296,8 @@ enum GsError {
     Failed(String),
 }
 
-// TODO: no privilege drop / rlimit sandboxing around this subprocess yet (low-priv
-// uid or an rlimit crate to cap memory/CPU). Magic-byte validation + timeout are in
-// place as the minimum bar; revisit if PDF compression becomes a bigger attack surface.
+// Ghostscript subprocess is sandboxed via rlimit (memory capped at 1GB, CPU time capped at 60s)
+// and executed with -dSAFER.
 async fn run_gs(
     input: &std::path::Path, output: &std::path::Path, level: &str,
     timeout_secs: u64, trace_id: u64, cores: &[i32],
@@ -319,6 +318,31 @@ async fn run_gs(
         .arg(input)
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
+
+    #[cfg(unix)]
+    unsafe {
+        cmd.pre_exec(|| {
+            let mem_limit = 1024 * 1024 * 1024; // 1GB
+            let rlim_mem = libc::rlimit {
+                rlim_cur: mem_limit,
+                rlim_max: mem_limit,
+            };
+            if libc::setrlimit(libc::RLIMIT_AS, &rlim_mem) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
+            let cpu_limit = 60; // 60 seconds
+            let rlim_cpu = libc::rlimit {
+                rlim_cur: cpu_limit,
+                rlim_max: cpu_limit,
+            };
+            if libc::setrlimit(libc::RLIMIT_CPU, &rlim_cpu) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
+            Ok(())
+        });
+    }
 
     let mut child = cmd.spawn().map_err(|e| GsError::Failed(format!("spawn: {e}")))?;
 
