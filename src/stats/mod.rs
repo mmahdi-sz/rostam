@@ -38,10 +38,6 @@ pub fn init(client: &'static Client) {
     let _ = DB.set(client);
 }
 
-pub fn init_url(url: &str) {
-    let _ = DB_URL.set(url.to_string());
-}
-
 pub async fn get_db_client() -> Option<Arc<Client>> {
     let url = DB_URL.get().cloned().or_else(config::database_url)?;
     let lock = DB_CLIENT.get_or_init(|| Arc::new(TokioRwLock::new(None)));

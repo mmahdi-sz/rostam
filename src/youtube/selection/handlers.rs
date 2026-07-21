@@ -58,7 +58,7 @@ pub async fn handle_selection_callback(api: &Bot, callback_query: &CallbackQuery
     true
 }
 
-async fn parse_rid_and_req<'a>(
+async fn parse_rid_and_req(
     api: &Bot,
     cq: &CallbackQuery,
     rest: &str,
