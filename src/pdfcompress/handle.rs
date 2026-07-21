@@ -466,3 +466,53 @@ async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
         .await;
     log_ev!("pdfcompress", trace_id, "cpu_released", "cores" => format!("{cores:?}"), "=>" => if r.is_ok() { "ok" } else { "fail" });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_starts_with_pdf_magic() {
+        let dir = std::env::temp_dir();
+        let pdf_file = dir.join("test_magic.pdf");
+        let non_pdf_file = dir.join("test_magic.txt");
+
+        std::fs::write(&pdf_file, b"%PDF-1.4\nsome content").unwrap();
+        std::fs::write(&non_pdf_file, b"NOT A PDF").unwrap();
+
+        assert!(starts_with_pdf_magic(&pdf_file));
+        assert!(!starts_with_pdf_magic(&non_pdf_file));
+
+        let _ = std::fs::remove_file(pdf_file);
+        let _ = std::fs::remove_file(non_pdf_file);
+    }
+
+    #[test]
+    fn test_fmt_bytes() {
+        assert_eq!(fmt_bytes(512), "0.0 MB");
+        assert_eq!(fmt_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(fmt_bytes(1024 * 1024 * 1024), "1.00 GB");
+    }
+
+    #[tokio::test]
+    async fn test_run_gs_invalid_input() {
+        let input = std::path::Path::new("/nonexistent/file.pdf");
+        let output = std::path::Path::new("/tmp/test_out.pdf");
+        let result = run_gs(input, output, "screen", 5, 1, &[]).await;
+        assert!(matches!(result, Err(GsError::Failed(_))));
+    }
+
+    #[tokio::test]
+    async fn test_run_gs_timeout() {
+        let dir = std::env::temp_dir();
+        let input = dir.join("test_timeout_in.pdf");
+        let output = dir.join("test_timeout_out.pdf");
+        std::fs::write(&input, b"%PDF-1.4\n%EOF\n").unwrap();
+
+        let result = run_gs(&input, &output, "screen", 0, 1, &[]).await;
+        assert!(matches!(result, Err(GsError::Timeout)));
+
+        let _ = std::fs::remove_file(input);
+        let _ = std::fs::remove_file(output);
+    }
+}
