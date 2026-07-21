@@ -5,12 +5,10 @@ INSTALL_DIR="/opt/rostam"
 REPO="${ROSTAM_REPO:-https://github.com/mmahdi-sz/rostam.git}"
 BRANCH="${ROSTAM_BRANCH:-master}"
 DENO_DIR="/opt/deno"
-ASR_MODEL_DIR="/opt/asr_model"
 BOTAPI_PORT=8081
 
 FRESH=0
 SKIP_BOTAPI=0
-SKIP_ASR=0
 SKIP_FIREFOX=0
 
 if [ -t 1 ]; then C_B=$'\033[1m'; C_G=$'\033[32m'; C_Y=$'\033[33m'; C_R=$'\033[31m'; C_0=$'\033[0m'
@@ -28,7 +26,7 @@ One-shot installer for the rostam Telegram bot (Rust + Python sidecars).
 Bootstraps EVERYTHING on a bare Debian/Ubuntu or Arch server: clones the repo,
 installs system packages + Rust + deno + yt-dlp, downloads ~4.2 GB of models,
 sets up PostgreSQL + Redis, builds the bot, and installs every sidecar
-(separation :6589, ASR :8765, surge :1700, local Telegram Bot API :8081) as
+(separation :6589, surge :1700, local Telegram Bot API :8081) as
 systemd services.
 
 Usage:
@@ -39,7 +37,6 @@ Options:
   --dir <path>      install location (default /opt/rostam)
   --branch <name>   git branch to clone (default master)
   --skip-bot-api    do not build/install the local Telegram Bot API server
-  --skip-asr        do not install the ASR service (:8765)
   --skip-firefox    do not install Firefox (cookie-pool refresher)
   --fresh           re-clone / rebuild from scratch
   -h, --help        show this help
@@ -51,7 +48,6 @@ while [ $# -gt 0 ]; do
     --dir)         INSTALL_DIR="$2"; shift 2 ;;
     --branch)      BRANCH="$2"; shift 2 ;;
     --skip-bot-api) SKIP_BOTAPI=1; shift ;;
-    --skip-asr)    SKIP_ASR=1; shift ;;
     --skip-firefox) SKIP_FIREFOX=1; shift ;;
     --fresh)       FRESH=1; shift ;;
     -h|--help)     usage; exit 0 ;;
@@ -64,7 +60,6 @@ if [ "$(id -u)" -ne 0 ]; then
   exec sudo -E bash "$0" \
     --dir "$INSTALL_DIR" --branch "$BRANCH" \
     $([ "$SKIP_BOTAPI" = 1 ] && echo --skip-bot-api) \
-    $([ "$SKIP_ASR" = 1 ] && echo --skip-asr) \
     $([ "$SKIP_FIREFOX" = 1 ] && echo --skip-firefox) \
     $([ "$FRESH" = 1 ] && echo --fresh)
 fi
@@ -265,42 +260,6 @@ ok "bot built"
 say "installing separation-service (:6589)…"
 bash "$INSTALL_DIR/separation-service/setup.sh" || warn "separation-service install failed (:6589 degrades)"
 
-asr_install() {
-  ( cd asr-service
-    [ -x venv/bin/python3 ] || python3 -m venv venv
-    venv/bin/pip install --upgrade pip >/dev/null
-    venv/bin/pip install -r requirements.txt
-    mkdir -p "$ASR_MODEL_DIR"
-    if [ -f "$ASR_MODEL_DIR/tokenizer.json" ]; then ok "ASR model present — skipping"; else
-      say "downloading ASR model (~1.5 GB)…"
-      ASR_MODEL_DIR="$ASR_MODEL_DIR" venv/bin/python download_model.py
-    fi
-  ) || return 1
-  cat > /etc/systemd/system/asr.service <<UNIT
-[Unit]
-Description=Nemotron ASR Service
-After=network.target
-
-[Service]
-WorkingDirectory=$INSTALL_DIR/asr-service
-ExecStart=$INSTALL_DIR/asr-service/venv/bin/uvicorn asr_service:app --host 127.0.0.1 --port 8765 --workers 1
-Restart=always
-RestartSec=5
-Environment=ASR_MODEL_DIR=$ASR_MODEL_DIR
-Environment=SEPARATION_SERVICE_DIR=$INSTALL_DIR/separation-service
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-  systemctl daemon-reload
-  systemctl enable --now asr.service >/dev/null 2>&1 || systemctl restart asr.service
-}
-if [ "$SKIP_ASR" = 0 ]; then
-  say "installing ASR service (:8765)…"
-  if asr_install; then ok "asr.service installed"
-  else warn "ASR install failed (:8765 unavailable) — likely a pinned dep with no wheel for this Python; core bot unaffected"; fi
-else warn "--skip-asr: ASR service not installed"; fi
-
 botapi_install() {
   if command -v telegram-bot-api >/dev/null 2>&1; then
     ok "telegram-bot-api already installed"; return 0
@@ -401,14 +360,13 @@ redis-cli ping >/dev/null 2>&1 && ok "redis: PONG" || warn "redis down"
 sudo -u postgres psql -d ros_telegram_bot -c 'SELECT 1' >/dev/null 2>&1 && ok "postgres: ok" || warn "postgres db unreachable"
 curl -fsS "http://127.0.0.1:6589/health" >/dev/null 2>&1 && ok "separation :6589 up" || warn "separation not ready yet"
 HOME=/root surge --host 127.0.0.1:1700 ls --json >/dev/null 2>&1 && ok "surge :1700 up" || warn "surge not ready yet"
-[ "$SKIP_ASR" = 0 ] && { curl -fsS "http://127.0.0.1:8765/health" >/dev/null 2>&1 && ok "asr :8765 up" || warn "asr not ready yet (model may still be loading)"; }
 [ "$SKIP_BOTAPI" = 0 ] && { curl -fsS "http://127.0.0.1:$BOTAPI_PORT/" >/dev/null 2>&1 && ok "bot-api :$BOTAPI_PORT up" || warn "bot-api not answering yet"; }
 sleep 2
-systemctl is-active --quiet rostam.service && ok "rostam.service active" || warn "rostam not active — journalctl -u rostam -n 100"
+systemctl is-active --quiet rostam.service && ok "rostam.service active" || warn "rostam not active — journalctl -n 100 -u rostam"
 
 echo
 ok "Done. Bot dir: $INSTALL_DIR"
 say "Logs: journalctl -u rostam -f"
-say "Sidecars: journalctl -u separation -f | -u asr -f | -u telegram-bot-api -f"
+say "Sidecars: journalctl -u separation -f | -u telegram-bot-api -f"
 [ -f "$INSTALL_DIR/.env" ] && grep -q '^BOT_TOKEN=$' "$INSTALL_DIR/.env" 2>/dev/null && warn "BOT_TOKEN is empty in .env — set it then: systemctl restart rostam"
 exit 0
