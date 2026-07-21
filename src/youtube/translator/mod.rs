@@ -33,16 +33,15 @@ pub fn parse_srt(content: &str) -> Vec<SrtItem> {
 
     for block in blocks {
         let lines: Vec<&str> = block.lines().collect();
-        if lines.len() >= 3 {
-            if let Ok(index) = lines[0].trim().parse::<usize>() {
-                let timestamp = lines[1].trim().to_string();
-                let text = lines[2..].join("\n").trim().to_string();
-                items.push(SrtItem {
-                    index,
-                    timestamp,
-                    text,
-                });
-            }
+        if lines.len() >= 3
+            && let Ok(index) = lines[0].trim().parse::<usize>() {
+            let timestamp = lines[1].trim().to_string();
+            let text = lines[2..].join("\n").trim().to_string();
+            items.push(SrtItem {
+                index,
+                timestamp,
+                text,
+            });
         }
     }
 

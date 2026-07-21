@@ -86,16 +86,14 @@ async fn handle_codec_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
     };
     let trace_id = req.trace_id;
     let changed = with_selection(&req, |slot| {
-        if let Some(sel) = slot.as_mut() {
-            if sel.codec != codec { sel.codec = codec; return true; }
-        }
+        if let Some(sel) = slot.as_mut()
+            && sel.codec != codec { sel.codec = codec; return true; }
         false
     });
     log_trace(trace_id, "selection_codec", &format!("request_id={request_id} codec={} changed={changed}", codec.key()));
-    if changed {
-        if let Some(msg) = extract_message(cq) {
-            refresh_full_panel(api, msg, &req, request_id).await;
-        }
+    if changed
+        && let Some(msg) = extract_message(cq) {
+        refresh_full_panel(api, msg, &req, request_id).await;
     }
     answer(api, cq, "").await;
 }
@@ -119,16 +117,14 @@ async fn handle_audio_toggle(api: &Bot, cq: &CallbackQuery, rest: &str) {
     };
     let trace_id = req.trace_id;
     let changed = with_selection(&req, |slot| {
-        if let Some(sel) = slot.as_mut() {
-            if sel.audio_lang.as_deref() != Some(&lang) { sel.audio_lang = Some(lang.clone()); return true; }
-        }
+        if let Some(sel) = slot.as_mut()
+            && sel.audio_lang.as_deref() != Some(&lang) { sel.audio_lang = Some(lang.clone()); return true; }
         false
     });
     log_trace(trace_id, "selection_audio", &format!("request_id={request_id} lang={lang} changed={changed}"));
-    if changed {
-        if let Some(msg) = extract_message(cq) {
-            refresh_keyboard(api, msg, &req, request_id).await;
-        }
+    if changed
+        && let Some(msg) = extract_message(cq) {
+        refresh_keyboard(api, msg, &req, request_id).await;
     }
     answer(api, cq, "").await;
 }
@@ -178,10 +174,9 @@ async fn handle_sub_toggle(api: &Bot, cq: &CallbackQuery, rest: &str, database: 
         } else { (false, 0) }
     });
     log_trace(trace_id, "selection_sub_toggle", &format!("request_id={request_id} lang={lang} added={added} total_selected={total}"));
-    if added {
-        if let Some(msg) = extract_message(cq) {
-            refresh_keyboard(api, msg, &req, request_id).await;
-        }
+    if added
+        && let Some(msg) = extract_message(cq) {
+        refresh_keyboard(api, msg, &req, request_id).await;
     }
     answer(api, cq, "").await;
 }
@@ -207,31 +202,28 @@ async fn handle_sub_mode_toggle(api: &Bot, cq: &CallbackQuery, rest: &str, datab
     let trace_id = req.trace_id;
 
     // rank check — فایل جداگانه فقط سپهبد به بالا
-    if new_mode == SubtitleMode::File {
-        if let (Some(uid), Some(db)) = (req.user_id, database.as_ref()) {
-            let user_rank = rank::effective_rank(db.client(), uid).await;
-            if !user_rank.can_subtitle_file() {
-                log_trace(trace_id, "sub_file_paywall", &format!("user_id={uid} rank={}", user_rank.as_str()));
-                answer(api, cq, "").await;
-                if let Some(msg) = extract_message(cq) {
-                    crate::rank::paywall::block_feature(api, msg.chat.id, &crate::i18n::t("youtube.subtitle_file_feature"), rank::types::Rank::Sepahbod).await;
-                }
-                return;
+    if new_mode == SubtitleMode::File
+        && let (Some(uid), Some(db)) = (req.user_id, database.as_ref()) {
+        let user_rank = rank::effective_rank(db.client(), uid).await;
+        if !user_rank.can_subtitle_file() {
+            log_trace(trace_id, "sub_file_paywall", &format!("user_id={uid} rank={}", user_rank.as_str()));
+            answer(api, cq, "").await;
+            if let Some(msg) = extract_message(cq) {
+                crate::rank::paywall::block_feature(api, msg.chat.id, &crate::i18n::t("youtube.subtitle_file_feature"), rank::types::Rank::Sepahbod).await;
             }
+            return;
         }
     }
 
     let changed = with_selection(&req, |slot| {
-        if let Some(sel) = slot.as_mut() {
-            if sel.subtitle_mode != new_mode { sel.subtitle_mode = new_mode; return true; }
-        }
+        if let Some(sel) = slot.as_mut()
+            && sel.subtitle_mode != new_mode { sel.subtitle_mode = new_mode; return true; }
         false
     });
     log_trace(trace_id, "selection_sub_mode", &format!("request_id={request_id} mode={mode_str} changed={changed}"));
-    if changed {
-        if let Some(msg) = extract_message(cq) {
-            refresh_keyboard(api, msg, &req, request_id).await;
-        }
+    if changed
+        && let Some(msg) = extract_message(cq) {
+        refresh_keyboard(api, msg, &req, request_id).await;
     }
     answer(api, cq, "").await;
 }
