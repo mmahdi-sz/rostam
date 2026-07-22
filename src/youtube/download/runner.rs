@@ -493,18 +493,14 @@ async fn run_download(
         // captions, so both --write-subs and --write-auto-subs are required —
         // otherwise yt-dlp reports "no subtitles for the requested languages"
         // and produces no subtitle output at all.
+        // Always convert to .srt and never use yt-dlp's own --embed-subs: the
+        // post-download `embed_subtitles()` pass is the single place that
+        // muxes subtitles into the mp4 (it also has to add translated tracks
+        // yt-dlp doesn't know about). Letting yt-dlp embed here too would
+        // double-embed the same language when a translation pass follows.
         cmd.arg("--write-subs").arg("--write-auto-subs")
-            .arg("--sub-langs").arg(&sub_langs);
-        match selection.subtitle_mode {
-            SubtitleMode::Embedded => {
-                // Embed into mp4 (yt-dlp converts vtt -> mov_text automatically).
-                cmd.arg("--embed-subs");
-            }
-            SubtitleMode::File => {
-                // Deliver as standalone file(s); convert to srt for broad player support.
-                cmd.arg("--convert-subs").arg("srt");
-            }
-        }
+            .arg("--sub-langs").arg(&sub_langs)
+            .arg("--convert-subs").arg("srt");
         log_trace(trace_id, "download_subtitle_args", &format!(
             "sub_langs={sub_langs} mode={:?} write_auto=true", selection.subtitle_mode
         ));
@@ -632,7 +628,7 @@ async fn run_download(
     if selection.subtitle_mode == SubtitleMode::Embedded && !selection.subtitle_langs.is_empty() {
         // زیرنویس‌های ترجمه‌شده را هم داخل mp4 می‌گذاریم (yt-dlp فقط زیرنویس اصلی
         // را embed کرده). اگر srt جدیدی نباشد، embed_subtitles همان مسیر را برمی‌گرداند.
-        match super::helpers::embed_subtitles(&dir, &path, trace_id).await {
+        match super::helpers::embed_subtitles(&dir, &path, &selection.subtitle_langs, trace_id).await {
             Ok(new_path) if new_path != path => {
                 log_trace(trace_id, "embed_subtitles_remuxed", &format!("path={new_path}"));
                 path = new_path;
@@ -641,6 +637,20 @@ async fn run_download(
             Err(e) => log_trace(trace_id, "embed_subtitles_failed", &format!("err={e}")),
         }
         super::helpers::fix_embedded_subtitle_flags(&path, trace_id).await;
+    } else if selection.subtitle_mode == SubtitleMode::Hardsub && !selection.subtitle_langs.is_empty() {
+        match super::helpers::hardsub_subtitles(
+            &api, status_chat_id, status_message_id, &dir, &path, &selection.subtitle_langs, trace_id, user_id,
+        ).await {
+            Ok(new_path) if new_path != path => {
+                log_trace(trace_id, "hardsub_subtitles_completed", &format!("path={new_path}"));
+                path = new_path;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                log_trace(trace_id, "hardsub_subtitles_failed", &format!("err={e}"));
+                edit_status(&api, status_chat_id, status_message_id, tf("youtube.download.hardsub_failed", &[("error", &e)])).await;
+            }
+        }
     }
 
     let file_size_bytes = tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0);
@@ -755,7 +765,7 @@ async fn run_download(
     // زیرنویس‌های ترجمه‌شده (translated_<lang>.srt) در مرحله‌ی ترجمه‌ی پیش از
     // این ساخته شده‌اند و همین‌جا کنار بقیه فرستاده می‌شوند.
     if upload_ok && selection.subtitle_mode == SubtitleMode::File && !selection.subtitle_langs.is_empty() {
-        let count = send_subtitle_files(&api, &dir, req.chat_id, &req.title, trace_id).await;
+        let count = send_subtitle_files(&api, &dir, req.chat_id, &req.title, &selection.subtitle_langs, trace_id).await;
         log_trace(trace_id, "subtitle_upload_done", &format!("files_sent={count}"));
     }
 

@@ -6,6 +6,7 @@ use super::super::types::{AudioLanguage, SubtitleLanguage, VideoCodec, VideoForm
 pub enum SubtitleMode {
     File,
     Embedded,
+    Hardsub,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

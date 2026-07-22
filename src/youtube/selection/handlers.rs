@@ -197,6 +197,7 @@ async fn handle_sub_mode_toggle(api: &Bot, cq: &CallbackQuery, rest: &str, datab
     let new_mode = match mode_str {
         "file" => SubtitleMode::File,
         "embedded" => SubtitleMode::Embedded,
+        "hardsub" => SubtitleMode::Hardsub,
         _ => { answer(api, cq, "").await; return; }
     };
     let trace_id = req.trace_id;
@@ -210,6 +211,20 @@ async fn handle_sub_mode_toggle(api: &Bot, cq: &CallbackQuery, rest: &str, datab
             answer(api, cq, "").await;
             if let Some(msg) = extract_message(cq) {
                 crate::rank::paywall::block_feature(api, msg.chat.id, &crate::i18n::t("youtube.subtitle_file_feature"), rank::types::Rank::Sepahbod).await;
+            }
+            return;
+        }
+    }
+
+    // rank check — هاردساب فقط اسفندیار به بالا
+    if new_mode == SubtitleMode::Hardsub
+        && let (Some(uid), Some(db)) = (req.user_id, database.as_ref()) {
+        let user_rank = rank::effective_rank(db.client(), uid).await;
+        if !user_rank.can_subtitle_hardcode() {
+            log_trace(trace_id, "sub_hardsub_paywall", &format!("user_id={uid} rank={}", user_rank.as_str()));
+            answer(api, cq, "").await;
+            if let Some(msg) = extract_message(cq) {
+                crate::rank::paywall::block_feature(api, msg.chat.id, &crate::i18n::t("youtube.subtitle_hardsub_feature"), rank::types::Rank::Esfandyar).await;
             }
             return;
         }

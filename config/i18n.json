@@ -475,6 +475,7 @@
         "page_next": "بعدی",
         "subtitle_mode_file": "📄 فایل زیرنویس",
         "subtitle_mode_embedded": "📺 زیرنویس در ویدیو",
+        "subtitle_mode_hardsub": "🔥 هاردساب (حک روی ویدیو)",
         "video_info": "اطلاعات ویدیو:\nرزولوشن : {quality}\nکدک : {codec}\nحجم حدودی فایل : {size} MiB\nبیت ریت : {bitrate} kbps",
         "confirm": "✅ تایید و دانلود",
         "back_to_quality": "↩ برگشت به منوی رزولوشن"
@@ -537,6 +538,8 @@
         "cancelled": "❌ دانلود لغو شد.",
         "non_h264_notice": "💡 این ویدیو با کدک {codec} جهت دسترسی به کمترین حجم به صورت فایل ارسال شد. برای پخش آن می‌توانید از پلیرهایی مثل VLC یا MX Player استفاده کنید.\n\nجهت دانلود VLC ترجیحاً با VPN روشن روی دکمه‌های زیر بزنید👇",
         "translating_subtitle": "⏳ در حال ترجمه زیرنویس...",
+        "hardsubbing": "🎬 در حال چسباندن (هاردساب) زیرنویس روی ویدیو...\nلطفاً شکیبا باشید، این پردازش کمی زمان می‌برد.",
+        "hardsub_failed": "⚠️ چسباندن زیرنویس روی ویدیو با خطا مواجه شد: {error}",
         "subtitle_caption": "📄 زیرنویس {lang}\n{title}",
         "playlist": {
           "start": "🎬 دانلود پلی‌لیست: {count} ویدیو\n\nلطفاً صبر کنید...",
@@ -554,6 +557,7 @@
       },
       "subtitle_feature": "زیرنویس",
       "subtitle_file_feature": "ارسال زیرنویس به‌صورت فایل جداگانه",
+      "subtitle_hardsub_feature": "هاردساب زیرنویس (حک روی ویدیو)",
       "traffic_daily_limit": "ترافیک روزانه ({limit})",
       "traffic_monthly_limit": "ترافیک ماهانه ({limit})",
       "traffic_file_too_big": "حجم این فایل ({size})، باقی‌مانده ترافیک شما ({remaining})",
