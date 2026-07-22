@@ -81,7 +81,38 @@ pub async fn handle_surge_cancel(
 
 pub fn is_direct_link(text: &str) -> bool {
     let text = text.trim();
-    text.starts_with("http://") || text.starts_with("https://")
+    let lower = text.to_lowercase();
+    if !lower.starts_with("http://") && !lower.starts_with("https://") {
+        return false;
+    }
+
+    let rest = if let Some(r) = lower.strip_prefix("https://") {
+        r
+    } else if let Some(r) = lower.strip_prefix("http://") {
+        r
+    } else {
+        return false;
+    };
+
+    let host = rest
+        .split('/')
+        .next()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("");
+
+    if host == "t.me"
+        || host.ends_with(".t.me")
+        || host == "telegram.org"
+        || host.ends_with(".telegram.org")
+        || host == "telegram.me"
+        || host.ends_with(".telegram.me")
+    {
+        return false;
+    }
+
+    true
 }
 
 pub async fn handle_surge_text(
@@ -677,7 +708,16 @@ fn sanitize_rename(typed: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitize_rename;
+    use super::{is_direct_link, sanitize_rename};
+
+    #[test]
+    fn test_is_direct_link_ignores_telegram_urls() {
+        assert!(!is_direct_link("https://t.me/c/3310766784/162"));
+        assert!(!is_direct_link("https://telegram.org/blog"));
+        assert!(!is_direct_link("http://telegram.me/user"));
+        assert!(is_direct_link("https://example.com/file.zip"));
+        assert!(is_direct_link("http://direct.download.com/video.mp4"));
+    }
 
     #[test]
     fn keeps_plain_names() {
