@@ -358,6 +358,11 @@ async fn download_single_playlist_item(
         .and_then(|f| f.bitrate)
         .map(|b| format!("{b:.0}"))
         .unwrap_or_else(|| "?".to_string());
+    let sub_tag = match (selection.subtitle_mode, selection.subtitle_langs.is_empty()) {
+        (SubtitleMode::Hardsub, false) => " | Hardsub",
+        (SubtitleMode::Embedded, false) => " | Softsub",
+        _ => "",
+    };
     let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
 
     let clean_name = sanitize_video_filename(item_title, &quality_label, &codec_name, &bitrate_str, merge_format);
@@ -375,7 +380,7 @@ async fn download_single_playlist_item(
         ("total", &format!("{total_videos:0width$}")),
         ("quality", &quality_label),
         ("codec", &codec_name),
-        ("bitrate", &bitrate_str),
+        ("bitrate", &bitrate_str), ("sub_tag", sub_tag),
         ("username", &bot_username),
         ("url", video_url),
     ]);
@@ -639,7 +644,7 @@ async fn run_download(
         super::helpers::fix_embedded_subtitle_flags(&path, trace_id).await;
     } else if selection.subtitle_mode == SubtitleMode::Hardsub && !selection.subtitle_langs.is_empty() {
         match super::helpers::hardsub_subtitles(
-            &api, status_chat_id, status_message_id, &dir, &path, &selection.subtitle_langs, trace_id, user_id,
+            &api, status_chat_id, status_message_id, &dir, &path, &selection.subtitle_langs, req.duration, trace_id, user_id,
         ).await {
             Ok(new_path) if new_path != path => {
                 log_trace(trace_id, "hardsub_subtitles_completed", &format!("path={new_path}"));
@@ -663,6 +668,11 @@ async fn run_download(
         .and_then(|f| f.bitrate)
         .map(|b| format!("{:.0}", b))
         .unwrap_or_else(|| "?".to_string());
+    let sub_tag = match (selection.subtitle_mode, selection.subtitle_langs.is_empty()) {
+        (SubtitleMode::Hardsub, false) => " | Hardsub",
+        (SubtitleMode::Embedded, false) => " | Softsub",
+        _ => "",
+    };
     let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
 
     let clean_name = sanitize_video_filename(&req.title, &quality_label, &codec_name, &bitrate_str, merge_format);
@@ -715,7 +725,7 @@ async fn run_download(
             let bot_username = crate::config::bot_username().to_string();
             let caption = tf("youtube.download.caption_part", &[
                 ("title", &req.title), ("quality", &quality_label),
-                ("codec", &codec_name), ("bitrate", &bitrate_str),
+                ("codec", &codec_name), ("bitrate", &bitrate_str), ("sub_tag", sub_tag),
                 ("part", &part_num.to_string()), ("total", &total.to_string()),
                 ("username", &bot_username), ("url", &req.webpage_url),
             ]);
@@ -742,7 +752,7 @@ async fn run_download(
         let bot_username = crate::config::bot_username().to_string();
         let caption = tf("youtube.download.caption", &[
             ("title", &req.title), ("quality", &quality_label),
-            ("codec", &codec_name), ("bitrate", &bitrate_str),
+            ("codec", &codec_name), ("bitrate", &bitrate_str), ("sub_tag", sub_tag),
             ("username", &bot_username), ("url", &req.webpage_url),
         ]);
         let caption_entities = entities_for_text(&caption);

@@ -108,6 +108,8 @@ fn build_main_keyboard(req: &YoutubeRequest, request_id: u64, sel: &Selection) -
                     format!("{CB_SUB_MODE}{request_id}:embedded"),
                     mode_selected == SubtitleMode::Embedded,
                 ),
+            ]);
+            rows.push(vec![
                 choice_button(
                     &t("youtube.selection.subtitle_mode_hardsub"),
                     format!("{CB_SUB_MODE}{request_id}:hardsub"),

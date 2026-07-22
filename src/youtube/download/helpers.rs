@@ -490,6 +490,22 @@ pub async fn embed_subtitles(
     }
 }
 
+fn parse_ffmpeg_time(s: &str) -> Option<u64> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 3 { return None; }
+    let h: u64 = parts[0].parse().ok()?;
+    let m: u64 = parts[1].parse().ok()?;
+    let sec_part = parts[2].split('.').next()?;
+    let s: u64 = sec_part.parse().ok()?;
+    Some(h * 3600 + m * 60 + s)
+}
+
+fn make_hardsub_bar(percent: u32) -> String {
+    let filled = ((percent.min(100) as usize) * 10) / 100;
+    let empty = 10 - filled;
+    format!("{}{}", "●".repeat(filled), "○".repeat(empty))
+}
+
 pub async fn hardsub_subtitles(
     api: &Bot,
     chat_id: i64,
@@ -497,9 +513,13 @@ pub async fn hardsub_subtitles(
     dir: &std::path::Path,
     video_path: &str,
     target_langs: &[String],
+    duration_secs: Option<u64>,
     trace_id: u64,
     user_id: i64,
 ) -> Result<String, String> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use std::process::Stdio;
+
     crate::youtube::trace::log_trace(trace_id, "hardsub_subtitles_started", &format!("video={video_path}"));
     let Ok(entries) = std::fs::read_dir(dir) else { return Ok(video_path.to_string()); };
     let mut srts = Vec::new();
@@ -557,27 +577,89 @@ pub async fn hardsub_subtitles(
        .arg("-crf").arg("23")
        .arg("-threads").arg(num_threads.to_string())
        .arg("-c:a").arg("copy")
-       .arg(&out_path);
+       .arg("-progress").arg("pipe:1")
+       .arg("-nostats")
+       .arg(&out_path)
+       .stdout(Stdio::piped())
+       .stderr(Stdio::piped());
 
     crate::youtube::trace::log_trace(trace_id, "hardsub_exec_start", &format!("srt={} threads={num_threads}", primary_srt.display()));
-    let output = cmd.output().await;
+    
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            release_cpu(cores, trace_id).await;
+            crate::youtube::trace::log_trace(trace_id, "hardsub_spawn_failed", &e.to_string());
+            return Err(e.to_string());
+        }
+    };
 
+    let stdout = child.stdout.take().expect("piped stdout");
+    let stderr = child.stderr.take().expect("piped stderr");
+
+    let mut reader = BufReader::new(stdout).lines();
+    let stderr_task = tokio::spawn(async move {
+        let mut err_reader = BufReader::new(stderr).lines();
+        let mut stderr_tail = String::new();
+        while let Ok(Some(line)) = err_reader.next_line().await {
+            stderr_tail = line;
+        }
+        stderr_tail
+    });
+
+    let mut last_edit = std::time::Instant::now() - std::time::Duration::from_secs(2);
+    let mut last_percent_int: i32 = -1;
+    let total_secs = duration_secs.unwrap_or(0);
+
+    while let Ok(Some(line)) = reader.next_line().await {
+        if line.starts_with("out_time=") {
+            let time_str = line.trim_start_matches("out_time=").trim();
+            if let Some(current_secs) = parse_ffmpeg_time(time_str) {
+                if total_secs > 0 {
+                    let percent = ((current_secs as f64 / total_secs as f64) * 100.0).clamp(0.0, 100.0);
+                    let percent_int = percent as i32;
+                    let now = std::time::Instant::now();
+                    if percent_int != last_percent_int && now.duration_since(last_edit) >= std::time::Duration::from_secs(1) {
+                        last_percent_int = percent_int;
+                        last_edit = now;
+                        let eta_secs = total_secs.saturating_sub(current_secs);
+                        let bar = make_hardsub_bar(percent_int as u32);
+                        let elapsed_str = super::super::format::format_duration(current_secs);
+                        let total_str = super::super::format::format_duration(total_secs);
+                        let eta_str = super::super::format::format_duration(eta_secs);
+                        let text = crate::i18n::tf("youtube.download.hardsub_progress", &[
+                            ("bar", &bar),
+                            ("percent", &format!("{percent_int}%")),
+                            ("elapsed", &elapsed_str),
+                            ("total", &total_str),
+                            ("eta", &eta_str),
+                        ]);
+                        if msg_id > 0 {
+                            super::status::edit_status(api, chat_id, msg_id, text).await;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let stderr_tail = stderr_task.await.unwrap_or_default();
+    let status = child.wait().await;
     release_cpu(cores, trace_id).await;
 
-    match output {
-        Ok(out) if out.status.success() => {
+    match status {
+        Ok(s) if s.success() => {
             crate::youtube::trace::log_trace(trace_id, "hardsub_ok", &format!("out={out_path}"));
             let _ = tokio::fs::remove_file(video_path).await;
             let _ = tokio::fs::remove_file(&hardsub_srt).await;
             Ok(out_path)
         }
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            crate::youtube::trace::log_trace(trace_id, "hardsub_failed", &format!("err={stderr}"));
-            Err(stderr.to_string())
+        Ok(s) => {
+            crate::youtube::trace::log_trace(trace_id, "hardsub_failed", &format!("status={s} err={stderr_tail}"));
+            Err(if stderr_tail.is_empty() { format!("exit {s}") } else { stderr_tail })
         }
         Err(e) => {
-            crate::youtube::trace::log_trace(trace_id, "hardsub_spawn_failed", &e.to_string());
+            crate::youtube::trace::log_trace(trace_id, "hardsub_wait_failed", &e.to_string());
             Err(e.to_string())
         }
     }
