@@ -337,11 +337,44 @@ pub async fn translate_subtitles(
         let cores = acquire_cpu(0, trace_id).await;
         let num_threads = if cores.is_empty() { 4 } else { cores.len() };
 
+        let progress_api = api.clone();
+        let mut last_edit = std::time::Instant::now() - std::time::Duration::from_secs(2);
+        let mut last_percent_int: i32 = -1;
+
         let res = crate::youtube::translator::translate_srt(
             &english_srt,
             &out_path,
             nllb_lang,
             num_threads,
+            move |done, total, elapsed_secs, eta_secs| {
+                let percent = if total > 0 { ((done as f64 / total as f64) * 100.0) as u32 } else { 0 };
+                let percent_int = percent as i32;
+                let elapsed_str = super::super::format::format_duration(elapsed_secs);
+                let eta_str = super::super::format::format_duration(eta_secs);
+
+                crate::youtube::trace::log_trace(trace_id, "translate_progress", &format!(
+                    "done={done} total={total} percent={percent}% elapsed={elapsed_str} eta={eta_str}"
+                ));
+
+                let now = std::time::Instant::now();
+                if msg_id > 0 && (percent_int != last_percent_int || done == total) && now.duration_since(last_edit) >= std::time::Duration::from_secs(1) {
+                    last_percent_int = percent_int;
+                    last_edit = now;
+                    let bar = make_hardsub_bar(percent);
+                    let text = crate::i18n::tf("youtube.download.translating_progress", &[
+                        ("bar", &bar),
+                        ("percent", &format!("{percent}%")),
+                        ("done", &done.to_string()),
+                        ("total", &total.to_string()),
+                        ("elapsed", &elapsed_str),
+                        ("eta", &eta_str),
+                    ]);
+                    let api_clone = progress_api.clone();
+                    tokio::spawn(async move {
+                        let _ = super::status::edit_status(&api_clone, chat_id, msg_id, text).await;
+                    });
+                }
+            },
         ).await;
 
         release_cpu(cores, trace_id).await;

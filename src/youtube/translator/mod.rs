@@ -149,12 +149,16 @@ fn is_nllb_lang_tag(w: &str) -> bool {
 ///
 /// `threads` نگه داشته شده برای سازگاری امضا؛ ct2rs تعداد thread را از Config
 /// می‌گیرد (فعلاً پیش‌فرض). کار CPU-bound داخل `spawn_blocking` اجرا می‌شود.
-pub async fn translate_srt(
+pub async fn translate_srt<F>(
     input_path: &Path,
     output_path: &Path,
     target_lang: &str,
     _threads: usize,
-) -> Result<(), String> {
+    mut progress_cb: F,
+) -> Result<(), String>
+where
+    F: FnMut(usize, usize, u64, u64),
+{
     let content = tokio::fs::read_to_string(input_path)
         .await
         .map_err(|e| format!("Failed to read srt input file: {e}"))?;
@@ -167,21 +171,43 @@ pub async fn translate_srt(
         return Ok(());
     }
 
+    let total_items = items.len();
     let target_lang = target_lang.to_string();
-    // ترجمه CPU-bound است و مدل بلوکینگ؛ روی runtime async اجرا نکن.
-    let translated_items = tokio::task::spawn_blocking(move || -> Result<Vec<SrtItem>, String> {
+    let start_time = std::time::Instant::now();
+
+    progress_cb(0, total_items, 0, 0);
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<(usize, usize, u64, u64)>(16);
+
+    let handle = tokio::task::spawn_blocking(move || -> Result<Vec<SrtItem>, String> {
         let batch_size = 32;
+        let mut processed = 0;
         for chunk in items.chunks_mut(batch_size) {
             let texts: Vec<String> = chunk.iter().map(|item| item.text.clone()).collect();
             let translated = translate_batch_blocking(&texts, &target_lang)?;
             for (item, t) in chunk.iter_mut().zip(translated) {
                 item.text = t;
             }
+            processed += chunk.len();
+            let elapsed = start_time.elapsed().as_secs();
+            let eta = if processed > 0 && processed < total_items {
+                let per_item = elapsed as f64 / processed as f64;
+                (per_item * (total_items - processed) as f64) as u64
+            } else {
+                0
+            };
+            let _ = tx.blocking_send((processed, total_items, elapsed, eta));
         }
         Ok(items)
-    })
-    .await
-    .map_err(|e| format!("translate task panicked: {e}"))??;
+    });
+
+    while let Some((done, total, elapsed, eta)) = rx.recv().await {
+        progress_cb(done, total, elapsed, eta);
+    }
+
+    let translated_items = handle
+        .await
+        .map_err(|e| format!("translate task panicked: {e}"))??;
 
     let out_content = format_srt(&translated_items);
     tokio::fs::write(output_path, out_content)
@@ -247,7 +273,7 @@ mod tests {
         )
         .unwrap();
 
-        translate_srt(&input, &output, "pes_Arab", 4).await.expect("translation failed");
+        translate_srt(&input, &output, "pes_Arab", 4, |_, _, _, _| {}).await.expect("translation failed");
 
         let result = std::fs::read_to_string(&output).unwrap();
         let items = parse_srt(&result);
