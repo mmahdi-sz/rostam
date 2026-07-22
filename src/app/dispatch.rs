@@ -455,10 +455,12 @@ async fn handle_message(
             }
 
             if matches!(flow_manager.get(uid), FlowState::AwaitingSurgeUrlInput) {
-                if message.text.is_some() {
+                if let Some(txt) = message.text.as_deref() {
                     let trace_id = next_trace_id();
                     log_trace(trace_id, "surge_dl_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
-                    flow_manager.clear(uid);
+                    if crate::surge_dl::is_direct_link(txt) {
+                        flow_manager.clear(uid);
+                    }
                     let api2 = api.clone();
                     let msg2 = message.clone();
                     let fm2 = flow_manager.clone();
