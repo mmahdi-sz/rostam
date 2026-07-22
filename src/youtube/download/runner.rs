@@ -505,9 +505,10 @@ async fn run_download(
         // double-embed the same language when a translation pass follows.
         cmd.arg("--write-subs").arg("--write-auto-subs")
             .arg("--sub-langs").arg(&sub_langs)
-            .arg("--convert-subs").arg("srt");
+            .arg("--convert-subs").arg("srt")
+            .arg("--ignore-errors");
         log_trace(trace_id, "download_subtitle_args", &format!(
-            "sub_langs={sub_langs} mode={:?} write_auto=true", selection.subtitle_mode
+            "sub_langs={sub_langs} mode={:?} write_auto=true ignore_errors=true", selection.subtitle_mode
         ));
     }
 
@@ -620,42 +621,13 @@ async fn run_download(
 
     log_trace(trace_id, "download_complete", &format!("path={path}"));
 
-    // مرحله‌ی ترجمه (مستقل از حالت تحویل): اگر کاربر زبانی خواسته که یوتیوب
-    // نداشته، انگلیسی را جدا می‌گیریم و به‌صورت محلی (NLLB) ترجمه می‌کنیم.
-    // خروجی translated_<lang>.srt در پوشه می‌ماند تا در مرحله‌ی تحویل استفاده شود.
-    if !selection.subtitle_langs.is_empty() {
-        super::helpers::ensure_translated_subtitles(
-            &api, &req.cookie_spec, &req.webpage_url,
-            status_chat_id, status_message_id, &dir, &selection.subtitle_langs, trace_id,
-        ).await;
-    }
+    let sub_pipeline_res = super::helpers::process_subtitle_pipeline(
+        &api, status_chat_id, status_message_id, &dir, &path,
+        &selection, &req.cookie_spec, &req.webpage_url, req.duration, trace_id, user_id,
+    ).await;
 
-    if selection.subtitle_mode == SubtitleMode::Embedded && !selection.subtitle_langs.is_empty() {
-        // زیرنویس‌های ترجمه‌شده را هم داخل mp4 می‌گذاریم (yt-dlp فقط زیرنویس اصلی
-        // را embed کرده). اگر srt جدیدی نباشد، embed_subtitles همان مسیر را برمی‌گرداند.
-        match super::helpers::embed_subtitles(&dir, &path, &selection.subtitle_langs, trace_id).await {
-            Ok(new_path) if new_path != path => {
-                log_trace(trace_id, "embed_subtitles_remuxed", &format!("path={new_path}"));
-                path = new_path;
-            }
-            Ok(_) => {}
-            Err(e) => log_trace(trace_id, "embed_subtitles_failed", &format!("err={e}")),
-        }
-        super::helpers::fix_embedded_subtitle_flags(&path, trace_id).await;
-    } else if selection.subtitle_mode == SubtitleMode::Hardsub && !selection.subtitle_langs.is_empty() {
-        match super::helpers::hardsub_subtitles(
-            &api, status_chat_id, status_message_id, &dir, &path, &selection.subtitle_langs, req.duration, trace_id, user_id,
-        ).await {
-            Ok(new_path) if new_path != path => {
-                log_trace(trace_id, "hardsub_subtitles_completed", &format!("path={new_path}"));
-                path = new_path;
-            }
-            Ok(_) => {}
-            Err(e) => {
-                log_trace(trace_id, "hardsub_subtitles_failed", &format!("err={e}"));
-                edit_status(&api, status_chat_id, status_message_id, tf("youtube.download.hardsub_failed", &[("error", &e)])).await;
-            }
-        }
+    if let super::helpers::SubtitlePipelineResult::VideoUpdated(new_path) = sub_pipeline_res {
+        path = new_path;
     }
 
     let file_size_bytes = tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0);

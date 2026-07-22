@@ -16,6 +16,8 @@ use frankenstein::methods::SendMessageParams;
 use redis::aio::MultiplexedConnection;
 use tokio::sync::OnceCell;
 
+use super::types::{Selection, SubtitleMode};
+
 static REDIS_CONN: OnceCell<MultiplexedConnection> = OnceCell::const_new();
 
 async fn redis_conn() -> Option<MultiplexedConnection> {
@@ -438,7 +440,12 @@ pub async fn embed_subtitles(
         }
     });
     
-    let out_path = format!("{}_embedded.mp4", video_path.trim_end_matches(".mp4"));
+    let is_mkv = video_path.ends_with(".mkv");
+    let ext = if is_mkv { "mkv" } else { "mp4" };
+    let sub_codec = if is_mkv { "srt" } else { "mov_text" };
+    let stem = video_path.strip_suffix(&format!(".{ext}")).unwrap_or(video_path);
+    let out_path = format!("{stem}_embedded.{ext}");
+
     let mut cmd = tokio::process::Command::new("ffmpeg");
     cmd.arg("-y").arg("-i").arg(video_path);
     
@@ -447,7 +454,7 @@ pub async fn embed_subtitles(
     }
     
     cmd.arg("-c").arg("copy");
-    cmd.arg("-c:s").arg("mov_text");
+    cmd.arg("-c:s").arg(sub_codec);
     
     cmd.arg("-map").arg("0");
     for (i, srt) in srts.iter().enumerate() {
@@ -483,6 +490,9 @@ pub async fn embed_subtitles(
         let _ = tokio::fs::remove_file(video_path).await;
         for srt in &srts {
             let _ = tokio::fs::remove_file(srt).await;
+        }
+        if !is_mkv {
+            fix_embedded_subtitle_flags(&out_path, trace_id).await;
         }
         Ok(out_path)
     } else {
@@ -662,6 +672,63 @@ pub async fn hardsub_subtitles(
             crate::youtube::trace::log_trace(trace_id, "hardsub_wait_failed", &e.to_string());
             Err(e.to_string())
         }
+    }
+}
+
+pub enum SubtitlePipelineResult {
+    VideoUpdated(String),
+    SendAsFiles,
+    None,
+}
+
+pub async fn process_subtitle_pipeline(
+    api: &Bot,
+    chat_id: i64,
+    msg_id: i32,
+    dir: &std::path::Path,
+    video_path: &str,
+    selection: &Selection,
+    cookie_spec: &str,
+    webpage_url: &str,
+    duration_secs: Option<u64>,
+    trace_id: u64,
+    user_id: i64,
+) -> SubtitlePipelineResult {
+    if selection.subtitle_langs.is_empty() {
+        return SubtitlePipelineResult::None;
+    }
+
+    // ── Phase 1: Guaranteed Subtitle Acquisition (NLLB Fallback for 429 / Missing Subs) ──
+    ensure_translated_subtitles(
+        api, cookie_spec, webpage_url, chat_id, msg_id, dir, &selection.subtitle_langs, trace_id,
+    ).await;
+
+    // ── Phase 2: Subtitle Mode Dispatch ──
+    match selection.subtitle_mode {
+        SubtitleMode::Hardsub => {
+            match hardsub_subtitles(
+                api, chat_id, msg_id, dir, video_path, &selection.subtitle_langs, duration_secs, trace_id, user_id,
+            ).await {
+                Ok(new_path) if new_path != video_path => SubtitlePipelineResult::VideoUpdated(new_path),
+                Ok(_) => SubtitlePipelineResult::None,
+                Err(e) => {
+                    crate::youtube::trace::log_trace(trace_id, "hardsub_pipeline_error", &e);
+                    let _ = super::status::edit_status(api, chat_id, msg_id, crate::i18n::tf("youtube.download.hardsub_failed", &[("error", &e)])).await;
+                    SubtitlePipelineResult::None
+                }
+            }
+        }
+        SubtitleMode::Embedded => {
+            match embed_subtitles(dir, video_path, &selection.subtitle_langs, trace_id).await {
+                Ok(new_path) if new_path != video_path => SubtitlePipelineResult::VideoUpdated(new_path),
+                Ok(_) => SubtitlePipelineResult::None,
+                Err(e) => {
+                    crate::youtube::trace::log_trace(trace_id, "embed_pipeline_error", &e);
+                    SubtitlePipelineResult::None
+                }
+            }
+        }
+        SubtitleMode::File => SubtitlePipelineResult::SendAsFiles,
     }
 }
 
