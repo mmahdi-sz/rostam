@@ -26,6 +26,7 @@ use super::split::split_video;
 use super::status::{edit_progress_status, edit_status};
 use super::store::take_request;
 use super::types::{Selection, SubtitleMode};
+use crate::youtube::types::VideoCodec;
 use super::types::AudioQuality;
 use super::upload::{
     build_part_doc_params, build_part_params, build_single_doc_params, build_single_params,
@@ -635,11 +636,21 @@ async fn run_download(
         stats::record_download_done(jid, file_size_bytes as i64).await;
     }
 
-    let codec_name = t(selection.codec.label_key());
-    let bitrate_str = find_format(&req, height, codec)
-        .and_then(|f| f.bitrate)
-        .map(|b| format!("{:.0}", b))
-        .unwrap_or_else(|| "?".to_string());
+    let hardsub_transcoded = matches!(selection.subtitle_mode, SubtitleMode::Hardsub)
+        && !selection.subtitle_langs.is_empty();
+    let codec_name = if hardsub_transcoded {
+        t(VideoCodec::H264.label_key())
+    } else {
+        t(selection.codec.label_key())
+    };
+    let bitrate_str = if hardsub_transcoded {
+        "?".to_string()
+    } else {
+        find_format(&req, height, codec)
+            .and_then(|f| f.bitrate)
+            .map(|b| format!("{:.0}", b))
+            .unwrap_or_else(|| "?".to_string())
+    };
     let sub_tag = match (selection.subtitle_mode, selection.subtitle_langs.is_empty()) {
         (SubtitleMode::Hardsub, false) => " | Hardsub",
         (SubtitleMode::Embedded, false) => " | Softsub",

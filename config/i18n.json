@@ -1399,6 +1399,7 @@
         "page_next": "Next",
         "subtitle_mode_file": "📄 Subtitle file",
         "subtitle_mode_embedded": "📺 Embedded subtitles",
+        "subtitle_mode_hardsub": "🔥 Hardsub (burned-in)",
         "video_info": "Video info:\nResolution: {quality}\nCodec: {codec}\nEstimated file size: {size} MiB\nBitrate: {bitrate} kbps",
         "confirm": "✅ Confirm & Download",
         "back_to_quality": "↩ Back to resolution menu"
@@ -1461,6 +1462,10 @@
         "cancelled": "❌ Download cancelled.",
         "non_h264_notice": "💡 Sent as a file with {codec} codec for maximum compression and smallest size. To play it, use players like VLC or MX Player.\n\nTo download VLC, preferably turn on VPN and click the buttons below👇",
         "translating_subtitle": "⏳ Translating subtitle...",
+        "translating_progress": "⏳ Translating subtitle...\n🔘 {bar}  {percent}\n📝 {done} of {total} lines translated\n⏱️ {elapsed}   ⌛ {eta}",
+        "hardsubbing": "🎬 Burning subtitles into video (hardsub)...\nPlease wait, this processing takes a moment.",
+        "hardsub_progress": "🎬 Burning subtitles (hardsub)...\n🔘 {bar}  {percent}\n⏱️ {elapsed} / {total}   ⌛ {eta}",
+        "hardsub_failed": "⚠️ Burning subtitles into video failed: {error}",
         "subtitle_caption": "📄 Subtitle {lang}\n{title}",
         "playlist": {
           "start": "🎬 Playlist download: {count} videos\n\nPlease wait...",
@@ -1477,6 +1482,7 @@
         }
       },
       "subtitle_feature": "Subtitles",
+      "subtitle_hardsub_feature": "Hardsub subtitles (burned-in)",
       "subtitle_file_feature": "Send subtitle as separate file",
       "traffic_daily_limit": "Daily traffic ({limit})",
       "traffic_monthly_limit": "Monthly traffic ({limit})",
@@ -2317,6 +2323,7 @@
         "page_next": "Successivo",
         "subtitle_mode_file": "📄 File sottotitoli",
         "subtitle_mode_embedded": "📺 Sottotitoli incorporati",
+        "subtitle_mode_hardsub": "🔥 Hardsub (impresso nel video)",
         "video_info": "Info video:\nRisoluzione: {quality}\nCodec: {codec}\nDimensione stimata: {size} MiB\nBitrate: {bitrate} kbps",
         "confirm": "✅ Conferma e Scarica",
         "back_to_quality": "↩ Torna al menu risoluzione"
@@ -2379,6 +2386,10 @@
         "cancelled": "❌ Download annullato.",
         "non_h264_notice": "💡 Inviato come file con codec {codec} per la massima compressione. Usa VLC o MX Player per riprodurlo.\n\nPer scaricare VLC, usa preferibilmente una VPN e clicca sui pulsanti sottostanti👇",
         "translating_subtitle": "⏳ Traduzione dei sottotitoli in corso...",
+        "translating_progress": "⏳ Traduzione dei sottotitoli in corso...\n🔘 {bar}  {percent}\n📝 {done} di {total} righe tradotte\n⏱️ {elapsed}   ⌛ {eta}",
+        "hardsubbing": "🎬 Impressione dei sottotitoli nel video (hardsub) in corso...\nAttendere, questo processo richiede un momento.",
+        "hardsub_progress": "🎬 Impressione dei sottotitoli (hardsub) in corso...\n🔘 {bar}  {percent}\n⏱️ {elapsed} / {total}   ⌛ {eta}",
+        "hardsub_failed": "⚠️ Impressione dei sottotitoli fallita: {error}",
         "subtitle_caption": "📄 Sottotitoli {lang}\n{title}",
         "playlist": {
           "start": "🎬 Download playlist: {count} video\n\nAttendere...",
@@ -2395,6 +2406,7 @@
         }
       },
       "subtitle_feature": "Sottotitoli",
+      "subtitle_hardsub_feature": "Sottotitoli Hardsub (impressi nel video)",
       "subtitle_file_feature": "Invia sottotitoli come file separato",
       "traffic_daily_limit": "Traffico giornaliero ({limit})",
       "traffic_monthly_limit": "Traffico mensile ({limit})",
