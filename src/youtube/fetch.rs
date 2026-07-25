@@ -140,6 +140,10 @@ pub async fn fetch_video_info(
                 .and_then(|t| t.get("url"))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
+        })
+        .map(|url| {
+            // Telegram Bot API send_photo by URL returns 400 "wrong type of the web page content" for vi_webp URLs
+            url.replace("/vi_webp/", "/vi/").replace(".webp", ".jpg")
         });
     let webpage_url = json
         .get("webpage_url")
