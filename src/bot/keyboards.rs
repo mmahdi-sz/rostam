@@ -50,14 +50,17 @@ pub async fn send_start_menu(
         ).await;
     }
     let text = apply_premium_to_md(&t("start.welcome"));
-    api.send_message(
+    if let Err(e) = api.send_message(
         &SendMessageParams::builder()
             .chat_id(chat_id)
             .text(&text)
             .parse_mode(ParseMode::MarkdownV2)
             .reply_markup(ReplyMarkup::InlineKeyboardMarkup(start_menu_keyboard(is_admin)))
             .build(),
-    ).await?;
+    ).await {
+        eprintln!("[bot event=send_start_menu_failed chat_id={chat_id} err={e:?}]");
+        return Err(e.into());
+    }
     Ok(())
 }
 
@@ -165,7 +168,7 @@ pub async fn edit_to_start_menu(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let is_admin = crate::config::admin_user_id().map(|id| id == chat_id).unwrap_or(false);
     let text = apply_premium_to_md(&t("start.welcome"));
-    api.edit_message_text(
+    if let Err(e) = api.edit_message_text(
         &EditMessageTextParams::builder()
             .chat_id(chat_id)
             .message_id(message_id)
@@ -173,6 +176,9 @@ pub async fn edit_to_start_menu(
             .parse_mode(ParseMode::MarkdownV2)
             .reply_markup(start_menu_keyboard(is_admin))
             .build(),
-    ).await?;
+    ).await {
+        eprintln!("[bot event=edit_to_start_menu_failed chat_id={chat_id} err={e:?}]");
+        return Err(e.into());
+    }
     Ok(())
 }
