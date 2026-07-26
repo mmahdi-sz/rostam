@@ -1,7 +1,8 @@
-mod dispatch;
+#[cfg(feature = "testapi")] pub mod dispatch;
+#[cfg(not(feature = "testapi"))] mod dispatch;
 mod startup;
-mod state;
-
+#[cfg(feature = "testapi")] pub mod state;
+#[cfg(not(feature = "testapi"))] mod state;
 use std::time::Duration;
 
 use frankenstein::{AsyncTelegramApi, methods::GetUpdatesParams, types::AllowedUpdate};

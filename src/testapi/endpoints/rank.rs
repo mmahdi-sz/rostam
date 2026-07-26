@@ -1,5 +1,6 @@
 use axum::Json;
 use serde_json::{Value, json};
+use axum::response::IntoResponse;
 use frankenstein::client_reqwest::Bot;
 use std::sync::{Arc, Mutex};
 use crate::rank::types::Rank;
@@ -10,14 +11,23 @@ use crate::stats::CAPTURED_STATS;
 use crate::i18n::RESOLVED_I18N_KEYS;
 use crate::bot::messaging::CAPTURED_EMOJIS;
 
-pub async fn test_paywall(Json(payload): Json<Value>) -> Json<Value> {
+pub async fn test_paywall(Json(payload): Json<Value>) -> axum::response::Response {
     clear_payloads();
     
-    let feature = payload.get("feature").and_then(|v| v.as_str()).unwrap_or("Test Feature");
-    let rank_str = payload.get("rank").and_then(|v| v.as_str()).unwrap_or("Dalavar");
+    let feature = match payload.get("feature") {
+        Some(v) if v.is_string() => v.as_str().unwrap().to_string(),
+        Some(_) => return (axum::http::StatusCode::BAD_REQUEST, "feature must be a string").into_response(),
+        None => "Test Feature".to_string(),
+    };
+    
+    let rank_str = match payload.get("rank") {
+        Some(v) if v.is_string() => v.as_str().unwrap().to_string(),
+        Some(_) => return (axum::http::StatusCode::BAD_REQUEST, "rank must be a string").into_response(),
+        None => "Dalavar".to_string(),
+    };
     
     // Parse rank manually
-    let rank = match rank_str {
+    let rank = match rank_str.as_str() {
         "Sepahbod" => Rank::Sepahbod,
         "Esfandyar" => Rank::Esfandyar,
         "Sohrab" => Rank::Sohrab,
@@ -42,7 +52,7 @@ pub async fn test_paywall(Json(payload): Json<Value>) -> Json<Value> {
         CAPTURED_STATS.scope(s, async {
             RESOLVED_I18N_KEYS.scope(i, async {
                 CAPTURED_EMOJIS.scope(e, async {
-                    block_feature(&api, chat_id, feature, rank).await;
+                    block_feature(&api, chat_id, &feature, rank).await;
                 }).await;
             }).await;
         }).await;
@@ -81,5 +91,5 @@ pub async fn test_paywall(Json(payload): Json<Value>) -> Json<Value> {
         "inline_keyboard": inline_keyboard,
         "reply_keyboard": reply_keyboard,
         "errors": []
-    }))
+    })).into_response()
 }

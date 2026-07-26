@@ -99,4 +99,30 @@ fi
 
 echo "✅ Emoji test passed!"
 
+echo ""
+echo "=== Running Router Callback Tests ==="
+
+echo "Testing /test/router/callback"
+# Assume sending "start:panel" routes to the start menu
+RES=$(curl -s -X POST "$BASE_URL/test/router/callback" \
+    -H "Content-Type: application/json" \
+    -d '{"callback_data": "start:panel", "user_id": 12345, "username": "testuser"}')
+
+# Check for successful execution
+OK=$(echo "$RES" | jq -r '.ok')
+if [ "$OK" != "true" ]; then
+    echo "Fail: ok != true"
+    exit 1
+fi
+
+TEXT=$(echo "$RES" | jq -r '.message.rendered_text')
+if [[ -z "$TEXT" || "$TEXT" == "null" ]]; then
+    echo "Fail: No message rendered text returned."
+    exit 1
+fi
+
+echo "Router callback dispatched successfully, responded with: ${TEXT:0:50}..."
+
+echo "✅ Router callback test passed!"
+
 echo "All tests passed successfully."

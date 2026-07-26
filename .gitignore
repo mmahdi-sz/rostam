@@ -15,3 +15,4 @@ downloads/
 # Internal planning/working notes — not part of the shipped codebase.
 plans/
 testapi.log
+scripts/run_testapi_suite.sh
