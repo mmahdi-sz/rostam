@@ -25,7 +25,14 @@ mod surge_dl;
 mod upscale;
 mod youtube;
 
+#[cfg(feature = "testapi")]
+mod testapi;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "testapi")]
+    if std::env::var("TESTAPI_ENABLED").unwrap_or_default() == "1" {
+        return testapi::run().await;
+    }
     app::run().await
 }

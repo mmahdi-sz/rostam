@@ -3,6 +3,8 @@ mod lookup;
 mod entities;
 mod premium_md;
 
+#[cfg(feature = "testapi")]
+pub use lookup::RESOLVED_I18N_KEYS;
 pub use lookup::{t, tf, reload as reload_i18n, LANG};
 pub use entities::entities_for_text;
 pub use premium_md::{apply_premium_to_md, apply_premium_to_html};

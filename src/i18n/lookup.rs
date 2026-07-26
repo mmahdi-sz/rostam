@@ -51,9 +51,15 @@ fn lookup(lang: &str, key: &str) -> String {
 
 tokio::task_local! {
     pub static LANG: String;
+    
+    #[cfg(feature = "testapi")]
+    pub static RESOLVED_I18N_KEYS: std::sync::Arc<std::sync::Mutex<Vec<String>>>;
 }
 
 pub fn t(key: &str) -> String {
+    #[cfg(feature = "testapi")]
+    let _ = RESOLVED_I18N_KEYS.try_with(|arc| arc.lock().unwrap().push(key.to_owned()));
+
     let lang = LANG.try_with(|l| l.clone()).unwrap_or_else(|_| "fa".to_owned());
     lookup(&lang, key)
 }

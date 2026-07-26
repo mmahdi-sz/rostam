@@ -44,6 +44,11 @@ pub async fn send_text(
     }
 }
 
+#[cfg(feature = "testapi")]
+tokio::task_local! {
+    pub static CAPTURED_EMOJIS: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>;
+}
+
 /// Expands `{key}` templates via the emoji cache (if loaded), then collects
 /// entities for both the cache expansions and the UI emoji in the remaining text.
 ///
@@ -67,6 +72,21 @@ async fn expand_and_entify(text: &str, chat_id: i64) -> (String, Vec<MessageEnti
                 let (rendered, mut cache_ents, lookups) =
                     cache_guard.render_plain_with_trace(text);
                 log_lookups(trace_id, &lookups);
+                
+                #[cfg(feature = "testapi")]
+                let _ = CAPTURED_EMOJIS.try_with(|arc| {
+                    let mut b = arc.lock().unwrap();
+                    for l in &lookups {
+                        if let LookupOutcome::CacheHit { custom_emoji_id, fallback, .. } = &l.outcome {
+                            b.push(serde_json::json!({
+                                "key": l.key,
+                                "custom_emoji_id": custom_emoji_id,
+                                "fallback": fallback,
+                            }));
+                        }
+                    }
+                });
+
                 let ui_ents = entities_for_text(&rendered);
                 eprintln!(
                     "[send_text trace={trace_id} event=expand_done] {summary} \

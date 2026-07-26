@@ -26,7 +26,12 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 # sentencepiece را عمداً خاموش کرده‌ایم: protobuf استاتیکش با ort (moebius) تداخل
 # لینک می‌سازد و NLLB به آن نیازی ندارد.
 ct2rs = { version = "0.9.21", default-features = false, features = ["tokenizers", "ruy"] }
+axum = { version = "0.8.9", features = ["json"], optional = true }
 
 
 [profile.dev]
 opt-level = 0
+
+[features]
+axum = ["dep:axum"]
+testapi = ["axum"]

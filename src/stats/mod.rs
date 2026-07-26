@@ -159,10 +159,24 @@ pub async fn record_user_global(user_id: i64) -> bool {
     record_user(client, user_id).await
 }
 
+#[cfg(feature = "testapi")]
+tokio::task_local! {
+    pub static CAPTURED_STATS: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>;
+}
+
 // ── generic feature event ───────────────────────────────────────────────────────
 // هر فیچر (stt/denoise/upscale/separation/gwm/asr/...) بدون تغییر امضاش با این تابع
 // آمار ثبت می‌کنه. amount = ثانیه‌ی صدا یا تعداد، بسته به فیچر.
 pub async fn record_event_global(feature: &str, action: &str, status: &str, amount: i64) {
+    #[cfg(feature = "testapi")]
+    let _ = CAPTURED_STATS.try_with(|arc| arc.lock().unwrap().push(serde_json::json!({
+        "user_id": 0,
+        "feature": feature,
+        "action": action,
+        "status": status,
+        "amount": amount,
+    })));
+
     let Some(client) = db() else { return };
     let r = client.execute(
         "INSERT INTO stats_events (user_id, feature, action, status, amount)
@@ -176,6 +190,15 @@ pub async fn record_event_global(feature: &str, action: &str, status: &str, amou
 
 // همون record_event_global ولی با user_id مشخص (وقتی در دسترسه).
 pub async fn record_event_user(user_id: i64, feature: &str, action: &str, status: &str, amount: i64) {
+    #[cfg(feature = "testapi")]
+    let _ = CAPTURED_STATS.try_with(|arc| arc.lock().unwrap().push(serde_json::json!({
+        "user_id": user_id,
+        "feature": feature,
+        "action": action,
+        "status": status,
+        "amount": amount,
+    })));
+
     let Some(client) = db() else { return };
     let r = client.execute(
         "INSERT INTO stats_events (user_id, feature, action, status, amount)

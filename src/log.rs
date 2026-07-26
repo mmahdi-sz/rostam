@@ -17,15 +17,30 @@ pub fn trunc_id(id: i64) -> String {
     trunc(&id.to_string())
 }
 
+#[cfg(feature = "testapi")]
+tokio::task_local! {
+    pub static CAPTURED_TRACES: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>;
+}
+
 /// Low-level: emit a trace event with a pre-formatted details string.
 /// Lets existing log_trace(trace_id, event, details) callers migrate with
 /// a one-line shim: `fn log_trace(t,e,d){crate::log::emit("domain",t,e,d)}`
 pub fn emit(domain: &str, trace_id: u64, event: &str, details: &str) {
-    if details.is_empty() {
-        eprintln!("[{domain} trace={trace_id} event={event}]")
+    let line = if details.is_empty() {
+        format!("[{domain} trace={trace_id} event={event}]")
     } else {
-        eprintln!("[{domain} trace={trace_id} event={event}] {details}")
-    }
+        format!("[{domain} trace={trace_id} event={event}] {details}")
+    };
+    eprintln!("{line}");
+
+    #[cfg(feature = "testapi")]
+    let _ = CAPTURED_TRACES.try_with(|arc| arc.lock().unwrap().push(serde_json::json!({
+        "domain": domain,
+        "trace_id": trace_id,
+        "event": event,
+        "details": details,
+        "line": line,
+    })));
 }
 
 /// Log the actor line when only user_id is available (no full User struct):
@@ -42,7 +57,19 @@ macro_rules! log_actor_id {
             let v = format!("{}", $val);
             if k == "=>" { format!("=> {}", v) } else { format!("{}={}", k, v) }
         }); )*
-        eprintln!("[{} trace={} actor] {}", $domain, $trace, parts.join(" "))
+        let line = format!("[{} trace={} actor] {}", $domain, $trace, parts.join(" "));
+        eprintln!("{}", line);
+        
+        #[cfg(feature = "testapi")]
+        let _ = $crate::log::CAPTURED_TRACES.try_with(|arc| {
+            arc.lock().unwrap().push(serde_json::json!({
+                "domain": $domain,
+                "trace_id": $trace,
+                "event": "actor",
+                "details": parts.join(" "),
+                "line": line,
+            }))
+        });
     }};
 }
 
@@ -65,7 +92,19 @@ macro_rules! log_actor {
             let v = format!("{}", $val);
             if k == "=>" { format!("=> {}", v) } else { format!("{}={}", k, v) }
         }); )*
-        eprintln!("[{} trace={} actor] {}", $domain, $trace, parts.join(" "))
+        let line = format!("[{} trace={} actor] {}", $domain, $trace, parts.join(" "));
+        eprintln!("{}", line);
+
+        #[cfg(feature = "testapi")]
+        let _ = $crate::log::CAPTURED_TRACES.try_with(|arc| {
+            arc.lock().unwrap().push(serde_json::json!({
+                "domain": $domain,
+                "trace_id": $trace,
+                "event": "actor",
+                "details": parts.join(" "),
+                "line": line,
+            }))
+        });
     }};
 }
 
@@ -81,11 +120,23 @@ macro_rules! log_ev {
             let v = format!("{}", $val);
             if k == "=>" { format!("=> {}", v) } else { format!("{}={}", k, v) }
         }),*];
-        if parts.is_empty() {
-            eprintln!("[{} trace={} event={}]", $domain, $trace, $event)
+        let line = if parts.is_empty() {
+            format!("[{} trace={} event={}]", $domain, $trace, $event)
         } else {
-            eprintln!("[{} trace={} event={}] {}", $domain, $trace, $event, parts.join(" "))
-        }
+            format!("[{} trace={} event={}] {}", $domain, $trace, $event, parts.join(" "))
+        };
+        eprintln!("{}", line);
+
+        #[cfg(feature = "testapi")]
+        let _ = $crate::log::CAPTURED_TRACES.try_with(|arc| {
+            arc.lock().unwrap().push(serde_json::json!({
+                "domain": $domain,
+                "trace_id": $trace,
+                "event": $event,
+                "details": parts.join(" "),
+                "line": line,
+            }))
+        });
     }};
 }
 
