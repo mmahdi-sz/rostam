@@ -14,6 +14,15 @@ pub(super) fn materialize_profiles_cache(
     cache_root: &Path,
     sources: Vec<CookieSource>,
 ) -> Vec<CookieSource> {
+    let cache_root_buf = if cache_root.is_absolute() {
+        cache_root.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|p| p.join(cache_root))
+            .unwrap_or_else(|_| cache_root.to_path_buf())
+    };
+    let cache_root = cache_root_buf.as_path();
+
     if cache_root.exists() {
         if let Err(error) = fs::remove_dir_all(cache_root) {
             eprintln!("failed to clear cookie cache at {}: {error}", cache_root.display());
