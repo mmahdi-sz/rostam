@@ -112,6 +112,11 @@ async fn expand_and_entify(text: &str, chat_id: i64) -> (String, Vec<MessageEnti
     (text.to_string(), entities, None)
 }
 
+#[cfg(feature = "testapi")]
+pub async fn expand_and_entify_for_test(text: &str, chat_id: i64) -> (String, Vec<MessageEntity>, Option<u64>) {
+    expand_and_entify(text, chat_id).await
+}
+
 fn log_lookups(trace_id: u64, lookups: &[RenderLookup]) {
     for (idx, l) in lookups.iter().enumerate() {
         match &l.outcome {

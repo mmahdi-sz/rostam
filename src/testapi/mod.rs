@@ -20,6 +20,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Router::new()
         .route("/test/rank/paywall", post(endpoints::rank::test_paywall))
+        .route("/test/emoji/premium_render", post(endpoints::emoji::test_premium_render))
         // Catch-all for outgoing frankenstein calls
         .route("/bot{token}/{method}", post(bot_mock::intercept_bot_request));
 

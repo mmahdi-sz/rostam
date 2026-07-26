@@ -14,3 +14,4 @@ downloads/
 
 # Internal planning/working notes — not part of the shipped codebase.
 plans/
+testapi.log
