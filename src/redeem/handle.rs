@@ -69,12 +69,10 @@ async fn plan_redeem(client: &Client, user_id: i64, new_rank: Rank, new_days: i3
     });
 
     // بدون مقام فعال (یا منقضی) → فقط روزهای کد
-    if !active {
+    let Some(cur) = cur else {
         let total = new_days;
         return Plan::Apply { rank: new_rank, expires_at: Some(now + total * 86_400), total_days: Some(total) };
-    }
-
-    let cur = cur.unwrap();
+    };
     let wc = cur.rank.weight();
     let wn = new_rank.weight();
 

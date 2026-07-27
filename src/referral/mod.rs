@@ -170,11 +170,9 @@ pub async fn plan_activation(client: &Client, user_id: i64, tier_rank: Rank) -> 
         None => true,
     });
 
-    if !active {
+    let Some(cur) = cur else {
         return ActivationPlan::Apply { rank: tier_rank, expires_at: now + ACTIVATION_DAYS * 86_400 };
-    }
-
-    let cur = cur.unwrap();
+    };
 
     // ترتیب اختصاصی پلکان زیرمجموعه‌گیری، نه وزن عمومی رتبه‌ها.
     if tier_position(tier_rank) < tier_position(cur.rank) {
