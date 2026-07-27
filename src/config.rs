@@ -11,9 +11,9 @@ pub fn bot_username() -> &'static str {
     BOT_USERNAME.get().map(|s| s.as_str()).unwrap_or("")
 }
 
-pub fn bot_token() -> Result<String, Box<dyn std::error::Error>> {
+pub fn bot_token() -> anyhow::Result<String> {
     config_value("BOT_TOKEN")
-        .ok_or_else(|| "BOT_TOKEN is not set in .env, /etc/default/abc, or process env".into())
+        .ok_or_else(|| anyhow::anyhow!("BOT_TOKEN is not set in .env, /etc/default/abc, or process env"))
 }
 
 pub fn admin_user_id() -> Option<i64> {

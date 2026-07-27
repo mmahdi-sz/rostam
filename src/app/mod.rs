@@ -19,7 +19,7 @@ use startup::{
 use state::AppState;
 
 pub async fn run() -> anyhow::Result<()> {
-    let token = config::bot_token().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let token = config::bot_token()?;
     let api = build_bot_api(&token).await?;
     let mut cookie_pool = CookiePool::from_default_firefox();
 
