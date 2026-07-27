@@ -22,6 +22,8 @@ pub async fn run() -> anyhow::Result<()> {
         .route("/test/rank/paywall", post(endpoints::rank::test_paywall))
         .route("/test/emoji/premium_render", post(endpoints::emoji::test_premium_render))
         .route("/test/router/callback", post(endpoints::router::test_callback))
+        .route("/test/youtube/format", post(endpoints::youtube::test_youtube_format))
+        .route("/test/pdfcompress/menu", post(endpoints::pdfcompress::test_pdf_compress))
         // Catch-all for outgoing frankenstein calls
         .route("/bot{token}/{method}", post(bot_mock::intercept_bot_request));
 

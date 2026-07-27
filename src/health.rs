@@ -23,6 +23,9 @@ pub fn is_ready() -> bool {
 
 /// Minimal HTTP health check server.
 /// Listens on 127.0.0.1:port and serves /health.
+use prometheus::Encoder;
+use tokio::io::AsyncReadExt;
+
 pub async fn serve(port: u16) {
     let addr = ("127.0.0.1", port);
     let listener = match TcpListener::bind(addr).await {
@@ -37,27 +40,44 @@ pub async fn serve(port: u16) {
 
     loop {
         if let Ok((mut stream, _)) = listener.accept().await {
-            let healthy = is_healthy();
-            let ready = is_ready();
-            let status = if ready && healthy {
-                "200 OK"
+            let mut buf = [0u8; 1024];
+            let n = stream.read(&mut buf).await.unwrap_or(0);
+            let req_str = String::from_utf8_lossy(&buf[..n]);
+
+            if req_str.contains("GET /metrics") {
+                let encoder = prometheus::TextEncoder::new();
+                let metric_families = prometheus::gather();
+                let mut buffer = vec![];
+                let _ = encoder.encode(&metric_families, &mut buffer);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    buffer.len()
+                );
+                let _ = stream.write_all(resp.as_bytes()).await;
+                let _ = stream.write_all(&buffer).await;
             } else {
-                "503 Service Unavailable"
-            };
-            let body = serde_json::json!({
-                "healthy": healthy,
-                "ready": ready,
-            })
-            .to_string();
+                let healthy = is_healthy();
+                let ready = is_ready();
+                let status = if ready && healthy {
+                    "200 OK"
+                } else {
+                    "503 Service Unavailable"
+                };
+                let body = serde_json::json!({
+                    "healthy": healthy,
+                    "ready": ready,
+                })
+                .to_string();
 
-            let resp = format!(
-                "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                status,
-                body.len(),
-                body
-            );
+                let resp = format!(
+                    "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status,
+                    body.len(),
+                    body
+                );
 
-            let _ = stream.write_all(resp.as_bytes()).await;
+                let _ = stream.write_all(resp.as_bytes()).await;
+            }
         }
     }
 }

@@ -125,4 +125,31 @@ echo "Router callback dispatched successfully, responded with: ${TEXT:0:50}..."
 
 echo "✅ Router callback test passed!"
 
+echo ""
+echo "=== Running Youtube Format Tests ==="
+echo "Testing /test/youtube/format"
+RES_YT=$(curl -s -X POST "$BASE_URL/test/youtube/format" \
+    -H "Content-Type: application/json" \
+    -d '{"url": "https://youtube.com/watch?v=dQw4w9WgXcQ"}')
+OK_YT=$(echo "$RES_YT" | jq -r '.ok')
+if [ "$OK_YT" != "true" ]; then
+    echo "Fail: youtube format ok != true"
+    exit 1
+fi
+echo "✅ Youtube format test passed!"
+
+echo ""
+echo "=== Running PDF Compress Tests ==="
+echo "Testing /test/pdfcompress/menu"
+RES_PDF=$(curl -s -X POST "$BASE_URL/test/pdfcompress/menu" \
+    -H "Content-Type: application/json" \
+    -d '{"filename": "document.pdf", "level": "ebook"}')
+FLAG_PDF=$(echo "$RES_PDF" | jq -r '.gs_flag')
+if [ "$FLAG_PDF" != "-dPDFSETTINGS=/ebook" ]; then
+    echo "Fail: pdf compress flag mismatch. Got: $FLAG_PDF"
+    exit 1
+fi
+echo "✅ PDF compress test passed!"
+
+echo ""
 echo "All tests passed successfully."

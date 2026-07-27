@@ -190,14 +190,20 @@ pub async fn record_event_global(feature: &str, action: &str, status: &str, amou
 
 // همون record_event_global ولی با user_id مشخص (وقتی در دسترسه).
 pub async fn record_event_user(user_id: i64, feature: &str, action: &str, status: &str, amount: i64) {
+    crate::metrics::get().requests_total.with_label_values(&[feature, status]).inc();
+
     #[cfg(feature = "testapi")]
-    let _ = CAPTURED_STATS.try_with(|arc| arc.lock().unwrap().push(serde_json::json!({
-        "user_id": user_id,
-        "feature": feature,
-        "action": action,
-        "status": status,
-        "amount": amount,
-    })));
+    let _ = CAPTURED_STATS.try_with(|arc| {
+        if let Ok(mut lock) = arc.lock() {
+            lock.push(serde_json::json!({
+                "user_id": user_id,
+                "feature": feature,
+                "action": action,
+                "status": status,
+                "amount": amount,
+            }));
+        }
+    });
 
     let Some(client) = db() else { return };
     let r = client.execute(
@@ -213,6 +219,8 @@ pub async fn record_event_user(user_id: i64, feature: &str, action: &str, status
 // ── error log ───────────────────────────────────────────────────────────────────
 // خطاهای مهم فیچرها برای دکمه «خطاهای ۱ روز گذشته».
 pub async fn record_error_global(feature: &str, message: &str) {
+    crate::metrics::get().errors_total.with_label_values(&[feature]).inc();
+
     let Some(client) = db() else { return };
     // پیام رو کوتاه نگه می‌داریم که جدول و پیام تلگرام منفجر نشه.
     let trimmed: String = message.chars().take(500).collect();

@@ -27,6 +27,7 @@ mod youtube;
 
 mod error;
 mod health;
+mod metrics;
 mod sync_util;
 
 #[cfg(feature = "testapi")]
