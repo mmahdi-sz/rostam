@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+#[allow(dead_code)]
 #[derive(Error, Debug)]
 pub enum AppError {
     #[error("telegram API error: {0}")]
@@ -28,4 +29,5 @@ pub enum AppError {
     },
 }
 
+#[allow(dead_code)]
 pub type Result<T> = std::result::Result<T, anyhow::Error>;
