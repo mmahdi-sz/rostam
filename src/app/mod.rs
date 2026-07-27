@@ -73,7 +73,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     crate::health::mark_ready();
 
-    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     tokio::spawn(async move {
         let ctrl_c = tokio::signal::ctrl_c();
         let sigterm = async {
