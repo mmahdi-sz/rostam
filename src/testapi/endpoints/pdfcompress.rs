@@ -15,7 +15,7 @@ pub struct PdfCompressResp {
     pub gs_flag: String,
 }
 
-pub async fn test_pdf_compress(Json(req): Json<PdfCompressReq>) -> Json<PdfCompressResp> {
+pub async fn test_pdf_compress(Json(req): Json<PdfCompressReq>) -> (axum::http::StatusCode, Json<PdfCompressResp>) {
     let gs_flag = match req.level.as_str() {
         "screen" => "-dPDFSETTINGS=/screen",
         "ebook" => "-dPDFSETTINGS=/ebook",
@@ -24,10 +24,13 @@ pub async fn test_pdf_compress(Json(req): Json<PdfCompressReq>) -> Json<PdfCompr
         _ => "-dPDFSETTINGS=/ebook",
     };
 
-    Json(PdfCompressResp {
-        ok: req.filename.ends_with(".pdf"),
-        filename: req.filename,
-        applied_level: req.level,
-        gs_flag: gs_flag.to_string(),
-    })
+    (
+        axum::http::StatusCode::OK,
+        Json(PdfCompressResp {
+            ok: req.filename.ends_with(".pdf"),
+            filename: req.filename,
+            applied_level: req.level,
+            gs_flag: gs_flag.to_string(),
+        }),
+    )
 }
