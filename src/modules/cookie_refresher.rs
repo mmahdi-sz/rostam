@@ -188,7 +188,7 @@ async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) 
     if let Some(xdg_runtime_dir) = crate::config::cookie_refresh_xdg_runtime_dir() {
         cmd.env("XDG_RUNTIME_DIR", xdg_runtime_dir);
     }
-    let child = cmd.spawn().map_err(|e| format!("failed to spawn firefox: {e}"))?;
+    let child = cmd.spawn().map_err(|e| anyhow::anyhow!("failed to spawn firefox: {e}"))?;
 
     // Detach: we don't wait on this child; we track firefox by profile path via pgrep.
     drop(child);
