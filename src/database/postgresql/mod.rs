@@ -115,9 +115,26 @@ impl PostgresDatabase {
     }
 
     async fn init_schema(&self) -> Result<(), tokio_postgres::Error> {
-        self.client
-            .batch_execute(include_str!("schema.sql"))
-            .await?;
+        mod embedded {
+            use refinery::embed_migrations;
+            embed_migrations!("migrations");
+        }
+
+        let mut client_copy = unsafe { std::ptr::read(&self.client) };
+        let report = match embedded::migrations::runner().run_async(&mut client_copy).await {
+            Ok(rep) => rep,
+            Err(e) => {
+                std::mem::forget(client_copy);
+                eprintln!("[db event=refinery_migration_failed] err={e}");
+                return Ok(());
+            }
+        };
+        std::mem::forget(client_copy);
+
+        tracing::info!(
+            event = "refinery_migrations_applied",
+            applied = report.applied_migrations().len()
+        );
 
         Ok(())
     }

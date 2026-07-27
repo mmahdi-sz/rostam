@@ -11,6 +11,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 frankenstein = { version = "0.50", features = ["client-reqwest", "trait-async"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "time", "sync", "signal"] }
 tokio-postgres = "0.7"
+refinery = { version = "0.8", features = ["tokio-postgres"] }
 serde_json = "1"
 unicode_names2 = "2"
 chrono = { version = "0.4", features = ["std"] }
