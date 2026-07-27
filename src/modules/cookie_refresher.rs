@@ -34,26 +34,26 @@ impl Default for CookieRefresherConfig {
     }
 }
 
-pub async fn run(api: &Bot, config: CookieRefresherConfig) -> Result<(), String> {
+pub async fn run(api: &Bot, config: CookieRefresherConfig) -> anyhow::Result<()> {
     let p = &config.profile_name;
     println!("[cookie_refresh profile={p} event=start] links_file={} duration={}s", config.links_file, config.duration_secs);
 
-    let links = load_links(&config)?;
+    let links = load_links(&config).map_err(|e| anyhow::anyhow!("{e}"))?;
     if links.is_empty() {
         println!("[cookie_refresh profile={p} event=no_links] links_file={}", config.links_file);
         crate::stats::record_event_global("cookie", "refresh", "fail", 0).await;
         crate::stats::record_error_global("cookie", &format!("no links for profile {p}")).await;
         let msg = format!("⚠️ فایل لینک‌های {} خالیه یا پیدا نشد!", p);
         notify(api, config.admin_chat_id, &msg).await;
-        return Err("no links available".to_string());
+        anyhow::bail!("no links available");
     }
 
-    if !check_login(&config)? {
+    if !check_login(&config).map_err(|e| anyhow::anyhow!("{e}"))? {
         crate::stats::record_event_global("cookie", "refresh", "fail", 0).await;
         crate::stats::record_error_global("cookie", &format!("profile {p} not logged in")).await;
         let msg = format!("⚠️ اکانت {} لاگین نشده!", p);
         notify(api, config.admin_chat_id, &msg).await;
-        return Err(format!("profile {} is not logged in", p));
+        anyhow::bail!("profile {} is not logged in", p);
     }
 
     println!("[cookie_refresh profile={p} event=firefox_starting] link_count={}", links.len());
@@ -77,7 +77,7 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> Result<(), String>
         crate::stats::record_error_global("cookie", &format!("firefox crashed for profile {p}")).await;
         let msg = format!("⚠️ فایرفاکس اکانت {} قبل از اتمام زمان crash کرد!", p);
         notify(api, config.admin_chat_id, &msg).await;
-        return Err(format!("firefox crashed for profile {}", p));
+        anyhow::bail!("firefox crashed for profile {}", p);
     }
 
     if !config.cache_dir.is_empty() && config.cache_dir != config.profile_path {
@@ -160,9 +160,9 @@ async fn kill_existing_firefox(profile_path: &str, profile_name: &str) {
     println!("[cookie_refresh profile={p} event=kill_existing] done");
 }
 
-async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) -> Result<(), String> {
+async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) -> anyhow::Result<()> {
     if links.is_empty() {
-        return Err("no links to open".to_string());
+        anyhow::bail!("no links to open");
     }
 
     let p = profile_name;
