@@ -1,3 +1,5 @@
+//! Helper module for Telegram message sending, formatting, and premium custom emoji rendering.
+
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
