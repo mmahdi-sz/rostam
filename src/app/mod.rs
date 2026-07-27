@@ -64,17 +64,56 @@ pub async fn run() -> anyhow::Result<()> {
         flow_clear_tx,
     };
 
+    crate::health::mark_healthy();
+
+    let health_port: u16 = config::config_value("HEALTH_PORT")
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(14380);
+    tokio::spawn(crate::health::serve(health_port));
+
+    crate::health::mark_ready();
+
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        let ctrl_c = tokio::signal::ctrl_c();
+        let sigterm = async {
+            #[cfg(unix)]
+            {
+                if let Ok(mut sig) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                    sig.recv().await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                std::future::pending::<()>().await;
+            }
+        };
+
+        tokio::select! {
+            _ = ctrl_c => tracing::info!(event = "signal_received", signal = "SIGINT"),
+            _ = sigterm => tracing::info!(event = "signal_received", signal = "SIGTERM"),
+        }
+        let _ = shutdown_tx.send(true);
+    });
+
     let mut params = GetUpdatesParams::builder()
         .timeout(30u32)
         .allowed_updates(vec![AllowedUpdate::Message, AllowedUpdate::CallbackQuery, AllowedUpdate::ChatMember])
         .build();
 
     loop {
+        if *shutdown_rx.borrow() {
+            tracing::info!(event = "shutdown_drain_start", "graceful shutdown initiated, draining tasks...");
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            tracing::info!(event = "shutdown_complete", "graceful shutdown complete");
+            break;
+        }
+
         let updates = match state.api.get_updates(&params).await {
             Ok(response) => response.result,
             Err(error) => {
-                // 429 → به اندازه‌ی retry_afterِ خودِ سرور صبر کن، نه یه ۲ثانیه‌ی ثابت که
-                // وسطِ backoffِ سرور فقط بهش فشار اضافه می‌کنه (get_updates → getDifference داخلی tdlib).
                 let wait = match &error {
                     frankenstein::Error::Api(e) if e.error_code == 429 => {
                         e.parameters.as_ref().and_then(|p| p.retry_after).unwrap_or(5).max(1) as u64
@@ -107,4 +146,5 @@ pub async fn run() -> anyhow::Result<()> {
             }
         }
     }
+    Ok(())
 }
