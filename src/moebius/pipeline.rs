@@ -32,27 +32,23 @@ const NUM_STEPS: usize = 20;
 const STRENGTH: f64 = 0.99;
 const GUIDANCE: f32 = 2.0;
 
-#[derive(Debug)]
+use thiserror::Error;
+
+#[derive(Debug, Error)]
 pub enum MoebiusError {
+    #[error("image decode error: {0}")]
     Decode(String),
+    #[error("io error: {0}")]
     Io(String),
+    #[error("onnx runtime error: {0}")]
     Onnx(String),
     /// Watermark could not be located (detection below threshold) and the
     /// image isn't in the ≥1024 class where the fixed-corner fallback is
     /// trusted — so we decline to inpaint a guessed region.
+    #[error("no watermark detected")]
     NoWatermark,
 }
 
-impl std::fmt::Display for MoebiusError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Decode(m) => write!(f, "image decode error: {m}"),
-            Self::Io(m) => write!(f, "io error: {m}"),
-            Self::Onnx(m) => write!(f, "onnx runtime error: {m}"),
-            Self::NoWatermark => write!(f, "no watermark detected"),
-        }
-    }
-}
 
 /// Public entry point. Downloads/decoding of the source image already
 /// happened in `gemini_watermark::handle`; this takes raw image bytes and

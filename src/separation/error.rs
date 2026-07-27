@@ -1,22 +1,14 @@
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum SeparationError {
+    #[error("service unavailable")]
     ServiceUnavailable,
+    #[error("invalid audio")]
     InvalidAudio,
+    #[error("processing failed: {0}")]
     ProcessingFailed(String),
+    #[error("timeout")]
     Timeout,
 }
 
-impl fmt::Display for SeparationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ServiceUnavailable => write!(f, "service unavailable"),
-            Self::InvalidAudio => write!(f, "invalid audio"),
-            Self::ProcessingFailed(msg) => write!(f, "processing failed: {msg}"),
-            Self::Timeout => write!(f, "timeout"),
-        }
-    }
-}
-
-impl std::error::Error for SeparationError {}
