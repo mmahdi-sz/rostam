@@ -21,10 +21,14 @@ fn cache() -> &'static Arc<RwLock<serde_json::Value>> {
 
 /// Reload i18n.json from disk without restarting.
 /// On parse/IO error keeps existing values and logs — does NOT panic.
+use crate::sync_util::{read_or_recover, write_or_recover};
+
+/// Reload i18n.json from disk without restarting.
+/// On parse/IO error keeps existing values and logs — does NOT panic.
 pub fn reload() {
     match try_load_from_file() {
         Ok(fresh) => {
-            *cache().write().unwrap() = fresh;
+            *write_or_recover(cache()) = fresh;
             eprintln!("[i18n] reloaded i18n.json from disk");
         }
         Err(e) => eprintln!("[i18n] reload failed, keeping previous values: {e}"),
@@ -32,7 +36,7 @@ pub fn reload() {
 }
 
 fn lookup(lang: &str, key: &str) -> String {
-    let guard = cache().read().unwrap();
+    let guard = read_or_recover(cache());
     let mut node = &*guard;
     for segment in std::iter::once(lang).chain(key.split('.')) {
         match node.get(segment) {

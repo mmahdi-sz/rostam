@@ -26,6 +26,7 @@ mod upscale;
 mod youtube;
 
 mod error;
+mod sync_util;
 
 #[cfg(feature = "testapi")]
 mod testapi;

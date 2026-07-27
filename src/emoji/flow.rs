@@ -56,17 +56,19 @@ pub struct FlowManager {
     states: Arc<RwLock<HashMap<i64, FlowState>>>,
 }
 
+use crate::sync_util::{read_or_recover, write_or_recover};
+
 impl FlowManager {
     pub fn new() -> Self {
         Self::default()
     }
 
     pub fn get(&self, user_id: i64) -> FlowState {
-        self.states.read().unwrap().get(&user_id).cloned().unwrap_or_default()
+        read_or_recover(&self.states).get(&user_id).cloned().unwrap_or_default()
     }
 
     pub fn set(&self, user_id: i64, state: FlowState) {
-        let mut map = self.states.write().unwrap();
+        let mut map = write_or_recover(&self.states);
         if matches!(state, FlowState::Idle) {
             map.remove(&user_id);
         } else {
@@ -75,6 +77,6 @@ impl FlowManager {
     }
 
     pub fn clear(&self, user_id: i64) {
-        self.states.write().unwrap().remove(&user_id);
+        write_or_recover(&self.states).remove(&user_id);
     }
 }

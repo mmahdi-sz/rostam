@@ -43,18 +43,20 @@ fn active_upscales() -> &'static Mutex<HashMap<i64, Arc<AtomicBool>>> {
     ACTIVE_UPSCALES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+use crate::sync_util::lock_or_recover;
+
 fn register_upscale(user_id: i64) -> Arc<AtomicBool> {
     let flag = Arc::new(AtomicBool::new(false));
-    active_upscales().lock().unwrap().insert(user_id, flag.clone());
+    lock_or_recover(active_upscales()).insert(user_id, flag.clone());
     flag
 }
 
 fn unregister_upscale(user_id: i64) {
-    active_upscales().lock().unwrap().remove(&user_id);
+    lock_or_recover(active_upscales()).remove(&user_id);
 }
 
 pub fn cancel_upscale(user_id: i64) -> bool {
-    if let Some(flag) = active_upscales().lock().unwrap().get(&user_id) {
+    if let Some(flag) = lock_or_recover(active_upscales()).get(&user_id) {
         flag.store(true, Ordering::Relaxed);
         true
     } else {
