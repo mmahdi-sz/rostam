@@ -233,7 +233,7 @@ pub async fn handle_stt_callback(
 }
 
 /// Converts audio to 16kHz mono 16-bit PCM WAV using ffmpeg.
-fn convert_to_wav(input: &str, output: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn convert_to_wav(input: &str, output: &str) -> anyhow::Result<()> {
     let status = std::process::Command::new("ffmpeg")
         .args([
             "-y", "-i", input,
@@ -241,10 +241,10 @@ fn convert_to_wav(input: &str, output: &str) -> Result<(), Box<dyn std::error::E
             "-f", "wav", output,
         ])
         .status()
-        .map_err(|e| format!("ffmpeg failed: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?;
 
     if !status.success() {
-        return Err("ffmpeg conversion failed".into());
+        anyhow::bail!("ffmpeg conversion failed");
     }
     Ok(())
 }
@@ -574,12 +574,12 @@ pub async fn handle_stt_audio(
     clean_up(&work_dir);
 }
 
-fn wav_duration(path: &str) -> Result<f64, Box<dyn std::error::Error>> {
+fn wav_duration(path: &str) -> anyhow::Result<f64> {
     let output = std::process::Command::new("ffprobe")
         .args(["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path])
         .output()?;
     if !output.status.success() {
-        return Err(format!("ffprobe failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+        anyhow::bail!("ffprobe failed: {}", String::from_utf8_lossy(&output.stderr));
     }
     let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
     Ok(s.parse()?)
