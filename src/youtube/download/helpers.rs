@@ -317,11 +317,9 @@ pub async fn translate_subtitles(
         }
     }
     
-    if has_target || english_srt.is_none() {
+    let Some(english_srt) = english_srt else {
         return Ok(());
-    }
-    
-    let english_srt = english_srt.unwrap();
+    };
     
     if msg_id > 0 {
         crate::youtube::download::status::edit_status(api, chat_id, msg_id, crate::i18n::tf("youtube.download.translating_subtitle", &[])).await;
@@ -483,7 +481,7 @@ pub async fn embed_subtitles(
     cmd.arg("-y").arg("-i").arg(video_path);
     
     for srt in &srts {
-        cmd.arg("-i").arg(srt.to_str().unwrap());
+        cmd.arg("-i").arg(srt.to_string_lossy().as_ref());
     }
     
     cmd.arg("-c").arg("copy");
@@ -803,7 +801,8 @@ const TX3G_FORCED_FLAGS: [u8; 4] = [0xC0, 0x00, 0x00, 0x00];
 /// Finds the first child box named `name` in `buf[off..end]`.
 fn find_box(buf: &[u8], mut off: usize, end: usize, name: &[u8; 4]) -> Option<(usize, usize)> {
     while off + 8 <= end.min(buf.len()) {
-        let size = u32::from_be_bytes(buf[off..off + 4].try_into().unwrap()) as usize;
+        let size_bytes: [u8; 4] = buf[off..off + 4].try_into().ok()?;
+        let size = u32::from_be_bytes(size_bytes) as usize;
         if size < 8 || off + size > end { return None; }
         if &buf[off + 4..off + 8] == name {
             return Some((off, size));
