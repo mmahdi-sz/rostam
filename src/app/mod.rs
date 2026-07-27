@@ -19,6 +19,7 @@ use startup::{
 use state::AppState;
 
 pub async fn run() -> anyhow::Result<()> {
+    crate::log::init_subscriber();
     let token = config::bot_token()?;
     let api = build_bot_api(&token).await?;
     let mut cookie_pool = CookiePool::from_default_firefox();

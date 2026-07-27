@@ -17,6 +17,17 @@ pub fn trunc_id(id: i64) -> String {
     trunc(&id.to_string())
 }
 
+pub fn init_subscriber() {
+    use tracing_subscriber::{fmt, EnvFilter};
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let _ = fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .with_level(false)
+        .try_init();
+}
+
 #[cfg(feature = "testapi")]
 tokio::task_local! {
     pub static CAPTURED_TRACES: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>;
@@ -31,16 +42,20 @@ pub fn emit(domain: &str, trace_id: u64, event: &str, details: &str) {
     } else {
         format!("[{domain} trace={trace_id} event={event}] {details}")
     };
-    eprintln!("{line}");
+    tracing::info!(domain = domain, trace = trace_id, event = event, "{}", line);
 
     #[cfg(feature = "testapi")]
-    let _ = CAPTURED_TRACES.try_with(|arc| arc.lock().unwrap().push(serde_json::json!({
-        "domain": domain,
-        "trace_id": trace_id,
-        "event": event,
-        "details": details,
-        "line": line,
-    })));
+    let _ = CAPTURED_TRACES.try_with(|arc| {
+        if let Ok(mut lock) = arc.lock() {
+            lock.push(serde_json::json!({
+                "domain": domain,
+                "trace_id": trace_id,
+                "event": event,
+                "details": details,
+                "line": line,
+            }));
+        }
+    });
 }
 
 /// Log the actor line when only user_id is available (no full User struct):
@@ -58,17 +73,19 @@ macro_rules! log_actor_id {
             if k == "=>" { format!("=> {}", v) } else { format!("{}={}", k, v) }
         }); )*
         let line = format!("[{} trace={} actor] {}", $domain, $trace, parts.join(" "));
-        eprintln!("{}", line);
+        tracing::info!(domain = $domain, trace = $trace, event = "actor", "{}", line);
         
         #[cfg(feature = "testapi")]
         let _ = $crate::log::CAPTURED_TRACES.try_with(|arc| {
-            arc.lock().unwrap().push(serde_json::json!({
-                "domain": $domain,
-                "trace_id": $trace,
-                "event": "actor",
-                "details": parts.join(" "),
-                "line": line,
-            }))
+            if let Ok(mut lock) = arc.lock() {
+                lock.push(serde_json::json!({
+                    "domain": $domain,
+                    "trace_id": $trace,
+                    "event": "actor",
+                    "details": parts.join(" "),
+                    "line": line,
+                }));
+            }
         });
     }};
 }
@@ -93,17 +110,19 @@ macro_rules! log_actor {
             if k == "=>" { format!("=> {}", v) } else { format!("{}={}", k, v) }
         }); )*
         let line = format!("[{} trace={} actor] {}", $domain, $trace, parts.join(" "));
-        eprintln!("{}", line);
+        tracing::info!(domain = $domain, trace = $trace, event = "actor", "{}", line);
 
         #[cfg(feature = "testapi")]
         let _ = $crate::log::CAPTURED_TRACES.try_with(|arc| {
-            arc.lock().unwrap().push(serde_json::json!({
-                "domain": $domain,
-                "trace_id": $trace,
-                "event": "actor",
-                "details": parts.join(" "),
-                "line": line,
-            }))
+            if let Ok(mut lock) = arc.lock() {
+                lock.push(serde_json::json!({
+                    "domain": $domain,
+                    "trace_id": $trace,
+                    "event": "actor",
+                    "details": parts.join(" "),
+                    "line": line,
+                }));
+            }
         });
     }};
 }
@@ -125,17 +144,19 @@ macro_rules! log_ev {
         } else {
             format!("[{} trace={} event={}] {}", $domain, $trace, $event, parts.join(" "))
         };
-        eprintln!("{}", line);
+        tracing::info!(domain = $domain, trace = $trace, event = $event, "{}", line);
 
         #[cfg(feature = "testapi")]
         let _ = $crate::log::CAPTURED_TRACES.try_with(|arc| {
-            arc.lock().unwrap().push(serde_json::json!({
-                "domain": $domain,
-                "trace_id": $trace,
-                "event": $event,
-                "details": parts.join(" "),
-                "line": line,
-            }))
+            if let Ok(mut lock) = arc.lock() {
+                lock.push(serde_json::json!({
+                    "domain": $domain,
+                    "trace_id": $trace,
+                    "event": $event,
+                    "details": parts.join(" "),
+                    "line": line,
+                }));
+            }
         });
     }};
 }

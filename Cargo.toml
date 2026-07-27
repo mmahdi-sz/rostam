@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 frankenstein = { version = "0.50", features = ["client-reqwest", "trait-async"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "time", "sync"] }
 tokio-postgres = "0.7"
