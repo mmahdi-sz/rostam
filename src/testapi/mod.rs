@@ -9,7 +9,7 @@ use axum::{
 use std::net::SocketAddr;
 use crate::config;
 
-pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run() -> anyhow::Result<()> {
     let api_base = config::config_value("BOT_API_BASE_URL").unwrap_or_default();
     if !api_base.contains("127.0.0.1") && !api_base.contains("localhost") {
         panic!("CRITICAL: BOT_API_BASE_URL must be a local address in test mode (got: {})", api_base);
@@ -28,7 +28,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     println!("[testapi] listening on 127.0.0.1:{}", port);
     
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
     Ok(())
 }
