@@ -4,6 +4,7 @@ use prometheus::{
 };
 use std::sync::OnceLock;
 
+#[allow(dead_code)]
 pub struct Metrics {
     pub requests_total: IntCounterVec,
     pub request_duration: HistogramVec,
