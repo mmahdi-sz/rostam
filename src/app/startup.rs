@@ -17,7 +17,7 @@ use crate::i18n::{reload_i18n, t, LANG};
 use crate::modules;
 use crate::stats;
 
-pub async fn build_bot_api(token: &str) -> Result<Bot, Box<dyn std::error::Error>> {
+pub async fn build_bot_api(token: &str) -> anyhow::Result<Bot> {
     let Some(base_url) = config::bot_api_base_url() else {
         println!("BOT_API_BASE_URL is not set; using official Telegram Bot API.");
         return Ok(Bot::new(token));
