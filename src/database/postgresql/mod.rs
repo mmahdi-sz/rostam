@@ -23,8 +23,10 @@ impl PostgresDatabase {
             }
         });
 
+        let mut client = client;
+        Self::init_schema(&mut client).await?;
+
         let database = Self { client: Arc::new(client) };
-        database.init_schema().await?;
         Ok(database)
     }
 
@@ -114,27 +116,23 @@ impl PostgresDatabase {
         Ok(())
     }
 
-    async fn init_schema(&self) -> Result<(), tokio_postgres::Error> {
+    async fn init_schema(client: &mut Client) -> Result<(), tokio_postgres::Error> {
         mod embedded {
             use refinery::embed_migrations;
             embed_migrations!("migrations");
         }
 
-        let mut client_copy = unsafe { std::ptr::read(&self.client) };
-        let report = match embedded::migrations::runner().run_async(&mut client_copy).await {
-            Ok(rep) => rep,
-            Err(e) => {
-                std::mem::forget(client_copy);
-                eprintln!("[db event=refinery_migration_failed] err={e}");
-                return Ok(());
+        match embedded::migrations::runner().run_async(client).await {
+            Ok(report) => {
+                tracing::info!(
+                    event = "refinery_migrations_applied",
+                    applied = report.applied_migrations().len()
+                );
             }
-        };
-        std::mem::forget(client_copy);
-
-        tracing::info!(
-            event = "refinery_migrations_applied",
-            applied = report.applied_migrations().len()
-        );
+            Err(e) => {
+                eprintln!("[db event=refinery_migration_failed] err={e}");
+            }
+        }
 
         Ok(())
     }
