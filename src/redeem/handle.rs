@@ -61,18 +61,22 @@ enum Plan {
 async fn plan_redeem(client: &Client, user_id: i64, new_rank: Rank, new_days: i32) -> Plan {
     let now = now_epoch();
     let new_days = new_days as i64;
-    let cur = crate::rank::store::get_user_rank(client, user_id).await.ok().flatten();
+    let user_rank = crate::rank::store::get_user_rank(client, user_id).await.ok().flatten();
 
-    let active = cur.as_ref().is_some_and(|r| match r.expires_at {
-        Some(exp) => exp > now,
-        None => true, // نامحدود
-    });
-
-    // بدون مقام فعال (یا منقضی) → فقط روزهای کد
-    let Some(cur) = cur else {
+    let Some(cur) = user_rank else {
         let total = new_days;
         return Plan::Apply { rank: new_rank, expires_at: Some(now + total * 86_400), total_days: Some(total) };
     };
+
+    let active = match cur.expires_at {
+        Some(exp) => exp > now,
+        None => true,
+    };
+
+    if !active {
+        let total = new_days;
+        return Plan::Apply { rank: new_rank, expires_at: Some(now + total * 86_400), total_days: Some(total) };
+    }
     let wc = cur.rank.weight();
     let wn = new_rank.weight();
 

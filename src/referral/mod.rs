@@ -165,14 +165,18 @@ pub async fn plan_activation(client: &Client, user_id: i64, tier_rank: Rank) -> 
     let now = now_epoch();
     let cur = crate::rank::store::get_user_rank(client, user_id).await.ok().flatten();
 
-    let active = cur.as_ref().is_some_and(|r| match r.expires_at {
-        Some(exp) => exp > now,
-        None => true,
-    });
-
     let Some(cur) = cur else {
         return ActivationPlan::Apply { rank: tier_rank, expires_at: now + ACTIVATION_DAYS * 86_400 };
     };
+
+    let active = match cur.expires_at {
+        Some(exp) => exp > now,
+        None => true,
+    };
+
+    if !active {
+        return ActivationPlan::Apply { rank: tier_rank, expires_at: now + ACTIVATION_DAYS * 86_400 };
+    }
 
     // ترتیب اختصاصی پلکان زیرمجموعه‌گیری، نه وزن عمومی رتبه‌ها.
     if tier_position(tier_rank) < tier_position(cur.rank) {

@@ -296,10 +296,10 @@ pub async fn translate_subtitles(
         return Ok(());
     }
 
-    let mut has_target = false;
     let mut english_srt = None;
     let Ok(entries) = std::fs::read_dir(dir) else { return Ok(()); };
     let mut srts = Vec::new();
+    let mut has_target = false;
     
     for entry in entries.flatten() {
         let path = entry.path();
@@ -315,6 +315,10 @@ pub async fn translate_subtitles(
                 english_srt = Some(path.clone());
             }
         }
+    }
+    
+    if has_target {
+        return Ok(());
     }
     
     let Some(english_srt) = english_srt else {
