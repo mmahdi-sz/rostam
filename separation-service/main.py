@@ -41,37 +41,51 @@ def next_trace_id() -> int:
     return _trace_counter
 
 
+_loading_lock = threading.Lock()
+
 def load_models():
     global _separator_quality, _separator_fast, _model_loaded, _all_cpu_cores
-    try:
-        import multiprocessing
-        from audio_separator.separator import Separator
+    with _loading_lock:
+        if _model_loaded:
+            return True
+        try:
+            import multiprocessing
+            from audio_separator.separator import Separator
 
-        log.info(f"[separation event=model_load_start] model={MODEL_NAME} model_dir={MODEL_DIR}")
-        os.makedirs(MODEL_DIR, exist_ok=True)
+            log.info(f"[separation event=model_load_start] model={MODEL_NAME} model_dir={MODEL_DIR}")
+            os.makedirs(MODEL_DIR, exist_ok=True)
 
-        # Record all available cores so we can restore affinity after separation.
-        _all_cpu_cores = set(range(multiprocessing.cpu_count()))
+            _all_cpu_cores = set(range(multiprocessing.cpu_count()))
 
-        _separator_quality = Separator(
-            model_file_dir=MODEL_DIR,
-            output_format="WAV",
-            log_level=logging.WARNING,
-        )
-        _separator_quality.load_model(MODEL_NAME)
+            _separator_quality = Separator(
+                model_file_dir=MODEL_DIR,
+                output_format="WAV",
+                log_level=logging.WARNING,
+            )
+            _separator_quality.load_model(MODEL_NAME)
 
-        _separator_fast = Separator(
-            model_file_dir=MODEL_DIR,
-            output_format="WAV",
-            log_level=logging.WARNING,
-        )
-        _separator_fast.load_model(MODEL_NAME)
+            _separator_fast = Separator(
+                model_file_dir=MODEL_DIR,
+                output_format="WAV",
+                log_level=logging.WARNING,
+            )
+            _separator_fast.load_model(MODEL_NAME)
 
-        _model_loaded = True
-        log.info(f"[separation event=model_load_done] model={MODEL_NAME}")
-    except Exception as e:
-        log.error(f"[separation event=model_load_failed] err={e}")
-        _model_loaded = False
+            _model_loaded = True
+            log.info(f"[separation event=model_load_done] model={MODEL_NAME}")
+            return True
+        except Exception as e:
+            log.error(f"[separation event=model_load_failed] err={e}")
+            _model_loaded = False
+            return False
+
+async fn_auto_recovery_loop():
+    while True:
+        await asyncio.sleep(30)
+        if not _model_loaded:
+            log.warning("[separation event=auto_recovery_trigger] Model is not loaded, attempting background reload...")
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, load_models)
 
 
 @asynccontextmanager
@@ -83,6 +97,7 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, load_models)
     log.info(f"[separation event=startup_done] model_loaded={_model_loaded}")
+    asyncio.create_task(fn_auto_recovery_loop())
     yield
     log.info("[separation event=shutdown]")
 
@@ -132,8 +147,12 @@ async def separate(
         raise HTTPException(status_code=400, detail=f"File too large: {file_size} bytes (max {MAX_FILE_BYTES})")
 
     if not _model_loaded:
-        log.error(f"[separation trace={trace_id} event=model_not_loaded]")
-        raise HTTPException(status_code=503, detail="Model not loaded yet. Try again in a few seconds.")
+        log.warning(f"[separation trace={trace_id} event=on_demand_reload_attempt]")
+        loop = asyncio.get_event_loop()
+        loaded = await loop.run_in_executor(None, load_models)
+        if not loaded:
+            log.error(f"[separation trace={trace_id} event=model_not_loaded]")
+            raise HTTPException(status_code=503, detail="Model not loaded yet. Try again in a few seconds.")
 
     # Acquire CPU cores from broker (blocks until available or caller cancels).
     log.info(f"[separation trace={trace_id} event=acquire_start] user_id={user_id} is_vip={is_vip}")

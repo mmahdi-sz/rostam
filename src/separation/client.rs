@@ -85,59 +85,79 @@ pub async fn separate_audio(
             SeparationError::ServiceUnavailable
         })?;
 
-    let part = reqwest::multipart::Part::bytes(audio_bytes)
-        .file_name(filename.to_string())
-        .mime_str("application/octet-stream")
-        .map_err(|e| {
-            eprintln!("[separation trace={trace_id} event=error] type=mime_build err={e}");
-            SeparationError::ServiceUnavailable
-        })?;
-    let form = reqwest::multipart::Form::new()
-        .part("file", part)
-        .text("mode", mode_str.to_string())
-        .text("user_id", user_id.to_string())
-        .text("is_vip", is_vip.to_string());
+    let mut response = None;
+    let mut last_err = None;
 
-    eprintln!("[separation trace={trace_id} event=service_post] url={SERVICE_URL} timeout=600s");
+    for attempt in 1..=3 {
+        let part = reqwest::multipart::Part::bytes(audio_bytes.to_vec())
+            .file_name(filename.to_string())
+            .mime_str("application/octet-stream")
+            .map_err(|e| {
+                eprintln!("[separation trace={trace_id} event=error] type=mime_build err={e}");
+                SeparationError::ServiceUnavailable
+            })?;
+        let form = reqwest::multipart::Form::new()
+            .part("file", part)
+            .text("mode", mode_str.to_string())
+            .text("user_id", user_id.to_string())
+            .text("is_vip", is_vip.to_string());
 
-    let t_start = std::time::Instant::now();
-    let response = match client.post(SERVICE_URL).multipart(form).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            let elapsed_ms = t_start.elapsed().as_millis();
-            if e.is_timeout() {
+        eprintln!("[separation trace={trace_id} event=service_post attempt={attempt}] url={SERVICE_URL} timeout=600s");
+
+        let t_start = std::time::Instant::now();
+        match client.post(SERVICE_URL).multipart(form).send().await {
+            Ok(r) => {
+                let elapsed_ms = t_start.elapsed().as_millis();
+                let status = r.status();
                 eprintln!(
-                    "[separation trace={trace_id} event=error] type=timeout elapsed_ms={elapsed_ms}"
+                    "[separation trace={trace_id} event=service_response attempt={attempt}] status={status} duration_ms={elapsed_ms}"
                 );
-                return Err(SeparationError::Timeout);
+                if status == reqwest::StatusCode::SERVICE_UNAVAILABLE
+                    || status == reqwest::StatusCode::BAD_GATEWAY
+                {
+                    eprintln!(
+                        "[separation trace={trace_id} event=error attempt={attempt}] type=service_unavailable status={status}"
+                    );
+                    last_err = Some(SeparationError::ServiceUnavailable);
+                } else {
+                    response = Some(r);
+                    break;
+                }
             }
-            if e.is_connect() {
-                eprintln!(
-                    "[separation trace={trace_id} event=error] type=service_unavailable err={e} elapsed_ms={elapsed_ms}"
-                );
-                return Err(SeparationError::ServiceUnavailable);
+            Err(e) => {
+                let elapsed_ms = t_start.elapsed().as_millis();
+                if e.is_timeout() {
+                    eprintln!(
+                        "[separation trace={trace_id} event=error attempt={attempt}] type=timeout elapsed_ms={elapsed_ms}"
+                    );
+                    return Err(SeparationError::Timeout);
+                }
+                if e.is_connect() {
+                    eprintln!(
+                        "[separation trace={trace_id} event=error attempt={attempt}] type=service_unavailable err={e} elapsed_ms={elapsed_ms}"
+                    );
+                    last_err = Some(SeparationError::ServiceUnavailable);
+                } else {
+                    eprintln!(
+                        "[separation trace={trace_id} event=error attempt={attempt}] type=http_send err={e} elapsed_ms={elapsed_ms}"
+                    );
+                    return Err(SeparationError::ProcessingFailed(e.to_string()));
+                }
             }
-            eprintln!(
-                "[separation trace={trace_id} event=error] type=http_send err={e} elapsed_ms={elapsed_ms}"
-            );
-            return Err(SeparationError::ProcessingFailed(e.to_string()));
         }
+
+        if attempt < 3 {
+            eprintln!("[separation trace={trace_id} event=retry_waiting] retry_in=3s");
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+    }
+
+    let response = match response {
+        Some(r) => r,
+        None => return Err(last_err.unwrap_or(SeparationError::ServiceUnavailable)),
     };
 
-    let elapsed_ms = t_start.elapsed().as_millis();
     let status = response.status();
-    eprintln!(
-        "[separation trace={trace_id} event=service_response] status={status} duration_ms={elapsed_ms}"
-    );
-
-    if status == reqwest::StatusCode::SERVICE_UNAVAILABLE
-        || status == reqwest::StatusCode::BAD_GATEWAY
-    {
-        eprintln!(
-            "[separation trace={trace_id} event=error] type=service_unavailable status={status}"
-        );
-        return Err(SeparationError::ServiceUnavailable);
-    }
     if status == reqwest::StatusCode::BAD_REQUEST {
         let body = response.text().await.unwrap_or_default();
         eprintln!("[separation trace={trace_id} event=error] type=invalid_audio body={body}");
