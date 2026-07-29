@@ -9,6 +9,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [1.24.2] — 2026-07-29
+
+### Fixed
+- Add the missing localized `rank.panel_title` key required by the TestAPI and deploy validation.
+
 ## [1.24.1] — 2026-07-29
 
 ### Fixed

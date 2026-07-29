@@ -704,6 +704,7 @@
       "gen_missing_days": "مدت مشخص نشده. مثال: 30d es 1u"
     },
     "rank": {
+      "panel_title": "پنل کاربری",
       "dalavar": "دلاور",
       "sepahbod": "سپهبد",
       "esfandyar": "اسفندیار",
@@ -1628,6 +1629,7 @@
       "panel_uses_header": "— Use count —"
     },
     "rank": {
+      "panel_title": "User Panel",
       "dalavar": "Dalavar",
       "sepahbod": "Sepahbod",
       "esfandyar": "Esfandyar",
@@ -2552,6 +2554,7 @@
       "panel_uses_header": "— Numero di utilizzi —"
     },
     "rank": {
+      "panel_title": "Pannello utente",
       "dalavar": "Dalavar",
       "sepahbod": "Sepahbod",
       "esfandyar": "Esfandyar",
