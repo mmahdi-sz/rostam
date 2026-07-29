@@ -79,7 +79,7 @@ def load_models():
             _model_loaded = False
             return False
 
-async fn_auto_recovery_loop():
+async def auto_recovery_loop():
     while True:
         await asyncio.sleep(30)
         if not _model_loaded:
@@ -97,7 +97,7 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, load_models)
     log.info(f"[separation event=startup_done] model_loaded={_model_loaded}")
-    asyncio.create_task(fn_auto_recovery_loop())
+    asyncio.create_task(auto_recovery_loop())
     yield
     log.info("[separation event=shutdown]")
 
