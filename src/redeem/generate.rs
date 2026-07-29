@@ -70,3 +70,31 @@ pub fn parse_gen_args(s: &str) -> Result<(Rank, i32, i32), String> {
 
     Ok((rank, days, uses))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_random_code_length_and_alphabet() {
+        let code = random_code();
+        assert_eq!(code.len(), 8);
+        for c in code.chars() {
+            assert!(ALPHABET.contains(&(c as u8)));
+        }
+    }
+
+    #[test]
+    fn test_parse_gen_args_valid() {
+        let (rank, days, uses) = parse_gen_args("30d es 5u").unwrap();
+        assert_eq!(rank, Rank::Esfandyar);
+        assert_eq!(days, 30);
+        assert_eq!(uses, 5);
+    }
+
+    #[test]
+    fn test_parse_gen_args_invalid_rank() {
+        let res = parse_gen_args("30d invalid_rank 1u");
+        assert!(res.is_err());
+    }
+}

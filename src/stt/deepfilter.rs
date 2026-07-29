@@ -1,6 +1,6 @@
-use std::time::Instant;
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
+use std::time::Instant;
 
 const DEEP_FILTER_BIN: &str = "files/runtime/deep-filter";
 const DF_MODEL: &str = "files/models/deepfilter/DeepFilterNet3_onnx.tar.gz";
@@ -22,11 +22,7 @@ pub fn denoise(input_wav: &str, output_wav: &str) -> anyhow::Result<f64> {
         .ok_or_else(|| anyhow::anyhow!("output directory path is not valid UTF-8"))?;
 
     let status = Command::new(DEEP_FILTER_BIN)
-        .args([
-            "-m", DF_MODEL,
-            "-o", out_dir_str,
-            input_wav,
-        ])
+        .args(["-m", DF_MODEL, "-o", out_dir_str, input_wav])
         .status()
         .map_err(|e| anyhow::anyhow!("failed to run deep-filter: {e}"))?;
 

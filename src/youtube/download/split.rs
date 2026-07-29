@@ -13,8 +13,15 @@ pub async fn split_video(
         Some(d) => d,
         None => {
             let out = tokio::process::Command::new("ffprobe")
-                .args(["-v", "error", "-show_entries", "format=duration",
-                       "-of", "default=noprint_wrappers=1:nokey=1", input])
+                .args([
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    input,
+                ])
                 .output()
                 .await
                 .map_err(|e| format!("ffprobe spawn: {e}"))?;
@@ -40,7 +47,9 @@ pub async fn split_video(
     let mut parts = Vec::new();
     for i in 0..num_parts {
         let start = i as u64 * part_secs;
-        if start >= total_secs { break; }
+        if start >= total_secs {
+            break;
+        }
 
         let out_path = dir.join(format!("part{:02}.mp4", i + 1));
         let out_str = out_path.to_string_lossy().into_owned();
@@ -48,17 +57,25 @@ pub async fn split_video(
         log_trace(
             trace_id,
             "split_part_start",
-            &format!("part={} start={start}s duration={part_secs}s out={out_str}", i + 1),
+            &format!(
+                "part={} start={start}s duration={part_secs}s out={out_str}",
+                i + 1
+            ),
         );
 
         let status = tokio::process::Command::new("ffmpeg")
             .args([
                 "-y",
-                "-ss", &start.to_string(),
-                "-i", input,
-                "-t", &part_secs.to_string(),
-                "-c", "copy",
-                "-avoid_negative_ts", "make_zero",
+                "-ss",
+                &start.to_string(),
+                "-i",
+                input,
+                "-t",
+                &part_secs.to_string(),
+                "-c",
+                "copy",
+                "-avoid_negative_ts",
+                "make_zero",
                 &out_str,
             ])
             .stdout(Stdio::null())
@@ -71,7 +88,11 @@ pub async fn split_video(
             return Err(format!("ffmpeg exit {} on part {}", status, i + 1));
         }
 
-        log_trace(trace_id, "split_part_done", &format!("part={} path={out_str}", i + 1));
+        log_trace(
+            trace_id,
+            "split_part_done",
+            &format!("part={} path={out_str}", i + 1),
+        );
         parts.push(out_str);
     }
 

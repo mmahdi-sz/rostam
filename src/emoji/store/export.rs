@@ -1,6 +1,9 @@
 use tokio_postgres::Client;
 
-pub async fn export_user_sql(client: &Client, owner: i64) -> Result<Option<String>, tokio_postgres::Error> {
+pub async fn export_user_sql(
+    client: &Client,
+    owner: i64,
+) -> Result<Option<String>, tokio_postgres::Error> {
     let mut out = String::new();
     out.push_str("-- emoji export\n\n");
     out.push_str("CREATE TABLE IF NOT EXISTS emoji_packs (\n    id SERIAL PRIMARY KEY,\n    owner_user_id BIGINT NOT NULL,\n    name TEXT NOT NULL,\n    alias TEXT,\n    is_default BOOLEAN NOT NULL DEFAULT FALSE,\n    item_count INT NOT NULL DEFAULT 0\n);\n\n");
@@ -61,7 +64,11 @@ pub async fn export_user_sql(client: &Client, owner: i64) -> Result<Option<Strin
 }
 
 #[allow(dead_code)]
-pub async fn render_template(client: &Client, owner: i64, template: &str) -> Result<String, tokio_postgres::Error> {
+pub async fn render_template(
+    client: &Client,
+    owner: i64,
+    template: &str,
+) -> Result<String, tokio_postgres::Error> {
     let rows = client.query(
         "SELECT custom_emoji_id, fallback, smart_name, alias FROM emoji_items WHERE owner_user_id = $1",
         &[&owner],

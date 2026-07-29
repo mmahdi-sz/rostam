@@ -14,4 +14,4 @@ mod model;
 mod pipeline;
 mod scheduler;
 
-pub use pipeline::{remove_watermark, MoebiusError};
+pub use pipeline::{MoebiusError, remove_watermark};

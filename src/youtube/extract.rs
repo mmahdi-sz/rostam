@@ -3,7 +3,10 @@ pub fn extract_youtube_urls(text: &str) -> Vec<String> {
 
     for token in text.split(|c: char| c.is_whitespace()) {
         let token = token.trim_matches(|c: char| {
-            matches!(c, '<' | '>' | '"' | '\'' | ',' | ';' | '!' | '?' | ')' | '(')
+            matches!(
+                c,
+                '<' | '>' | '"' | '\'' | ',' | ';' | '!' | '?' | ')' | '('
+            )
         });
 
         if token.is_empty() {

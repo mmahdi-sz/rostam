@@ -1,12 +1,11 @@
+use super::types::Rank;
+use crate::i18n::tf;
 use frankenstein::{
-    AsyncTelegramApi,
-    ParseMode,
+    AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     methods::SendMessageParams,
     types::{InlineKeyboardButton, InlineKeyboardMarkup, ReplyMarkup},
 };
-use crate::i18n::tf;
-use super::types::Rank;
 
 pub const CB_RANK_SHOW_MENU: &str = "rank:menu";
 
@@ -15,7 +14,9 @@ fn show_plans_keyboard() -> InlineKeyboardMarkup {
         .text(crate::i18n::t("rank.paywall_button"))
         .callback_data(CB_RANK_SHOW_MENU)
         .build();
-    InlineKeyboardMarkup::builder().inline_keyboard(vec![vec![btn]]).build()
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn]])
+        .build()
 }
 
 /// محدودیت نوع ۱ — قابلیت برای این رتبه اصلاً در دسترس نیست
@@ -24,10 +25,10 @@ fn show_plans_keyboard() -> InlineKeyboardMarkup {
 pub async fn block_feature(api: &Bot, chat_id: i64, feature: &str, min_rank: Rank) {
     crate::stats::record_event_global("paywall", "feature", min_rank.as_str(), 0).await;
     let min_rank_name = min_rank.display_name();
-    let text = tf("rank.paywall_feature", &[
-        ("feature", feature),
-        ("min_rank", &min_rank_name),
-    ]);
+    let text = tf(
+        "rank.paywall_feature",
+        &[("feature", feature), ("min_rank", &min_rank_name)],
+    );
     let params = SendMessageParams::builder()
         .chat_id(chat_id)
         .text(text)
@@ -45,10 +46,10 @@ pub async fn block_feature(api: &Bot, chat_id: i64, feature: &str, min_rank: Ran
 pub async fn block_limit(api: &Bot, chat_id: i64, limit: &str, min_rank: Rank) {
     crate::stats::record_event_global("paywall", "limit", min_rank.as_str(), 0).await;
     let min_rank_name = min_rank.display_name();
-    let text = tf("rank.paywall_limit", &[
-        ("limit", limit),
-        ("min_rank", &min_rank_name),
-    ]);
+    let text = tf(
+        "rank.paywall_limit",
+        &[("limit", limit), ("min_rank", &min_rank_name)],
+    );
     let params = SendMessageParams::builder()
         .chat_id(chat_id)
         .text(text)

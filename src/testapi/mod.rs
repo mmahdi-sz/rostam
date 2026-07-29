@@ -1,18 +1,18 @@
-pub mod state;
 pub mod bot_mock;
 pub mod endpoints;
+pub mod state;
 
-use axum::{
-    routing::post,
-    Router,
-};
-use std::net::SocketAddr;
 use crate::config;
+use axum::{Router, routing::post};
+use std::net::SocketAddr;
 
 pub async fn run() -> anyhow::Result<()> {
     let api_base = config::config_value("BOT_API_BASE_URL").unwrap_or_default();
     if !api_base.contains("127.0.0.1") && !api_base.contains("localhost") {
-        panic!("CRITICAL: BOT_API_BASE_URL must be a local address in test mode (got: {})", api_base);
+        panic!(
+            "CRITICAL: BOT_API_BASE_URL must be a local address in test mode (got: {})",
+            api_base
+        );
     }
 
     let port_str = std::env::var("TESTAPI_PORT").unwrap_or_else(|_| "14379".to_string());
@@ -20,16 +20,65 @@ pub async fn run() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/test/rank/paywall", post(endpoints::rank::test_paywall))
-        .route("/test/emoji/premium_render", post(endpoints::emoji::test_premium_render))
-        .route("/test/router/callback", post(endpoints::router::test_callback))
-        .route("/test/youtube/format", post(endpoints::youtube::test_youtube_format))
-        .route("/test/pdfcompress/menu", post(endpoints::pdfcompress::test_pdf_compress))
+        .route("/test/rank/panel", post(endpoints::rank::test_rank_panel))
+        .route(
+            "/test/emoji/premium_render",
+            post(endpoints::emoji::test_premium_render),
+        )
+        .route(
+            "/test/router/callback",
+            post(endpoints::router::test_callback),
+        )
+        .route(
+            "/test/youtube/format",
+            post(endpoints::youtube::test_youtube_format),
+        )
+        .route(
+            "/test/youtube/quality_select",
+            post(endpoints::youtube::test_youtube_quality_select),
+        )
+        .route(
+            "/test/youtube/cancel",
+            post(endpoints::youtube::test_youtube_cancel),
+        )
+        .route(
+            "/test/pdfcompress/menu",
+            post(endpoints::pdfcompress::test_pdf_compress),
+        )
+        .route(
+            "/test/stt/recognize",
+            post(endpoints::ai::test_stt_recognize),
+        )
+        .route(
+            "/test/separation/submit",
+            post(endpoints::ai::test_separation_submit),
+        )
+        .route("/test/gwm/detect", post(endpoints::ai::test_gwm_detect))
+        .route(
+            "/test/admin/panel",
+            post(endpoints::admin::test_admin_panel),
+        )
+        .route(
+            "/test/surge/validate_url",
+            post(endpoints::surge::test_surge_validate_url),
+        )
+        .route(
+            "/test/health/deep",
+            post(endpoints::health::test_deep_health),
+        )
+        .route(
+            "/test/referral/spend",
+            post(endpoints::referral::test_referral_spend),
+        )
         // Catch-all for outgoing frankenstein calls
-        .route("/bot{token}/{method}", post(bot_mock::intercept_bot_request));
+        .route(
+            "/bot{token}/{method}",
+            post(bot_mock::intercept_bot_request),
+        );
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     println!("[testapi] listening on 127.0.0.1:{}", port);
-    
+
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())

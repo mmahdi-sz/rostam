@@ -102,10 +102,7 @@ pub async fn get_monthly_traffic(
 }
 
 /// خواندن first_upload_at کاربر از stats_users (None اگه هنوز آپلودی نکرده)
-pub async fn get_first_upload_at(
-    client: &Client,
-    user_id: i64,
-) -> Option<i64> {
+pub async fn get_first_upload_at(client: &Client, user_id: i64) -> Option<i64> {
     client
         .query_opt(
             "SELECT first_upload_at FROM stats_users WHERE user_id = $1",

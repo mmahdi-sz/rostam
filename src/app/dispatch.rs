@@ -1,49 +1,54 @@
 use frankenstein::{
-    AsyncTelegramApi,
-    methods::AnswerCallbackQueryParams,
-    types::MaybeInaccessibleMessage,
+    AsyncTelegramApi, methods::AnswerCallbackQueryParams, types::MaybeInaccessibleMessage,
     updates::UpdateContent,
 };
 
-use crate::bot::{send_start_menu, edit_to_start_menu, edit_to_ai_lab, edit_to_tools, send_lang_picker};
 use crate::bot::{
-    CB_LANG_SET,
-    CB_START_EMOJI, CB_START_YOUTUBE, CB_START_AI_LAB, CB_START_TOOLS, CB_USER_PANEL,
-    CB_AI_DENOISE, CB_AI_UPSCALE, CB_AI_STT, CB_AI_SEP, CB_AI_GWM, CB_DENOISE_CANCEL,
-    CB_ADMIN_PANEL, CB_ADMIN_STATS, CB_ADMIN_STATS_MORE, CB_ADMIN_ERRORS, CB_ADMIN_FORCE_JOIN, CB_ADMIN_GEN_CODE,
+    CB_ADMIN_ERRORS, CB_ADMIN_FORCE_JOIN, CB_ADMIN_GEN_CODE, CB_ADMIN_PANEL, CB_ADMIN_STATS,
+    CB_ADMIN_STATS_MORE, CB_AI_DENOISE, CB_AI_GWM, CB_AI_SEP, CB_AI_STT, CB_AI_UPSCALE,
+    CB_DENOISE_CANCEL, CB_LANG_SET, CB_START_AI_LAB, CB_START_EMOJI, CB_START_TOOLS,
+    CB_START_YOUTUBE, CB_USER_PANEL,
 };
-use crate::pdfcompress::{
-    enter_pdf_compress, handle_pdf_mode_simple, handle_pdf_cancel, handle_pdf_file, handle_pdf_level,
-    CB_TOOLS_PDF_COMPRESS, CB_PDF_MODE_SIMPLE, CB_PDF_MODE_ADVANCED, CB_PDF_LEVEL_PREFIX, CB_PDF_CANCEL,
+use crate::bot::{
+    edit_to_ai_lab, edit_to_start_menu, edit_to_tools, send_lang_picker, send_start_menu,
 };
 use crate::config;
 use crate::denoise;
 use crate::emoji::{FlowState, handler as emoji_handler, panel::CB_START_PANEL};
-use crate::gemini_watermark::{enter_gwm, handle_gwm_cancel, handle_gwm_image, CB_GWM_CANCEL};
-use crate::i18n::{t, reload_i18n, LANG};
+use crate::gemini_watermark::{CB_GWM_CANCEL, enter_gwm, handle_gwm_cancel, handle_gwm_image};
+use crate::i18n::{LANG, reload_i18n, t};
 use crate::ip_lookup::{
-    detect_ip, enter_ip_lookup, handle_ip_command, handle_ip_lookup_auto, handle_ip_lookup_cancel,
-    handle_ip_lookup_text, CB_IP_LOOKUP_CANCEL, CB_TOOLS_IP_LOOKUP,
+    CB_IP_LOOKUP_CANCEL, CB_TOOLS_IP_LOOKUP, detect_ip, enter_ip_lookup, handle_ip_command,
+    handle_ip_lookup_auto, handle_ip_lookup_cancel, handle_ip_lookup_text,
 };
-use crate::separation::{enter_separation, handle_separation_audio, handle_separation_callback, CB_SEP_PREFIX};
-use crate::surge_dl::{
-    enter_surge_dl, handle_surge_cancel, handle_surge_confirm_original, handle_surge_confirm_rename,
-    handle_surge_rename_text, handle_surge_text, CB_SURGE_CANCEL, CB_SURGE_CONFIRM_ORIGINAL,
-    CB_SURGE_CONFIRM_RENAME, CB_TOOLS_SURGE,
-};
-use crate::stt::handle::{enter_stt_config, handle_stt_audio, handle_stt_callback};
-use crate::upscale::{
-    enter_upscale, handle_upscale_anime_toggle, handle_upscale_cancel,
-    handle_upscale_image, handle_upscale_model_pick,
-    CB_UPSCALE_CANCEL, CB_UPSCALE_MODEL_PREFIX, CB_UPSCALE_ANIME_TOGGLE,
-};
-use crate::youtube::{extract_youtube_urls, handle_youtube_url};
-use crate::youtube::trace::log_trace;
 use crate::log::next_trace_id;
+use crate::pdfcompress::{
+    CB_PDF_CANCEL, CB_PDF_LEVEL_PREFIX, CB_PDF_MODE_ADVANCED, CB_PDF_MODE_SIMPLE,
+    CB_TOOLS_PDF_COMPRESS, enter_pdf_compress, handle_pdf_cancel, handle_pdf_file,
+    handle_pdf_level, handle_pdf_mode_simple,
+};
+use crate::separation::{
+    CB_SEP_PREFIX, enter_separation, handle_separation_audio, handle_separation_callback,
+};
 use crate::stats;
+use crate::stt::handle::{enter_stt_config, handle_stt_audio, handle_stt_callback};
+use crate::surge_dl::{
+    CB_SURGE_CANCEL, CB_SURGE_CONFIRM_ORIGINAL, CB_SURGE_CONFIRM_RENAME, CB_TOOLS_SURGE,
+    enter_surge_dl, handle_surge_cancel, handle_surge_confirm_original,
+    handle_surge_confirm_rename, handle_surge_rename_text, handle_surge_text,
+};
+use crate::upscale::{
+    CB_UPSCALE_ANIME_TOGGLE, CB_UPSCALE_CANCEL, CB_UPSCALE_MODEL_PREFIX, enter_upscale,
+    handle_upscale_anime_toggle, handle_upscale_cancel, handle_upscale_image,
+    handle_upscale_model_pick,
+};
+use crate::youtube::trace::log_trace;
+use crate::youtube::{extract_youtube_urls, handle_youtube_url};
 use frankenstein::{
     methods::SendMessageParams,
-    types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, ReplyMarkup},
+    types::{
+        ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, ReplyMarkup,
+    },
 };
 
 use super::state::AppState;
@@ -51,7 +56,7 @@ use super::state::AppState;
 pub async fn handle_update(
     state: &mut AppState,
     content: UpdateContent,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> crate::error::Result<()> {
     // DEV_MODE: فقط ادمین می‌تونه استفاده کنه
     if config::dev_mode() {
         let admin = config::admin_user_id();
@@ -73,10 +78,36 @@ pub async fn handle_update(
     }
 
     let sender = match &content {
-        UpdateContent::Message(m) => m.from.as_ref().map(|u| u.id as i64),
+        UpdateContent::Message(m) => {
+            if let Some(text) = &m.text {
+                if text.len() > 4096 {
+                    eprintln!(
+                        "[security] dropped oversized message from user_id={:?}",
+                        m.from.as_ref().map(|u| u.id)
+                    );
+                    return Ok(());
+                }
+            }
+            m.from.as_ref().map(|u| u.id as i64)
+        }
         UpdateContent::CallbackQuery(c) => Some(c.from.id as i64),
         _ => None,
     };
+
+    if let Some(uid) = sender {
+        let mut cache = state.user_last_update.lock().await;
+        let now = std::time::Instant::now();
+        if let Some(&last) = cache.get(&uid) {
+            if now.duration_since(last) < std::time::Duration::from_millis(500) {
+                eprintln!("[rate_limit] dropped update from user_id={uid}");
+                return Ok(());
+            }
+        }
+        cache.insert(uid, now);
+        if cache.len() > 50_000 {
+            cache.clear();
+        }
+    }
 
     // ── language gate ────────────────────────────────────────────────────────
     // callback "lang:set:xx" → ذخیره زبان، ack، ادامه عادی
@@ -92,26 +123,34 @@ pub async fn handle_update(
         if let Some(lang) = cb_data.and_then(|d| d.strip_prefix(CB_LANG_SET)) {
             // ack callback
             if let UpdateContent::CallbackQuery(cq) = &content {
-                let _ = state.api.answer_callback_query(
-                    &AnswerCallbackQueryParams::builder()
-                        .callback_query_id(cq.id.clone())
-                        .build(),
-                ).await;
+                let _ = state
+                    .api
+                    .answer_callback_query(
+                        &AnswerCallbackQueryParams::builder()
+                            .callback_query_id(cq.id.clone())
+                            .build(),
+                    )
+                    .await;
             }
             stats::set_user_language(uid, lang).await;
             eprintln!("[dispatch event=lang_set] user_id={uid} lang={lang}");
             // بعد از ذخیره زبان، منوی شروع رو نشون بده
             let chat_id = match &content {
-                UpdateContent::CallbackQuery(cq) => cq.message.as_ref().and_then(|m| match m {
-                    MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
-                    _ => None,
-                }).unwrap_or(uid),
+                UpdateContent::CallbackQuery(cq) => cq
+                    .message
+                    .as_ref()
+                    .and_then(|m| match m {
+                        MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
+                        _ => None,
+                    })
+                    .unwrap_or(uid),
                 _ => uid,
             };
             let lang_owned = lang.to_owned();
             LANG.scope(lang_owned, async {
                 send_start_menu(&state.api, chat_id).await
-            }).await?;
+            })
+            .await?;
             return Ok(());
         }
 
@@ -119,7 +158,8 @@ pub async fn handle_update(
         if state.database.is_some() {
             // redeem deep-link: gate رو bypass کن تا کد اول فعال بشه، بعد زبان انتخاب میشه
             let is_redeem = if let UpdateContent::Message(m) = &content {
-                m.text.as_deref()
+                m.text
+                    .as_deref()
                     .and_then(|t| t.strip_prefix("/start"))
                     .map(|r| r.trim().starts_with("redeem"))
                     .unwrap_or(false)
@@ -131,27 +171,35 @@ pub async fn handle_update(
             if lang_opt.is_none() && !is_redeem {
                 let chat_id = match &content {
                     UpdateContent::Message(m) => m.chat.id,
-                    UpdateContent::CallbackQuery(cq) => cq.message.as_ref().and_then(|m| match m {
-                        MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
-                        _ => None,
-                    }).unwrap_or(uid),
+                    UpdateContent::CallbackQuery(cq) => cq
+                        .message
+                        .as_ref()
+                        .and_then(|m| match m {
+                            MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
+                            _ => None,
+                        })
+                        .unwrap_or(uid),
                     _ => uid,
                 };
                 send_lang_picker(&state.api, chat_id).await?;
                 return Ok(());
             }
             let lang = lang_opt.unwrap_or_else(|| "fa".to_string());
-            return LANG.scope(lang, async {
-                if !is_redeem && !gate_force_join(state, &content, uid, is_check_btn).await? {
-                    return Ok(());
-                }
-                match content {
-                    UpdateContent::Message(message) => handle_message(state, *message).await?,
-                    UpdateContent::CallbackQuery(callback_query) => handle_callback(state, *callback_query).await?,
-                    _ => {}
-                }
-                Ok(())
-            }).await;
+            return LANG
+                .scope(lang, async {
+                    if !is_redeem && !gate_force_join(state, &content, uid, is_check_btn).await? {
+                        return Ok(());
+                    }
+                    match content {
+                        UpdateContent::Message(message) => handle_message(state, *message).await?,
+                        UpdateContent::CallbackQuery(callback_query) => {
+                            handle_callback(state, *callback_query).await?
+                        }
+                        _ => {}
+                    }
+                    Ok(())
+                })
+                .await;
         }
 
         // بدون DB: مفهومی برای redeem وجود نداره (نیازمند DB است) → همیشه گیت بزن
@@ -163,7 +211,9 @@ pub async fn handle_update(
     // بدون DB (یا update بدون sender): مستقیم dispatch با fa
     match content {
         UpdateContent::Message(message) => handle_message(state, *message).await?,
-        UpdateContent::CallbackQuery(callback_query) => handle_callback(state, *callback_query).await?,
+        UpdateContent::CallbackQuery(callback_query) => {
+            handle_callback(state, *callback_query).await?
+        }
         _ => {}
     }
     Ok(())
@@ -178,7 +228,7 @@ async fn gate_force_join(
     content: &UpdateContent,
     uid: i64,
     is_check_btn: bool,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> crate::error::Result<bool> {
     let joined = if is_check_btn {
         crate::force_join::is_joined_live(&state.api, uid).await
     } else {
@@ -187,10 +237,14 @@ async fn gate_force_join(
 
     let chat_id = match content {
         UpdateContent::Message(m) => m.chat.id,
-        UpdateContent::CallbackQuery(cq) => cq.message.as_ref().and_then(|m| match m {
-            MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
-            _ => None,
-        }).unwrap_or(uid),
+        UpdateContent::CallbackQuery(cq) => cq
+            .message
+            .as_ref()
+            .and_then(|m| match m {
+                MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
+                _ => None,
+            })
+            .unwrap_or(uid),
         _ => uid,
     };
 
@@ -203,7 +257,9 @@ async fn gate_force_join(
                     .show_alert(true)
                     .build()
             } else {
-                AnswerCallbackQueryParams::builder().callback_query_id(cq.id.clone()).build()
+                AnswerCallbackQueryParams::builder()
+                    .callback_query_id(cq.id.clone())
+                    .build()
             };
             let _ = state.api.answer_callback_query(&params).await;
         }
@@ -215,12 +271,15 @@ async fn gate_force_join(
 
     if is_check_btn {
         if let UpdateContent::CallbackQuery(cq) = content {
-            let _ = state.api.answer_callback_query(
-                &AnswerCallbackQueryParams::builder()
-                    .callback_query_id(cq.id.clone())
-                    .text(t("force_join.now_joined"))
-                    .build(),
-            ).await;
+            let _ = state
+                .api
+                .answer_callback_query(
+                    &AnswerCallbackQueryParams::builder()
+                        .callback_query_id(cq.id.clone())
+                        .text(t("force_join.now_joined"))
+                        .build(),
+                )
+                .await;
         }
         send_start_menu(&state.api, chat_id).await?;
         return Ok(false);
@@ -232,8 +291,16 @@ async fn gate_force_join(
 async fn handle_message(
     state: &mut AppState,
     message: frankenstein::types::Message,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let AppState { api, cookie_pool, database, flow_manager, rate_limit_tx, flow_clear_tx } = state;
+) -> crate::error::Result<()> {
+    let AppState {
+        api,
+        cookie_pool,
+        database,
+        flow_manager,
+        rate_limit_tx,
+        flow_clear_tx,
+        ..
+    } = state;
     let user_id = message.from.as_ref().map(|u| u.id as i64);
     let msg_text = message.text.as_deref().unwrap_or("");
     if let Some(u) = message.from.as_ref() {
@@ -254,8 +321,14 @@ async fn handle_message(
             if !text.trim_start().starts_with('/') {
                 if let Some(pack_name) = emoji_handler::extract_addemoji_pack_name(text) {
                     emoji_handler::handle_addemoji_link(
-                        api, &message, uid, &pack_name, flow_manager, database,
-                    ).await;
+                        api,
+                        &message,
+                        uid,
+                        &pack_name,
+                        flow_manager,
+                        database,
+                    )
+                    .await;
                     return Ok(());
                 }
             }
@@ -268,16 +341,33 @@ async fn handle_message(
             flow_manager.clear(uid);
             let payload = rest.trim();
             if let Some(code) = payload.strip_prefix("redeem") {
-                let first_name = message.from.as_ref().map(|u| u.first_name.as_str()).unwrap_or("");
+                let first_name = message
+                    .from
+                    .as_ref()
+                    .map(|u| u.first_name.as_str())
+                    .unwrap_or("");
                 let username = message.from.as_ref().and_then(|u| u.username.as_deref());
-                crate::redeem::handle::handle_redeem(api, message.chat.id, uid, first_name, username, code, database).await;
+                crate::redeem::handle::handle_redeem(
+                    api,
+                    message.chat.id,
+                    uid,
+                    first_name,
+                    username,
+                    code,
+                    database,
+                )
+                .await;
             } else if let Ok(referrer_id) = payload.parse::<i64>() {
                 // زیرمجموعه‌گیری: فقط کاربر واقعاً تازه‌وارد و غیر از خودِ referrer نسبت داده می‌شود.
                 if is_new_user && referrer_id != uid {
                     if let Some(db) = database {
                         let trace_id = next_trace_id();
                         crate::referral::record_referral(db.client(), uid, referrer_id).await;
-                        log_trace(trace_id, "referral_attributed", &format!("referred_id={uid} referrer_id={referrer_id}"));
+                        log_trace(
+                            trace_id,
+                            "referral_attributed",
+                            &format!("referred_id={uid} referrer_id={referrer_id}"),
+                        );
                     }
                 }
                 send_start_menu(api, message.chat.id).await?;
@@ -290,7 +380,9 @@ async fn handle_message(
 
     // Step 3: «لغو عملیات» reply keyboard when Idle
     if let (Some(uid), Some(text)) = (user_id, message.text.as_deref()) {
-        if text.contains(&crate::i18n::t("emoji.cancel_button")) && matches!(flow_manager.get(uid), FlowState::Idle) {
+        if text.contains(&crate::i18n::t("emoji.cancel_button"))
+            && matches!(flow_manager.get(uid), FlowState::Idle)
+        {
             send_start_menu(api, message.chat.id).await?;
             return Ok(());
         }
@@ -305,7 +397,14 @@ async fn handle_message(
                     flow_manager.clear(uid);
                     let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
                     if is_admin {
-                        crate::redeem::handle::handle_generate(api, message.chat.id, uid, text, database).await;
+                        crate::redeem::handle::handle_generate(
+                            api,
+                            message.chat.id,
+                            uid,
+                            text,
+                            database,
+                        )
+                        .await;
                     }
                     return Ok(());
                 }
@@ -316,7 +415,14 @@ async fn handle_message(
                 if let Some(text) = message.text.as_deref() {
                     let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
                     if is_admin {
-                        crate::force_join::handle_link_message(api, message.chat.id, text, flow_manager, uid).await;
+                        crate::force_join::handle_link_message(
+                            api,
+                            message.chat.id,
+                            text,
+                            flow_manager,
+                            uid,
+                        )
+                        .await;
                     }
                     return Ok(());
                 }
@@ -326,34 +432,63 @@ async fn handle_message(
             if let FlowState::AwaitingForceJoinPrivateInfo { link } = flow_manager.get(uid) {
                 let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
                 if is_admin {
-                    crate::force_join::handle_private_info_message(api, message.chat.id, &link, &message, flow_manager, uid).await;
+                    crate::force_join::handle_private_info_message(
+                        api,
+                        message.chat.id,
+                        &link,
+                        &message,
+                        flow_manager,
+                        uid,
+                    )
+                    .await;
                 }
                 return Ok(());
             }
 
             // ادمین ورودی ویزارد ویرایش فیلد قفل (نام/زمان/عضو/رزرو) را فرستاده
-            if let FlowState::AwaitingForceJoinField { lock_id, field, .. } = flow_manager.get(uid) {
+            if let FlowState::AwaitingForceJoinField { lock_id, field, .. } = flow_manager.get(uid)
+            {
                 if let Some(text) = message.text.as_deref() {
                     let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
                     if is_admin {
-                        crate::force_join::handle_field_message(api, message.chat.id, lock_id, &field, text, flow_manager, uid, database).await;
+                        crate::force_join::handle_field_message(
+                            api,
+                            message.chat.id,
+                            lock_id,
+                            &field,
+                            text,
+                            flow_manager,
+                            uid,
+                            database,
+                        )
+                        .await;
                     }
                     return Ok(());
                 }
             }
 
-            if emoji_handler::handle_emoji_flow_message(api, &message, uid, flow_manager, database).await {
+            if emoji_handler::handle_emoji_flow_message(api, &message, uid, flow_manager, database)
+                .await
+            {
                 return Ok(());
             }
 
             if let FlowState::AwaitingSttAudio { config } = flow_manager.get(uid) {
-                if message.voice.is_some() || message.audio.is_some() || message.document.is_some() {
-                    let file_id = message.voice.as_ref().map(|v| v.file_id.clone())
+                if message.voice.is_some() || message.audio.is_some() || message.document.is_some()
+                {
+                    let file_id = message
+                        .voice
+                        .as_ref()
+                        .map(|v| v.file_id.clone())
                         .or_else(|| message.audio.as_ref().map(|a| a.file_id.clone()))
                         .or_else(|| message.document.as_ref().map(|d| d.file_id.clone()));
                     if let Some(fid) = file_id {
                         let trace_id = next_trace_id();
-                        log_trace(trace_id, "stt_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
+                        log_trace(
+                            trace_id,
+                            "stt_route_dispatched",
+                            &format!("user_id={uid} chat_id={}", message.chat.id),
+                        );
                         let api2 = api.clone();
                         let chat_id2 = message.chat.id;
                         let db2 = database.clone();
@@ -375,9 +510,14 @@ async fn handle_message(
             }
 
             if matches!(flow_manager.get(uid), FlowState::AwaitingDenoiseAudio) {
-                if message.voice.is_some() || message.audio.is_some() || message.document.is_some() {
+                if message.voice.is_some() || message.audio.is_some() || message.document.is_some()
+                {
                     let trace_id = next_trace_id();
-                    log_trace(trace_id, "denoise_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
+                    log_trace(
+                        trace_id,
+                        "denoise_route_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
                     // Spawn so the event loop stays free during denoise (minutes-long operation).
                     flow_manager.clear(uid);
                     let api2 = api.clone();
@@ -390,10 +530,19 @@ async fn handle_message(
                 }
             }
 
-            if let FlowState::AwaitingUpscaleImage { scale_factor, model_name, .. } = flow_manager.get(uid) {
+            if let FlowState::AwaitingUpscaleImage {
+                scale_factor,
+                model_name,
+                ..
+            } = flow_manager.get(uid)
+            {
                 if message.photo.is_some() || message.document.is_some() {
                     let trace_id = next_trace_id();
-                    log_trace(trace_id, "upscale_route_dispatched", &format!("user_id={uid} model={model_name}"));
+                    log_trace(
+                        trace_id,
+                        "upscale_route_dispatched",
+                        &format!("user_id={uid} model={model_name}"),
+                    );
                     flow_manager.clear(uid);
                     let api2 = api.clone();
                     let msg2 = message.clone();
@@ -406,9 +555,17 @@ async fn handle_message(
             }
 
             if matches!(flow_manager.get(uid), FlowState::AwaitingSeparation) {
-                if message.audio.is_some() || message.voice.is_some() || message.document.is_some() || message.video.is_some() {
+                if message.audio.is_some()
+                    || message.voice.is_some()
+                    || message.document.is_some()
+                    || message.video.is_some()
+                {
                     let trace_id = next_trace_id();
-                    log_trace(trace_id, "separation_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
+                    log_trace(
+                        trace_id,
+                        "separation_route_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
                     handle_separation_audio(api, &message, uid, flow_manager).await;
                     return Ok(());
                 }
@@ -417,7 +574,11 @@ async fn handle_message(
             if matches!(flow_manager.get(uid), FlowState::AwaitingGeminiWmImage) {
                 if message.photo.is_some() || message.document.is_some() {
                     let trace_id = next_trace_id();
-                    log_trace(trace_id, "gwm_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
+                    log_trace(
+                        trace_id,
+                        "gwm_route_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
                     // Spawn so the event loop stays free during watermark removal.
                     flow_manager.clear(uid);
                     let api2 = api.clone();
@@ -432,23 +593,37 @@ async fn handle_message(
             if matches!(flow_manager.get(uid), FlowState::AwaitingPdfCompressFile) {
                 if message.document.is_some() {
                     let trace_id = next_trace_id();
-                    log_trace(trace_id, "pdfcompress_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
+                    log_trace(
+                        trace_id,
+                        "pdfcompress_route_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
                     handle_pdf_file(api, &message, uid, flow_manager).await;
                 } else {
-                    let _ = crate::bot::send_text(api, message.chat.id, &t("pdfcompress.busy_warning")).await;
+                    let _ =
+                        crate::bot::send_text(api, message.chat.id, &t("pdfcompress.busy_warning"))
+                            .await;
                 }
                 return Ok(());
             }
 
-            if matches!(flow_manager.get(uid), FlowState::AwaitingPdfCompressLevel { .. }) {
-                let _ = crate::bot::send_text(api, message.chat.id, &t("pdfcompress.busy_warning")).await;
+            if matches!(
+                flow_manager.get(uid),
+                FlowState::AwaitingPdfCompressLevel { .. }
+            ) {
+                let _ = crate::bot::send_text(api, message.chat.id, &t("pdfcompress.busy_warning"))
+                    .await;
                 return Ok(());
             }
 
             if matches!(flow_manager.get(uid), FlowState::AwaitingIpLookupInput) {
                 if message.text.is_some() {
                     let trace_id = next_trace_id();
-                    log_trace(trace_id, "ip_lookup_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
+                    log_trace(
+                        trace_id,
+                        "ip_lookup_route_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
                     handle_ip_lookup_text(api, &message, uid, flow_manager).await;
                 }
                 return Ok(());
@@ -457,7 +632,11 @@ async fn handle_message(
             if matches!(flow_manager.get(uid), FlowState::AwaitingSurgeUrlInput) {
                 if let Some(txt) = message.text.as_deref() {
                     let trace_id = next_trace_id();
-                    log_trace(trace_id, "surge_dl_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
+                    log_trace(
+                        trace_id,
+                        "surge_dl_route_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
                     if crate::surge_dl::is_direct_link(txt) {
                         flow_manager.clear(uid);
                     }
@@ -472,10 +651,17 @@ async fn handle_message(
                 return Ok(());
             }
 
-            if matches!(flow_manager.get(uid), FlowState::AwaitingSurgeRenameInput { .. }) {
+            if matches!(
+                flow_manager.get(uid),
+                FlowState::AwaitingSurgeRenameInput { .. }
+            ) {
                 if message.text.is_some() {
                     let trace_id = next_trace_id();
-                    log_trace(trace_id, "surge_dl_rename_route_dispatched", &format!("user_id={uid} chat_id={}", message.chat.id));
+                    log_trace(
+                        trace_id,
+                        "surge_dl_rename_route_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
                     handle_surge_rename_text(api, &message, uid, flow_manager).await;
                 }
                 return Ok(());
@@ -494,7 +680,10 @@ async fn handle_message(
             return Ok(());
         }
         if cmd == "/rank" {
-            eprintln!("[dispatch event=rank_menu] user_id={user_id:?} chat_id={}", message.chat.id);
+            eprintln!(
+                "[dispatch event=rank_menu] user_id={user_id:?} chat_id={}",
+                message.chat.id
+            );
             crate::rank::menu::send_rank_menu(api, message.chat.id).await;
             return Ok(());
         }
@@ -516,21 +705,33 @@ async fn handle_message(
         }
         // ساخت کد هدیه (فقط ادمین): /re 30d es 1u یا /re
         if cmd == "/re" || text.starts_with("/re ") {
-            let is_admin = config::admin_user_id().map(|id| Some(id) == user_id).unwrap_or(false);
+            let is_admin = config::admin_user_id()
+                .map(|id| Some(id) == user_id)
+                .unwrap_or(false);
             if is_admin {
                 if let Some(uid) = user_id {
                     let rest = text.split_once(' ').map(|(_, r)| r.trim()).unwrap_or("");
-                    crate::redeem::handle::handle_generate(api, message.chat.id, uid, rest, database).await;
+                    crate::redeem::handle::handle_generate(
+                        api,
+                        message.chat.id,
+                        uid,
+                        rest,
+                        database,
+                    )
+                    .await;
                 }
             }
             return Ok(());
         }
         match text {
             "/i18n_reload" => {
-                let is_admin = config::admin_user_id().map(|id| Some(id) == user_id).unwrap_or(false);
+                let is_admin = config::admin_user_id()
+                    .map(|id| Some(id) == user_id)
+                    .unwrap_or(false);
                 if is_admin {
                     reload_i18n();
-                    crate::bot::send_text(api, message.chat.id, "✅ config/i18n.json reloaded.").await?;
+                    crate::bot::send_text(api, message.chat.id, "✅ config/i18n.json reloaded.")
+                        .await?;
                 }
             }
             "/start" => send_start_menu(api, message.chat.id).await?,
@@ -544,9 +745,11 @@ async fn handle_message(
                 if !urls.is_empty() {
                     for url in urls {
                         let trace_id = next_trace_id();
-                        log_trace(trace_id, "route_youtube_url", &format!(
-                            "user_id={user_id:?} chat_id={} url={url}", message.chat.id
-                        ));
+                        log_trace(
+                            trace_id,
+                            "route_youtube_url",
+                            &format!("user_id={user_id:?} chat_id={} url={url}", message.chat.id),
+                        );
                         // Spawn so a slow yt-dlp fetch doesn't freeze the whole event loop.
                         let api2 = api.clone();
                         let chat_id2 = message.chat.id;
@@ -556,18 +759,24 @@ async fn handle_message(
                         let rl_tx2 = rate_limit_tx.clone();
                         let url_owned = url.to_string();
                         tokio::spawn(async move {
-                            handle_youtube_url(
-                                &api2, chat_id2, msg_id2,
-                                user_id, trace_id, &url_owned, pool2, &db2, &rl_tx2,
-                            ).await;
+                            if let Err(e) = handle_youtube_url(
+                                &api2, chat_id2, msg_id2, user_id, trace_id, &url_owned, pool2,
+                                &db2, &rl_tx2,
+                            )
+                            .await
+                            {
+                                crate::stats::record_error_global("youtube", e).await;
+                            }
                         });
                     }
                 } else if let Some(uid) = user_id {
                     if crate::surge_dl::is_direct_link(text) {
                         let trace_id = next_trace_id();
-                        log_trace(trace_id, "route_surge_dl_url", &format!(
-                            "user_id={uid} chat_id={} url={text}", message.chat.id
-                        ));
+                        log_trace(
+                            trace_id,
+                            "route_surge_dl_url",
+                            &format!("user_id={uid} chat_id={} url={text}", message.chat.id),
+                        );
                         let api2 = api.clone();
                         let msg2 = message.clone();
                         let fm2 = flow_manager.clone();
@@ -586,14 +795,24 @@ async fn handle_message(
 async fn handle_callback(
     state: &mut AppState,
     callback_query: frankenstein::types::CallbackQuery,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let AppState { api, flow_manager, database, flow_clear_tx, .. } = state;
+) -> crate::error::Result<()> {
+    let AppState {
+        api,
+        flow_manager,
+        database,
+        flow_clear_tx,
+        ..
+    } = state;
     let cb_user_id = callback_query.from.id;
     let cb_data = callback_query.data.as_deref().unwrap_or("");
-    let cb_chat_id = callback_query.message.as_ref().and_then(|m| match m {
-        MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
-        _ => None,
-    }).unwrap_or(0);
+    let cb_chat_id = callback_query
+        .message
+        .as_ref()
+        .and_then(|m| match m {
+            MaybeInaccessibleMessage::Message(msg) => Some(msg.chat.id),
+            _ => None,
+        })
+        .unwrap_or(0);
     {
         let trace_id = crate::log::next_trace_id();
         log_actor!("dispatch", trace_id, &callback_query.from, "clicked" => cb_data, "chat_id" => cb_chat_id);
@@ -603,11 +822,13 @@ async fn handle_callback(
     #[allow(unused_macros)]
     macro_rules! answer_and_get_msg {
         () => {{
-            let _ = api.answer_callback_query(
-                &AnswerCallbackQueryParams::builder()
-                    .callback_query_id(callback_query.id.clone())
-                    .build(),
-            ).await;
+            let _ = api
+                .answer_callback_query(
+                    &AnswerCallbackQueryParams::builder()
+                        .callback_query_id(callback_query.id.clone())
+                        .build(),
+                )
+                .await;
             match callback_query.message.as_ref() {
                 Some(MaybeInaccessibleMessage::Message(msg)) => Some(msg),
                 _ => None,
@@ -616,15 +837,25 @@ async fn handle_callback(
     }
 
     if cb_data == crate::rank::paywall::CB_RANK_SHOW_MENU {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         crate::rank::menu::send_rank_menu(api, cb_chat_id).await;
         return Ok(());
     }
 
     if cb_data == CB_USER_PANEL || cb_data.starts_with("user:panel") {
-        crate::rank::panel::handle_panel_callback(api, &callback_query, cb_user_id as i64, database).await;
+        crate::rank::panel::handle_panel_callback(
+            api,
+            &callback_query,
+            cb_user_id as i64,
+            database,
+        )
+        .await;
         return Ok(());
     }
 
@@ -639,37 +870,69 @@ async fn handle_callback(
 
     if cb_data == CB_START_EMOJI {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_start_emoji", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_start_emoji",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             emoji_handler::open_emoji_panel(
-                api, message.chat.id, callback_query.from.id as i64, flow_manager, database,
-            ).await;
+                api,
+                message.chat.id,
+                callback_query.from.id as i64,
+                flow_manager,
+                database,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_START_YOUTUBE {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_start_youtube", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_start_youtube",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             let icon_id = t("emoji.panel.icons.back");
             let back_btn = InlineKeyboardButton {
                 text: t("start.back"),
-                icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') { None } else { Some(icon_id) },
+                icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') {
+                    None
+                } else {
+                    Some(icon_id)
+                },
                 callback_data: Some(CB_START_PANEL.to_string()),
                 style: Some(ButtonStyle::Primary),
-                url: None, login_url: None, web_app: None,
-                switch_inline_query: None, switch_inline_query_current_chat: None,
-                switch_inline_query_chosen_chat: None, copy_text: None,
-                callback_game: None, pay: None,
+                url: None,
+                login_url: None,
+                web_app: None,
+                switch_inline_query: None,
+                switch_inline_query_current_chat: None,
+                switch_inline_query_chosen_chat: None,
+                copy_text: None,
+                callback_game: None,
+                pay: None,
             };
-            let keyboard = InlineKeyboardMarkup::builder().inline_keyboard(vec![vec![back_btn]]).build();
+            let keyboard = InlineKeyboardMarkup::builder()
+                .inline_keyboard(vec![vec![back_btn]])
+                .build();
             let no_preview = LinkPreviewOptions::builder().is_disabled(true).build();
             let params = SendMessageParams::builder()
                 .chat_id(message.chat.id)
@@ -678,285 +941,616 @@ async fn handle_callback(
                 .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard))
                 .build();
             let r = api.send_message(&params).await;
-            log_trace(trace_id, "cb_start_youtube_sent", &format!("ok={}", r.is_ok()));
+            log_trace(
+                trace_id,
+                "cb_start_youtube_sent",
+                &format!("ok={}", r.is_ok()),
+            );
         }
         return Ok(());
     }
 
     if cb_data == CB_START_PANEL {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_start_panel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_start_panel",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             let r = edit_to_start_menu(api, message.chat.id, message.message_id).await;
-            log_trace(trace_id, "cb_start_panel_done", &format!("ok={}", r.is_ok()));
+            log_trace(
+                trace_id,
+                "cb_start_panel_done",
+                &format!("ok={}", r.is_ok()),
+            );
         }
         return Ok(());
     }
 
     if cb_data == CB_START_AI_LAB {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_start_ai_lab", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_start_ai_lab",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             let r = edit_to_ai_lab(api, message.chat.id, message.message_id).await;
-            log_trace(trace_id, "cb_start_ai_lab_done", &format!("ok={}", r.is_ok()));
+            log_trace(
+                trace_id,
+                "cb_start_ai_lab_done",
+                &format!("ok={}", r.is_ok()),
+            );
         }
         return Ok(());
     }
 
     if cb_data == CB_START_TOOLS {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_start_tools", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_start_tools",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             let r = edit_to_tools(api, message.chat.id, message.message_id).await;
-            log_trace(trace_id, "cb_start_tools_done", &format!("ok={}", r.is_ok()));
+            log_trace(
+                trace_id,
+                "cb_start_tools_done",
+                &format!("ok={}", r.is_ok()),
+            );
         }
         return Ok(());
     }
 
     if cb_data == CB_TOOLS_PDF_COMPRESS {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_pdf_compress_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_pdf_compress_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            enter_pdf_compress(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            enter_pdf_compress(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_PDF_MODE_SIMPLE {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_pdf_mode_simple", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_pdf_mode_simple",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_pdf_mode_simple(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_pdf_mode_simple(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_PDF_MODE_ADVANCED {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_pdf_mode_advanced", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder()
-                .callback_query_id(callback_query.id.clone())
-                .text(t("pdfcompress.advanced_soon"))
-                .show_alert(true)
-                .build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_pdf_mode_advanced",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .text(t("pdfcompress.advanced_soon"))
+                    .show_alert(true)
+                    .build(),
+            )
+            .await;
         return Ok(());
     }
 
     if cb_data == CB_PDF_CANCEL {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_pdf_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_pdf_cancel",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_pdf_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_pdf_cancel(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if let Some(level) = cb_data.strip_prefix(CB_PDF_LEVEL_PREFIX) {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_pdf_level", &format!("user_id={cb_user_id} level={level}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_pdf_level",
+            &format!("user_id={cb_user_id} level={level}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_pdf_level(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager, level).await;
+            handle_pdf_level(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+                level,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_TOOLS_IP_LOOKUP {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ip_lookup_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_ip_lookup_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            enter_ip_lookup(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            enter_ip_lookup(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_IP_LOOKUP_CANCEL {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ip_lookup_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_ip_lookup_cancel",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_ip_lookup_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_ip_lookup_cancel(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_TOOLS_IP_LOOKUP {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ip_lookup_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_ip_lookup_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            enter_ip_lookup(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            enter_ip_lookup(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_IP_LOOKUP_CANCEL {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ip_lookup_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_ip_lookup_cancel",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_ip_lookup_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_ip_lookup_cancel(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_TOOLS_SURGE {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_surge_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_surge_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            enter_surge_dl(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            enter_surge_dl(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_SURGE_CANCEL {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_surge_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_surge_cancel",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_surge_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_surge_cancel(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_SURGE_CONFIRM_ORIGINAL {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_surge_confirm_original", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_surge_confirm_original",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_surge_confirm_original(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_surge_confirm_original(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_SURGE_CONFIRM_RENAME {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_surge_confirm_rename", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_surge_confirm_rename",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_surge_confirm_rename(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_surge_confirm_rename(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_AI_STT {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ai_stt_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_ai_stt_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            enter_stt_config(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager, database).await;
+            enter_stt_config(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+                database,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data.starts_with("stt:") {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "stt_callback", &format!("user_id={cb_user_id} data={cb_data:?}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "stt_callback",
+            &format!("user_id={cb_user_id} data={cb_data:?}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_stt_callback(api, cb_data, message.chat.id, message.message_id, cb_user_id as i64, flow_manager, database).await;
+            handle_stt_callback(
+                api,
+                cb_data,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+                database,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_AI_DENOISE {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ai_denoise_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_ai_denoise_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            denoise::enter_denoise(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            denoise::enter_denoise(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_DENOISE_CANCEL {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "denoise_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "denoise_cancel",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            denoise::handle_denoise_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            denoise::handle_denoise_cancel(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_AI_UPSCALE {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ai_upscale_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_ai_upscale_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            enter_upscale(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            enter_upscale(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_UPSCALE_CANCEL {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "upscale_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "upscale_cancel",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_upscale_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_upscale_cancel(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_UPSCALE_ANIME_TOGGLE {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_upscale_anime_toggle(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_upscale_anime_toggle(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
@@ -964,95 +1558,201 @@ async fn handle_callback(
     if cb_data.starts_with(CB_UPSCALE_MODEL_PREFIX) {
         let trace_id = next_trace_id();
         let model_name = cb_data.strip_prefix(CB_UPSCALE_MODEL_PREFIX).unwrap_or("");
-        log_trace(trace_id, "upscale_model_pick", &format!("user_id={cb_user_id} model={model_name}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "upscale_model_pick",
+            &format!("user_id={cb_user_id} model={model_name}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_upscale_model_pick(api, model_name, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_upscale_model_pick(
+                api,
+                model_name,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_AI_SEP {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ai_sep_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_ai_sep_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            enter_separation(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            enter_separation(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data.starts_with(CB_SEP_PREFIX) {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "sep_callback", &format!("user_id={cb_user_id} data={cb_data:?}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "sep_callback",
+            &format!("user_id={cb_user_id} data={cb_data:?}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_separation_callback(api, cb_data, message.chat.id, message.message_id, cb_user_id as i64, flow_manager, flow_clear_tx.clone(), database).await;
+            handle_separation_callback(
+                api,
+                cb_data,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+                flow_clear_tx.clone(),
+                database,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_AI_GWM {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "cb_ai_gwm_entry", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "cb_ai_gwm_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            enter_gwm(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            enter_gwm(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_GWM_CANCEL {
         let trace_id = next_trace_id();
-        log_trace(trace_id, "gwm_cancel", &format!("user_id={cb_user_id} chat_id={cb_chat_id}"));
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        log_trace(
+            trace_id,
+            "gwm_cancel",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            handle_gwm_cancel(api, message.chat.id, message.message_id, cb_user_id as i64, flow_manager).await;
+            handle_gwm_cancel(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
         }
         return Ok(());
     }
 
-    let is_admin = config::admin_user_id().map(|id| id == cb_user_id as i64).unwrap_or(false);
+    let is_admin = config::admin_user_id()
+        .map(|id| id == cb_user_id as i64)
+        .unwrap_or(false);
 
     if cb_data == CB_ADMIN_PANEL && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            use frankenstein::methods::EditMessageTextParams;
             use crate::emoji::panel::btn_icon;
             use crate::i18n::t;
+            use frankenstein::methods::EditMessageTextParams;
             let kb = frankenstein::types::InlineKeyboardMarkup::builder()
                 .inline_keyboard(vec![
                     vec![btn_icon(&t("admin.stats_button"), CB_ADMIN_STATS, "stats")],
-                    vec![btn_icon(&t("admin.force_join_button"), CB_ADMIN_FORCE_JOIN, "")],
-                    vec![btn_icon(&t("admin.gencode_button"), CB_ADMIN_GEN_CODE, "panel")],
-                    vec![btn_icon(&t("admin.back"), crate::bot::CB_START_PANEL, "back")],
+                    vec![btn_icon(
+                        &t("admin.force_join_button"),
+                        CB_ADMIN_FORCE_JOIN,
+                        "",
+                    )],
+                    vec![btn_icon(
+                        &t("admin.gencode_button"),
+                        CB_ADMIN_GEN_CODE,
+                        "panel",
+                    )],
+                    vec![btn_icon(
+                        &t("admin.back"),
+                        crate::bot::CB_START_PANEL,
+                        "back",
+                    )],
                 ])
                 .build();
-            let _ = api.edit_message_text(
-                &EditMessageTextParams::builder()
-                    .chat_id(message.chat.id).message_id(message.message_id)
-                    .text(t("admin.panel_title")).reply_markup(kb).build(),
-            ).await;
+            let _ = api
+                .edit_message_text(
+                    &EditMessageTextParams::builder()
+                        .chat_id(message.chat.id)
+                        .message_id(message.message_id)
+                        .text(t("admin.panel_title"))
+                        .reply_markup(kb)
+                        .build(),
+                )
+                .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_ADMIN_STATS && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             use crate::emoji::panel::btn_icon;
             use crate::i18n::t;
@@ -1063,22 +1763,34 @@ async fn handle_callback(
             };
             let kb = frankenstein::types::InlineKeyboardMarkup::builder()
                 .inline_keyboard(vec![
-                    vec![btn_icon(&t("admin.stats_more_button"), CB_ADMIN_STATS_MORE, "stats")],
-                    vec![btn_icon(&t("admin.errors_button"), CB_ADMIN_ERRORS, "warning")],
+                    vec![btn_icon(
+                        &t("admin.stats_more_button"),
+                        CB_ADMIN_STATS_MORE,
+                        "stats",
+                    )],
+                    vec![btn_icon(
+                        &t("admin.errors_button"),
+                        CB_ADMIN_ERRORS,
+                        "warning",
+                    )],
                     vec![btn_icon(&t("admin.back"), CB_ADMIN_PANEL, "back")],
                 ])
                 .build();
-            let _ = crate::bot::edit_text(
-                api, message.chat.id, message.message_id, &text, Some(kb),
-            ).await;
+            let _ =
+                crate::bot::edit_text(api, message.chat.id, message.message_id, &text, Some(kb))
+                    .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_ADMIN_STATS_MORE && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             use crate::emoji::panel::btn_icon;
             use crate::i18n::t;
@@ -1088,21 +1800,27 @@ async fn handle_callback(
                 crate::i18n::t("admin.db_missing")
             };
             let kb = frankenstein::types::InlineKeyboardMarkup::builder()
-                .inline_keyboard(vec![vec![
-                    btn_icon(&t("admin.back"), CB_ADMIN_STATS, "back"),
-                ]])
+                .inline_keyboard(vec![vec![btn_icon(
+                    &t("admin.back"),
+                    CB_ADMIN_STATS,
+                    "back",
+                )]])
                 .build();
-            let _ = crate::bot::edit_text(
-                api, message.chat.id, message.message_id, &text, Some(kb),
-            ).await;
+            let _ =
+                crate::bot::edit_text(api, message.chat.id, message.message_id, &text, Some(kb))
+                    .await;
         }
         return Ok(());
     }
 
     if cb_data == CB_ADMIN_FORCE_JOIN && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             crate::force_join::open_menu(api, message.chat.id, message.message_id).await;
         }
@@ -1110,9 +1828,13 @@ async fn handle_callback(
     }
 
     if cb_data == crate::force_join::CB_FJ_TOGGLE && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         crate::force_join::toggle_enabled().await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             crate::force_join::open_menu(api, message.chat.id, message.message_id).await;
@@ -1121,9 +1843,13 @@ async fn handle_callback(
     }
 
     if cb_data == crate::force_join::CB_FJ_VIEW && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             crate::force_join::open_locks_list(api, message.chat.id, message.message_id).await;
         }
@@ -1131,19 +1857,34 @@ async fn handle_callback(
     }
 
     if cb_data == crate::force_join::CB_FJ_ADD_NEW && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            crate::force_join::prompt_add_new(api, message.chat.id, message.message_id, flow_manager, cb_user_id as i64).await;
+            crate::force_join::prompt_add_new(
+                api,
+                message.chat.id,
+                message.message_id,
+                flow_manager,
+                cb_user_id as i64,
+            )
+            .await;
         }
         return Ok(());
     }
 
     if cb_data == crate::force_join::CB_FJ_ADD_CANCEL && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         flow_manager.clear(cb_user_id as i64);
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             crate::force_join::open_locks_list(api, message.chat.id, message.message_id).await;
@@ -1153,11 +1894,24 @@ async fn handle_callback(
 
     if let Some(id_str) = cb_data.strip_prefix(crate::force_join::FJ_MANAGE_PREFIX) {
         if is_admin {
-            let _ = api.answer_callback_query(
-                &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-            ).await;
-            if let (Some(MaybeInaccessibleMessage::Message(message)), Ok(lock_id)) = (callback_query.message, id_str.parse::<i64>()) {
-                crate::force_join::open_manage(api, message.chat.id, message.message_id, lock_id, database).await;
+            let _ = api
+                .answer_callback_query(
+                    &AnswerCallbackQueryParams::builder()
+                        .callback_query_id(callback_query.id.clone())
+                        .build(),
+                )
+                .await;
+            if let (Some(MaybeInaccessibleMessage::Message(message)), Ok(lock_id)) =
+                (callback_query.message, id_str.parse::<i64>())
+            {
+                crate::force_join::open_manage(
+                    api,
+                    message.chat.id,
+                    message.message_id,
+                    lock_id,
+                    database,
+                )
+                .await;
             }
         }
         return Ok(());
@@ -1176,18 +1930,32 @@ async fn handle_callback(
                 let ack = match alert_text {
                     Some(text) => AnswerCallbackQueryParams::builder()
                         .callback_query_id(callback_query.id.clone())
-                        .text(text).show_alert(true).build(),
+                        .text(text)
+                        .show_alert(true)
+                        .build(),
                     None => AnswerCallbackQueryParams::builder()
-                        .callback_query_id(callback_query.id.clone()).build(),
+                        .callback_query_id(callback_query.id.clone())
+                        .build(),
                 };
                 let _ = api.answer_callback_query(&ack).await;
                 if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-                    crate::force_join::open_manage(api, message.chat.id, message.message_id, lock_id, database).await;
+                    crate::force_join::open_manage(
+                        api,
+                        message.chat.id,
+                        message.message_id,
+                        lock_id,
+                        database,
+                    )
+                    .await;
                 }
             } else {
-                let _ = api.answer_callback_query(
-                    &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-                ).await;
+                let _ = api
+                    .answer_callback_query(
+                        &AnswerCallbackQueryParams::builder()
+                            .callback_query_id(callback_query.id.clone())
+                            .build(),
+                    )
+                    .await;
             }
         }
         return Ok(());
@@ -1195,19 +1963,42 @@ async fn handle_callback(
 
     // ویزاردهای ویرایش فیلد قفل: نام/زمان/عضو/رزرو → پرامپت ورودی متنی
     {
-        use crate::force_join::{FJ_NAME_PREFIX, FJ_TIME_PREFIX, FJ_MEMBER_PREFIX, FJ_RESERVE_PREFIX};
-        let field = if let Some(id) = cb_data.strip_prefix(FJ_NAME_PREFIX) { Some(("name", id)) }
-            else if let Some(id) = cb_data.strip_prefix(FJ_TIME_PREFIX) { Some(("time", id)) }
-            else if let Some(id) = cb_data.strip_prefix(FJ_MEMBER_PREFIX) { Some(("member", id)) }
-            else if let Some(id) = cb_data.strip_prefix(FJ_RESERVE_PREFIX) { Some(("reserve", id)) }
-            else { None };
+        use crate::force_join::{
+            FJ_MEMBER_PREFIX, FJ_NAME_PREFIX, FJ_RESERVE_PREFIX, FJ_TIME_PREFIX,
+        };
+        let field = if let Some(id) = cb_data.strip_prefix(FJ_NAME_PREFIX) {
+            Some(("name", id))
+        } else if let Some(id) = cb_data.strip_prefix(FJ_TIME_PREFIX) {
+            Some(("time", id))
+        } else if let Some(id) = cb_data.strip_prefix(FJ_MEMBER_PREFIX) {
+            Some(("member", id))
+        } else if let Some(id) = cb_data.strip_prefix(FJ_RESERVE_PREFIX) {
+            Some(("reserve", id))
+        } else {
+            None
+        };
         if let Some((field, id_str)) = field {
             if is_admin {
-                let _ = api.answer_callback_query(
-                    &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-                ).await;
-                if let (Some(MaybeInaccessibleMessage::Message(message)), Ok(lock_id)) = (callback_query.message, id_str.parse::<i64>()) {
-                    crate::force_join::prompt_field(api, message.chat.id, message.message_id, lock_id, field, flow_manager, cb_user_id as i64).await;
+                let _ = api
+                    .answer_callback_query(
+                        &AnswerCallbackQueryParams::builder()
+                            .callback_query_id(callback_query.id.clone())
+                            .build(),
+                    )
+                    .await;
+                if let (Some(MaybeInaccessibleMessage::Message(message)), Ok(lock_id)) =
+                    (callback_query.message, id_str.parse::<i64>())
+                {
+                    crate::force_join::prompt_field(
+                        api,
+                        message.chat.id,
+                        message.message_id,
+                        lock_id,
+                        field,
+                        flow_manager,
+                        cb_user_id as i64,
+                    )
+                    .await;
                 }
             }
             return Ok(());
@@ -1216,11 +2007,23 @@ async fn handle_callback(
 
     if let Some(id_str) = cb_data.strip_prefix(crate::force_join::FJ_DELETE_PREFIX) {
         if is_admin {
-            let _ = api.answer_callback_query(
-                &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-            ).await;
-            if let (Some(MaybeInaccessibleMessage::Message(message)), Ok(lock_id)) = (callback_query.message, id_str.parse::<i64>()) {
-                crate::force_join::open_delete_confirm(api, message.chat.id, message.message_id, lock_id).await;
+            let _ = api
+                .answer_callback_query(
+                    &AnswerCallbackQueryParams::builder()
+                        .callback_query_id(callback_query.id.clone())
+                        .build(),
+                )
+                .await;
+            if let (Some(MaybeInaccessibleMessage::Message(message)), Ok(lock_id)) =
+                (callback_query.message, id_str.parse::<i64>())
+            {
+                crate::force_join::open_delete_confirm(
+                    api,
+                    message.chat.id,
+                    message.message_id,
+                    lock_id,
+                )
+                .await;
             }
         }
         return Ok(());
@@ -1228,10 +2031,16 @@ async fn handle_callback(
 
     if let Some(id_str) = cb_data.strip_prefix(crate::force_join::FJ_DELETE_YES_PREFIX) {
         if is_admin {
-            let _ = api.answer_callback_query(
-                &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-            ).await;
-            if let (Some(MaybeInaccessibleMessage::Message(message)), Ok(lock_id)) = (callback_query.message, id_str.parse::<i64>()) {
+            let _ = api
+                .answer_callback_query(
+                    &AnswerCallbackQueryParams::builder()
+                        .callback_query_id(callback_query.id.clone())
+                        .build(),
+                )
+                .await;
+            if let (Some(MaybeInaccessibleMessage::Message(message)), Ok(lock_id)) =
+                (callback_query.message, id_str.parse::<i64>())
+            {
                 crate::force_join::delete_lock(lock_id).await;
                 crate::force_join::open_locks_list(api, message.chat.id, message.message_id).await;
             }
@@ -1240,16 +2049,24 @@ async fn handle_callback(
     }
 
     if cb_data == crate::force_join::CB_FJ_NOOP && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         return Ok(());
     }
 
     if cb_data == CB_ADMIN_GEN_CODE && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             crate::redeem::handle::open_panel(api, message.chat.id, cb_user_id as i64).await;
         }
@@ -1258,23 +2075,37 @@ async fn handle_callback(
 
     // دکمه‌های پنل گرافیکی ساخت کد (gc:*) — فقط ادمین
     if cb_data.starts_with(crate::redeem::panel::CB_GC_PREFIX) && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if cb_data != crate::redeem::panel::CB_GC_NOP {
             if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
                 crate::redeem::handle::handle_panel_callback(
-                    api, message.chat.id, message.message_id, cb_user_id as i64, cb_data, database,
-                ).await;
+                    api,
+                    message.chat.id,
+                    message.message_id,
+                    cb_user_id as i64,
+                    cb_data,
+                    database,
+                )
+                .await;
             }
         }
         return Ok(());
     }
 
     if cb_data == CB_ADMIN_ERRORS && is_admin {
-        let _ = api.answer_callback_query(
-            &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id.clone()).build(),
-        ).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             let text = if let Some(db) = database {
                 crate::admin::render_errors_1d(db.client()).await
@@ -1282,13 +2113,15 @@ async fn handle_callback(
                 crate::i18n::t("admin.db_missing")
             };
             // HTML چون blockquote جمع‌شو داره — پیام جدید می‌فرستیم تا پنل دست‌نخورده بمونه.
-            use frankenstein::{methods::SendMessageParams, ParseMode};
             use crate::emoji::panel::btn_icon;
             use crate::i18n::t;
+            use frankenstein::{ParseMode, methods::SendMessageParams};
             let kb = frankenstein::types::InlineKeyboardMarkup::builder()
-                .inline_keyboard(vec![vec![
-                    btn_icon(&t("admin.back"), CB_ADMIN_PANEL, "back"),
-                ]])
+                .inline_keyboard(vec![vec![btn_icon(
+                    &t("admin.back"),
+                    CB_ADMIN_PANEL,
+                    "back",
+                )]])
                 .build();
             let params = SendMessageParams::builder()
                 .chat_id(message.chat.id)
@@ -1304,10 +2137,16 @@ async fn handle_callback(
     }
 
     // Unknown callback → start menu
-    eprintln!("[main event=callback_unhandled] user_id={cb_user_id} chat_id={cb_chat_id} data={cb_data:?}");
-    let _ = api.answer_callback_query(
-        &AnswerCallbackQueryParams::builder().callback_query_id(callback_query.id).build(),
-    ).await;
+    eprintln!(
+        "[main event=callback_unhandled] user_id={cb_user_id} chat_id={cb_chat_id} data={cb_data:?}"
+    );
+    let _ = api
+        .answer_callback_query(
+            &AnswerCallbackQueryParams::builder()
+                .callback_query_id(callback_query.id)
+                .build(),
+        )
+        .await;
     if cb_chat_id != 0 {
         flow_manager.clear(cb_user_id as i64);
         let _ = send_start_menu(api, cb_chat_id).await;

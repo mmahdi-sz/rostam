@@ -15,4 +15,5 @@ pub struct AppState {
     /// Spawned separation/STT tasks send the user_id here when finished
     /// so the main loop can clear their FlowState.
     pub flow_clear_tx: UnboundedSender<i64>,
+    pub user_last_update: Arc<Mutex<std::collections::HashMap<i64, std::time::Instant>>>,
 }

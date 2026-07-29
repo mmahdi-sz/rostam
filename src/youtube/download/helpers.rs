@@ -64,12 +64,7 @@ pub fn vlc_download_keyboard() -> InlineKeyboardMarkup {
         .build()
 }
 
-pub async fn maybe_send_non_h264_notice(
-    api: &Bot,
-    chat_id: i64,
-    codec_name: &str,
-    trace_id: u64,
-) {
+pub async fn maybe_send_non_h264_notice(api: &Bot, chat_id: i64, codec_name: &str, trace_id: u64) {
     let key = format!("user:notice:vlc:{chat_id}");
 
     if let Some(mut conn) = redis_conn().await {
@@ -79,7 +74,11 @@ pub async fn maybe_send_non_h264_notice(
             .await
             .unwrap_or(0);
         if exists > 0 {
-            log_trace(trace_id, "vlc_notice_throttled", &format!("chat_id={chat_id} ttl=48h_active"));
+            log_trace(
+                trace_id,
+                "vlc_notice_throttled",
+                &format!("chat_id={chat_id} ttl=48h_active"),
+            );
             return;
         }
 
@@ -104,7 +103,11 @@ pub async fn maybe_send_non_h264_notice(
                 .build(),
         )
         .await;
-    log_trace(trace_id, "vlc_notice_sent", &format!("chat_id={chat_id} ttl=48h"));
+    log_trace(
+        trace_id,
+        "vlc_notice_sent",
+        &format!("chat_id={chat_id} ttl=48h"),
+    );
 }
 
 use super::super::trace::log_trace;
@@ -143,24 +146,48 @@ pub async fn fetch_thumbnail(
 
     let resp = match reqwest::get(url).await {
         Ok(r) if r.status().is_success() => r,
-        Ok(r) => { log_trace(trace_id, "thumb_http_error", &format!("status={}", r.status())); return None; }
-        Err(e) => { log_trace(trace_id, "thumb_fetch_failed", &e.to_string()); return None; }
+        Ok(r) => {
+            log_trace(
+                trace_id,
+                "thumb_http_error",
+                &format!("status={}", r.status()),
+            );
+            return None;
+        }
+        Err(e) => {
+            log_trace(trace_id, "thumb_fetch_failed", &e.to_string());
+            return None;
+        }
     };
     let bytes = match resp.bytes().await {
         Ok(b) => b,
-        Err(e) => { log_trace(trace_id, "thumb_bytes_failed", &e.to_string()); return None; }
+        Err(e) => {
+            log_trace(trace_id, "thumb_bytes_failed", &e.to_string());
+            return None;
+        }
     };
     if tokio::fs::write(&raw_path, &bytes).await.is_err() {
         log_trace(trace_id, "thumb_write_failed", url);
         return None;
     }
-    log_trace(trace_id, "thumb_fetched", &format!("bytes={} raw={}", bytes.len(), raw_path.display()));
+    log_trace(
+        trace_id,
+        "thumb_fetched",
+        &format!("bytes={} raw={}", bytes.len(), raw_path.display()),
+    );
 
     // YouTube often returns WebP; convert to JPEG so Telegram accepts it as a thumbnail.
     let ffmpeg_out = tokio::process::Command::new("ffmpeg")
-        .args(["-y", "-i", &raw_path.to_string_lossy(),
-               "-vf", "scale=320:-1", "-q:v", "2",
-               &jpg_path.to_string_lossy()])
+        .args([
+            "-y",
+            "-i",
+            &raw_path.to_string_lossy(),
+            "-vf",
+            "scale=320:-1",
+            "-q:v",
+            "2",
+            &jpg_path.to_string_lossy(),
+        ])
         .output()
         .await;
 
@@ -171,10 +198,17 @@ pub async fn fetch_thumbnail(
         }
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            log_trace(trace_id, "thumb_convert_failed", &format!("ffmpeg: {stderr}"));
+            log_trace(
+                trace_id,
+                "thumb_convert_failed",
+                &format!("ffmpeg: {stderr}"),
+            );
             None
         }
-        Err(e) => { log_trace(trace_id, "thumb_convert_spawn_failed", &e.to_string()); None }
+        Err(e) => {
+            log_trace(trace_id, "thumb_convert_spawn_failed", &e.to_string());
+            None
+        }
     }
 }
 
@@ -195,7 +229,9 @@ fn subtitle_lang_of(fname: &str) -> Option<String> {
     if let Some(rest) = lower.strip_prefix("translated_") {
         return rest.strip_suffix(".srt").map(|s| s.to_string());
     }
-    let stem = lower.strip_suffix(".srt").or_else(|| lower.strip_suffix(".vtt"))?;
+    let stem = lower
+        .strip_suffix(".srt")
+        .or_else(|| lower.strip_suffix(".vtt"))?;
     stem.rsplit('.').next().map(|s| s.to_string())
 }
 
@@ -204,7 +240,9 @@ fn subtitle_lang_of(fname: &str) -> Option<String> {
 /// srt fetched only so it can be translated) out of what actually gets
 /// delivered/embedded when the user never asked for that language.
 fn subtitle_matches_selection(fname: &str, target_langs: &[String]) -> bool {
-    let Some(lang) = subtitle_lang_of(fname) else { return false };
+    let Some(lang) = subtitle_lang_of(fname) else {
+        return false;
+    };
     target_langs.iter().any(|t| {
         let t = t.to_lowercase();
         lang == t || lang.starts_with(&format!("{t}-"))
@@ -215,7 +253,9 @@ fn subtitle_matches_selection(fname: &str, target_langs: &[String]) -> bool {
 /// or a prior pass) for `lang` — used to avoid re-downloading/re-embedding
 /// a language that's already on disk.
 fn subtitle_file_exists_for_lang(dir: &std::path::Path, lang: &str) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir) else { return false; };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
     let lang = lang.to_lowercase();
     entries.flatten().any(|e| {
         let name = e.file_name().to_string_lossy().to_string();
@@ -234,7 +274,9 @@ pub async fn send_subtitle_files(
     trace_id: u64,
 ) -> usize {
     let mut sent = 0usize;
-    let Ok(entries) = std::fs::read_dir(dir) else { return 0; };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
     let mut subs: Vec<PathBuf> = entries
         .flatten()
         .map(|e| e.path())
@@ -256,7 +298,10 @@ pub async fn send_subtitle_files(
         .collect();
     subs.sort();
     for sub_path in &subs {
-        let fname = sub_path.file_name().and_then(|n| n.to_str()).unwrap_or("subtitle");
+        let fname = sub_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("subtitle");
         // Try to surface the language tag in the caption (e.g. "video.fa.srt" -> "fa").
         let lang = sub_path
             .file_stem()
@@ -264,23 +309,38 @@ pub async fn send_subtitle_files(
             .and_then(|s| s.rsplit('.').next())
             .unwrap_or("")
             .to_string();
-        let caption = tf("youtube.download.subtitle_caption", &[
-            ("title", video_title), ("lang", &lang),
-        ]);
+        let caption = tf(
+            "youtube.download.subtitle_caption",
+            &[("title", video_title), ("lang", &lang)],
+        );
         let params = SendDocumentParams::builder()
             .chat_id(chat_id)
-            .document(FileUpload::InputFile(InputFile { path: sub_path.clone() }))
+            .document(FileUpload::InputFile(InputFile {
+                path: sub_path.clone(),
+            }))
             .caption(caption)
             .build();
         match api.send_document(&params).await {
             Ok(_) => {
                 sent += 1;
-                log_trace(trace_id, "subtitle_file_sent", &format!("file={fname} lang={lang}"));
+                log_trace(
+                    trace_id,
+                    "subtitle_file_sent",
+                    &format!("file={fname} lang={lang}"),
+                );
             }
-            Err(e) => log_trace(trace_id, "subtitle_file_failed", &format!("file={fname} err={e}")),
+            Err(e) => log_trace(
+                trace_id,
+                "subtitle_file_failed",
+                &format!("file={fname} err={e}"),
+            ),
         }
     }
-    log_trace(trace_id, "subtitle_files_done", &format!("sent={sent} found={}", subs.len()));
+    log_trace(
+        trace_id,
+        "subtitle_files_done",
+        &format!("sent={sent} found={}", subs.len()),
+    );
     sent
 }
 
@@ -297,17 +357,27 @@ pub async fn translate_subtitles(
     }
 
     let mut english_srt = None;
-    let Ok(entries) = std::fs::read_dir(dir) else { return Ok(()); };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(());
+    };
     let mut srts = Vec::new();
     let mut has_target = false;
-    
+
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) == Some("srt") {
-            let fname = path.file_name().unwrap_or_default().to_str().unwrap_or_default().to_string();
+            let fname = path
+                .file_name()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap_or_default()
+                .to_string();
             srts.push(path.clone());
             for tgt in target_langs {
-                if fname.contains(&format!(".{}.", tgt)) || fname.contains(&format!(".{}-", tgt)) || fname.contains(&format!("_{}.srt", tgt)) {
+                if fname.contains(&format!(".{}.", tgt))
+                    || fname.contains(&format!(".{}-", tgt))
+                    || fname.contains(&format!("_{}.srt", tgt))
+                {
                     has_target = true;
                 }
             }
@@ -316,23 +386,33 @@ pub async fn translate_subtitles(
             }
         }
     }
-    
+
     if has_target {
         return Ok(());
     }
-    
+
     let Some(english_srt) = english_srt else {
         return Ok(());
     };
-    
-    if msg_id > 0 {
-        crate::youtube::download::status::edit_status(api, chat_id, msg_id, crate::i18n::tf("youtube.download.translating_subtitle", &[])).await;
-    }
-    
-    for tgt in target_langs {
-        if tgt == "en" || tgt.starts_with("en-") { continue; }
 
-        let Some(nllb_lang) = crate::youtube::translator::map_language_code(tgt) else { continue; };
+    if msg_id > 0 {
+        crate::youtube::download::status::edit_status(
+            api,
+            chat_id,
+            msg_id,
+            crate::i18n::tf("youtube.download.translating_subtitle", &[]),
+        )
+        .await;
+    }
+
+    for tgt in target_langs {
+        if tgt == "en" || tgt.starts_with("en-") {
+            continue;
+        }
+
+        let Some(nllb_lang) = crate::youtube::translator::map_language_code(tgt) else {
+            continue;
+        };
 
         let out_path = dir.join(format!("translated_{}.srt", tgt));
 
@@ -383,10 +463,18 @@ pub async fn translate_subtitles(
 
         match res {
             Ok(()) => {
-                crate::youtube::trace::log_trace(trace_id, "translate_subtitle_ok", &format!("lang={tgt}"));
+                crate::youtube::trace::log_trace(
+                    trace_id,
+                    "translate_subtitle_ok",
+                    &format!("lang={tgt}"),
+                );
             }
             Err(e) => {
-                crate::youtube::trace::log_trace(trace_id, "translate_subtitle_error", &format!("lang={tgt} err={e}"));
+                crate::youtube::trace::log_trace(
+                    trace_id,
+                    "translate_subtitle_error",
+                    &format!("lang={tgt} err={e}"),
+                );
             }
         }
     }
@@ -433,7 +521,9 @@ pub async fn ensure_translated_subtitles(
         download_subtitles_separately(cookie_spec, webpage_url, dir, &[], trace_id).await;
     }
 
-    if let Err(e) = translate_subtitles(api, chat_id, msg_id, trace_id, dir, &missing_translatable).await {
+    if let Err(e) =
+        translate_subtitles(api, chat_id, msg_id, trace_id, dir, &missing_translatable).await
+    {
         crate::youtube::trace::log_trace(trace_id, "ensure_translate_failed", &format!("err={e}"));
     }
 }
@@ -445,12 +535,15 @@ pub async fn embed_subtitles(
     trace_id: u64,
 ) -> Result<String, String> {
     crate::youtube::trace::log_trace(trace_id, "embed_subtitles_started", "");
-    let Ok(entries) = std::fs::read_dir(dir) else { return Ok(video_path.to_string()); };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(video_path.to_string());
+    };
     let mut srts = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
         let is_srt = path.extension().and_then(|e| e.to_str()) == Some("srt");
-        let matches_selection = path.file_name()
+        let matches_selection = path
+            .file_name()
             .and_then(|n| n.to_str())
             .map(|n| subtitle_matches_selection(n, target_langs))
             .unwrap_or(false);
@@ -458,59 +551,84 @@ pub async fn embed_subtitles(
             srts.push(path);
         }
     }
-    
+
     if srts.is_empty() {
         return Ok(video_path.to_string());
     }
-    
+
     srts.sort_by(|a, b| {
-        let a_name = a.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-        let b_name = b.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-        let a_is_fa = a_name.contains("translated_fa") || a_name.contains(".fa.") || a_name.contains("_fa.srt");
-        let b_is_fa = b_name.contains("translated_fa") || b_name.contains(".fa.") || b_name.contains("_fa.srt");
+        let a_name = a
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase();
+        let b_name = b
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase();
+        let a_is_fa = a_name.contains("translated_fa")
+            || a_name.contains(".fa.")
+            || a_name.contains("_fa.srt");
+        let b_is_fa = b_name.contains("translated_fa")
+            || b_name.contains(".fa.")
+            || b_name.contains("_fa.srt");
         match (a_is_fa, b_is_fa) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
             _ => a_name.cmp(&b_name),
         }
     });
-    
+
     let is_mkv = video_path.ends_with(".mkv");
     let ext = if is_mkv { "mkv" } else { "mp4" };
     let sub_codec = if is_mkv { "srt" } else { "mov_text" };
-    let stem = video_path.strip_suffix(&format!(".{ext}")).unwrap_or(video_path);
+    let stem = video_path
+        .strip_suffix(&format!(".{ext}"))
+        .unwrap_or(video_path);
     let out_path = format!("{stem}_embedded.{ext}");
 
     let mut cmd = tokio::process::Command::new("ffmpeg");
     cmd.arg("-y").arg("-i").arg(video_path);
-    
+
     for srt in &srts {
         cmd.arg("-i").arg(srt.to_string_lossy().as_ref());
     }
-    
+
     cmd.arg("-c").arg("copy");
     cmd.arg("-c:s").arg(sub_codec);
-    
+
     cmd.arg("-map").arg("0");
     for (i, srt) in srts.iter().enumerate() {
         let idx = i + 1;
         cmd.arg("-map").arg(idx.to_string());
-        
-        let fname = srt.file_name().unwrap_or_default().to_str().unwrap_or_default().to_lowercase();
-        let (lang_code, lang_title) = if fname.contains("translated_fa") || fname.contains(".fa.") || fname.contains("_fa.srt") {
+
+        let fname = srt
+            .file_name()
+            .unwrap_or_default()
+            .to_str()
+            .unwrap_or_default()
+            .to_lowercase();
+        let (lang_code, lang_title) = if fname.contains("translated_fa")
+            || fname.contains(".fa.")
+            || fname.contains("_fa.srt")
+        {
             ("per", "زیرنویس فارسی (Farsi)")
-        } else if fname.contains(".en.") || fname.contains("_en.srt") || fname.contains("translated_en") {
+        } else if fname.contains(".en.")
+            || fname.contains("_en.srt")
+            || fname.contains("translated_en")
+        {
             ("eng", "English Subtitle")
         } else {
             ("und", "Subtitle")
         };
-        
+
         cmd.arg(format!("-metadata:s:s:{}", i))
-           .arg(format!("language={}", lang_code));
+            .arg(format!("language={}", lang_code));
         cmd.arg(format!("-metadata:s:s:{}", i))
-           .arg(format!("title={}", lang_title));
+            .arg(format!("title={}", lang_title));
         cmd.arg(format!("-metadata:s:s:{}", i))
-           .arg(format!("handler_name={}", lang_title));
+            .arg(format!("handler_name={}", lang_title));
 
         if i == 0 {
             cmd.arg("-disposition:s:0").arg("default");
@@ -519,7 +637,7 @@ pub async fn embed_subtitles(
         }
     }
     cmd.arg(&out_path);
-    
+
     let out = cmd.output().await.map_err(|e| e.to_string())?;
     if out.status.success() {
         let _ = tokio::fs::remove_file(video_path).await;
@@ -537,7 +655,9 @@ pub async fn embed_subtitles(
 
 fn parse_ffmpeg_time(s: &str) -> Option<u64> {
     let parts: Vec<&str> = s.split(':').collect();
-    if parts.len() != 3 { return None; }
+    if parts.len() != 3 {
+        return None;
+    }
     let h: u64 = parts[0].parse().ok()?;
     let m: u64 = parts[1].parse().ok()?;
     let sec_part = parts[2].split('.').next()?;
@@ -562,16 +682,23 @@ pub async fn hardsub_subtitles(
     trace_id: u64,
     user_id: i64,
 ) -> Result<String, String> {
-    use tokio::io::{AsyncBufReadExt, BufReader};
     use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
 
-    crate::youtube::trace::log_trace(trace_id, "hardsub_subtitles_started", &format!("video={video_path}"));
-    let Ok(entries) = std::fs::read_dir(dir) else { return Ok(video_path.to_string()); };
+    crate::youtube::trace::log_trace(
+        trace_id,
+        "hardsub_subtitles_started",
+        &format!("video={video_path}"),
+    );
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Ok(video_path.to_string());
+    };
     let mut srts = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
         let is_srt = path.extension().and_then(|e| e.to_str()) == Some("srt");
-        let matches_selection = path.file_name()
+        let matches_selection = path
+            .file_name()
             .and_then(|n| n.to_str())
             .map(|n| subtitle_matches_selection(n, target_langs))
             .unwrap_or(false);
@@ -586,10 +713,22 @@ pub async fn hardsub_subtitles(
     }
 
     srts.sort_by(|a, b| {
-        let a_name = a.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-        let b_name = b.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-        let a_is_fa = a_name.contains("translated_fa") || a_name.contains(".fa.") || a_name.contains("_fa.srt");
-        let b_is_fa = b_name.contains("translated_fa") || b_name.contains(".fa.") || b_name.contains("_fa.srt");
+        let a_name = a
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase();
+        let b_name = b
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase();
+        let a_is_fa = a_name.contains("translated_fa")
+            || a_name.contains(".fa.")
+            || a_name.contains("_fa.srt");
+        let b_is_fa = b_name.contains("translated_fa")
+            || b_name.contains(".fa.")
+            || b_name.contains("_fa.srt");
         match (a_is_fa, b_is_fa) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
@@ -605,7 +744,13 @@ pub async fn hardsub_subtitles(
     }
 
     if msg_id > 0 {
-        super::status::edit_status(api, chat_id, msg_id, crate::i18n::t("youtube.download.hardsubbing")).await;
+        super::status::edit_status(
+            api,
+            chat_id,
+            msg_id,
+            crate::i18n::t("youtube.download.hardsubbing"),
+        )
+        .await;
     }
 
     let cores = acquire_cpu(user_id, trace_id).await;
@@ -628,8 +773,12 @@ pub async fn hardsub_subtitles(
        .stdout(Stdio::piped())
        .stderr(Stdio::piped());
 
-    crate::youtube::trace::log_trace(trace_id, "hardsub_exec_start", &format!("srt={} threads={num_threads}", primary_srt.display()));
-    
+    crate::youtube::trace::log_trace(
+        trace_id,
+        "hardsub_exec_start",
+        &format!("srt={} threads={num_threads}", primary_srt.display()),
+    );
+
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -639,8 +788,14 @@ pub async fn hardsub_subtitles(
         }
     };
 
-    let stdout = child.stdout.take().expect("piped stdout");
-    let stderr = child.stderr.take().expect("piped stderr");
+    let Some(stdout) = child.stdout.take() else {
+        release_cpu(cores, trace_id).await;
+        return Err("piped stdout missing".to_string());
+    };
+    let Some(stderr) = child.stderr.take() else {
+        release_cpu(cores, trace_id).await;
+        return Err("piped stderr missing".to_string());
+    };
 
     let mut reader = BufReader::new(stdout).lines();
     let stderr_task = tokio::spawn(async move {
@@ -661,10 +816,13 @@ pub async fn hardsub_subtitles(
             let time_str = line.trim_start_matches("out_time=").trim();
             if let Some(current_secs) = parse_ffmpeg_time(time_str) {
                 if total_secs > 0 {
-                    let percent = ((current_secs as f64 / total_secs as f64) * 100.0).clamp(0.0, 100.0);
+                    let percent =
+                        ((current_secs as f64 / total_secs as f64) * 100.0).clamp(0.0, 100.0);
                     let percent_int = percent as i32;
                     let now = std::time::Instant::now();
-                    if percent_int != last_percent_int && now.duration_since(last_edit) >= std::time::Duration::from_secs(1) {
+                    if percent_int != last_percent_int
+                        && now.duration_since(last_edit) >= std::time::Duration::from_secs(1)
+                    {
                         last_percent_int = percent_int;
                         last_edit = now;
                         let eta_secs = total_secs.saturating_sub(current_secs);
@@ -672,13 +830,16 @@ pub async fn hardsub_subtitles(
                         let elapsed_str = super::super::format::format_duration(current_secs);
                         let total_str = super::super::format::format_duration(total_secs);
                         let eta_str = super::super::format::format_duration(eta_secs);
-                        let text = crate::i18n::tf("youtube.download.hardsub_progress", &[
-                            ("bar", &bar),
-                            ("percent", &format!("{percent_int}%")),
-                            ("elapsed", &elapsed_str),
-                            ("total", &total_str),
-                            ("eta", &eta_str),
-                        ]);
+                        let text = crate::i18n::tf(
+                            "youtube.download.hardsub_progress",
+                            &[
+                                ("bar", &bar),
+                                ("percent", &format!("{percent_int}%")),
+                                ("elapsed", &elapsed_str),
+                                ("total", &total_str),
+                                ("eta", &eta_str),
+                            ],
+                        );
                         if msg_id > 0 {
                             super::status::edit_status(api, chat_id, msg_id, text).await;
                         }
@@ -700,8 +861,16 @@ pub async fn hardsub_subtitles(
             Ok(out_path)
         }
         Ok(s) => {
-            crate::youtube::trace::log_trace(trace_id, "hardsub_failed", &format!("status={s} err={stderr_tail}"));
-            Err(if stderr_tail.is_empty() { format!("exit {s}") } else { stderr_tail })
+            crate::youtube::trace::log_trace(
+                trace_id,
+                "hardsub_failed",
+                &format!("status={s} err={stderr_tail}"),
+            );
+            Err(if stderr_tail.is_empty() {
+                format!("exit {s}")
+            } else {
+                stderr_tail
+            })
         }
         Err(e) => {
             crate::youtube::trace::log_trace(trace_id, "hardsub_wait_failed", &e.to_string());
@@ -735,27 +904,55 @@ pub async fn process_subtitle_pipeline(
 
     // ── Phase 1: Guaranteed Subtitle Acquisition (NLLB Fallback for 429 / Missing Subs) ──
     ensure_translated_subtitles(
-        api, cookie_spec, webpage_url, chat_id, msg_id, dir, &selection.subtitle_langs, trace_id,
-    ).await;
+        api,
+        cookie_spec,
+        webpage_url,
+        chat_id,
+        msg_id,
+        dir,
+        &selection.subtitle_langs,
+        trace_id,
+    )
+    .await;
 
     // ── Phase 2: Subtitle Mode Dispatch ──
     match selection.subtitle_mode {
         SubtitleMode::Hardsub => {
             match hardsub_subtitles(
-                api, chat_id, msg_id, dir, video_path, &selection.subtitle_langs, duration_secs, trace_id, user_id,
-            ).await {
-                Ok(new_path) if new_path != video_path => SubtitlePipelineResult::VideoUpdated(new_path),
+                api,
+                chat_id,
+                msg_id,
+                dir,
+                video_path,
+                &selection.subtitle_langs,
+                duration_secs,
+                trace_id,
+                user_id,
+            )
+            .await
+            {
+                Ok(new_path) if new_path != video_path => {
+                    SubtitlePipelineResult::VideoUpdated(new_path)
+                }
                 Ok(_) => SubtitlePipelineResult::None,
                 Err(e) => {
                     crate::youtube::trace::log_trace(trace_id, "hardsub_pipeline_error", &e);
-                    let _ = super::status::edit_status(api, chat_id, msg_id, crate::i18n::tf("youtube.download.hardsub_failed", &[("error", &e)])).await;
+                    let _ = super::status::edit_status(
+                        api,
+                        chat_id,
+                        msg_id,
+                        crate::i18n::tf("youtube.download.hardsub_failed", &[("error", &e)]),
+                    )
+                    .await;
                     SubtitlePipelineResult::None
                 }
             }
         }
         SubtitleMode::Embedded => {
             match embed_subtitles(dir, video_path, &selection.subtitle_langs, trace_id).await {
-                Ok(new_path) if new_path != video_path => SubtitlePipelineResult::VideoUpdated(new_path),
+                Ok(new_path) if new_path != video_path => {
+                    SubtitlePipelineResult::VideoUpdated(new_path)
+                }
                 Ok(_) => SubtitlePipelineResult::None,
                 Err(e) => {
                     crate::youtube::trace::log_trace(trace_id, "embed_pipeline_error", &e);
@@ -767,7 +964,6 @@ pub async fn process_subtitle_pipeline(
     }
 }
 
-
 /// ffmpeg (and therefore yt-dlp --embed-subs) writes mov_text/tx3g sample
 /// entries with displayFlags=0. Players such as VLC then list the subtitle
 /// track in the menu but never render it unless the user selects it manually
@@ -776,16 +972,28 @@ pub async fn process_subtitle_pipeline(
 /// makes players auto-display it, which is what a soft-sub user expects.
 /// Patches 4 bytes in place; never touches sample data.
 pub async fn fix_embedded_subtitle_flags(video_path: &str, trace_id: u64) -> bool {
-    log_trace(trace_id, "subtitle_flags_fix", &format!("path={video_path}"));
+    log_trace(
+        trace_id,
+        "subtitle_flags_fix",
+        &format!("path={video_path}"),
+    );
     let path = video_path.to_string();
     let res = tokio::task::spawn_blocking(move || patch_first_tx3g_display_flags(&path)).await;
     match res {
         Ok(Ok(Some(offset))) => {
-            log_trace(trace_id, "subtitle_flags_fix", &format!("=> ok offset={offset}"));
+            log_trace(
+                trace_id,
+                "subtitle_flags_fix",
+                &format!("=> ok offset={offset}"),
+            );
             true
         }
         Ok(Ok(None)) => {
-            log_trace(trace_id, "subtitle_flags_fix", "=> pass no enabled tx3g track");
+            log_trace(
+                trace_id,
+                "subtitle_flags_fix",
+                "=> pass no enabled tx3g track",
+            );
             false
         }
         Ok(Err(e)) => {
@@ -793,7 +1001,11 @@ pub async fn fix_embedded_subtitle_flags(video_path: &str, trace_id: u64) -> boo
             false
         }
         Err(e) => {
-            log_trace(trace_id, "subtitle_flags_fix", &format!("=> fail join err={e}"));
+            log_trace(
+                trace_id,
+                "subtitle_flags_fix",
+                &format!("=> fail join err={e}"),
+            );
             false
         }
     }
@@ -807,7 +1019,9 @@ fn find_box(buf: &[u8], mut off: usize, end: usize, name: &[u8; 4]) -> Option<(u
     while off + 8 <= end.min(buf.len()) {
         let size_bytes: [u8; 4] = buf[off..off + 4].try_into().ok()?;
         let size = u32::from_be_bytes(size_bytes) as usize;
-        if size < 8 || off + size > end { return None; }
+        if size < 8 || off + size > end {
+            return None;
+        }
         if &buf[off + 4..off + 8] == name {
             return Some((off, size));
         }
@@ -822,7 +1036,10 @@ fn find_box(buf: &[u8], mut off: usize, end: usize, name: &[u8; 4]) -> Option<(u
 fn patch_first_tx3g_display_flags(path: &str) -> std::io::Result<Option<u64>> {
     use std::io::{Read, Seek, SeekFrom, Write};
 
-    let mut f = std::fs::OpenOptions::new().read(true).write(true).open(path)?;
+    let mut f = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)?;
     let file_len = f.metadata()?.len();
 
     // Top-level scan for the moov box (may sit before or after mdat).
@@ -840,16 +1057,22 @@ fn patch_first_tx3g_display_flags(path: &str) -> std::io::Result<Option<u64>> {
         } else if size == 0 {
             size = file_len - off;
         }
-        if size < 8 { break; }
+        if size < 8 {
+            break;
+        }
         if &hdr[4..8] == b"moov" {
             moov = Some((off, size));
             break;
         }
         off += size;
     }
-    let Some((moov_off, moov_size)) = moov else { return Ok(None) };
+    let Some((moov_off, moov_size)) = moov else {
+        return Ok(None);
+    };
     // moov of a 2GB video is a few MB; anything huge means a corrupt size field.
-    if moov_size > 128 * 1024 * 1024 { return Ok(None); }
+    if moov_size > 128 * 1024 * 1024 {
+        return Ok(None);
+    }
 
     let mut buf = vec![0u8; moov_size as usize];
     f.seek(SeekFrom::Start(moov_off))?;
@@ -866,17 +1089,31 @@ fn patch_first_tx3g_display_flags(path: &str) -> std::io::Result<Option<u64>> {
         let enabled = find_box(&buf, trak + 8, trak_end, b"tkhd")
             .map(|(o, s)| s >= 12 && (buf[o + 11] & 0x01) != 0)
             .unwrap_or(false);
-        if !enabled { continue; }
+        if !enabled {
+            continue;
+        }
 
-        let Some((mdia, mdia_size)) = find_box(&buf, trak + 8, trak_end, b"mdia") else { continue };
-        let Some((minf, minf_size)) = find_box(&buf, mdia + 8, mdia + mdia_size, b"minf") else { continue };
-        let Some((stbl, stbl_size)) = find_box(&buf, minf + 8, minf + minf_size, b"stbl") else { continue };
-        let Some((stsd, stsd_size)) = find_box(&buf, stbl + 8, stbl + stbl_size, b"stsd") else { continue };
+        let Some((mdia, mdia_size)) = find_box(&buf, trak + 8, trak_end, b"mdia") else {
+            continue;
+        };
+        let Some((minf, minf_size)) = find_box(&buf, mdia + 8, mdia + mdia_size, b"minf") else {
+            continue;
+        };
+        let Some((stbl, stbl_size)) = find_box(&buf, minf + 8, minf + minf_size, b"stbl") else {
+            continue;
+        };
+        let Some((stsd, stsd_size)) = find_box(&buf, stbl + 8, stbl + stbl_size, b"stsd") else {
+            continue;
+        };
 
         // stsd: 8 header + 4 version/flags + 4 entry_count, then first entry.
         let entry = stsd + 16;
-        if entry + 20 > stsd + stsd_size { continue; }
-        if &buf[entry + 4..entry + 8] != b"tx3g" { continue; }
+        if entry + 20 > stsd + stsd_size {
+            continue;
+        }
+        if &buf[entry + 4..entry + 8] != b"tx3g" {
+            continue;
+        }
 
         // tx3g entry: 4 size + 4 type + 6 reserved + 2 data_ref_index, then displayFlags.
         let abs = moov_off + (entry + 16) as u64;
@@ -904,17 +1141,28 @@ pub async fn download_subtitles_separately(
     let sub_langs = target_langs.join(",");
 
     let mut cmd = tokio::process::Command::new("yt-dlp");
-    cmd.arg("--js-runtimes").arg(format!("deno:{}", crate::config::deno_path()))
-        .arg("--cookies-from-browser").arg(cookie_spec)
-        .arg("--no-warnings").arg("--no-playlist")
-        .arg("--write-subs").arg("--write-auto-subs")
-        .arg("--sub-langs").arg(&sub_langs)
-        .arg("--convert-subs").arg("srt")
+    cmd.arg("--js-runtimes")
+        .arg(format!("deno:{}", crate::config::deno_path()))
+        .arg("--cookies-from-browser")
+        .arg(cookie_spec)
+        .arg("--no-warnings")
+        .arg("--no-playlist")
+        .arg("--write-subs")
+        .arg("--write-auto-subs")
+        .arg("--sub-langs")
+        .arg(&sub_langs)
+        .arg("--convert-subs")
+        .arg("srt")
         .arg("--skip-download")
-        .arg("-o").arg(format!("{}/sub.%(ext)s", dir.display()))
+        .arg("-o")
+        .arg(format!("{}/sub.%(ext)s", dir.display()))
         .arg(webpage_url);
 
-    crate::youtube::trace::log_trace(trace_id, "download_subtitles_separately_start", &format!("langs={sub_langs}"));
+    crate::youtube::trace::log_trace(
+        trace_id,
+        "download_subtitles_separately_start",
+        &format!("langs={sub_langs}"),
+    );
     let _ = cmd.output().await;
 }
 
@@ -924,7 +1172,10 @@ async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
     let client = reqwest::Client::new();
     let res = client
         .post(format!("{SEP_BASE}/cpu/acquire"))
-        .form(&[("user_id", user_id.to_string()), ("is_vip", "false".to_string())])
+        .form(&[
+            ("user_id", user_id.to_string()),
+            ("is_vip", "false".to_string()),
+        ])
         .timeout(std::time::Duration::from_secs(120))
         .send()
         .await;
@@ -946,7 +1197,9 @@ async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
 }
 
 async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
-    if cores.is_empty() { return; }
+    if cores.is_empty() {
+        return;
+    }
     let client = reqwest::Client::new();
     let body = serde_json::json!({ "cores": cores });
     let r = client
@@ -955,9 +1208,12 @@ async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await;
-    log_trace(trace_id, "cpu_released", &format!("cores={cores:?} ok={}", r.is_ok()));
+    log_trace(
+        trace_id,
+        "cpu_released",
+        &format!("cores={cores:?} ok={}", r.is_ok()),
+    );
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -973,13 +1229,28 @@ mod tests {
         std::fs::write(&srt, "1\n00:00:00,000 --> 00:00:02,000\nhello\n\n").unwrap();
         let out = dir.join("o.mp4");
         let st = std::process::Command::new("ffmpeg")
-            .args(["-y", "-v", "error",
-                   "-f", "lavfi", "-i", "color=black:size=64x64:rate=10:duration=3",
-                   "-i", srt.to_str().unwrap(),
-                   "-c:v", "libx264", "-preset", "ultrafast",
-                   "-c:s", "mov_text",
-                   "-map", "0", "-map", "1",
-                   out.to_str().unwrap()])
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=black:size=64x64:rate=10:duration=3",
+                "-i",
+                srt.to_str().unwrap(),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-c:s",
+                "mov_text",
+                "-map",
+                "0",
+                "-map",
+                "1",
+                out.to_str().unwrap(),
+            ])
             .status()
             .expect("ffmpeg must exist on host");
         assert!(st.success());
@@ -1002,17 +1273,26 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-
     #[test]
     fn tx3g_patch_ignores_files_without_subtitles() {
         let dir = std::env::temp_dir().join(format!("tx3g_nosub_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("o.mp4");
         let st = std::process::Command::new("ffmpeg")
-            .args(["-y", "-v", "error",
-                   "-f", "lavfi", "-i", "color=black:size=64x64:rate=10:duration=1",
-                   "-c:v", "libx264", "-preset", "ultrafast",
-                   out.to_str().unwrap()])
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=black:size=64x64:rate=10:duration=1",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                out.to_str().unwrap(),
+            ])
             .status()
             .expect("ffmpeg must exist on host");
         assert!(st.success());
@@ -1020,7 +1300,11 @@ mod tests {
         let before = std::fs::read(&out).unwrap();
         let res = patch_first_tx3g_display_flags(out.to_str().unwrap()).unwrap();
         assert!(res.is_none());
-        assert_eq!(before, std::fs::read(&out).unwrap(), "file must be untouched");
+        assert_eq!(
+            before,
+            std::fs::read(&out).unwrap(),
+            "file must be untouched"
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -1088,11 +1372,7 @@ pub fn sanitize_video_filename(
 }
 
 /// Create a clean, safe OS filename for downloaded audio files.
-pub fn sanitize_audio_filename(
-    title: &str,
-    quality_label: &str,
-    ext: &str,
-) -> String {
+pub fn sanitize_audio_filename(title: &str, quality_label: &str, ext: &str) -> String {
     let tech_info = format!("[{quality_label}]");
     let ext_with_dot = format!(".{ext}");
     let suffix = format!(" {tech_info}{ext_with_dot}");

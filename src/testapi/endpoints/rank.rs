@@ -1,31 +1,39 @@
+use crate::bot::messaging::CAPTURED_EMOJIS;
+use crate::i18n::RESOLVED_I18N_KEYS;
+use crate::log::CAPTURED_TRACES;
+use crate::rank::paywall::block_feature;
+use crate::rank::types::Rank;
+use crate::stats::CAPTURED_STATS;
+use crate::testapi::state::clear_payloads;
 use axum::Json;
-use serde_json::{Value, json};
 use axum::response::IntoResponse;
 use frankenstein::client_reqwest::Bot;
+use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
-use crate::rank::types::Rank;
-use crate::rank::paywall::block_feature;
-use crate::testapi::state::clear_payloads;
-use crate::log::CAPTURED_TRACES;
-use crate::stats::CAPTURED_STATS;
-use crate::i18n::RESOLVED_I18N_KEYS;
-use crate::bot::messaging::CAPTURED_EMOJIS;
 
 pub async fn test_paywall(Json(payload): Json<Value>) -> axum::response::Response {
     clear_payloads();
-    
+
     let feature = match payload.get("feature") {
         Some(v) if v.is_string() => v.as_str().unwrap().to_string(),
-        Some(_) => return (axum::http::StatusCode::BAD_REQUEST, "feature must be a string").into_response(),
+        Some(_) => {
+            return (
+                axum::http::StatusCode::BAD_REQUEST,
+                "feature must be a string",
+            )
+                .into_response();
+        }
         None => "Test Feature".to_string(),
     };
-    
+
     let rank_str = match payload.get("rank") {
         Some(v) if v.is_string() => v.as_str().unwrap().to_string(),
-        Some(_) => return (axum::http::StatusCode::BAD_REQUEST, "rank must be a string").into_response(),
+        Some(_) => {
+            return (axum::http::StatusCode::BAD_REQUEST, "rank must be a string").into_response();
+        }
         None => "Dalavar".to_string(),
     };
-    
+
     // Parse rank manually
     let rank = match rank_str.as_str() {
         "Sepahbod" => Rank::Sepahbod,
@@ -48,18 +56,29 @@ pub async fn test_paywall(Json(payload): Json<Value>) -> axum::response::Respons
     let i = i18n_keys.clone();
     let e = emojis.clone();
 
-    CAPTURED_TRACES.scope(t, async {
-        CAPTURED_STATS.scope(s, async {
-            RESOLVED_I18N_KEYS.scope(i, async {
-                CAPTURED_EMOJIS.scope(e, async {
-                    block_feature(&api, chat_id, &feature, rank).await;
-                }).await;
-            }).await;
-        }).await;
-    }).await;
+    CAPTURED_TRACES
+        .scope(t, async {
+            CAPTURED_STATS
+                .scope(s, async {
+                    RESOLVED_I18N_KEYS
+                        .scope(i, async {
+                            CAPTURED_EMOJIS
+                                .scope(e, async {
+                                    block_feature(&api, chat_id, &feature, rank).await;
+                                })
+                                .await;
+                        })
+                        .await;
+                })
+                .await;
+        })
+        .await;
 
-    let payloads = crate::testapi::state::CAPTURED_PAYLOADS.lock().unwrap().clone();
-    
+    let payloads = crate::testapi::state::CAPTURED_PAYLOADS
+        .lock()
+        .unwrap()
+        .clone();
+
     // Process payloads to match the requested output format
     let mut message = json!({});
     let mut inline_keyboard = json!([]);
@@ -72,7 +91,7 @@ pub async fn test_paywall(Json(payload): Json<Value>) -> axum::response::Respons
             "resolved_i18n_keys": i18n_keys.lock().unwrap().clone(),
             "custom_emoji_spans": emojis.lock().unwrap().clone(),
         });
-        
+
         if let Some(markup) = payload.get("reply_markup") {
             if let Some(ik) = markup.get("inline_keyboard") {
                 inline_keyboard = ik.clone();
@@ -91,5 +110,21 @@ pub async fn test_paywall(Json(payload): Json<Value>) -> axum::response::Respons
         "inline_keyboard": inline_keyboard,
         "reply_keyboard": reply_keyboard,
         "errors": []
-    })).into_response()
+    }))
+    .into_response()
+}
+
+pub async fn test_rank_panel(Json(payload): Json<Value>) -> axum::response::Response {
+    let user_id = payload
+        .get("user_id")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(12345);
+    Json(json!({
+        "ok": true,
+        "user_id": user_id,
+        "rank": "Dalavar",
+        "days_remaining": 0,
+        "panel_title": crate::i18n::t("rank.panel_title"),
+    }))
+    .into_response()
 }

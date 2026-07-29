@@ -24,14 +24,14 @@ pub fn store_request(req: YoutubeRequest) -> u64 {
             req.formats.len()
         ),
     );
-    store().lock().unwrap().insert(id, req);
+    crate::sync_util::lock_or_recover(store()).insert(id, req);
     id
 }
 
 pub fn get_request(id: u64) -> Option<YoutubeRequest> {
-    store().lock().unwrap().get(&id).cloned()
+    crate::sync_util::lock_or_recover(store()).get(&id).cloned()
 }
 
 pub fn take_request(id: u64) -> Option<YoutubeRequest> {
-    store().lock().unwrap().remove(&id)
+    crate::sync_util::lock_or_recover(store()).remove(&id)
 }

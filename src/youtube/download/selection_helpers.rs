@@ -53,7 +53,7 @@ pub fn with_selection<F, R>(req: &YoutubeRequest, f: F) -> R
 where
     F: FnOnce(&mut Option<Selection>) -> R,
 {
-    let mut guard = req.selection.lock().unwrap();
+    let mut guard = crate::sync_util::lock_or_recover(&req.selection);
     f(&mut *guard)
 }
 

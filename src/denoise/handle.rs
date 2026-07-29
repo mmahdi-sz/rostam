@@ -7,14 +7,20 @@ use frankenstein::{
     types::{InlineKeyboardMarkup, Message},
 };
 
-use crate::bot::{send_text, send_text_with_back, send_text_md_with_keyboard, ai_lab_back_keyboard, CB_DENOISE_CANCEL};
+use crate::bot::{
+    CB_DENOISE_CANCEL, ai_lab_back_keyboard, send_text, send_text_md_with_keyboard,
+    send_text_with_back,
+};
 use crate::database::postgresql::PostgresDatabase;
-use crate::emoji::{FlowManager, FlowState};
 use crate::emoji::panel::btn_icon_danger;
-use crate::i18n::{t, tf, apply_premium_to_md};
-use crate::rank::{self, quota::{QuotaKind, get_usage, add_usage}};
-use crate::stt::deepfilter;
+use crate::emoji::{FlowManager, FlowState};
+use crate::i18n::{apply_premium_to_md, t, tf};
 use crate::log::next_trace_id;
+use crate::rank::{
+    self,
+    quota::{QuotaKind, add_usage, get_usage},
+};
+use crate::stt::deepfilter;
 
 // ponytail: thin shim so existing log_trace() calls below keep working with correct domain.
 fn log_trace(trace_id: u64, event: &str, details: &str) {
@@ -43,16 +49,22 @@ pub async fn enter_denoise(
         .reply_markup(denoise_keyboard())
         .build();
     match api.edit_message_text(&params).await {
-        Ok(_) => log_trace(trace_id, "denoise_prompt_shown", &format!("user_id={user_id} chat_id={chat_id}")),
+        Ok(_) => log_trace(
+            trace_id,
+            "denoise_prompt_shown",
+            &format!("user_id={user_id} chat_id={chat_id}"),
+        ),
         Err(e) => log_trace(trace_id, "denoise_prompt_failed", &e.to_string()),
     }
 }
 
 fn denoise_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![
-            vec![btn_icon_danger(&t("denoise.cancel_button"), CB_DENOISE_CANCEL, "cancel")],
-        ])
+        .inline_keyboard(vec![vec![btn_icon_danger(
+            &t("denoise.cancel_button"),
+            CB_DENOISE_CANCEL,
+            "cancel",
+        )]])
         .build()
 }
 
@@ -66,7 +78,11 @@ pub async fn handle_denoise_cancel(
 ) {
     flow_manager.clear(user_id);
     let r = crate::bot::edit_to_ai_lab(api, chat_id, message_id).await;
-    log_trace(next_trace_id(), "denoise_cancel_done", &format!("ok={}", r.is_ok()));
+    log_trace(
+        next_trace_id(),
+        "denoise_cancel_done",
+        &format!("ok={}", r.is_ok()),
+    );
 }
 
 /// Processes an audio message when user is in AwaitingDenoiseAudio.
@@ -100,8 +116,15 @@ pub async fn handle_denoise_audio(
 
     // Extract original filename for output naming
     let orig_stem = message
-        .audio.as_ref().and_then(|a| a.file_name.as_deref())
-        .or_else(|| message.document.as_ref().and_then(|d| d.file_name.as_deref()))
+        .audio
+        .as_ref()
+        .and_then(|a| a.file_name.as_deref())
+        .or_else(|| {
+            message
+                .document
+                .as_ref()
+                .and_then(|d| d.file_name.as_deref())
+        })
         .and_then(|name| {
             let dot = name.rfind('.')?;
             Some(&name[..dot])
@@ -109,9 +132,13 @@ pub async fn handle_denoise_audio(
         .unwrap_or("voice");
     let clean_filename = format!("{orig_stem}_clean.{orig_ext}");
 
-    log_trace(trace_id, "denoise_audio_received", &format!(
-        "user_id={user_id} chat_id={chat_id} voice={is_voice} audio={is_audio} doc={is_doc} ext={orig_ext} stem={orig_stem} clean={clean_filename}"
-    ));
+    log_trace(
+        trace_id,
+        "denoise_audio_received",
+        &format!(
+            "user_id={user_id} chat_id={chat_id} voice={is_voice} audio={is_audio} doc={is_doc} ext={orig_ext} stem={orig_stem} clean={clean_filename}"
+        ),
+    );
 
     let _ = send_text(api, chat_id, &t("denoise.preparing")).await;
 
@@ -123,8 +150,12 @@ pub async fn handle_denoise_audio(
     let denoised_path = work_dir.join("denoised.wav");
     let output_path = work_dir.join(&clean_filename);
 
-    let (Some(input_str), Some(wav_str), Some(denoised_str), Some(output_str)) =
-        (input_path.to_str(), wav_path.to_str(), denoised_path.to_str(), output_path.to_str()) else {
+    let (Some(input_str), Some(wav_str), Some(denoised_str), Some(output_str)) = (
+        input_path.to_str(),
+        wav_path.to_str(),
+        denoised_path.to_str(),
+        output_path.to_str(),
+    ) else {
         log_trace(trace_id, "denoise_invalid_path", "invalid UTF-8 path");
         clean_up(&work_dir);
         return;
@@ -147,9 +178,11 @@ pub async fn handle_denoise_audio(
     let convert_res = {
         let inp = input_str.to_string();
         let outp = wav_str.to_string();
-        tokio::task::spawn_blocking(move || convert_to_wav(&inp, &outp, 48000).map_err(|e| e.to_string()))
-            .await
-            .unwrap_or_else(|e| Err(format!("convert task panicked: {e}")))
+        tokio::task::spawn_blocking(move || {
+            convert_to_wav(&inp, &outp, 48000).map_err(|e| e.to_string())
+        })
+        .await
+        .unwrap_or_else(|e| Err(format!("convert task panicked: {e}")))
     };
     if let Err(e) = convert_res {
         log_trace(trace_id, "denoise_convert_failed", &format!("err={e}"));
@@ -170,14 +203,22 @@ pub async fn handle_denoise_audio(
         let user_rank = rank::effective_rank(db.client(), user_id).await;
         let daily_limit = user_rank.denoise_daily_secs();
         let weekly_limit = user_rank.denoise_weekly_secs();
-        let daily_used = get_usage(db.client(), user_id, QuotaKind::DenoiseDaily, 86400).await.unwrap_or(0) as u64;
-        let weekly_used = get_usage(db.client(), user_id, QuotaKind::DenoiseWeekly, 7 * 86400).await.unwrap_or(0) as u64;
+        let daily_used = get_usage(db.client(), user_id, QuotaKind::DenoiseDaily, 86400)
+            .await
+            .unwrap_or(0) as u64;
+        let weekly_used = get_usage(db.client(), user_id, QuotaKind::DenoiseWeekly, 7 * 86400)
+            .await
+            .unwrap_or(0) as u64;
 
         let daily_remaining = daily_limit.saturating_sub(daily_used);
         let weekly_remaining = weekly_limit.saturating_sub(weekly_used);
 
         if daily_remaining == 0 {
-            log_trace(trace_id, "denoise_quota_daily", &format!("user_id={user_id} used={daily_used} limit={daily_limit}"));
+            log_trace(
+                trace_id,
+                "denoise_quota_daily",
+                &format!("user_id={user_id} used={daily_used} limit={daily_limit}"),
+            );
             let limit_str = format_duration_fa(daily_limit);
             let limit_label = tf("rank.denoise_daily_limit", &[("limit", &limit_str)]);
             let next = user_rank.denoise_next_rank();
@@ -185,12 +226,21 @@ pub async fn handle_denoise_audio(
             if let Some(min_rank) = next {
                 crate::rank::paywall::block_limit(api, chat_id, &limit_label, min_rank).await;
             } else {
-                let _ = send_text_with_back(api, chat_id, &tf("denoise.quota_daily_exceeded", &[("limit", &limit_str)])).await;
+                let _ = send_text_with_back(
+                    api,
+                    chat_id,
+                    &tf("denoise.quota_daily_exceeded", &[("limit", &limit_str)]),
+                )
+                .await;
             }
             return;
         }
         if weekly_remaining == 0 {
-            log_trace(trace_id, "denoise_quota_weekly", &format!("user_id={user_id} used={weekly_used} limit={weekly_limit}"));
+            log_trace(
+                trace_id,
+                "denoise_quota_weekly",
+                &format!("user_id={user_id} used={weekly_used} limit={weekly_limit}"),
+            );
             let limit_str = format_duration_fa(weekly_limit);
             let limit_label = tf("rank.denoise_weekly_limit", &[("limit", &limit_str)]);
             let next = user_rank.denoise_next_rank();
@@ -198,13 +248,22 @@ pub async fn handle_denoise_audio(
             if let Some(min_rank) = next {
                 crate::rank::paywall::block_limit(api, chat_id, &limit_label, min_rank).await;
             } else {
-                let _ = send_text_with_back(api, chat_id, &tf("denoise.quota_weekly_exceeded", &[("limit", &limit_str)])).await;
+                let _ = send_text_with_back(
+                    api,
+                    chat_id,
+                    &tf("denoise.quota_weekly_exceeded", &[("limit", &limit_str)]),
+                )
+                .await;
             }
             return;
         }
         if duration_secs > daily_remaining || duration_secs > weekly_remaining {
             let remaining = daily_remaining.min(weekly_remaining);
-            log_trace(trace_id, "denoise_quota_file_too_long", &format!("user_id={user_id} duration={duration_secs} remaining={remaining}"));
+            log_trace(
+                trace_id,
+                "denoise_quota_file_too_long",
+                &format!("user_id={user_id} duration={duration_secs} remaining={remaining}"),
+            );
             let remaining_str = format_duration_fa(remaining);
             let remaining_label = tf("rank.denoise_remaining", &[("remaining", &remaining_str)]);
             let next = user_rank.denoise_next_rank();
@@ -212,7 +271,15 @@ pub async fn handle_denoise_audio(
             if let Some(min_rank) = next {
                 crate::rank::paywall::block_limit(api, chat_id, &remaining_label, min_rank).await;
             } else {
-                let _ = send_text_with_back(api, chat_id, &tf("denoise.quota_file_too_long", &[("remaining", &remaining_str)])).await;
+                let _ = send_text_with_back(
+                    api,
+                    chat_id,
+                    &tf(
+                        "denoise.quota_file_too_long",
+                        &[("remaining", &remaining_str)],
+                    ),
+                )
+                .await;
             }
             return;
         }
@@ -222,9 +289,11 @@ pub async fn handle_denoise_audio(
     let denoise_res = {
         let wav_in = wav_str.to_string();
         let wav_out = denoised_str.to_string();
-        tokio::task::spawn_blocking(move || deepfilter::denoise(&wav_in, &wav_out).map_err(|e| e.to_string()))
-            .await
-            .unwrap_or_else(|e| Err(format!("denoise task panicked: {e}")))
+        tokio::task::spawn_blocking(move || {
+            deepfilter::denoise(&wav_in, &wav_out).map_err(|e| e.to_string())
+        })
+        .await
+        .unwrap_or_else(|e| Err(format!("denoise task panicked: {e}")))
     };
     let processing_secs = match denoise_res {
         Ok(s) => {
@@ -233,7 +302,8 @@ pub async fn handle_denoise_audio(
         }
         Err(e) => {
             log_trace(trace_id, "denoise_failed", &format!("err={e}"));
-            crate::stats::record_event_user(user_id, "denoise", "", "fail", duration_secs as i64).await;
+            crate::stats::record_event_user(user_id, "denoise", "", "fail", duration_secs as i64)
+                .await;
             crate::stats::record_error_global("denoise", &format!("denoise failed: {e}")).await;
             let _ = send_text_with_back(api, chat_id, &t("denoise.denoise_failed")).await;
             clean_up(&work_dir);
@@ -246,9 +316,11 @@ pub async fn handle_denoise_audio(
         let inp = denoised_str.to_string();
         let outp = output_str.to_string();
         let ext = orig_ext.clone();
-        tokio::task::spawn_blocking(move || convert_from_wav(&inp, &outp, &ext).map_err(|e| e.to_string()))
-            .await
-            .unwrap_or_else(|e| Err(format!("reconvert task panicked: {e}")))
+        tokio::task::spawn_blocking(move || {
+            convert_from_wav(&inp, &outp, &ext).map_err(|e| e.to_string())
+        })
+        .await
+        .unwrap_or_else(|e| Err(format!("reconvert task panicked: {e}")))
     };
     if let Err(e) = reconvert_res {
         log_trace(trace_id, "denoise_reconvert_failed", &format!("err={e}"));
@@ -261,7 +333,11 @@ pub async fn handle_denoise_audio(
     log_trace(trace_id, "denoise_reconverted", &format!("ext={orig_ext}"));
 
     // 5. Send denoised file
-    let efficiency = if processing_secs > 0.0 { audio_duration / processing_secs } else { 0.0 };
+    let efficiency = if processing_secs > 0.0 {
+        audio_duration / processing_secs
+    } else {
+        0.0
+    };
 
     let caption = apply_premium_to_md(&t("denoise.result_caption"));
 
@@ -287,23 +363,48 @@ pub async fn handle_denoise_audio(
 
     // 6. ثبت مصرف quota
     if let Some(db) = database.as_ref() {
-        let _ = add_usage(db.client(), user_id, QuotaKind::DenoiseDaily, duration_secs as i64, 86400).await;
-        let _ = add_usage(db.client(), user_id, QuotaKind::DenoiseWeekly, duration_secs as i64, 7 * 86400).await;
-        log_trace(trace_id, "denoise_quota_added", &format!("user_id={user_id} secs={duration_secs}"));
+        let _ = add_usage(
+            db.client(),
+            user_id,
+            QuotaKind::DenoiseDaily,
+            duration_secs as i64,
+            86400,
+        )
+        .await;
+        let _ = add_usage(
+            db.client(),
+            user_id,
+            QuotaKind::DenoiseWeekly,
+            duration_secs as i64,
+            7 * 86400,
+        )
+        .await;
+        log_trace(
+            trace_id,
+            "denoise_quota_added",
+            &format!("user_id={user_id} secs={duration_secs}"),
+        );
     }
 
     // 7. Send report
     let duration_str = escape_md(&format!("{:.1}", audio_duration));
     let processing_str = escape_md(&format!("{:.1}", processing_secs));
     let ratio_str = escape_md(&format!("{:.1}", efficiency));
-    let report = apply_premium_to_md(&tf("denoise.report", &[
-        ("duration", &duration_str),
-        ("processing", &processing_str),
-        ("ratio", &ratio_str),
-    ]));
+    let report = apply_premium_to_md(&tf(
+        "denoise.report",
+        &[
+            ("duration", &duration_str),
+            ("processing", &processing_str),
+            ("ratio", &ratio_str),
+        ],
+    ));
     let kb = ai_lab_back_keyboard();
     let _ = send_text_md_with_keyboard(api, chat_id, &report, kb).await;
-    log_trace(trace_id, "denoise_report_sent", &format!("duration={audio_duration:.1}s processing={processing_secs:.1}s"));
+    log_trace(
+        trace_id,
+        "denoise_report_sent",
+        &format!("duration={audio_duration:.1}s processing={processing_secs:.1}s"),
+    );
     crate::stats::record_event_user(user_id, "denoise", "", "ok", duration_secs as i64).await;
 
     clean_up(&work_dir);
@@ -345,47 +446,66 @@ fn mime_to_ext(mime: &str) -> String {
         "audio/flac" => "flac",
         "audio/webm" => "webm",
         _ => "wav",
-    }.to_string()
+    }
+    .to_string()
 }
 
-fn convert_to_wav(input: &str, output: &str, sample_rate: u32) -> Result<(), Box<dyn std::error::Error>> {
+fn convert_to_wav(input: &str, output: &str, sample_rate: u32) -> crate::error::Result<()> {
     let output = std::process::Command::new("ffmpeg")
         .args([
-            "-y", "-i", input,
-            "-ar", &sample_rate.to_string(), "-ac", "1", "-sample_fmt", "s16",
-            "-f", "wav", output,
+            "-y",
+            "-i",
+            input,
+            "-ar",
+            &sample_rate.to_string(),
+            "-ac",
+            "1",
+            "-sample_fmt",
+            "s16",
+            "-f",
+            "wav",
+            output,
         ])
         .output()
-        .map_err(|e| format!("ffmpeg spawn failed: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("ffmpeg spawn failed: {e}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("ffmpeg conversion failed: {stderr}").into());
+        anyhow::bail!("ffmpeg conversion failed: {stderr}");
     }
     Ok(())
 }
 
-fn convert_from_wav(input: &str, output: &str, ext: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn convert_from_wav(input: &str, output: &str, ext: &str) -> crate::error::Result<()> {
     let status = match ext {
         "ogg" => std::process::Command::new("ffmpeg")
             .args(["-y", "-i", input, "-c:a", "libopus", "-b:a", "32k", output])
             .status()
-            .map_err(|e| format!("ffmpeg failed: {e}"))?,
+            .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?,
         "mp3" => std::process::Command::new("ffmpeg")
-            .args(["-y", "-i", input, "-c:a", "libmp3lame", "-b:a", "128k", output])
+            .args([
+                "-y",
+                "-i",
+                input,
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                "128k",
+                output,
+            ])
             .status()
-            .map_err(|e| format!("ffmpeg failed: {e}"))?,
+            .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?,
         "m4a" => std::process::Command::new("ffmpeg")
             .args(["-y", "-i", input, "-c:a", "aac", "-b:a", "128k", output])
             .status()
-            .map_err(|e| format!("ffmpeg failed: {e}"))?,
+            .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?,
         "flac" => std::process::Command::new("ffmpeg")
             .args(["-y", "-i", input, "-c:a", "flac", output])
             .status()
-            .map_err(|e| format!("ffmpeg failed: {e}"))?,
+            .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?,
         "webm" => std::process::Command::new("ffmpeg")
             .args(["-y", "-i", input, "-c:a", "libopus", output])
             .status()
-            .map_err(|e| format!("ffmpeg failed: {e}"))?,
+            .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?,
         // wav: just copy the denoised wav
         "wav" => {
             std::fs::copy(input, output)?;
@@ -398,17 +518,28 @@ fn convert_from_wav(input: &str, output: &str, ext: &str) -> Result<(), Box<dyn 
         }
     };
     if !status.success() {
-        return Err("ffmpeg reconversion failed".into());
+        anyhow::bail!("ffmpeg reconversion failed");
     }
     Ok(())
 }
 
-fn wav_duration(path: &str) -> Result<f64, Box<dyn std::error::Error>> {
+fn wav_duration(path: &str) -> crate::error::Result<f64> {
     let output = std::process::Command::new("ffprobe")
-        .args(["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path])
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+            path,
+        ])
         .output()?;
     if !output.status.success() {
-        return Err(format!("ffprobe failed: {}", String::from_utf8_lossy(&output.stderr)).into());
+        anyhow::bail!(
+            "ffprobe failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
     Ok(s.parse()?)
@@ -419,12 +550,15 @@ use crate::bot::download_telegram_file as download_file;
 /// Escape MarkdownV2 special characters in dynamic text.
 /// Does NOT touch `*` since those may be formatting markers in the i18n template.
 fn escape_md(s: &str) -> String {
-    s.chars().map(|c| match c {
-        '_' | '[' | ']' | '(' | ')' | '~' | '`' | '>' | '#' | '+' | '-' | '=' | '|' | '{' | '}' | '.' | '!' => {
-            format!("\\{c}")
-        }
-        other => other.to_string(),
-    }).collect()
+    s.chars()
+        .map(|c| match c {
+            '_' | '[' | ']' | '(' | ')' | '~' | '`' | '>' | '#' | '+' | '-' | '=' | '|' | '{'
+            | '}' | '.' | '!' => {
+                format!("\\{c}")
+            }
+            other => other.to_string(),
+        })
+        .collect()
 }
 
 fn clean_up(dir: &std::path::Path) {
@@ -441,7 +575,29 @@ fn format_duration_fa(secs: u64) -> String {
         if rem_mins == 0 {
             tf("rank.duration_hours", &[("hours", &hours.to_string())])
         } else {
-            tf("rank.duration_hours_minutes", &[("hours", &hours.to_string()), ("mins", &rem_mins.to_string())])
+            tf(
+                "rank.duration_hours_minutes",
+                &[
+                    ("hours", &hours.to_string()),
+                    ("mins", &rem_mins.to_string()),
+                ],
+            )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_denoise_keyboard() {
+        let kbd = denoise_keyboard();
+        assert!(!kbd.inline_keyboard.is_empty());
+    }
+
+    #[test]
+    fn test_escape_md() {
+        assert_eq!(escape_md("hello_world"), "hello\\_world");
     }
 }

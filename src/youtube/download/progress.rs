@@ -50,8 +50,12 @@ pub fn build_bar(percent: f32) -> String {
     let total = 10usize;
     let filled = ((percent / 10.0).round() as i32).clamp(0, total as i32) as usize;
     let mut s = String::new();
-    for _ in 0..filled { s.push('●'); }
-    for _ in 0..(total - filled) { s.push('○'); }
+    for _ in 0..filled {
+        s.push('●');
+    }
+    for _ in 0..(total - filled) {
+        s.push('○');
+    }
     s
 }
 

@@ -37,7 +37,7 @@
 //! a downscaled copy for symmetric candidates, then verify each at full
 //! resolution across several scales and keep the best that clears every gate.
 
-use image::{imageops, RgbImage};
+use image::{RgbImage, imageops};
 
 /// A located watermark, in full-resolution image coordinates.
 #[derive(Debug, Clone, Copy)]
@@ -250,7 +250,10 @@ fn signed_wedge(hp: &[f32], n: usize, sign: f32) -> f32 {
             if ang < 0.0 {
                 ang += 180.0;
             }
-            let dax = (ang - 0.0).abs().min((ang - 90.0).abs()).min((ang - 180.0).abs());
+            let dax = (ang - 0.0)
+                .abs()
+                .min((ang - 90.0).abs())
+                .min((ang - 180.0).abs());
             let ddg = (ang - 45.0).abs().min((ang - 135.0).abs());
             let v = hp[j * n + i];
             band_sq += v * v;
@@ -295,7 +298,10 @@ pub fn detect_watermark(img: &RgbImage) -> Option<Detection> {
     };
     let region = imageops::crop_imm(img, rx as u32, ry as u32, rw as u32, rh as u32).to_image();
     let small = if f < 1.0 {
-        let (dw, dh) = ((rw as f32 * f).round().max(32.0) as u32, (rh as f32 * f).round().max(32.0) as u32);
+        let (dw, dh) = (
+            (rw as f32 * f).round().max(32.0) as u32,
+            (rh as f32 * f).round().max(32.0) as u32,
+        );
         imageops::resize(&region, dw, dh, imageops::FilterType::Triangle)
     } else {
         region
@@ -442,6 +448,9 @@ mod tests {
                 }
             }
         }
-        assert!(detect_watermark(&img).is_none(), "bright disk must not be detected as a sparkle");
+        assert!(
+            detect_watermark(&img).is_none(),
+            "bright disk must not be detected as a sparkle"
+        );
     }
 }

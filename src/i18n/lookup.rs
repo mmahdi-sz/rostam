@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 static I18N: OnceLock<Arc<RwLock<serde_json::Value>>> = OnceLock::new();
 
@@ -11,8 +11,7 @@ fn load_from_file() -> serde_json::Value {
 fn try_load_from_file() -> Result<serde_json::Value, String> {
     let json = std::fs::read_to_string("config/i18n.json")
         .map_err(|e| format!("read config/i18n.json: {e}"))?;
-    serde_json::from_str(&json)
-        .map_err(|e| format!("parse config/i18n.json: {e}"))
+    serde_json::from_str(&json).map_err(|e| format!("parse config/i18n.json: {e}"))
 }
 
 fn cache() -> &'static Arc<RwLock<serde_json::Value>> {
@@ -43,28 +42,42 @@ fn lookup(lang: &str, key: &str) -> String {
             Some(next) => node = next,
             None => {
                 drop(guard);
-                return if lang != "fa" { lookup("fa", key) } else { format!("!{key}!") };
+                return if lang != "fa" {
+                    lookup("fa", key)
+                } else {
+                    format!("!{key}!")
+                };
             }
         }
     }
     node.as_str().map(|s| s.to_owned()).unwrap_or_else(|| {
         drop(guard);
-        if lang != "fa" { lookup("fa", key) } else { format!("!{key}!") }
+        if lang != "fa" {
+            lookup("fa", key)
+        } else {
+            format!("!{key}!")
+        }
     })
 }
 
 tokio::task_local! {
     pub static LANG: String;
-    
+
     #[cfg(feature = "testapi")]
     pub static RESOLVED_I18N_KEYS: std::sync::Arc<std::sync::Mutex<Vec<String>>>;
 }
 
 pub fn t(key: &str) -> String {
     #[cfg(feature = "testapi")]
-    let _ = RESOLVED_I18N_KEYS.try_with(|arc| arc.lock().unwrap().push(key.to_owned()));
+    let _ = RESOLVED_I18N_KEYS.try_with(|arc| {
+        if let Ok(mut lock) = arc.lock() {
+            lock.push(key.to_owned());
+        }
+    });
 
-    let lang = LANG.try_with(|l| l.clone()).unwrap_or_else(|_| "fa".to_owned());
+    let lang = LANG
+        .try_with(|l| l.clone())
+        .unwrap_or_else(|_| "fa".to_owned());
     lookup(&lang, key)
 }
 

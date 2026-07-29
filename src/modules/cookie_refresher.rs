@@ -36,11 +36,17 @@ impl Default for CookieRefresherConfig {
 
 pub async fn run(api: &Bot, config: CookieRefresherConfig) -> anyhow::Result<()> {
     let p = &config.profile_name;
-    println!("[cookie_refresh profile={p} event=start] links_file={} duration={}s", config.links_file, config.duration_secs);
+    println!(
+        "[cookie_refresh profile={p} event=start] links_file={} duration={}s",
+        config.links_file, config.duration_secs
+    );
 
     let links = load_links(&config).map_err(|e| anyhow::anyhow!("{e}"))?;
     if links.is_empty() {
-        println!("[cookie_refresh profile={p} event=no_links] links_file={}", config.links_file);
+        println!(
+            "[cookie_refresh profile={p} event=no_links] links_file={}",
+            config.links_file
+        );
         crate::stats::record_event_global("cookie", "refresh", "fail", 0).await;
         crate::stats::record_error_global("cookie", &format!("no links for profile {p}")).await;
         let msg = format!("⚠️ فایل لینک‌های {} خالیه یا پیدا نشد!", p);
@@ -56,7 +62,10 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> anyhow::Result<()>
         anyhow::bail!("profile {} is not logged in", p);
     }
 
-    println!("[cookie_refresh profile={p} event=firefox_starting] link_count={}", links.len());
+    println!(
+        "[cookie_refresh profile={p} event=firefox_starting] link_count={}",
+        links.len()
+    );
 
     // Force-enable autoplay so YouTube videos actually play (Firefox blocks
     // audible autoplay by default). Muted (volume_scale=0) so no real audio
@@ -74,7 +83,8 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> anyhow::Result<()>
     if crashed {
         println!("[cookie_refresh profile={p} event=done] success=false reason=crashed");
         crate::stats::record_event_global("cookie", "refresh", "fail", 0).await;
-        crate::stats::record_error_global("cookie", &format!("firefox crashed for profile {p}")).await;
+        crate::stats::record_error_global("cookie", &format!("firefox crashed for profile {p}"))
+            .await;
         let msg = format!("⚠️ فایرفاکس اکانت {} قبل از اتمام زمان crash کرد!", p);
         notify(api, config.admin_chat_id, &msg).await;
         anyhow::bail!("firefox crashed for profile {}", p);
@@ -117,10 +127,15 @@ fn check_login(config: &CookieRefresherConfig) -> Result<bool, String> {
     let sqlite = std::path::Path::new(&config.profile_path).join("cookies.sqlite");
     let exists = sqlite.exists() && sqlite.metadata().map(|m| m.len() > 0).unwrap_or(false);
     if exists {
-        println!("[cookie_refresh profile={p} event=login_check] result=ok cookies.sqlite found size={}",
-            sqlite.metadata().map(|m| m.len()).unwrap_or(0));
+        println!(
+            "[cookie_refresh profile={p} event=login_check] result=ok cookies.sqlite found size={}",
+            sqlite.metadata().map(|m| m.len()).unwrap_or(0)
+        );
     } else {
-        println!("[cookie_refresh profile={p} event=login_check] result=failed err=cookies.sqlite missing or empty path={}", sqlite.display());
+        println!(
+            "[cookie_refresh profile={p} event=login_check] result=failed err=cookies.sqlite missing or empty path={}",
+            sqlite.display()
+        );
     }
     Ok(exists)
 }
@@ -129,15 +144,15 @@ async fn kill_existing_firefox(profile_path: &str, profile_name: &str) {
     let p = profile_name;
     let pattern = format!("firefox.*{}", profile_path);
 
-    println!("[cookie_refresh profile={p} event=kill_existing] pkill -TERM profile_path={profile_path}");
-    let _ = Command::new("pkill")
-        .arg("-f")
-        .arg(&pattern)
-        .output()
-        .await;
+    println!(
+        "[cookie_refresh profile={p} event=kill_existing] pkill -TERM profile_path={profile_path}"
+    );
+    let _ = Command::new("pkill").arg("-f").arg(&pattern).output().await;
     sleep(Duration::from_secs(3)).await;
 
-    println!("[cookie_refresh profile={p} event=kill_existing] pkill -KILL profile_path={profile_path}");
+    println!(
+        "[cookie_refresh profile={p} event=kill_existing] pkill -KILL profile_path={profile_path}"
+    );
     let _ = Command::new("pkill")
         .arg("-9")
         .arg("-f")
@@ -151,8 +166,14 @@ async fn kill_existing_firefox(profile_path: &str, profile_name: &str) {
         let path = std::path::Path::new(profile_path).join(lock);
         if path.exists() {
             match std::fs::remove_file(&path) {
-                Ok(_) => println!("[cookie_refresh profile={p} event=kill_existing] removed lock file={}", path.display()),
-                Err(e) => eprintln!("[cookie_refresh profile={p} event=kill_existing] failed to remove lock file={} err={e}", path.display()),
+                Ok(_) => println!(
+                    "[cookie_refresh profile={p} event=kill_existing] removed lock file={}",
+                    path.display()
+                ),
+                Err(e) => eprintln!(
+                    "[cookie_refresh profile={p} event=kill_existing] failed to remove lock file={} err={e}",
+                    path.display()
+                ),
             }
         }
     }
@@ -160,7 +181,11 @@ async fn kill_existing_firefox(profile_path: &str, profile_name: &str) {
     println!("[cookie_refresh profile={p} event=kill_existing] done");
 }
 
-async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) -> anyhow::Result<()> {
+async fn open_firefox(
+    profile_path: &str,
+    profile_name: &str,
+    links: &[String],
+) -> anyhow::Result<()> {
     if links.is_empty() {
         anyhow::bail!("no links to open");
     }
@@ -188,11 +213,16 @@ async fn open_firefox(profile_path: &str, profile_name: &str, links: &[String]) 
     if let Some(xdg_runtime_dir) = crate::config::cookie_refresh_xdg_runtime_dir() {
         cmd.env("XDG_RUNTIME_DIR", xdg_runtime_dir);
     }
-    let child = cmd.spawn().map_err(|e| anyhow::anyhow!("failed to spawn firefox: {e}"))?;
+    let child = cmd
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("failed to spawn firefox: {e}"))?;
 
     // Detach: we don't wait on this child; we track firefox by profile path via pgrep.
     drop(child);
-    println!("[cookie_refresh profile={p} event=firefox_open] url={}", links[0]);
+    println!(
+        "[cookie_refresh profile={p} event=firefox_open] url={}",
+        links[0]
+    );
 
     // Single focused tab only: background tabs get media-throttled by Firefox,
     // so opening extra --new-tab links would never play. One active video is
@@ -216,7 +246,10 @@ fn write_autoplay_prefs(profile_path: &str, profile_name: &str) {
         "user_pref(\"datareporting.policy.dataSubmissionEnabled\", false);\n",
     );
     match std::fs::write(&user_js, contents) {
-        Ok(_) => println!("[cookie_refresh profile={p} event=autoplay_prefs_written] path={}", user_js.display()),
+        Ok(_) => println!(
+            "[cookie_refresh profile={p} event=autoplay_prefs_written] path={}",
+            user_js.display()
+        ),
         Err(e) => eprintln!("[cookie_refresh profile={p} event=autoplay_prefs_failed] err={e}"),
     }
 }
@@ -279,7 +312,11 @@ async fn kill_firefox(profile_path: &str, profile_name: &str) {
 /// whose referenced parent firefox pid no longer exists.
 async fn reap_orphan_crashhelpers(profile_name: &str) {
     let p = profile_name;
-    let out = match Command::new("pgrep").args(["-af", "crashhelper"]).output().await {
+    let out = match Command::new("pgrep")
+        .args(["-af", "crashhelper"])
+        .output()
+        .await
+    {
         Ok(o) => o,
         Err(_) => return,
     };
@@ -288,10 +325,14 @@ async fn reap_orphan_crashhelpers(profile_name: &str) {
     for line in listing.lines() {
         // format: "<pid> /usr/lib/firefox-esr/crashhelper <parent_pid> ..."
         let mut parts = line.split_whitespace();
-        let Some(pid) = parts.next() else { continue; };
+        let Some(pid) = parts.next() else {
+            continue;
+        };
         // skip the binary path token, then read the parent firefox pid argument
         let _bin = parts.next();
-        let Some(parent_pid) = parts.next() else { continue; };
+        let Some(parent_pid) = parts.next() else {
+            continue;
+        };
         let parent_alive = std::path::Path::new(&format!("/proc/{parent_pid}")).exists();
         if !parent_alive {
             let _ = Command::new("kill").args(["-9", pid]).output().await;
@@ -309,13 +350,17 @@ fn refresh_cache(source_dir: &str, cache_dir: &str, profile_name: &str) {
     for name in ["cookies.sqlite", "cookies.sqlite-wal", "cookies.sqlite-shm"] {
         let src = std::path::Path::new(source_dir).join(name);
         if !src.exists() {
-            println!("[cookie_refresh profile={p} event=cache_copy] file={name} ok=false err=src_not_found");
+            println!(
+                "[cookie_refresh profile={p} event=cache_copy] file={name} ok=false err=src_not_found"
+            );
             continue;
         }
         let dst = std::path::Path::new(cache_dir).join(name);
         match std::fs::copy(&src, &dst) {
             Ok(_) => println!("[cookie_refresh profile={p} event=cache_copy] file={name} ok=true"),
-            Err(e) => println!("[cookie_refresh profile={p} event=cache_copy] file={name} ok=false err={e}"),
+            Err(e) => println!(
+                "[cookie_refresh profile={p} event=cache_copy] file={name} ok=false err={e}"
+            ),
         }
     }
 }

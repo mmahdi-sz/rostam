@@ -5,12 +5,12 @@ use frankenstein::{
     types::{CallbackQuery, InlineKeyboardMarkup, ReplyMarkup},
 };
 
-use crate::database::postgresql::PostgresDatabase;
-use crate::i18n::{t, tf, apply_premium_to_html};
-use crate::emoji::panel::{btn_icon, btn_icon_success};
 use super::quota;
 use super::store::get_user_rank;
 use super::types::Rank;
+use crate::database::postgresql::PostgresDatabase;
+use crate::emoji::panel::{btn_icon, btn_icon_success};
+use crate::i18n::{apply_premium_to_html, t, tf};
 
 pub const CB_USER_PANEL: &str = "user:panel";
 pub const CB_USER_PANEL_MORE: &str = "user:panel:more";
@@ -22,9 +22,12 @@ pub const CB_REFERRAL_CLAIM_PREFIX: &str = "user:panel:referral:claim:";
 fn fmt_jalali(epoch: i64) -> String {
     use chrono::Datelike;
     use chrono_tz::Asia::Tehran;
-    let Some(utc) = chrono::DateTime::from_timestamp(epoch, 0) else { return "—".to_string() };
+    let Some(utc) = chrono::DateTime::from_timestamp(epoch, 0) else {
+        return "—".to_string();
+    };
     let dt = utc.with_timezone(&Tehran);
-    let (y, m, d) = crate::youtube::jalali::gregorian_to_jalali(dt.year(), dt.month() as i32, dt.day() as i32);
+    let (y, m, d) =
+        crate::youtube::jalali::gregorian_to_jalali(dt.year(), dt.month() as i32, dt.day() as i32);
     format!("{y}/{m:02}/{d:02}")
 }
 
@@ -61,7 +64,10 @@ fn fmt_gib(bytes: u64) -> String {
 }
 
 // ── ساخت متن پنل اصلی ────────────────────────────────────────────────────────
-async fn build_main_text(db: &crate::database::postgresql::PostgresDatabase, user_id: i64) -> String {
+async fn build_main_text(
+    db: &crate::database::postgresql::PostgresDatabase,
+    user_id: i64,
+) -> String {
     let client = db.client();
     let rank_row = get_user_rank(client, user_id).await.ok().flatten();
     let rank = rank_row.as_ref().map(|r| r.rank).unwrap_or(Rank::Dalavar);
@@ -70,7 +76,10 @@ async fn build_main_text(db: &crate::database::postgresql::PostgresDatabase, use
     let expiry_line = match expires_at {
         Some(ts) => {
             let left = days_left(ts);
-            tf("rank.expiry_with_date", &[("date", &fmt_jalali(ts)), ("days", &left.to_string())])
+            tf(
+                "rank.expiry_with_date",
+                &[("date", &fmt_jalali(ts)), ("days", &left.to_string())],
+            )
         }
         None => t("rank.expiry_unlimited"),
     };
@@ -82,7 +91,9 @@ async fn build_main_text(db: &crate::database::postgresql::PostgresDatabase, use
 
     let first_upload = quota::get_first_upload_at(client, user_id).await;
     let monthly_used = if let Some(fu) = first_upload {
-        quota::get_monthly_traffic(client, user_id, fu).await.unwrap_or(0) as u64
+        quota::get_monthly_traffic(client, user_id, fu)
+            .await
+            .unwrap_or(0) as u64
     } else {
         0
     };
@@ -91,24 +102,35 @@ async fn build_main_text(db: &crate::database::postgresql::PostgresDatabase, use
 
     // هوش مصنوعی (تومار)
     let ai_used = quota::get_usage(client, user_id, quota::QuotaKind::AiChatMonthly, 30 * 86400)
-        .await.unwrap_or(0) as u64;
+        .await
+        .unwrap_or(0) as u64;
     let ai_allowed = rank.ai_chat_monthly_toomar().is_some();
     let ai_limit = rank.ai_chat_monthly_toomar().unwrap_or(0) as u64;
 
     let rank_name = rank.display_name();
-    apply_premium_to_html(&tf("panel.main_text", &[
-        ("rank", &rank_name),
-        ("expiry", &expiry_line),
-        ("bar_d", &bar(daily_used, daily_limit, true)),
-        ("used_d", &fmt_gib(daily_used)),
-        ("left_d", &fmt_gib(daily_left)),
-        ("bar_m", &bar(monthly_used, monthly_limit, true)),
-        ("used_m", &fmt_gib(monthly_used)),
-        ("left_m", &fmt_gib(monthly_left)),
-        ("bar_ai", &bar(ai_used, ai_limit, ai_allowed)),
-        ("ai_u", &ai_used.to_string()),
-        ("ai_lim", &if ai_allowed { ai_limit.to_string() } else { "—".to_string() }),
-    ]))
+    apply_premium_to_html(&tf(
+        "panel.main_text",
+        &[
+            ("rank", &rank_name),
+            ("expiry", &expiry_line),
+            ("bar_d", &bar(daily_used, daily_limit, true)),
+            ("used_d", &fmt_gib(daily_used)),
+            ("left_d", &fmt_gib(daily_left)),
+            ("bar_m", &bar(monthly_used, monthly_limit, true)),
+            ("used_m", &fmt_gib(monthly_used)),
+            ("left_m", &fmt_gib(monthly_left)),
+            ("bar_ai", &bar(ai_used, ai_limit, ai_allowed)),
+            ("ai_u", &ai_used.to_string()),
+            (
+                "ai_lim",
+                &if ai_allowed {
+                    ai_limit.to_string()
+                } else {
+                    "—".to_string()
+                },
+            ),
+        ],
+    ))
 }
 
 fn main_keyboard() -> InlineKeyboardMarkup {
@@ -116,10 +138,18 @@ fn main_keyboard() -> InlineKeyboardMarkup {
         .inline_keyboard(vec![
             vec![
                 btn_icon(&t("panel.more_button"), CB_USER_PANEL_MORE, "stats"),
-                btn_icon_success(&t("rank.paywall_button"), crate::rank::paywall::CB_RANK_SHOW_MENU, "rocket"),
+                btn_icon_success(
+                    &t("rank.paywall_button"),
+                    crate::rank::paywall::CB_RANK_SHOW_MENU,
+                    "rocket",
+                ),
             ],
             vec![btn_icon_success(&t("referral.button"), CB_REFERRAL, "user")],
-            vec![btn_icon(&t("start.back"), crate::bot::CB_START_PANEL, "back")],
+            vec![btn_icon(
+                &t("start.back"),
+                crate::bot::CB_START_PANEL,
+                "back",
+            )],
         ])
         .build()
 }
@@ -128,7 +158,11 @@ fn back_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![btn_icon(&t("panel.back_button"), CB_USER_PANEL, "back")],
-            vec![btn_icon(&t("start.back"), crate::bot::CB_START_PANEL, "back")],
+            vec![btn_icon(
+                &t("start.back"),
+                crate::bot::CB_START_PANEL,
+                "back",
+            )],
         ])
         .build()
 }
@@ -148,7 +182,10 @@ async fn send_with_back(api: &Bot, chat_id: i64, text: &str) {
 }
 
 // ── ساخت متن صفحه سهمیه‌های دیگر ─────────────────────────────────────────────
-async fn build_more_text(db: &crate::database::postgresql::PostgresDatabase, user_id: i64) -> String {
+async fn build_more_text(
+    db: &crate::database::postgresql::PostgresDatabase,
+    user_id: i64,
+) -> String {
     let client = db.client();
     let rank_row = get_user_rank(client, user_id).await.ok().flatten();
     let rank = rank_row.as_ref().map(|r| r.rank).unwrap_or(Rank::Dalavar);
@@ -157,76 +194,138 @@ async fn build_more_text(db: &crate::database::postgresql::PostgresDatabase, use
     let day = 86400_i64;
 
     // STT سریع
-    let stt_fast_d = quota::get_usage(client, user_id, quota::QuotaKind::SttFastDaily, day).await.unwrap_or(0) as u64;
-    let stt_fast_w = quota::get_usage(client, user_id, quota::QuotaKind::SttFastWeekly, week).await.unwrap_or(0) as u64;
+    let stt_fast_d = quota::get_usage(client, user_id, quota::QuotaKind::SttFastDaily, day)
+        .await
+        .unwrap_or(0) as u64;
+    let stt_fast_w = quota::get_usage(client, user_id, quota::QuotaKind::SttFastWeekly, week)
+        .await
+        .unwrap_or(0) as u64;
     let stt_fast_d_lim = rank.stt_fast_daily_secs().unwrap_or(0);
     let stt_fast_w_lim = rank.stt_fast_weekly_secs().unwrap_or(0);
     let stt_fast_allowed = rank.stt_fast_daily_secs().is_some();
 
     // STT دقیق
-    let stt_acc_d = quota::get_usage(client, user_id, quota::QuotaKind::SttAccurateDaily, day).await.unwrap_or(0) as u64;
-    let stt_acc_w = quota::get_usage(client, user_id, quota::QuotaKind::SttAccurateWeekly, week).await.unwrap_or(0) as u64;
+    let stt_acc_d = quota::get_usage(client, user_id, quota::QuotaKind::SttAccurateDaily, day)
+        .await
+        .unwrap_or(0) as u64;
+    let stt_acc_w = quota::get_usage(client, user_id, quota::QuotaKind::SttAccurateWeekly, week)
+        .await
+        .unwrap_or(0) as u64;
     let stt_acc_d_lim = rank.stt_accurate_daily_secs().unwrap_or(0);
     let stt_acc_w_lim = rank.stt_accurate_weekly_secs().unwrap_or(0);
     let stt_acc_allowed = rank.stt_accurate_daily_secs().is_some();
 
     // حذف نویز
-    let dn_d = quota::get_usage(client, user_id, quota::QuotaKind::DenoiseDaily, day).await.unwrap_or(0) as u64;
-    let dn_w = quota::get_usage(client, user_id, quota::QuotaKind::DenoiseWeekly, week).await.unwrap_or(0) as u64;
+    let dn_d = quota::get_usage(client, user_id, quota::QuotaKind::DenoiseDaily, day)
+        .await
+        .unwrap_or(0) as u64;
+    let dn_w = quota::get_usage(client, user_id, quota::QuotaKind::DenoiseWeekly, week)
+        .await
+        .unwrap_or(0) as u64;
     let dn_d_lim = rank.denoise_daily_secs();
     let dn_w_lim = rank.denoise_weekly_secs();
 
     // جداسازی
-    let sep_d = quota::get_usage(client, user_id, quota::QuotaKind::SeparationDaily, day).await.unwrap_or(0) as u64;
-    let sep_w = quota::get_usage(client, user_id, quota::QuotaKind::SeparationWeekly, week).await.unwrap_or(0) as u64;
+    let sep_d = quota::get_usage(client, user_id, quota::QuotaKind::SeparationDaily, day)
+        .await
+        .unwrap_or(0) as u64;
+    let sep_w = quota::get_usage(client, user_id, quota::QuotaKind::SeparationWeekly, week)
+        .await
+        .unwrap_or(0) as u64;
     let sep_d_lim = rank.separation_daily_secs();
     let sep_w_lim = rank.separation_weekly_secs();
 
     // افزایش کیفیت
-    let up2 = quota::get_usage(client, user_id, quota::QuotaKind::Upscale2xWeekly, week).await.unwrap_or(0) as u64;
-    let up3 = quota::get_usage(client, user_id, quota::QuotaKind::Upscale3xWeekly, week).await.unwrap_or(0) as u64;
-    let up4 = quota::get_usage(client, user_id, quota::QuotaKind::Upscale4xWeekly, week).await.unwrap_or(0) as u64;
+    let up2 = quota::get_usage(client, user_id, quota::QuotaKind::Upscale2xWeekly, week)
+        .await
+        .unwrap_or(0) as u64;
+    let up3 = quota::get_usage(client, user_id, quota::QuotaKind::Upscale3xWeekly, week)
+        .await
+        .unwrap_or(0) as u64;
+    let up4 = quota::get_usage(client, user_id, quota::QuotaKind::Upscale4xWeekly, week)
+        .await
+        .unwrap_or(0) as u64;
     let up2_lim = rank.upscale_weekly_quota(2) as u64;
     let up3_lim = rank.upscale_weekly_quota(3) as u64;
     let up4_lim = rank.upscale_weekly_quota(4) as u64;
 
     fn fmt_secs(s: u64) -> String {
-        if s >= 3600 { tf("rank.duration_hours", &[("hours", &format!("{:.1}", s as f64 / 3600.0))]) }
-        else { tf("rank.duration_minutes", &[("mins", &(s / 60).to_string())]) }
+        if s >= 3600 {
+            tf(
+                "rank.duration_hours",
+                &[("hours", &format!("{:.1}", s as f64 / 3600.0))],
+            )
+        } else {
+            tf("rank.duration_minutes", &[("mins", &(s / 60).to_string())])
+        }
     }
 
-    apply_premium_to_html(&tf("panel.more_text", &[
-        ("b_sf_d", &bar(stt_fast_d, stt_fast_d_lim, stt_fast_allowed)),
-        ("u_sf_d", &fmt_secs(stt_fast_d)), ("l_sf_d", &fmt_secs(stt_fast_d_lim)),
-        ("b_sf_w", &bar(stt_fast_w, stt_fast_w_lim, stt_fast_allowed)),
-        ("u_sf_w", &fmt_secs(stt_fast_w)), ("l_sf_w", &fmt_secs(stt_fast_w_lim)),
-        ("b_sa_d", &bar(stt_acc_d, stt_acc_d_lim, stt_acc_allowed)),
-        ("u_sa_d", &fmt_secs(stt_acc_d)), ("l_sa_d", &fmt_secs(stt_acc_d_lim)),
-        ("b_sa_w", &bar(stt_acc_w, stt_acc_w_lim, stt_acc_allowed)),
-        ("u_sa_w", &fmt_secs(stt_acc_w)), ("l_sa_w", &fmt_secs(stt_acc_w_lim)),
-        ("b_dn_d", &bar(dn_d, dn_d_lim, true)), ("u_dn_d", &fmt_secs(dn_d)), ("l_dn_d", &fmt_secs(dn_d_lim)),
-        ("b_dn_w", &bar(dn_w, dn_w_lim, true)), ("u_dn_w", &fmt_secs(dn_w)), ("l_dn_w", &fmt_secs(dn_w_lim)),
-        ("b_sep_d", &bar(sep_d, sep_d_lim, true)), ("u_sep_d", &fmt_secs(sep_d)), ("l_sep_d", &fmt_secs(sep_d_lim)),
-        ("b_sep_w", &bar(sep_w, sep_w_lim, true)), ("u_sep_w", &fmt_secs(sep_w)), ("l_sep_w", &fmt_secs(sep_w_lim)),
-        ("b_u2", &bar(up2, up2_lim, true)), ("v_u2", &up2.to_string()), ("l_u2", &up2_lim.to_string()),
-        ("b_u3", &bar(up3, up3_lim, true)), ("v_u3", &up3.to_string()), ("l_u3", &up3_lim.to_string()),
-        ("b_u4", &bar(up4, up4_lim, true)), ("v_u4", &up4.to_string()), ("l_u4", &up4_lim.to_string()),
-    ]))
+    apply_premium_to_html(&tf(
+        "panel.more_text",
+        &[
+            ("b_sf_d", &bar(stt_fast_d, stt_fast_d_lim, stt_fast_allowed)),
+            ("u_sf_d", &fmt_secs(stt_fast_d)),
+            ("l_sf_d", &fmt_secs(stt_fast_d_lim)),
+            ("b_sf_w", &bar(stt_fast_w, stt_fast_w_lim, stt_fast_allowed)),
+            ("u_sf_w", &fmt_secs(stt_fast_w)),
+            ("l_sf_w", &fmt_secs(stt_fast_w_lim)),
+            ("b_sa_d", &bar(stt_acc_d, stt_acc_d_lim, stt_acc_allowed)),
+            ("u_sa_d", &fmt_secs(stt_acc_d)),
+            ("l_sa_d", &fmt_secs(stt_acc_d_lim)),
+            ("b_sa_w", &bar(stt_acc_w, stt_acc_w_lim, stt_acc_allowed)),
+            ("u_sa_w", &fmt_secs(stt_acc_w)),
+            ("l_sa_w", &fmt_secs(stt_acc_w_lim)),
+            ("b_dn_d", &bar(dn_d, dn_d_lim, true)),
+            ("u_dn_d", &fmt_secs(dn_d)),
+            ("l_dn_d", &fmt_secs(dn_d_lim)),
+            ("b_dn_w", &bar(dn_w, dn_w_lim, true)),
+            ("u_dn_w", &fmt_secs(dn_w)),
+            ("l_dn_w", &fmt_secs(dn_w_lim)),
+            ("b_sep_d", &bar(sep_d, sep_d_lim, true)),
+            ("u_sep_d", &fmt_secs(sep_d)),
+            ("l_sep_d", &fmt_secs(sep_d_lim)),
+            ("b_sep_w", &bar(sep_w, sep_w_lim, true)),
+            ("u_sep_w", &fmt_secs(sep_w)),
+            ("l_sep_w", &fmt_secs(sep_w_lim)),
+            ("b_u2", &bar(up2, up2_lim, true)),
+            ("v_u2", &up2.to_string()),
+            ("l_u2", &up2_lim.to_string()),
+            ("b_u3", &bar(up3, up3_lim, true)),
+            ("v_u3", &up3.to_string()),
+            ("l_u3", &up3_lim.to_string()),
+            ("b_u4", &bar(up4, up4_lim, true)),
+            ("v_u4", &up4.to_string()),
+            ("l_u4", &up4_lim.to_string()),
+        ],
+    ))
 }
 
 // ── زیرمجموعه‌گیری ───────────────────────────────────────────────────────────
 
 fn referral_keyboard() -> InlineKeyboardMarkup {
     let tier_rows = crate::referral::TIERS.iter().map(|(threshold, rank)| {
-        let label = tf("referral.tier_button", &[
-            ("rank", &rank.display_name()),
-            ("count", &threshold.to_string()),
-        ]);
-        vec![btn_icon(&label, &format!("{CB_REFERRAL_CLAIM_PREFIX}{threshold}"), "rocket")]
+        let label = tf(
+            "referral.tier_button",
+            &[
+                ("rank", &rank.display_name()),
+                ("count", &threshold.to_string()),
+            ],
+        );
+        vec![btn_icon(
+            &label,
+            &format!("{CB_REFERRAL_CLAIM_PREFIX}{threshold}"),
+            "rocket",
+        )]
     });
     let mut rows: Vec<Vec<_>> = tier_rows.collect();
-    rows.push(vec![btn_icon(&t("panel.back_button"), CB_USER_PANEL, "back")]);
-    InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
+    rows.push(vec![btn_icon(
+        &t("panel.back_button"),
+        CB_USER_PANEL,
+        "back",
+    )]);
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(rows)
+        .build()
 }
 
 pub async fn send_referral(
@@ -236,18 +335,24 @@ pub async fn send_referral(
     database: &Option<PostgresDatabase>,
 ) {
     let username = crate::config::bot_username();
-    let banner = tf("referral.banner", &[
-        ("username", username),
-        ("user_id", &user_id.to_string()),
-    ]);
-    let _ = api.send_message(
-        &SendMessageParams::builder()
-            .chat_id(chat_id)
-            .text(apply_premium_to_html(&banner))
-            .parse_mode(frankenstein::ParseMode::Html)
-            .link_preview_options(frankenstein::types::LinkPreviewOptions::builder().is_disabled(true).build())
-            .build(),
-    ).await;
+    let banner = tf(
+        "referral.banner",
+        &[("username", username), ("user_id", &user_id.to_string())],
+    );
+    let _ = api
+        .send_message(
+            &SendMessageParams::builder()
+                .chat_id(chat_id)
+                .text(apply_premium_to_html(&banner))
+                .parse_mode(frankenstein::ParseMode::Html)
+                .link_preview_options(
+                    frankenstein::types::LinkPreviewOptions::builder()
+                        .is_disabled(true)
+                        .build(),
+                )
+                .build(),
+        )
+        .await;
 
     let (count, available, pending) = if let Some(db) = database {
         let client = db.client();
@@ -258,11 +363,14 @@ pub async fn send_referral(
     } else {
         (0, 0, 0)
     };
-    let status = tf("referral.status", &[
-        ("count", &count.to_string()),
-        ("available", &available.to_string()),
-        ("pending", &pending.to_string()),
-    ]);
+    let status = tf(
+        "referral.status",
+        &[
+            ("count", &count.to_string()),
+            ("available", &available.to_string()),
+            ("pending", &pending.to_string()),
+        ],
+    );
     let params = SendMessageParams::builder()
         .chat_id(chat_id)
         .text(apply_premium_to_html(&status))
@@ -283,12 +391,14 @@ pub async fn send_user_panel(
     database: &Option<PostgresDatabase>,
 ) {
     let Some(db) = database else {
-        let _ = api.send_message(
-            &SendMessageParams::builder()
-                .chat_id(chat_id)
-                .text(t("panel.unavailable"))
-                .build(),
-        ).await;
+        let _ = api
+            .send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(t("panel.unavailable"))
+                    .build(),
+            )
+            .await;
         return;
     };
     let text = build_main_text(db, user_id).await;
@@ -310,7 +420,10 @@ async fn process_claim(
     threshold: u32,
     trace_id: u64,
 ) -> String {
-    let Some(&(_, tier_rank)) = crate::referral::TIERS.iter().find(|(th, _)| *th == threshold) else {
+    let Some(&(_, tier_rank)) = crate::referral::TIERS
+        .iter()
+        .find(|(th, _)| *th == threshold)
+    else {
         log_ev!("referral", trace_id, "claim", "=>" => "unknown_tier");
         return t("panel.unavailable");
     };
@@ -329,10 +442,13 @@ async fn process_claim(
 
     if available < threshold as i64 {
         log_ev!("referral", trace_id, "points_check", "=>" => "insufficient");
-        return tf("referral.activate_insufficient", &[
-            ("available", &available.to_string()),
-            ("needed", &threshold.to_string()),
-        ]);
+        return tf(
+            "referral.activate_insufficient",
+            &[
+                ("available", &available.to_string()),
+                ("needed", &threshold.to_string()),
+            ],
+        );
     }
 
     log_ev!("referral", trace_id, "plan_activation_enter");
@@ -347,16 +463,22 @@ async fn process_claim(
         }
         crate::referral::ActivationPlan::Apply { rank, expires_at } => {
             log_ev!("referral", trace_id, "rank_apply_enter", "rank" => rank.as_str(), "expires_at" => expires_at);
-            if let Err(e) = crate::rank::store::set_user_rank(client, user_id, rank, Some(expires_at)).await {
+            if let Err(e) =
+                crate::rank::store::set_user_rank(client, user_id, rank, Some(expires_at)).await
+            {
                 log_ev!("referral", trace_id, "rank_apply", "=>" => "fail", "err" => e);
                 return t("redeem.apply_error");
             }
-            crate::referral::record_activation(client, user_id, rank, threshold as i64, expires_at).await;
+            crate::referral::record_activation(client, user_id, rank, threshold as i64, expires_at)
+                .await;
             log_ev!("referral", trace_id, "rank_apply", "=>" => "ok");
-            tf("referral.activate_success", &[
-                ("rank", &rank.display_name()),
-                ("date", &fmt_jalali(expires_at)),
-            ])
+            tf(
+                "referral.activate_success",
+                &[
+                    ("rank", &rank.display_name()),
+                    ("date", &fmt_jalali(expires_at)),
+                ],
+            )
         }
     }
 }
@@ -369,7 +491,9 @@ pub async fn handle_panel_callback(
 ) {
     let cb = cq.data.as_deref().unwrap_or("");
 
-    let claim_threshold = cb.strip_prefix(CB_REFERRAL_CLAIM_PREFIX).and_then(|s| s.parse::<u32>().ok());
+    let claim_threshold = cb
+        .strip_prefix(CB_REFERRAL_CLAIM_PREFIX)
+        .and_then(|s| s.parse::<u32>().ok());
     let claim_result = if let Some(threshold) = claim_threshold {
         let trace_id = crate::log::next_trace_id();
         log_actor_id!("referral", trace_id, user_id, "clicked" => cb);
@@ -380,10 +504,14 @@ pub async fn handle_panel_callback(
 
     // برای claim، ack خالیه (فقط اسپینر تلگرام رو متوقف می‌کنه) — نتیجه به‌صورت
     // پیام دائمی توی چت فرستاده می‌شه که کاربر بتونه ثبتش رو ببینه/نگه داره.
-    let ack = AnswerCallbackQueryParams::builder().callback_query_id(cq.id.clone()).build();
+    let ack = AnswerCallbackQueryParams::builder()
+        .callback_query_id(cq.id.clone())
+        .build();
     let _ = api.answer_callback_query(&ack).await;
 
-    let Some(msg) = cq.message.as_ref() else { return };
+    let Some(msg) = cq.message.as_ref() else {
+        return;
+    };
     let chat_id = match msg {
         frankenstein::types::MaybeInaccessibleMessage::Message(m) => m.chat.id,
         _ => return,

@@ -12,8 +12,8 @@ use crate::i18n::{t, tf};
 
 use super::super::trace::log_trace;
 use super::progress::format_upload_body;
-use super::status::{edit_progress_status, edit_status};
 use super::runner::EDIT_THROTTLE;
+use super::status::{edit_progress_status, edit_status};
 
 pub enum MediaPayload {
     Video(SendVideoParams),
@@ -64,17 +64,26 @@ pub async fn send_media_with_progress(
 
     match send_result {
         Ok(Ok(_)) => {
-            log_trace(trace_id, "upload_ok", &format!("elapsed={}s", upload_start.elapsed().as_secs()));
+            log_trace(
+                trace_id,
+                "upload_ok",
+                &format!("elapsed={}s", upload_start.elapsed().as_secs()),
+            );
             true
         }
         Ok(Err(e)) => {
             log_trace(trace_id, "upload_failed", &e.to_string());
-            let _ = api.send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(tf("youtube.download.upload_failed", &[("error", &e.to_string())]))
-                    .build(),
-            ).await;
+            let _ = api
+                .send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(tf(
+                            "youtube.download.upload_failed",
+                            &[("error", &e.to_string())],
+                        ))
+                        .build(),
+                )
+                .await;
             false
         }
         Err(e) => {
@@ -108,7 +117,8 @@ pub async fn send_video_with_progress(
         quality_label,
         cancel_fut,
         trace_id,
-    ).await
+    )
+    .await
 }
 
 pub async fn send_audio_file(
@@ -127,12 +137,20 @@ pub async fn send_audio_file(
 ) -> bool {
     let mut params = SendAudioParams::builder()
         .chat_id(chat_id)
-        .audio(FileUpload::InputFile(InputFile { path: PathBuf::from(path) }))
+        .audio(FileUpload::InputFile(InputFile {
+            path: PathBuf::from(path),
+        }))
         .caption(caption)
         .build();
-    if !title.is_empty() { params.title = Some(title); }
-    if !performer.is_empty() { params.performer = Some(performer); }
-    if !caption_entities.is_empty() { params.caption_entities = Some(caption_entities); }
+    if !title.is_empty() {
+        params.title = Some(title);
+    }
+    if !performer.is_empty() {
+        params.performer = Some(performer);
+    }
+    if !caption_entities.is_empty() {
+        params.caption_entities = Some(caption_entities);
+    }
     let api_for_send = api.clone();
     let mut send_task = tokio::spawn(async move { api_for_send.send_audio(&params).await });
     let upload_start = Instant::now();
@@ -158,23 +176,34 @@ pub async fn send_audio_file(
     };
     match send_result {
         Ok(Ok(_)) => {
-            log_trace(trace_id, "audio_upload_ok", &format!("elapsed={}s", upload_start.elapsed().as_secs()));
+            log_trace(
+                trace_id,
+                "audio_upload_ok",
+                &format!("elapsed={}s", upload_start.elapsed().as_secs()),
+            );
             true
         }
         Ok(Err(e)) => {
             log_trace(trace_id, "audio_upload_failed", &e.to_string());
-            crate::stats::record_error_global("youtube", &format!("audio_upload_failed: {e}")).await;
-            let _ = api.send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(tf("youtube.download.upload_failed", &[("error", &e.to_string())]))
-                    .build(),
-            ).await;
+            crate::stats::record_error_global("youtube", &format!("audio_upload_failed: {e}"))
+                .await;
+            let _ = api
+                .send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(tf(
+                            "youtube.download.upload_failed",
+                            &[("error", &e.to_string())],
+                        ))
+                        .build(),
+                )
+                .await;
             false
         }
         Err(e) => {
             log_trace(trace_id, "audio_upload_join_failed", &e.to_string());
-            crate::stats::record_error_global("youtube", &format!("audio_upload_join_failed: {e}")).await;
+            crate::stats::record_error_global("youtube", &format!("audio_upload_join_failed: {e}"))
+                .await;
             false
         }
     }
@@ -191,16 +220,24 @@ pub fn build_single_params(
 ) -> SendVideoParams {
     let mut params = SendVideoParams::builder()
         .chat_id(chat_id)
-        .video(FileUpload::InputFile(InputFile { path: PathBuf::from(path) }))
+        .video(FileUpload::InputFile(InputFile {
+            path: PathBuf::from(path),
+        }))
         .supports_streaming(true)
         .caption(caption)
         .build();
-    if !caption_entities.is_empty() { params.caption_entities = Some(caption_entities); }
+    if !caption_entities.is_empty() {
+        params.caption_entities = Some(caption_entities);
+    }
     if let Some(tp) = thumb_path {
-        params.thumbnail = Some(FileUpload::InputFile(InputFile { path: PathBuf::from(tp) }));
+        params.thumbnail = Some(FileUpload::InputFile(InputFile {
+            path: PathBuf::from(tp),
+        }));
     }
     if let Some(d) = duration {
-        if d > 0 && d <= u32::MAX as u64 { params.duration = Some(d as u32); }
+        if d > 0 && d <= u32::MAX as u64 {
+            params.duration = Some(d as u32);
+        }
     }
     params.height = Some(height);
     params.width = Some(height * 16 / 9);
@@ -217,13 +254,19 @@ pub fn build_part_params(
 ) -> SendVideoParams {
     let mut params = SendVideoParams::builder()
         .chat_id(chat_id)
-        .video(FileUpload::InputFile(InputFile { path: PathBuf::from(part_path) }))
+        .video(FileUpload::InputFile(InputFile {
+            path: PathBuf::from(part_path),
+        }))
         .supports_streaming(true)
         .caption(caption)
         .build();
-    if !caption_entities.is_empty() { params.caption_entities = Some(caption_entities); }
+    if !caption_entities.is_empty() {
+        params.caption_entities = Some(caption_entities);
+    }
     if let Some(tp) = thumb_path {
-        params.thumbnail = Some(FileUpload::InputFile(InputFile { path: PathBuf::from(tp) }));
+        params.thumbnail = Some(FileUpload::InputFile(InputFile {
+            path: PathBuf::from(tp),
+        }));
     }
     params.height = Some(height);
     params.width = Some(height * 16 / 9);
@@ -239,12 +282,18 @@ pub fn build_single_doc_params(
 ) -> SendDocumentParams {
     let mut params = SendDocumentParams::builder()
         .chat_id(chat_id)
-        .document(FileUpload::InputFile(InputFile { path: PathBuf::from(path) }))
+        .document(FileUpload::InputFile(InputFile {
+            path: PathBuf::from(path),
+        }))
         .caption(caption)
         .build();
-    if !caption_entities.is_empty() { params.caption_entities = Some(caption_entities); }
+    if !caption_entities.is_empty() {
+        params.caption_entities = Some(caption_entities);
+    }
     if let Some(tp) = thumb_path {
-        params.thumbnail = Some(FileUpload::InputFile(InputFile { path: PathBuf::from(tp) }));
+        params.thumbnail = Some(FileUpload::InputFile(InputFile {
+            path: PathBuf::from(tp),
+        }));
     }
     params
 }
@@ -258,13 +307,18 @@ pub fn build_part_doc_params(
 ) -> SendDocumentParams {
     let mut params = SendDocumentParams::builder()
         .chat_id(chat_id)
-        .document(FileUpload::InputFile(InputFile { path: PathBuf::from(part_path) }))
+        .document(FileUpload::InputFile(InputFile {
+            path: PathBuf::from(part_path),
+        }))
         .caption(caption)
         .build();
-    if !caption_entities.is_empty() { params.caption_entities = Some(caption_entities); }
+    if !caption_entities.is_empty() {
+        params.caption_entities = Some(caption_entities);
+    }
     if let Some(tp) = thumb_path {
-        params.thumbnail = Some(FileUpload::InputFile(InputFile { path: PathBuf::from(tp) }));
+        params.thumbnail = Some(FileUpload::InputFile(InputFile {
+            path: PathBuf::from(tp),
+        }));
     }
     params
 }
-

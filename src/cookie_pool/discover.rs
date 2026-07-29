@@ -1,4 +1,7 @@
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use super::types::CookieSource;
 
@@ -25,11 +28,17 @@ pub(super) fn materialize_profiles_cache(
 
     if cache_root.exists() {
         if let Err(error) = fs::remove_dir_all(cache_root) {
-            eprintln!("failed to clear cookie cache at {}: {error}", cache_root.display());
+            eprintln!(
+                "failed to clear cookie cache at {}: {error}",
+                cache_root.display()
+            );
         }
     }
     if let Err(error) = fs::create_dir_all(cache_root) {
-        eprintln!("failed to create cookie cache at {}: {error}", cache_root.display());
+        eprintln!(
+            "failed to create cookie cache at {}: {error}",
+            cache_root.display()
+        );
         return sources;
     }
 
@@ -38,14 +47,20 @@ pub(super) fn materialize_profiles_cache(
     for source in sources {
         let dest_profile = cache_root.join(&source.id);
         if let Err(error) = fs::create_dir_all(&dest_profile) {
-            eprintln!("failed to create cache dir {}: {error}", dest_profile.display());
+            eprintln!(
+                "failed to create cache dir {}: {error}",
+                dest_profile.display()
+            );
             continue;
         }
 
         let entries = match fs::read_dir(&source.profile_dir) {
             Ok(entries) => entries,
             Err(error) => {
-                eprintln!("failed to read profile dir {}: {error}", source.profile_dir.display());
+                eprintln!(
+                    "failed to read profile dir {}: {error}",
+                    source.profile_dir.display()
+                );
                 continue;
             }
         };
@@ -53,17 +68,27 @@ pub(super) fn materialize_profiles_cache(
         let mut copied_any = false;
         for entry in entries.flatten() {
             let name = entry.file_name();
-            let Some(name_str) = name.to_str() else { continue };
-            if !name_str.starts_with("cookies.sqlite") { continue; }
+            let Some(name_str) = name.to_str() else {
+                continue;
+            };
+            if !name_str.starts_with("cookies.sqlite") {
+                continue;
+            }
             let src = entry.path();
             let dst = dest_profile.join(name_str);
             match fs::copy(&src, &dst) {
                 Ok(_) => copied_any = true,
-                Err(error) => eprintln!("failed to copy {} to {}: {error}", src.display(), dst.display()),
+                Err(error) => eprintln!(
+                    "failed to copy {} to {}: {error}",
+                    src.display(),
+                    dst.display()
+                ),
             }
         }
 
-        if !copied_any { continue; }
+        if !copied_any {
+            continue;
+        }
 
         copied.push(CookieSource {
             id: source.id,
@@ -79,7 +104,9 @@ pub(super) fn materialize_profiles_cache(
 
 fn discover_from_profiles_ini(root: &Path) -> Vec<CookieSource> {
     let profiles_ini = root.join("profiles.ini");
-    let Ok(contents) = fs::read_to_string(profiles_ini) else { return Vec::new() };
+    let Ok(contents) = fs::read_to_string(profiles_ini) else {
+        return Vec::new();
+    };
 
     let mut profiles = Vec::new();
     let mut name = String::new();
@@ -89,10 +116,14 @@ fn discover_from_profiles_ini(root: &Path) -> Vec<CookieSource> {
     for line in contents.lines().map(str::trim).chain([""]) {
         if line.starts_with('[') {
             push_profile(root, &mut profiles, &name, &path, is_relative);
-            name.clear(); path.clear(); is_relative = true;
+            name.clear();
+            path.clear();
+            is_relative = true;
             continue;
         }
-        let Some((key, value)) = line.split_once('=') else { continue };
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
         match key {
             "Name" => name = value.to_owned(),
             "Path" => path = value.to_owned(),
@@ -104,21 +135,47 @@ fn discover_from_profiles_ini(root: &Path) -> Vec<CookieSource> {
     profiles
 }
 
-fn push_profile(root: &Path, profiles: &mut Vec<CookieSource>, name: &str, profile_path: &str, is_relative: bool) {
-    if profile_path.is_empty() { return; }
-    let profile_dir = if is_relative { root.join(profile_path) } else { PathBuf::from(profile_path) };
+fn push_profile(
+    root: &Path,
+    profiles: &mut Vec<CookieSource>,
+    name: &str,
+    profile_path: &str,
+    is_relative: bool,
+) {
+    if profile_path.is_empty() {
+        return;
+    }
+    let profile_dir = if is_relative {
+        root.join(profile_path)
+    } else {
+        PathBuf::from(profile_path)
+    };
     let cookies_sqlite = profile_dir.join("cookies.sqlite");
-    if !cookies_sqlite.is_file() { return; }
-    let id = profile_dir.file_name().and_then(|f| f.to_str()).unwrap_or(profile_path).to_owned();
+    if !cookies_sqlite.is_file() {
+        return;
+    }
+    let id = profile_dir
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(profile_path)
+        .to_owned();
     profiles.push(CookieSource {
-        profile_name: if name.is_empty() { id.clone() } else { name.to_owned() },
+        profile_name: if name.is_empty() {
+            id.clone()
+        } else {
+            name.to_owned()
+        },
         source_profile_dir: profile_dir.clone(),
-        id, profile_dir, cookies_sqlite,
+        id,
+        profile_dir,
+        cookies_sqlite,
     });
 }
 
 fn discover_from_profile_dirs(root: &Path) -> Vec<CookieSource> {
-    let Ok(entries) = fs::read_dir(root) else { return Vec::new() };
+    let Ok(entries) = fs::read_dir(root) else {
+        return Vec::new();
+    };
     entries
         .filter_map(Result::ok)
         .map(|e| e.path())

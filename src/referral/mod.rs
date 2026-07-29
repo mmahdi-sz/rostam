@@ -9,11 +9,19 @@ pub const PENDING_DAYS: i64 = 2;
 /// آستانه‌های تعداد دعوت برای هر رتبه، به ترتیب پلکانی زیرمجموعه‌گیری
 /// (سهراب < اسفندیار < رستم) — این ترتیب با وزن عمومی رتبه‌ها (`Rank::weight`)
 /// فرق دارد، چون آنجا اسفندیار/سهراب برای کد هدیه هم‌وزن تعریف شده‌اند.
-pub const TIERS: &[(u32, Rank)] = &[(10, Rank::Sohrab), (20, Rank::Esfandyar), (50, Rank::Rostam)];
+pub const TIERS: &[(u32, Rank)] = &[
+    (10, Rank::Sohrab),
+    (20, Rank::Esfandyar),
+    (50, Rank::Rostam),
+];
 
 /// جایگاه یک رتبه در پلکان زیرمجموعه‌گیری. رتبه‌های خارج از پلکان (دلاور/سپهبد) پایین‌ترین‌اند.
 fn tier_position(rank: Rank) -> i32 {
-    TIERS.iter().position(|(_, r)| *r == rank).map(|i| i as i32).unwrap_or(-1)
+    TIERS
+        .iter()
+        .position(|(_, r)| *r == rank)
+        .map(|i| i as i32)
+        .unwrap_or(-1)
 }
 
 /// مدت هر فعال‌سازی با امتیاز (روز).
@@ -32,14 +40,19 @@ fn now_epoch() -> i64 {
 /// می‌شود، بعد از اینکه کاربر حداقل `PENDING_DAYS` روز عضو قفل اجباری مانده باشد.
 pub async fn record_referral(client: &Client, referred_id: i64, referrer_id: i64) {
     let now = now_epoch();
-    let r = client.execute(
-        "INSERT INTO referral_pending (referred_id, referrer_id, started_at)
+    let r = client
+        .execute(
+            "INSERT INTO referral_pending (referred_id, referrer_id, started_at)
          VALUES ($1, $2, $3)
          ON CONFLICT (referred_id) DO NOTHING",
-        &[&referred_id, &referrer_id, &now],
-    ).await;
+            &[&referred_id, &referrer_id, &now],
+        )
+        .await;
     if let Err(e) = r {
-        eprintln!("[referral event=pending_record_failed] referred_id={referred_id} referrer_id={referrer_id} err={e}");
+        eprintln!(
+            "[referral event=pending_record_failed] referred_id={referred_id} referrer_id={referrer_id} err={e}"
+        );
+        crate::stats::record_error_global("referral", &e.to_string()).await;
     }
 }
 
@@ -48,13 +61,17 @@ pub async fn record_referral(client: &Client, referred_id: i64, referrer_id: i64
 /// عضو نمانده → حذف می‌شود (باطل). توسط یه job دوره‌ای در startup.rs صدا زده می‌شود.
 pub async fn sweep_confirm(client: &Client, api: &Bot) {
     let cutoff = now_epoch() - PENDING_DAYS * 86_400;
-    let rows = match client.query(
-        "SELECT referred_id, referrer_id FROM referral_pending WHERE started_at <= $1",
-        &[&cutoff],
-    ).await {
+    let rows = match client
+        .query(
+            "SELECT referred_id, referrer_id FROM referral_pending WHERE started_at <= $1",
+            &[&cutoff],
+        )
+        .await
+    {
         Ok(rows) => rows,
         Err(e) => {
             eprintln!("[referral event=sweep_query_failed] err={e}");
+            crate::stats::record_error_global("referral", &e.to_string()).await;
             return;
         }
     };
@@ -67,14 +84,19 @@ pub async fn sweep_confirm(client: &Client, api: &Bot) {
 
         if crate::force_join::is_joined(api, referred_id).await {
             let now = now_epoch();
-            let r = client.execute(
-                "INSERT INTO referrals (referred_id, referrer_id, created_at)
+            let r = client
+                .execute(
+                    "INSERT INTO referrals (referred_id, referrer_id, created_at)
                  VALUES ($1, $2, $3)
                  ON CONFLICT (referred_id) DO NOTHING",
-                &[&referred_id, &referrer_id, &now],
-            ).await;
+                    &[&referred_id, &referrer_id, &now],
+                )
+                .await;
             if let Err(e) = r {
-                eprintln!("[referral event=confirm_insert_failed] referred_id={referred_id} err={e}");
+                eprintln!(
+                    "[referral event=confirm_insert_failed] referred_id={referred_id} err={e}"
+                );
+                crate::stats::record_error_global("referral", &e.to_string()).await;
                 continue;
             }
             confirmed += 1;
@@ -82,10 +104,12 @@ pub async fn sweep_confirm(client: &Client, api: &Bot) {
             discarded += 1;
         }
 
-        let _ = client.execute(
-            "DELETE FROM referral_pending WHERE referred_id = $1",
-            &[&referred_id],
-        ).await;
+        let _ = client
+            .execute(
+                "DELETE FROM referral_pending WHERE referred_id = $1",
+                &[&referred_id],
+            )
+            .await;
     }
 
     if confirmed > 0 || discarded > 0 {
@@ -94,29 +118,47 @@ pub async fn sweep_confirm(client: &Client, api: &Bot) {
 }
 
 pub async fn count_referrals(client: &Client, referrer_id: i64) -> i64 {
-    client.query_one(
-        "SELECT COUNT(*) FROM referrals WHERE referrer_id = $1",
-        &[&referrer_id],
-    ).await.map(|row| row.get(0)).unwrap_or(0)
+    client
+        .query_one(
+            "SELECT COUNT(*) FROM referrals WHERE referrer_id = $1",
+            &[&referrer_id],
+        )
+        .await
+        .map(|row| row.get(0))
+        .unwrap_or(0)
 }
 
 /// تعداد دعوت‌های این referrer که هنوز در انتظار تأیید (۲ روز عضویت) هستند.
 pub async fn count_pending(client: &Client, referrer_id: i64) -> i64 {
-    client.query_one(
-        "SELECT COUNT(*) FROM referral_pending WHERE referrer_id = $1",
-        &[&referrer_id],
-    ).await.map(|row| row.get(0)).unwrap_or(0)
+    client
+        .query_one(
+            "SELECT COUNT(*) FROM referral_pending WHERE referrer_id = $1",
+            &[&referrer_id],
+        )
+        .await
+        .map(|row| row.get(0))
+        .unwrap_or(0)
 }
 
 /// مجموع امتیازهایی که تا الان صرف فعال‌سازی رتبه شده.
 pub async fn total_spent_points(client: &Client, user_id: i64) -> i64 {
-    client.query_one(
-        "SELECT COALESCE(SUM(points_spent), 0) FROM referral_activations WHERE user_id = $1",
-        &[&user_id],
-    ).await.map(|row| row.get(0)).unwrap_or(0)
+    client
+        .query_one(
+            "SELECT COALESCE(SUM(points_spent), 0) FROM referral_activations WHERE user_id = $1",
+            &[&user_id],
+        )
+        .await
+        .map(|row| row.get(0))
+        .unwrap_or(0)
 }
 
-pub async fn record_activation(client: &Client, user_id: i64, rank: Rank, points_spent: i64, expires_at: i64) {
+pub async fn record_activation(
+    client: &Client,
+    user_id: i64,
+    rank: Rank,
+    points_spent: i64,
+    expires_at: i64,
+) {
     let now = now_epoch();
     let r = client.execute(
         "INSERT INTO referral_activations (user_id, rank, points_spent, activated_at, expires_at)
@@ -124,7 +166,11 @@ pub async fn record_activation(client: &Client, user_id: i64, rank: Rank, points
         &[&user_id, &rank.as_str(), &(points_spent as i32), &now, &expires_at],
     ).await;
     if let Err(e) = r {
-        eprintln!("[referral event=record_activation_failed] user_id={user_id} rank={} err={e}", rank.as_str());
+        eprintln!(
+            "[referral event=record_activation_failed] user_id={user_id} rank={} err={e}",
+            rank.as_str()
+        );
+        crate::stats::record_error_global("referral", &e.to_string()).await;
     }
 }
 
@@ -163,10 +209,16 @@ pub fn calculate_converted_days(remaining_days: i64, cur_weight: i64, target_wei
 
 pub async fn plan_activation(client: &Client, user_id: i64, tier_rank: Rank) -> ActivationPlan {
     let now = now_epoch();
-    let cur = crate::rank::store::get_user_rank(client, user_id).await.ok().flatten();
+    let cur = crate::rank::store::get_user_rank(client, user_id)
+        .await
+        .ok()
+        .flatten();
 
     let Some(cur) = cur else {
-        return ActivationPlan::Apply { rank: tier_rank, expires_at: now + ACTIVATION_DAYS * 86_400 };
+        return ActivationPlan::Apply {
+            rank: tier_rank,
+            expires_at: now + ACTIVATION_DAYS * 86_400,
+        };
     };
 
     let active = match cur.expires_at {
@@ -175,7 +227,10 @@ pub async fn plan_activation(client: &Client, user_id: i64, tier_rank: Rank) -> 
     };
 
     if !active {
-        return ActivationPlan::Apply { rank: tier_rank, expires_at: now + ACTIVATION_DAYS * 86_400 };
+        return ActivationPlan::Apply {
+            rank: tier_rank,
+            expires_at: now + ACTIVATION_DAYS * 86_400,
+        };
     }
 
     // ترتیب اختصاصی پلکان زیرمجموعه‌گیری، نه وزن عمومی رتبه‌ها.
@@ -192,7 +247,10 @@ pub async fn plan_activation(client: &Client, user_id: i64, tier_rank: Rank) -> 
     let remaining_days = ceil_div((cur_exp - now).max(0), 86_400);
     let converted = calculate_converted_days(remaining_days, wc, wn);
     let total_days = ACTIVATION_DAYS + converted;
-    ActivationPlan::Apply { rank: tier_rank, expires_at: now + total_days * 86_400 }
+    ActivationPlan::Apply {
+        rank: tier_rank,
+        expires_at: now + total_days * 86_400,
+    }
 }
 
 #[cfg(test)]
@@ -237,7 +295,7 @@ pub mod tests {
         assert_eq!(calculate_converted_days(10, 5, 5), 10);
         // Upgrade from weight 5 to 10
         assert_eq!(calculate_converted_days(10, 5, 10), 5); // 10 * 5 / 10 = 5
-        assert_eq!(calculate_converted_days(7, 5, 10), 4);  // ceil(35 / 10) = 4
+        assert_eq!(calculate_converted_days(7, 5, 10), 4); // ceil(35 / 10) = 4
         // Edge cases
         assert_eq!(calculate_converted_days(0, 5, 10), 0);
     }

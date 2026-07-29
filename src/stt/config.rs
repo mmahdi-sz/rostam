@@ -1,6 +1,6 @@
 use frankenstein::types::InlineKeyboardMarkup;
 
-use crate::emoji::panel::{btn_icon, btn_icon_success, btn_icon_danger};
+use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
 use crate::i18n::t;
 
 pub const CB_STT_FA_BIG: &str = "stt:fa_big";
@@ -32,9 +32,7 @@ pub fn config_keyboard(denoise: bool) -> InlineKeyboardMarkup {
             } else {
                 btn_icon_danger(&denoise_text, CB_STT_TOGGLE_DENOISE, "cancel")
             }],
-            vec![
-                btn_icon(&t("start.back"), CB_STT_BACK, "back"),
-            ],
+            vec![btn_icon(&t("start.back"), CB_STT_BACK, "back")],
         ])
         .build()
 }
@@ -42,22 +40,20 @@ pub fn config_keyboard(denoise: bool) -> InlineKeyboardMarkup {
 /// Build the "ready" / cancel keyboard after the user has chosen config.
 pub fn ready_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![
-            vec![
-                btn_icon(&t("stt.cancel_button"), CB_STT_CANCEL, "cancel"),
-                btn_icon(&t("start.main_menu"), CB_STT_MAIN_MENU, "panel"),
-            ],
-        ])
+        .inline_keyboard(vec![vec![
+            btn_icon(&t("stt.cancel_button"), CB_STT_CANCEL, "cancel"),
+            btn_icon(&t("start.main_menu"), CB_STT_MAIN_MENU, "panel"),
+        ]])
         .build()
 }
 
 /// Build the cancel keyboard for an active processing job.
 pub fn cancel_job_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![
-            vec![
-                btn_icon(&t("stt.cancel_button"), CB_STT_JOB_CANCEL, "cancel"),
-            ],
-        ])
+        .inline_keyboard(vec![vec![btn_icon(
+            &t("stt.cancel_button"),
+            CB_STT_JOB_CANCEL,
+            "cancel",
+        )]])
         .build()
 }

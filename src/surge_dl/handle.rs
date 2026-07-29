@@ -2,12 +2,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use frankenstein::{
-    AsyncTelegramApi,
-    client_reqwest::Bot,
-    methods::{EditMessageTextParams, SendDocumentParams, SendMessageParams},
-    types::{InlineKeyboardMarkup, Message, ReplyMarkup},
-};
 use crate::bot::edit_to_tools;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::panel::btn_icon;
@@ -15,10 +9,18 @@ use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{entities_for_text, t, tf};
 use crate::log::next_trace_id;
 use crate::rank;
+use frankenstein::{
+    AsyncTelegramApi,
+    client_reqwest::Bot,
+    methods::{EditMessageTextParams, SendDocumentParams, SendMessageParams},
+    types::{InlineKeyboardMarkup, Message, ReplyMarkup},
+};
 
 fn surge_cmd(args: &[&str]) -> tokio::process::Command {
     let mut cmd = tokio::process::Command::new("surge");
-    cmd.args(args).arg("--host").arg(crate::config::surge_host());
+    cmd.args(args)
+        .arg("--host")
+        .arg(crate::config::surge_host());
     cmd
 }
 const MAX_PART_BYTES: u64 = 2000 * 1024 * 1024;
@@ -32,7 +34,11 @@ pub const CB_SURGE_CONFIRM_RENAME: &str = "surge:confirm:rename";
 
 fn cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon(&t("start.back"), CB_SURGE_CANCEL, "back")]])
+        .inline_keyboard(vec![vec![btn_icon(
+            &t("start.back"),
+            CB_SURGE_CANCEL,
+            "back",
+        )]])
         .build()
 }
 
@@ -40,8 +46,16 @@ fn confirm_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![
-                btn_icon(&t("surge.confirm_original_button"), CB_SURGE_CONFIRM_ORIGINAL, "check"),
-                btn_icon(&t("surge.confirm_rename_button"), CB_SURGE_CONFIRM_RENAME, "edit"),
+                btn_icon(
+                    &t("surge.confirm_original_button"),
+                    CB_SURGE_CONFIRM_ORIGINAL,
+                    "check",
+                ),
+                btn_icon(
+                    &t("surge.confirm_rename_button"),
+                    CB_SURGE_CONFIRM_RENAME,
+                    "edit",
+                ),
             ],
             vec![btn_icon(&t("start.back"), CB_SURGE_CANCEL, "back")],
         ])
@@ -51,7 +65,11 @@ fn confirm_keyboard() -> InlineKeyboardMarkup {
 // ── menu entry ───────────────────────────────────────────────────────────────
 
 pub async fn enter_surge_dl(
-    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &FlowManager,
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    user_id: i64,
+    flow_manager: &FlowManager,
 ) {
     let trace_id = next_trace_id();
     log_actor_id!("surge_dl", trace_id, user_id, "clicked" => CB_TOOLS_SURGE);
@@ -59,17 +77,24 @@ pub async fn enter_surge_dl(
     let text = t("surge.prompt");
     let entities = entities_for_text(&text);
     let mut params = EditMessageTextParams::builder()
-        .chat_id(chat_id).message_id(message_id)
+        .chat_id(chat_id)
+        .message_id(message_id)
         .text(text)
         .reply_markup(cancel_keyboard())
         .build();
-    if !entities.is_empty() { params.entities = Some(entities); }
+    if !entities.is_empty() {
+        params.entities = Some(entities);
+    }
     let r = api.edit_message_text(&params).await;
     log_ev!("surge_dl", trace_id, "prompt_shown", "=>" => if r.is_ok() { "ok" } else { "fail" });
 }
 
 pub async fn handle_surge_cancel(
-    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &FlowManager,
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    user_id: i64,
+    flow_manager: &FlowManager,
 ) {
     let trace_id = next_trace_id();
     log_ev!("surge_dl", trace_id, "cancel", "user_id" => user_id);
@@ -81,11 +106,11 @@ pub async fn handle_surge_cancel(
 
 pub fn is_direct_link(text: &str) -> bool {
     let text = text.trim();
-    let lower = text.to_lowercase();
-    if !lower.starts_with("http://") && !lower.starts_with("https://") {
+    if !crate::validation::is_safe_url(text) {
         return false;
     }
 
+    let lower = text.to_lowercase();
     let rest = if let Some(r) = lower.strip_prefix("https://") {
         r
     } else if let Some(r) = lower.strip_prefix("http://") {
@@ -116,14 +141,19 @@ pub fn is_direct_link(text: &str) -> bool {
 }
 
 pub async fn handle_surge_text(
-    api: &Bot, message: &Message, user_id: i64, flow_manager: &FlowManager,
+    api: &Bot,
+    message: &Message,
+    user_id: i64,
+    flow_manager: &FlowManager,
     database: &Option<PostgresDatabase>,
 ) {
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
     log_actor_id!("surge_dl", trace_id, user_id, "clicked" => "send_surge_url");
 
-    let Some(url) = message.text.as_deref().map(str::trim) else { return };
+    let Some(url) = message.text.as_deref().map(str::trim) else {
+        return;
+    };
     if !is_direct_link(url) {
         log_ev!("surge_dl", trace_id, "invalid_url", "input" => url, "=>" => "reject");
         let _ = crate::bot::send_text_with_back(api, chat_id, &t("surge.invalid_url")).await;
@@ -136,14 +166,32 @@ pub async fn handle_surge_text(
         let user_rank = rank::effective_rank(client, user_id).await;
         let daily_limit = user_rank.daily_traffic_bytes();
         let monthly_limit = user_rank.monthly_traffic_bytes();
-        let first_upload_at = rank::quota::get_first_upload_at(client, user_id).await.unwrap_or_else(now_epoch);
-        let daily_used = rank::quota::get_daily_traffic(client, user_id).await.unwrap_or(0) as u64;
-        let monthly_used = rank::quota::get_monthly_traffic(client, user_id, first_upload_at).await.unwrap_or(0) as u64;
+        let first_upload_at = rank::quota::get_first_upload_at(client, user_id)
+            .await
+            .unwrap_or_else(now_epoch);
+        let daily_used = rank::quota::get_daily_traffic(client, user_id)
+            .await
+            .unwrap_or(0) as u64;
+        let monthly_used = rank::quota::get_monthly_traffic(client, user_id, first_upload_at)
+            .await
+            .unwrap_or(0) as u64;
 
         let block = if daily_used >= daily_limit {
-            Some((tf("youtube.traffic_daily_limit", &[("limit", &fmt_traffic_fa(daily_limit))]), user_rank.traffic_daily_next_rank()))
+            Some((
+                tf(
+                    "youtube.traffic_daily_limit",
+                    &[("limit", &fmt_traffic_fa(daily_limit))],
+                ),
+                user_rank.traffic_daily_next_rank(),
+            ))
         } else if monthly_used >= monthly_limit {
-            Some((tf("youtube.traffic_monthly_limit", &[("limit", &fmt_traffic_fa(monthly_limit))]), user_rank.traffic_monthly_next_rank()))
+            Some((
+                tf(
+                    "youtube.traffic_monthly_limit",
+                    &[("limit", &fmt_traffic_fa(monthly_limit))],
+                ),
+                user_rank.traffic_monthly_next_rank(),
+            ))
         } else {
             None
         };
@@ -164,19 +212,30 @@ pub async fn handle_surge_text(
     let (filename, size_bytes) = probe_url(url).await;
     log_ev!("surge_dl", trace_id, "probed", "name" => &filename, "size" => format!("{size_bytes:?}"));
 
-    flow_manager.set(user_id, FlowState::AwaitingSurgeConfirm {
-        url: url.to_string(), filename: filename.clone(),
-    });
+    flow_manager.set(
+        user_id,
+        FlowState::AwaitingSurgeConfirm {
+            url: url.to_string(),
+            filename: filename.clone(),
+        },
+    );
 
-    let size_label = size_bytes.map(fmt_bytes).unwrap_or_else(|| t("surge.size_unknown"));
-    let text = tf("surge.confirm_prompt", &[("name", &filename), ("size", &size_label)]);
+    let size_label = size_bytes
+        .map(fmt_bytes)
+        .unwrap_or_else(|| t("surge.size_unknown"));
+    let text = tf(
+        "surge.confirm_prompt",
+        &[("name", &filename), ("size", &size_label)],
+    );
     let entities = entities_for_text(&text);
     let mut params = SendMessageParams::builder()
         .chat_id(chat_id)
         .text(text)
         .reply_markup(ReplyMarkup::InlineKeyboardMarkup(confirm_keyboard()))
         .build();
-    if !entities.is_empty() { params.entities = Some(entities); }
+    if !entities.is_empty() {
+        params.entities = Some(entities);
+    }
     let r = api.send_message(&params).await;
     log_ev!("surge_dl", trace_id, "confirm_shown", "=>" => if r.is_ok() { "ok" } else { "fail" });
 }
@@ -184,14 +243,24 @@ pub async fn handle_surge_text(
 // ── confirm / rename ──────────────────────────────────────────────────────────
 
 async fn start_surge_job(
-    api: &Bot, chat_id: i64, message_id: i32, user_id: i64,
-    url: String, rename_to: Option<String>, trace_id: u64,
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    user_id: i64,
+    url: String,
+    rename_to: Option<String>,
+    trace_id: u64,
 ) {
     let text = t("surge.queued");
     let entities = entities_for_text(&text);
     let mut params = EditMessageTextParams::builder()
-        .chat_id(chat_id).message_id(message_id).text(text).build();
-    if !entities.is_empty() { params.entities = Some(entities); }
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(text)
+        .build();
+    if !entities.is_empty() {
+        params.entities = Some(entities);
+    }
     if let Err(e) = api.edit_message_text(&params).await {
         log_ev!("surge_dl", trace_id, "queue_edit_failed", "=>" => format!("fail err={e}"));
     }
@@ -202,7 +271,11 @@ async fn start_surge_job(
 }
 
 pub async fn handle_surge_confirm_original(
-    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &FlowManager,
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    user_id: i64,
+    flow_manager: &FlowManager,
 ) {
     let trace_id = next_trace_id();
     log_actor_id!("surge_dl", trace_id, user_id, "clicked" => CB_SURGE_CONFIRM_ORIGINAL);
@@ -215,7 +288,11 @@ pub async fn handle_surge_confirm_original(
 }
 
 pub async fn handle_surge_confirm_rename(
-    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &FlowManager,
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    user_id: i64,
+    flow_manager: &FlowManager,
 ) {
     let trace_id = next_trace_id();
     log_actor_id!("surge_dl", trace_id, user_id, "clicked" => CB_SURGE_CONFIRM_RENAME);
@@ -223,11 +300,17 @@ pub async fn handle_surge_confirm_rename(
         log_ev!("surge_dl", trace_id, "confirm_stale", "=>" => "ignored");
         return;
     };
-    flow_manager.set(user_id, FlowState::AwaitingSurgeRenameInput {
-        url, original_filename: filename, prompt_message_id: message_id,
-    });
+    flow_manager.set(
+        user_id,
+        FlowState::AwaitingSurgeRenameInput {
+            url,
+            original_filename: filename,
+            prompt_message_id: message_id,
+        },
+    );
     let params = EditMessageTextParams::builder()
-        .chat_id(chat_id).message_id(message_id)
+        .chat_id(chat_id)
+        .message_id(message_id)
         .text(t("surge.rename_prompt"))
         .build();
     let r = api.edit_message_text(&params).await;
@@ -235,16 +318,29 @@ pub async fn handle_surge_confirm_rename(
 }
 
 pub async fn handle_surge_rename_text(
-    api: &Bot, message: &Message, user_id: i64, flow_manager: &FlowManager,
+    api: &Bot,
+    message: &Message,
+    user_id: i64,
+    flow_manager: &FlowManager,
 ) {
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
     log_actor_id!("surge_dl", trace_id, user_id, "clicked" => "send_surge_rename");
 
-    let FlowState::AwaitingSurgeRenameInput { url, original_filename, prompt_message_id } = flow_manager.get(user_id) else {
+    let FlowState::AwaitingSurgeRenameInput {
+        url,
+        original_filename,
+        prompt_message_id,
+    } = flow_manager.get(user_id)
+    else {
         return;
     };
-    let Some(typed) = message.text.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
+    let Some(typed) = message
+        .text
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
         return;
     };
 
@@ -260,7 +356,10 @@ pub async fn handle_surge_rename_text(
     let new_name = if typed.contains('.') {
         typed.to_string()
     } else {
-        match std::path::Path::new(&original_filename).extension().and_then(|e| e.to_str()) {
+        match std::path::Path::new(&original_filename)
+            .extension()
+            .and_then(|e| e.to_str())
+        {
             Some(ext) => format!("{typed}.{ext}"),
             None => typed.to_string(),
         }
@@ -268,7 +367,16 @@ pub async fn handle_surge_rename_text(
     flow_manager.clear(user_id);
     log_ev!("surge_dl", trace_id, "rename_accepted", "name" => &new_name);
 
-    start_surge_job(api, chat_id, prompt_message_id, user_id, url, Some(new_name), trace_id).await;
+    start_surge_job(
+        api,
+        chat_id,
+        prompt_message_id,
+        user_id,
+        url,
+        Some(new_name),
+        trace_id,
+    )
+    .await;
 }
 
 // ── download orchestration ───────────────────────────────────────────────────
@@ -285,10 +393,17 @@ struct SurgeDetail {
 }
 
 async fn run_surge_download(
-    api: Bot, chat_id: i64, message_id: i32, user_id: i64, url: String,
-    rename_to: Option<String>, trace_id: u64,
+    api: Bot,
+    chat_id: i64,
+    message_id: i32,
+    user_id: i64,
+    url: String,
+    rename_to: Option<String>,
+    trace_id: u64,
 ) {
     let stats_job_id = crate::stats::record_download_start(user_id).await;
+    let _active_dl_guard = crate::metrics::ActiveDownloadGuard::new();
+    let _duration_guard = crate::metrics::RequestDurationGuard::new("surge_dl");
     let dir = format!("{}/{user_id}", crate::config::surge_downloads_root());
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         log_ev!("surge_dl", trace_id, "mkdir_failed", "=>" => format!("fail err={e}"));
@@ -332,14 +447,17 @@ async fn run_surge_download(
                     "percent" => percent, "speed" => fmt_speed(d.speed));
                 if percent != last_percent {
                     last_percent = percent;
-                    let body = tf("surge.progress", &[
-                        ("name", &d.filename),
-                        ("bar", &build_bar(percent as f32)),
-                        ("percent", &percent.to_string()),
-                        ("downloaded", &fmt_bytes(d.downloaded)),
-                        ("total", &fmt_bytes(d.total_size)),
-                        ("speed", &fmt_speed(d.speed)),
-                    ]);
+                    let body = tf(
+                        "surge.progress",
+                        &[
+                            ("name", &d.filename),
+                            ("bar", &build_bar(percent as f32)),
+                            ("percent", &percent.to_string()),
+                            ("downloaded", &fmt_bytes(d.downloaded)),
+                            ("total", &fmt_bytes(d.total_size)),
+                            ("speed", &fmt_speed(d.speed)),
+                        ],
+                    );
                     edit_status(&api, chat_id, message_id, &body).await;
                 }
             }
@@ -394,12 +512,27 @@ async fn run_surge_download(
         Ok(()) => {
             log_ev!("surge_dl", trace_id, "result_sent", "=>" => "ok");
             tokio::time::sleep(Duration::from_millis(500)).await;
-            show_sent_menu(&api, chat_id, message_id, detail.downloaded, download_elapsed, upload_elapsed).await;
+            show_sent_menu(
+                &api,
+                chat_id,
+                message_id,
+                detail.downloaded,
+                download_elapsed,
+                upload_elapsed,
+            )
+            .await;
             if let Some(jid) = stats_job_id {
                 crate::stats::record_upload_done(jid, user_id, detail.downloaded as i64).await;
                 log_ev!("surge_dl", trace_id, "traffic_added", "bytes" => detail.downloaded);
             }
-            crate::stats::record_event_user(user_id, "surge_dl", "download", "ok", detail.downloaded as i64).await;
+            crate::stats::record_event_user(
+                user_id,
+                "surge_dl",
+                "download",
+                "ok",
+                detail.downloaded as i64,
+            )
+            .await;
         }
         Err(e) => {
             log_ev!("surge_dl", trace_id, "result_send_failed", "=>" => format!("fail err={e}"));
@@ -410,7 +543,11 @@ async fn run_surge_download(
     }
 }
 
-async fn send_single_file(api: &Bot, chat_id: i64, path: &Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn send_single_file(
+    api: &Bot,
+    chat_id: i64,
+    path: &Path,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let params = SendDocumentParams::builder()
         .chat_id(chat_id)
         .document(path.to_path_buf())
@@ -421,7 +558,10 @@ async fn send_single_file(api: &Bot, chat_id: i64, path: &Path) -> Result<(), Bo
 }
 
 async fn send_split_file(
-    api: &Bot, chat_id: i64, path: &Path, trace_id: u64,
+    api: &Bot,
+    chat_id: i64,
+    path: &Path,
+    trace_id: u64,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let archive_base = path.with_extension("rar");
     log_ev!("surge_dl", trace_id, "rar_spawn", "archive" => archive_base.display());
@@ -436,7 +576,8 @@ async fn send_split_file(
         .stderr(Stdio::piped());
 
     let mut child = cmd.spawn()?;
-    let status = tokio::time::timeout(Duration::from_secs(DOWNLOAD_TIMEOUT_SECS), child.wait()).await??;
+    let status =
+        tokio::time::timeout(Duration::from_secs(DOWNLOAD_TIMEOUT_SECS), child.wait()).await??;
     if !status.success() {
         return Err(format!("rar exit {status}").into());
     }
@@ -446,14 +587,19 @@ async fn send_split_file(
 
     let total = parts.len();
     for (i, part) in parts.iter().enumerate() {
-        let caption = tf("surge.sending_part", &[("n", &(i + 1).to_string()), ("total", &total.to_string())]);
+        let caption = tf(
+            "surge.sending_part",
+            &[("n", &(i + 1).to_string()), ("total", &total.to_string())],
+        );
         let caption_entities = entities_for_text(&caption);
         let mut params = SendDocumentParams::builder()
             .chat_id(chat_id)
             .document(part.clone())
             .caption(&caption)
             .build();
-        if !caption_entities.is_empty() { params.caption_entities = Some(caption_entities); }
+        if !caption_entities.is_empty() {
+            params.caption_entities = Some(caption_entities);
+        }
         api.send_document(&params).await?;
         log_ev!("surge_dl", trace_id, "part_sent", "n" => i + 1, "total" => total);
     }
@@ -465,9 +611,14 @@ async fn send_split_file(
     Ok(())
 }
 
-async fn list_rar_parts(archive_base: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error + Send + Sync>> {
+async fn list_rar_parts(
+    archive_base: &Path,
+) -> Result<Vec<PathBuf>, Box<dyn std::error::Error + Send + Sync>> {
     let dir = archive_base.parent().ok_or("no parent dir")?;
-    let stem = archive_base.file_stem().and_then(|s| s.to_str()).ok_or("no stem")?;
+    let stem = archive_base
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or("no stem")?;
     let prefix = format!("{stem}.part");
     let mut parts = Vec::new();
     let mut entries = tokio::fs::read_dir(dir).await?;
@@ -506,13 +657,19 @@ fn percent_decode(s: &str) -> String {
 
 fn filename_from_url(url: &str) -> String {
     let no_query = url.split('?').next().unwrap_or(url);
-    let name = no_query.rsplit('/').next().filter(|s| !s.is_empty()).unwrap_or("file");
+    let name = no_query
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("file");
     percent_decode(name)
 }
 
 fn extract_content_disposition_filename(header: &str) -> Option<String> {
     header.split(';').find_map(|part| {
-        part.trim().strip_prefix("filename=").map(|v| v.trim_matches('"').to_string())
+        part.trim()
+            .strip_prefix("filename=")
+            .map(|v| v.trim_matches('"').to_string())
     })
 }
 
@@ -534,12 +691,16 @@ async fn probe_url(url: &str) -> (String, Option<u64>) {
         Ok(r) if r.status().is_success() => r,
         _ => return (fallback, None),
     };
-    let filename = resp.headers().get(reqwest::header::CONTENT_DISPOSITION)
+    let filename = resp
+        .headers()
+        .get(reqwest::header::CONTENT_DISPOSITION)
         .and_then(|v| v.to_str().ok())
         .and_then(extract_content_disposition_filename)
         .map(|s| percent_decode(&s))
         .unwrap_or(fallback);
-    let size = resp.headers().get(reqwest::header::CONTENT_LENGTH)
+    let size = resp
+        .headers()
+        .get(reqwest::header::CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok());
     (filename, size)
@@ -549,8 +710,12 @@ fn build_bar(percent: f32) -> String {
     let total = 10usize;
     let filled = ((percent / 10.0).round() as i32).clamp(0, total as i32) as usize;
     let mut s = String::new();
-    for _ in 0..filled { s.push('●'); }
-    for _ in 0..(total - filled) { s.push('○'); }
+    for _ in 0..filled {
+        s.push('●');
+    }
+    for _ in 0..(total - filled) {
+        s.push('○');
+    }
     s
 }
 
@@ -569,12 +734,18 @@ fn fmt_traffic_fa(bytes: u64) -> String {
     let (num, unit) = if b >= GB {
         let g = b / GB;
         if (g.round() - g).abs() < 0.05 {
-            (format!("{:.0}", g.round()), crate::i18n::t("youtube.unit_gb"))
+            (
+                format!("{:.0}", g.round()),
+                crate::i18n::t("youtube.unit_gb"),
+            )
         } else {
             (format!("{:.1}", g), crate::i18n::t("youtube.unit_gb"))
         }
     } else {
-        (format!("{:.0}", (b / MB).round()), crate::i18n::t("youtube.unit_mb"))
+        (
+            format!("{:.0}", (b / MB).round()),
+            crate::i18n::t("youtube.unit_mb"),
+        )
     };
     format!("{} {}", crate::i18n::to_fa_digits(&num), unit)
 }
@@ -582,7 +753,11 @@ fn fmt_traffic_fa(bytes: u64) -> String {
 fn fmt_bytes(bytes: u64) -> String {
     const MB: f64 = 1024.0 * 1024.0;
     let mb = bytes as f64 / MB;
-    if mb >= 1024.0 { format!("{:.2}GB", mb / 1024.0) } else { format!("{mb:.1}MB") }
+    if mb >= 1024.0 {
+        format!("{:.2}GB", mb / 1024.0)
+    } else {
+        format!("{mb:.1}MB")
+    }
 }
 
 // surge already reports speed/avg_speed in MB/s (confirmed against a real
@@ -604,38 +779,61 @@ fn fmt_speed_from(bytes: u64, elapsed: Duration) -> String {
 }
 
 async fn show_sent_menu(
-    api: &Bot, chat_id: i64, message_id: i32,
-    bytes: u64, download_elapsed: Duration, upload_elapsed: Duration,
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    bytes: u64,
+    download_elapsed: Duration,
+    upload_elapsed: Duration,
 ) {
-    let _ = api.delete_message(
-        &frankenstein::methods::DeleteMessageParams::builder()
-            .chat_id(chat_id).message_id(message_id).build(),
-    ).await;
+    let _ = api
+        .delete_message(
+            &frankenstein::methods::DeleteMessageParams::builder()
+                .chat_id(chat_id)
+                .message_id(message_id)
+                .build(),
+        )
+        .await;
 
-    let is_admin = crate::config::admin_user_id().map(|id| id == chat_id).unwrap_or(false);
+    let is_admin = crate::config::admin_user_id()
+        .map(|id| id == chat_id)
+        .unwrap_or(false);
     // زمان‌ها رو خودمون اندازه می‌گیریم و سرعت رو از تقسیم حجم بر زمان حساب می‌کنیم —
     // فیلد avg_speed خودِ surge واحدش قابل‌اعتماد نبود (برای دانلود ۹ثانیه‌ای عددی
     // مثل ۱۶۱۸۵۳۹۰۶٫۷۳MB/s برمی‌گردوند).
-    let text = tf("surge.sent", &[
-        ("download_time", &fmt_elapsed(download_elapsed)),
-        ("download_speed", &fmt_speed_from(bytes, download_elapsed)),
-        ("upload_time", &fmt_elapsed(upload_elapsed)),
-        ("upload_speed", &fmt_speed_from(bytes, upload_elapsed)),
-    ]);
+    let text = tf(
+        "surge.sent",
+        &[
+            ("download_time", &fmt_elapsed(download_elapsed)),
+            ("download_speed", &fmt_speed_from(bytes, download_elapsed)),
+            ("upload_time", &fmt_elapsed(upload_elapsed)),
+            ("upload_speed", &fmt_speed_from(bytes, upload_elapsed)),
+        ],
+    );
     let entities = entities_for_text(&text);
     let mut params = SendMessageParams::builder()
-        .chat_id(chat_id).text(text)
-        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(crate::bot::start_menu_keyboard(is_admin)))
+        .chat_id(chat_id)
+        .text(text)
+        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(
+            crate::bot::start_menu_keyboard(is_admin),
+        ))
         .build();
-    if !entities.is_empty() { params.entities = Some(entities); }
+    if !entities.is_empty() {
+        params.entities = Some(entities);
+    }
     let _ = api.send_message(&params).await;
 }
 
 async fn edit_status(api: &Bot, chat_id: i64, message_id: i32, text: &str) {
     let entities = entities_for_text(text);
     let mut params = EditMessageTextParams::builder()
-        .chat_id(chat_id).message_id(message_id).text(text).build();
-    if !entities.is_empty() { params.entities = Some(entities); }
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(text)
+        .build();
+    if !entities.is_empty() {
+        params.entities = Some(entities);
+    }
     let _ = api.edit_message_text(&params).await;
 }
 
@@ -644,7 +842,9 @@ async fn edit_status(api: &Bot, chat_id: i64, message_id: i32, text: &str) {
 async fn run_surge_add(url: &str, dir: &str) -> bool {
     let mut cmd = surge_cmd(&["add", url, "-o", dir]);
     cmd.stdout(Stdio::null()).stderr(Stdio::piped());
-    let Ok(mut child) = cmd.spawn() else { return false };
+    let Ok(mut child) = cmd.spawn() else {
+        return false;
+    };
     match tokio::time::timeout(Duration::from_secs(30), child.wait()).await {
         Ok(Ok(status)) => status.success(),
         _ => {
@@ -662,8 +862,13 @@ async fn list_ids(trace_id: u64) -> Vec<String> {
         return vec![];
     };
     let entries: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
-    entries.as_array()
-        .map(|arr| arr.iter().filter_map(|e| e.get("id")?.as_str().map(str::to_string)).collect())
+    entries
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|e| e.get("id")?.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -690,7 +895,10 @@ async fn fetch_detail(id: &str) -> Option<SurgeDetail> {
         downloaded: json.get("downloaded")?.as_u64()?,
         progress: json.get("progress")?.as_f64()?,
         speed: json.get("speed").and_then(|v| v.as_f64()).unwrap_or(0.0),
-        avg_speed: json.get("avg_speed").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        avg_speed: json
+            .get("avg_speed")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0),
         status: json.get("status")?.as_str()?.to_string(),
     })
 }
@@ -703,7 +911,13 @@ fn sanitize_rename(typed: &str) -> Option<String> {
         .file_name()
         .and_then(|n| n.to_str())
         .filter(|n| !n.is_empty() && *n != "." && *n != "..")
-        .map(|n| n.to_string())
+        .map(|n| {
+            let mut s = n.to_string();
+            if s.len() > 200 {
+                s.truncate(200);
+            }
+            s
+        })
 }
 
 #[cfg(test)]
@@ -728,7 +942,10 @@ mod tests {
     #[test]
     fn strips_traversal() {
         // Path separators and parent refs are stripped to the trailing component…
-        assert_eq!(sanitize_rename("../../etc/passwd").as_deref(), Some("passwd"));
+        assert_eq!(
+            sanitize_rename("../../etc/passwd").as_deref(),
+            Some("passwd")
+        );
         assert_eq!(sanitize_rename("/etc/cron.d/x").as_deref(), Some("x"));
         // …and inputs that reduce to nothing safe are rejected outright.
         assert_eq!(sanitize_rename(".."), None);

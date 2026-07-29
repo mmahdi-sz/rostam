@@ -10,16 +10,19 @@ use frankenstein::{
 use crate::emoji::cache::{self, LookupOutcome, RenderLookup};
 use crate::i18n::entities_for_text;
 
-pub async fn send_text(
-    api: &Bot,
-    chat_id: i64,
-    text: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn send_text(api: &Bot, chat_id: i64, text: &str) -> crate::error::Result<()> {
     let (rendered, entities, trace_id) = expand_and_entify(text, chat_id).await;
     let params = if entities.is_empty() {
-        SendMessageParams::builder().chat_id(chat_id).text(&rendered).build()
+        SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(&rendered)
+            .build()
     } else {
-        SendMessageParams::builder().chat_id(chat_id).text(&rendered).entities(entities.clone()).build()
+        SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(&rendered)
+            .entities(entities.clone())
+            .build()
     };
     match api.send_message(&params).await {
         Ok(_) => {
@@ -41,7 +44,7 @@ pub async fn send_text(
             } else {
                 eprintln!("[send_text event=send_failed] chat_id={chat_id} error={e}");
             }
-            Err(Box::new(e))
+            Err(e.into())
         }
     }
 }
@@ -71,20 +74,25 @@ async fn expand_and_entify(text: &str, chat_id: i64) -> (String, Vec<MessageEnti
                     tl = text.chars().count(),
                     tp = cache::preview(text, 120),
                 );
-                let (rendered, mut cache_ents, lookups) =
-                    cache_guard.render_plain_with_trace(text);
+                let (rendered, mut cache_ents, lookups) = cache_guard.render_plain_with_trace(text);
                 log_lookups(trace_id, &lookups);
-                
+
                 #[cfg(feature = "testapi")]
                 let _ = CAPTURED_EMOJIS.try_with(|arc| {
-                    let mut b = arc.lock().unwrap();
-                    for l in &lookups {
-                        if let LookupOutcome::CacheHit { custom_emoji_id, fallback, .. } = &l.outcome {
-                            b.push(serde_json::json!({
-                                "key": l.key,
-                                "custom_emoji_id": custom_emoji_id,
-                                "fallback": fallback,
-                            }));
+                    if let Ok(mut b) = arc.lock() {
+                        for l in &lookups {
+                            if let LookupOutcome::CacheHit {
+                                custom_emoji_id,
+                                fallback,
+                                ..
+                            } = &l.outcome
+                            {
+                                b.push(serde_json::json!({
+                                    "key": l.key,
+                                    "custom_emoji_id": custom_emoji_id,
+                                    "fallback": fallback,
+                                }));
+                            }
                         }
                     }
                 });
@@ -101,7 +109,8 @@ async fn expand_and_entify(text: &str, chat_id: i64) -> (String, Vec<MessageEnti
                 );
                 // Filter out ui entities whose offset already has a cache entity
                 // (fallback chars from the cache can appear in EMOJI_MAP → avoid overlapping entities)
-                let ui_filtered: Vec<_> = ui_ents.into_iter()
+                let ui_filtered: Vec<_> = ui_ents
+                    .into_iter()
                     .filter(|ue| !cache_ents.iter().any(|ce| ce.offset == ue.offset))
                     .collect();
                 cache_ents.extend(ui_filtered);
@@ -115,14 +124,21 @@ async fn expand_and_entify(text: &str, chat_id: i64) -> (String, Vec<MessageEnti
 }
 
 #[cfg(feature = "testapi")]
-pub async fn expand_and_entify_for_test(text: &str, chat_id: i64) -> (String, Vec<MessageEntity>, Option<u64>) {
+pub async fn expand_and_entify_for_test(
+    text: &str,
+    chat_id: i64,
+) -> (String, Vec<MessageEntity>, Option<u64>) {
     expand_and_entify(text, chat_id).await
 }
 
 fn log_lookups(trace_id: u64, lookups: &[RenderLookup]) {
     for (idx, l) in lookups.iter().enumerate() {
         match &l.outcome {
-            LookupOutcome::CacheHit { custom_emoji_id, fallback, group_size } => {
+            LookupOutcome::CacheHit {
+                custom_emoji_id,
+                fallback,
+                group_size,
+            } => {
                 eprintln!(
                     "[send_text trace={trace_id} event=lookup] idx={idx} key={key:?} \
                      outcome=cache_hit group_size={group_size} fallback={fallback:?} id={id}",
@@ -158,43 +174,59 @@ pub async fn edit_text(
     message_id: i32,
     text: &str,
     reply_markup: Option<InlineKeyboardMarkup>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> crate::error::Result<()> {
     let (rendered, entities, _) = expand_and_entify(text, chat_id).await;
     match (entities.is_empty(), reply_markup) {
         (true, None) => {
             api.edit_message_text(
                 &EditMessageTextParams::builder()
-                    .chat_id(chat_id).message_id(message_id).text(&rendered).build(),
-            ).await?;
+                    .chat_id(chat_id)
+                    .message_id(message_id)
+                    .text(&rendered)
+                    .build(),
+            )
+            .await?;
         }
         (true, Some(kb)) => {
             api.edit_message_text(
                 &EditMessageTextParams::builder()
-                    .chat_id(chat_id).message_id(message_id).text(&rendered).reply_markup(kb).build(),
-            ).await?;
+                    .chat_id(chat_id)
+                    .message_id(message_id)
+                    .text(&rendered)
+                    .reply_markup(kb)
+                    .build(),
+            )
+            .await?;
         }
         (false, None) => {
             api.edit_message_text(
                 &EditMessageTextParams::builder()
-                    .chat_id(chat_id).message_id(message_id).text(&rendered).entities(entities).build(),
-            ).await?;
+                    .chat_id(chat_id)
+                    .message_id(message_id)
+                    .text(&rendered)
+                    .entities(entities)
+                    .build(),
+            )
+            .await?;
         }
         (false, Some(kb)) => {
             api.edit_message_text(
                 &EditMessageTextParams::builder()
-                    .chat_id(chat_id).message_id(message_id).text(&rendered).entities(entities).reply_markup(kb).build(),
-            ).await?;
+                    .chat_id(chat_id)
+                    .message_id(message_id)
+                    .text(&rendered)
+                    .entities(entities)
+                    .reply_markup(kb)
+                    .build(),
+            )
+            .await?;
         }
     }
     Ok(())
 }
 
 /// Used for potentially long output such as STT transcription results.
-pub async fn send_long_text(
-    api: &Bot,
-    chat_id: i64,
-    text: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn send_long_text(api: &Bot, chat_id: i64, text: &str) -> crate::error::Result<()> {
     const MAX: usize = 4000;
     if text.chars().count() <= MAX {
         return send_text(api, chat_id, text).await;
@@ -210,11 +242,7 @@ pub async fn send_long_text(
     Ok(())
 }
 
-pub async fn send_text_md(
-    api: &Bot,
-    chat_id: i64,
-    text: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn send_text_md(api: &Bot, chat_id: i64, text: &str) -> crate::error::Result<()> {
     api.send_message(
         &SendMessageParams::builder()
             .chat_id(chat_id)
@@ -231,7 +259,7 @@ pub async fn send_text_md_with_keyboard(
     chat_id: i64,
     text: &str,
     reply_markup: InlineKeyboardMarkup,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> crate::error::Result<()> {
     let markup = ReplyMarkup::InlineKeyboardMarkup(reply_markup);
     api.send_message(
         &SendMessageParams::builder()
@@ -250,7 +278,7 @@ pub async fn send_text_with_keyboard(
     chat_id: i64,
     text: &str,
     reply_markup: InlineKeyboardMarkup,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> crate::error::Result<()> {
     let (rendered, entities, _) = expand_and_entify(text, chat_id).await;
     let markup = ReplyMarkup::InlineKeyboardMarkup(reply_markup);
     let params = if entities.is_empty() {
@@ -271,12 +299,7 @@ pub async fn send_text_with_keyboard(
     Ok(())
 }
 
-pub async fn send_text_with_back(
-    api: &Bot,
-    chat_id: i64,
-    text: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn send_text_with_back(api: &Bot, chat_id: i64, text: &str) -> crate::error::Result<()> {
     let kb = super::keyboards::back_keyboard();
     send_text_with_keyboard(api, chat_id, text, kb).await
 }
-

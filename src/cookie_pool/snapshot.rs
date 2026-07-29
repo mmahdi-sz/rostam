@@ -8,4 +8,3 @@ pub async fn save_snapshot(database: &Option<PostgresDatabase>, snapshot: &Cooki
         eprintln!("failed to save cookie pool snapshot: {error}");
     }
 }
-

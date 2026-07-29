@@ -64,13 +64,20 @@ pub async fn download_telegram_file(
         format!("https://api.telegram.org/file/bot{token}/{file_path}")
     };
 
-    let mut response = reqwest::get(&url).await?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()?;
+    let mut response = client.get(&url).send().await?;
     let mut file = tokio::fs::File::create(dest).await?;
     let mut bytes_copied = 0u64;
     while let Some(chunk) = response.chunk().await? {
         tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await?;
         bytes_copied += chunk.len() as u64;
     }
-    log_trace(trace, "download_file_http_done", &format!("bytes={bytes_copied}"));
+    log_trace(
+        trace,
+        "download_file_http_done",
+        &format!("bytes={bytes_copied}"),
+    );
     Ok(())
 }

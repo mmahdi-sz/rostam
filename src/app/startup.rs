@@ -13,7 +13,7 @@ use crate::config;
 use crate::cookie_pool::{CookiePool, CookieSource};
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji;
-use crate::i18n::{reload_i18n, t, LANG};
+use crate::i18n::{LANG, reload_i18n, t};
 use crate::modules;
 use crate::stats;
 
@@ -24,10 +24,15 @@ pub async fn build_bot_api(token: &str) -> anyhow::Result<Bot> {
     };
     let base_url = base_url.trim_end_matches('/').to_string();
     if base_url.contains("127.0.0.1") || base_url.contains("localhost") {
-        println!("Local Bot API base detected ({base_url}); logging out from official Telegram Bot API.");
+        println!(
+            "Local Bot API base detected ({base_url}); logging out from official Telegram Bot API."
+        );
         let official_api = Bot::new(token);
         match official_api.log_out().await {
-            Ok(response) => println!("Official Telegram Bot API logOut result: {}", response.result),
+            Ok(response) => println!(
+                "Official Telegram Bot API logOut result: {}",
+                response.result
+            ),
             Err(error) => {
                 let desc = error.to_string();
                 if desc.contains("Logged out") || desc.contains("Unauthorized") {
@@ -78,7 +83,8 @@ pub async fn init_emoji_cache(database_url: &str) {
         println!("ADMIN_USER_ID not set; emoji cache disabled.");
         return;
     };
-    let Ok((client, conn)) = tokio_postgres::connect(database_url, tokio_postgres::NoTls).await else {
+    let Ok((client, conn)) = tokio_postgres::connect(database_url, tokio_postgres::NoTls).await
+    else {
         eprintln!("emoji cache: failed initial DB connection");
         return;
     };
@@ -91,7 +97,9 @@ pub async fn init_emoji_cache(database_url: &str) {
 
     let db_url = database_url.to_string();
     tokio::spawn(async move {
-        let Ok((refresh_client, refresh_conn)) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await else {
+        let Ok((refresh_client, refresh_conn)) =
+            tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await
+        else {
             eprintln!("emoji cache refresh: failed to connect");
             return;
         };
@@ -109,8 +117,10 @@ pub async fn init_emoji_cache(database_url: &str) {
 pub fn spawn_redeem_sweeper(database_url: &str) {
     let db_url = database_url.to_string();
     tokio::spawn(async move {
-        let Ok((client, conn)) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await else {
+        let Ok((client, conn)) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await
+        else {
             eprintln!("[redeem event=sweeper_connect_failed]");
+            crate::stats::record_error_global("redeem_sweeper", "DB connect failed").await;
             return;
         };
         tokio::spawn(conn);
@@ -118,7 +128,10 @@ pub fn spawn_redeem_sweeper(database_url: &str) {
             match crate::redeem::store::sweep_expired(&client).await {
                 Ok(n) if n > 0 => eprintln!("[redeem event=sweep_done removed={n}]"),
                 Ok(_) => {}
-                Err(e) => eprintln!("[redeem event=sweep_failed err={e}]"),
+                Err(e) => {
+                    eprintln!("[redeem event=sweep_failed err={e}]");
+                    crate::stats::record_error_global("redeem_sweeper", &e.to_string()).await;
+                }
             }
             tokio::time::sleep(Duration::from_secs(3600)).await;
         }
@@ -132,8 +145,10 @@ pub fn spawn_referral_confirm_sweeper(database_url: &str, api: &Bot) {
     let db_url = database_url.to_string();
     let api = api.clone();
     tokio::spawn(async move {
-        let Ok((client, conn)) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await else {
+        let Ok((client, conn)) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await
+        else {
             eprintln!("[referral event=sweeper_connect_failed]");
+            crate::stats::record_error_global("referral_sweeper", "DB connect failed").await;
             return;
         };
         tokio::spawn(conn);
@@ -161,11 +176,13 @@ pub fn spawn_cookie_refresher(api: &Bot, cookie_pool: &mut CookiePool) {
         .snapshot()
         .available_cookies
         .into_iter()
-        .map(|c| (
-            c.profile_name,
-            c.source_profile_dir.to_string_lossy().into_owned(),
-            c.profile_dir.to_string_lossy().into_owned(),
-        ))
+        .map(|c| {
+            (
+                c.profile_name,
+                c.source_profile_dir.to_string_lossy().into_owned(),
+                c.profile_dir.to_string_lossy().into_owned(),
+            )
+        })
         .collect();
 
     if profiles.is_empty() {
@@ -188,7 +205,12 @@ pub fn spawn_cookie_refresher(api: &Bot, cookie_pool: &mut CookiePool) {
 
     println!(
         "[cookie_worker] starting: {} profile(s) interval={}s fresh_ttl={}s lock_ttl={}s owner={} redis={}",
-        profiles.len(), interval, fresh_ttl, lock_ttl, owner, redis_url
+        profiles.len(),
+        interval,
+        fresh_ttl,
+        lock_ttl,
+        owner,
+        redis_url
     );
 
     tokio::spawn(async move {
@@ -196,6 +218,7 @@ pub fn spawn_cookie_refresher(api: &Bot, cookie_pool: &mut CookiePool) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("[cookie_worker event=redis_client_init_failed] err={e}");
+                crate::stats::record_error_global("cookie_worker", &e.to_string()).await;
                 modules::notify_admin(&api, admin_chat_id, "⚠️ ساخت کلاینت Redis برای رفرش کوکی شکست خورد — رفرش کوکی‌ها غیرفعال شد. REDIS_URL رو چک کن.").await;
                 return;
             }
@@ -205,8 +228,12 @@ pub fn spawn_cookie_refresher(api: &Bot, cookie_pool: &mut CookiePool) {
         // locks left by a previous run of THIS env that died before unlocking
         // (prevents profiles being skip_locked for up to lock_ttl after a restart).
         match store.conn().await {
-            Ok(mut conn) => match crate::cookie_pool::fresh::clear_own_locks(&mut conn, &owner).await {
-                Ok(n) if n > 0 => println!("[cookie_worker event=startup_lock_cleanup] owner={owner} removed={n}"),
+            Ok(mut conn) => match crate::cookie_pool::fresh::clear_own_locks(&mut conn, &owner)
+                .await
+            {
+                Ok(n) if n > 0 => {
+                    println!("[cookie_worker event=startup_lock_cleanup] owner={owner} removed={n}")
+                }
                 Ok(_) => {}
                 Err(e) => eprintln!("[cookie_worker event=startup_lock_cleanup_failed] err={e}"),
             },
@@ -215,16 +242,32 @@ pub fn spawn_cookie_refresher(api: &Bot, cookie_pool: &mut CookiePool) {
 
         let mut redis_down = false;
         loop {
-            match cookie_worker_cycle(&api, &store, &profiles, &owner, fresh_ttl, lock_ttl, admin_chat_id).await {
+            match cookie_worker_cycle(
+                &api,
+                &store,
+                &profiles,
+                &owner,
+                fresh_ttl,
+                lock_ttl,
+                admin_chat_id,
+            )
+            .await
+            {
                 Ok(()) => {
                     if redis_down {
                         redis_down = false;
                         println!("[cookie_worker event=redis_recovered]");
-                        modules::notify_admin(&api, admin_chat_id, "✅ ارتباط با Redis دوباره برقرار شد — رفرش کوکی‌ها از سر گرفته شد.").await;
+                        modules::notify_admin(
+                            &api,
+                            admin_chat_id,
+                            "✅ ارتباط با Redis دوباره برقرار شد — رفرش کوکی‌ها از سر گرفته شد.",
+                        )
+                        .await;
                     }
                 }
                 Err(e) => {
                     eprintln!("[cookie_worker event=redis_error] err={e}");
+                    crate::stats::record_error_global("cookie_worker", &e.to_string()).await;
                     if !redis_down {
                         redis_down = true;
                         modules::notify_admin(&api, admin_chat_id, "⚠️ ارتباط با Redis قطع شده! رفرش کوکی‌ها متوقف شد. لطفاً Redis رو چک کن.").await;
@@ -255,7 +298,9 @@ async fn cookie_worker_cycle(
             continue;
         }
         if !fresh::try_lock(&mut conn, profile_name, owner, lock_ttl).await? {
-            println!("[cookie_worker profile={profile_name} event=skip_locked] (another env refreshing)");
+            println!(
+                "[cookie_worker profile={profile_name} event=skip_locked] (another env refreshing)"
+            );
             continue;
         }
 
@@ -274,15 +319,23 @@ async fn cookie_worker_cycle(
             Ok(()) => {
                 let ts = chrono::Utc::now().timestamp();
                 if let Err(e) = fresh::mark_fresh(&mut conn, profile_name, fresh_ttl, ts).await {
-                    eprintln!("[cookie_worker profile={profile_name} event=mark_fresh_failed] err={e}");
+                    eprintln!(
+                        "[cookie_worker profile={profile_name} event=mark_fresh_failed] err={e}"
+                    );
+                    crate::stats::record_error_global("cookie_worker", &e.to_string()).await;
                 }
                 let _ = fresh::unlock(&mut conn, profile_name).await;
-                println!("[cookie_worker profile={profile_name} event=refresh_done] fresh_ttl={fresh_ttl}s");
+                println!(
+                    "[cookie_worker profile={profile_name} event=refresh_done] fresh_ttl={fresh_ttl}s"
+                );
             }
             Err(e) => {
                 // Leave the lock to expire (back-off) instead of unlocking, so a
                 // broken profile is not hammered every cycle.
-                eprintln!("[cookie_worker profile={profile_name} event=refresh_failed] err={e} backoff={lock_ttl}s");
+                eprintln!(
+                    "[cookie_worker profile={profile_name} event=refresh_failed] err={e} backoff={lock_ttl}s"
+                );
+                crate::stats::record_error_global("cookie_worker", &e.to_string()).await;
             }
         }
     }
@@ -311,9 +364,14 @@ pub fn spawn_cooldown_refresh(
             admin_chat_id,
         };
         if let Err(e) = modules::cookie_refresher::run(&api_clone, cfg).await {
-            eprintln!("[cookie_refresh profile={p} event=cooldown_refresh_failed] cookie_id={cookie_id} err={e}");
+            eprintln!(
+                "[cookie_refresh profile={p} event=cooldown_refresh_failed] cookie_id={cookie_id} err={e}"
+            );
+            crate::stats::record_error_global("cookie_refresh", &e.to_string()).await;
         } else {
-            println!("[cookie_refresh profile={p} event=cooldown_refresh_done] cookie_id={cookie_id}");
+            println!(
+                "[cookie_refresh profile={p} event=cooldown_refresh_done] cookie_id={cookie_id}"
+            );
         }
         let _ = done_tx.send(cookie_id);
     });
@@ -326,7 +384,10 @@ pub fn spawn_i18n_watcher() {
         let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
         let mut watcher = recommended_watcher(tx).expect("failed to create file watcher");
         watcher
-            .watch(std::path::Path::new("config/i18n.json"), RecursiveMode::NonRecursive)
+            .watch(
+                std::path::Path::new("config/i18n.json"),
+                RecursiveMode::NonRecursive,
+            )
             .expect("failed to watch config/i18n.json");
         eprintln!("[i18n] watching config/i18n.json for changes");
         for res in rx {
@@ -362,35 +423,77 @@ pub async fn set_bot_commands(api: &Bot) {
 
     // ۱. ابتدا برای حالت پیش‌فرض (بدون language_code) ست می‌کنیم تا برای همه کاربران نمایش داده شود
     let default_cmds = vec![
-        BotCommand { command: "start".to_string(),    description: t("commands.start") },
-        BotCommand { command: "panel".to_string(),   description: t("commands.panel") },
-        BotCommand { command: "language".to_string(), description: t("commands.language") },
-        BotCommand { command: "rank".to_string(),     description: t("commands.rank") },
-        BotCommand { command: "ref".to_string(),      description: t("commands.ref") },
+        BotCommand {
+            command: "start".to_string(),
+            description: t("commands.start"),
+        },
+        BotCommand {
+            command: "panel".to_string(),
+            description: t("commands.panel"),
+        },
+        BotCommand {
+            command: "language".to_string(),
+            description: t("commands.language"),
+        },
+        BotCommand {
+            command: "rank".to_string(),
+            description: t("commands.rank"),
+        },
+        BotCommand {
+            command: "ref".to_string(),
+            description: t("commands.ref"),
+        },
     ];
-    match api.set_my_commands(&SetMyCommandsParams::builder().commands(default_cmds).build()).await {
+    match api
+        .set_my_commands(
+            &SetMyCommandsParams::builder()
+                .commands(default_cmds)
+                .build(),
+        )
+        .await
+    {
         Ok(_) => println!("Default bot commands set."),
         Err(e) => eprintln!("Failed to set default bot commands: {e}"),
     }
 
     // ۲. ست کردن اختصاصی برای هر زبان
     for lang in ["fa", "en", "it"] {
-        let commands = LANG.scope(lang.to_owned(), async {
-            vec![
-                BotCommand { command: "start".to_string(),    description: t("commands.start") },
-                BotCommand { command: "panel".to_string(),   description: t("commands.panel") },
-                BotCommand { command: "language".to_string(), description: t("commands.language") },
-                BotCommand { command: "rank".to_string(),     description: t("commands.rank") },
-                BotCommand { command: "ref".to_string(),      description: t("commands.ref") },
-            ]
-        }).await;
+        let commands = LANG
+            .scope(lang.to_owned(), async {
+                vec![
+                    BotCommand {
+                        command: "start".to_string(),
+                        description: t("commands.start"),
+                    },
+                    BotCommand {
+                        command: "panel".to_string(),
+                        description: t("commands.panel"),
+                    },
+                    BotCommand {
+                        command: "language".to_string(),
+                        description: t("commands.language"),
+                    },
+                    BotCommand {
+                        command: "rank".to_string(),
+                        description: t("commands.rank"),
+                    },
+                    BotCommand {
+                        command: "ref".to_string(),
+                        description: t("commands.ref"),
+                    },
+                ]
+            })
+            .await;
 
-        match api.set_my_commands(
-            &SetMyCommandsParams::builder()
-                .commands(commands)
-                .language_code(lang.to_owned())
-                .build(),
-        ).await {
+        match api
+            .set_my_commands(
+                &SetMyCommandsParams::builder()
+                    .commands(commands)
+                    .language_code(lang.to_owned())
+                    .build(),
+            )
+            .await
+        {
             Ok(_) => println!("Bot commands set for lang={lang}."),
             Err(e) => eprintln!("Failed to set bot commands for lang={lang}: {e}"),
         }

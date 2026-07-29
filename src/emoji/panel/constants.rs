@@ -28,5 +28,9 @@ pub const LIST_PAGE_SIZE: usize = 15;
 pub const PENDING_PAGE_SIZE: usize = 30;
 
 pub fn pending_total_pages(count: usize) -> usize {
-    if count == 0 { 1 } else { (count + PENDING_PAGE_SIZE - 1) / PENDING_PAGE_SIZE }
+    if count == 0 {
+        1
+    } else {
+        (count + PENDING_PAGE_SIZE - 1) / PENDING_PAGE_SIZE
+    }
 }

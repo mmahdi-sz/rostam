@@ -44,7 +44,11 @@ pub(super) async fn refresh_once() {
     *guard = fresh;
     eprintln!(
         "[ip_lookup event=lists_refreshed] aws={} gcp={} cloudflare={} tor={} spamhaus={}",
-        guard.aws.len(), guard.gcp.len(), guard.cloudflare.len(), guard.tor_exits.len(), guard.spamhaus.len(),
+        guard.aws.len(),
+        guard.gcp.len(),
+        guard.cloudflare.len(),
+        guard.tor_exits.len(),
+        guard.spamhaus.len(),
     );
 }
 
@@ -54,31 +58,72 @@ async fn build_lists() -> CachedLists {
 
     let aws = fetch_aws_ranges(&client, timeout).await.unwrap_or_default();
     let gcp = fetch_gcp_ranges(&client, timeout).await.unwrap_or_default();
-    let cloudflare = fetch_cloudflare_ranges(&client, timeout).await.unwrap_or_default();
+    let cloudflare = fetch_cloudflare_ranges(&client, timeout)
+        .await
+        .unwrap_or_default();
     let tor_exits = fetch_tor_exits(&client, timeout).await.unwrap_or_default();
     let spamhaus = fetch_spamhaus(&client, timeout).await.unwrap_or_default();
 
-    CachedLists { aws, gcp, cloudflare, tor_exits, spamhaus }
+    CachedLists {
+        aws,
+        gcp,
+        cloudflare,
+        tor_exits,
+        spamhaus,
+    }
 }
 
 const USER_AGENT: &str = "ros-telegram-bot-ip-lookup/1.0";
 
 async fn fetch_text(client: &reqwest::Client, url: &str, timeout: Duration) -> Option<String> {
-    client.get(url).timeout(timeout).header("User-Agent", USER_AGENT).send().await.ok()?.text().await.ok()
+    client
+        .get(url)
+        .timeout(timeout)
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await
+        .ok()?
+        .text()
+        .await
+        .ok()
 }
 
-async fn fetch_json(client: &reqwest::Client, url: &str, timeout: Duration) -> Option<serde_json::Value> {
-    client.get(url).timeout(timeout).header("User-Agent", USER_AGENT).send().await.ok()?.json().await.ok()
+async fn fetch_json(
+    client: &reqwest::Client,
+    url: &str,
+    timeout: Duration,
+) -> Option<serde_json::Value> {
+    client
+        .get(url)
+        .timeout(timeout)
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
+        .ok()
 }
 
-async fn fetch_aws_ranges(client: &reqwest::Client, timeout: Duration) -> Option<Vec<(IpAddr, u8, Option<String>)>> {
-    let v = fetch_json(client, "https://ip-ranges.amazonaws.com/ip-ranges.json", timeout).await?;
+async fn fetch_aws_ranges(
+    client: &reqwest::Client,
+    timeout: Duration,
+) -> Option<Vec<(IpAddr, u8, Option<String>)>> {
+    let v = fetch_json(
+        client,
+        "https://ip-ranges.amazonaws.com/ip-ranges.json",
+        timeout,
+    )
+    .await?;
     let mut out = Vec::new();
     if let Some(prefixes) = v.get("prefixes").and_then(|p| p.as_array()) {
         for p in prefixes {
             if let Some(cidr) = p.get("ip_prefix").and_then(|c| c.as_str()) {
                 if let Some((net, prefix)) = parse_cidr(cidr) {
-                    let region = p.get("region").and_then(|r| r.as_str()).map(|s| s.to_string());
+                    let region = p
+                        .get("region")
+                        .and_then(|r| r.as_str())
+                        .map(|s| s.to_string());
                     out.push((net, prefix, region));
                 }
             }
@@ -88,7 +133,10 @@ async fn fetch_aws_ranges(client: &reqwest::Client, timeout: Duration) -> Option
         for p in prefixes {
             if let Some(cidr) = p.get("ipv6_prefix").and_then(|c| c.as_str()) {
                 if let Some((net, prefix)) = parse_cidr(cidr) {
-                    let region = p.get("region").and_then(|r| r.as_str()).map(|s| s.to_string());
+                    let region = p
+                        .get("region")
+                        .and_then(|r| r.as_str())
+                        .map(|s| s.to_string());
                     out.push((net, prefix, region));
                 }
             }
@@ -97,42 +145,80 @@ async fn fetch_aws_ranges(client: &reqwest::Client, timeout: Duration) -> Option
     Some(out)
 }
 
-async fn fetch_gcp_ranges(client: &reqwest::Client, timeout: Duration) -> Option<Vec<(IpAddr, u8)>> {
-    let v = fetch_json(client, "https://www.gstatic.com/ipranges/cloud.json", timeout).await?;
+async fn fetch_gcp_ranges(
+    client: &reqwest::Client,
+    timeout: Duration,
+) -> Option<Vec<(IpAddr, u8)>> {
+    let v = fetch_json(
+        client,
+        "https://www.gstatic.com/ipranges/cloud.json",
+        timeout,
+    )
+    .await?;
     let mut out = Vec::new();
     if let Some(prefixes) = v.get("prefixes").and_then(|p| p.as_array()) {
         for p in prefixes {
-            let cidr = p.get("ipv4Prefix").and_then(|c| c.as_str())
+            let cidr = p
+                .get("ipv4Prefix")
+                .and_then(|c| c.as_str())
                 .or_else(|| p.get("ipv6Prefix").and_then(|c| c.as_str()));
             if let Some(cidr) = cidr {
-                if let Some(parsed) = parse_cidr(cidr) { out.push(parsed); }
+                if let Some(parsed) = parse_cidr(cidr) {
+                    out.push(parsed);
+                }
             }
         }
     }
     Some(out)
 }
 
-async fn fetch_cloudflare_ranges(client: &reqwest::Client, timeout: Duration) -> Option<Vec<(IpAddr, u8)>> {
-    let v4 = fetch_text(client, "https://www.cloudflare.com/ips-v4", timeout).await.unwrap_or_default();
-    let v6 = fetch_text(client, "https://www.cloudflare.com/ips-v6", timeout).await.unwrap_or_default();
-    let out = v4.lines().chain(v6.lines())
+async fn fetch_cloudflare_ranges(
+    client: &reqwest::Client,
+    timeout: Duration,
+) -> Option<Vec<(IpAddr, u8)>> {
+    let v4 = fetch_text(client, "https://www.cloudflare.com/ips-v4", timeout)
+        .await
+        .unwrap_or_default();
+    let v6 = fetch_text(client, "https://www.cloudflare.com/ips-v6", timeout)
+        .await
+        .unwrap_or_default();
+    let out = v4
+        .lines()
+        .chain(v6.lines())
         .filter_map(parse_cidr)
         .collect();
     Some(out)
 }
 
 async fn fetch_tor_exits(client: &reqwest::Client, timeout: Duration) -> Option<HashSet<IpAddr>> {
-    let text = fetch_text(client, "https://check.torproject.org/torbulkexitlist", timeout).await?;
-    Some(text.lines().filter_map(|l| l.trim().parse::<IpAddr>().ok()).collect())
+    let text = fetch_text(
+        client,
+        "https://check.torproject.org/torbulkexitlist",
+        timeout,
+    )
+    .await?;
+    Some(
+        text.lines()
+            .filter_map(|l| l.trim().parse::<IpAddr>().ok())
+            .collect(),
+    )
 }
 
 async fn fetch_spamhaus(client: &reqwest::Client, timeout: Duration) -> Option<Vec<(IpAddr, u8)>> {
-    let drop = fetch_text(client, "https://www.spamhaus.org/drop/drop.txt", timeout).await.unwrap_or_default();
-    let edrop = fetch_text(client, "https://www.spamhaus.org/drop/edrop.txt", timeout).await.unwrap_or_default();
-    let out = drop.lines().chain(edrop.lines())
+    let drop = fetch_text(client, "https://www.spamhaus.org/drop/drop.txt", timeout)
+        .await
+        .unwrap_or_default();
+    let edrop = fetch_text(client, "https://www.spamhaus.org/drop/edrop.txt", timeout)
+        .await
+        .unwrap_or_default();
+    let out = drop
+        .lines()
+        .chain(edrop.lines())
         .filter_map(|l| {
             let l = l.trim();
-            if l.is_empty() || l.starts_with(';') { return None; }
+            if l.is_empty() || l.starts_with(';') {
+                return None;
+            }
             let cidr = l.split(';').next()?.trim();
             parse_cidr(cidr)
         })
@@ -150,12 +236,16 @@ fn parse_cidr(s: &str) -> Option<(IpAddr, u8)> {
 fn cidr_contains(network: IpAddr, prefix: u8, ip: IpAddr) -> bool {
     match (network, ip) {
         (IpAddr::V4(net), IpAddr::V4(ip)) => {
-            if prefix == 0 { return true; }
+            if prefix == 0 {
+                return true;
+            }
             let mask = u32::MAX.checked_shl(32 - prefix as u32).unwrap_or(0);
             u32::from(net) & mask == u32::from(ip) & mask
         }
         (IpAddr::V6(net), IpAddr::V6(ip)) => {
-            if prefix == 0 { return true; }
+            if prefix == 0 {
+                return true;
+            }
             let mask = u128::MAX.checked_shl(128 - prefix as u32).unwrap_or(0);
             u128::from(net) & mask == u128::from(ip) & mask
         }
@@ -164,11 +254,14 @@ fn cidr_contains(network: IpAddr, prefix: u8, ip: IpAddr) -> bool {
 }
 
 fn any_contains(ranges: &[(IpAddr, u8)], ip: IpAddr) -> bool {
-    ranges.iter().any(|(net, prefix)| cidr_contains(*net, *prefix, ip))
+    ranges
+        .iter()
+        .any(|(net, prefix)| cidr_contains(*net, *prefix, ip))
 }
 
 fn find_aws_region(ranges: &[(IpAddr, u8, Option<String>)], ip: IpAddr) -> Option<Option<String>> {
-    ranges.iter()
+    ranges
+        .iter()
         .find(|(net, prefix, _)| cidr_contains(*net, *prefix, ip))
         .map(|(_, _, region)| region.clone())
 }
@@ -216,7 +309,10 @@ mod tests {
 
     #[test]
     fn parse_cidr_valid_and_invalid() {
-        assert_eq!(parse_cidr("192.168.0.0/24"), Some(("192.168.0.0".parse().unwrap(), 24)));
+        assert_eq!(
+            parse_cidr("192.168.0.0/24"),
+            Some(("192.168.0.0".parse().unwrap(), 24))
+        );
         assert_eq!(parse_cidr("not-a-cidr"), None);
     }
 }

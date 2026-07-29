@@ -3,13 +3,13 @@ use tokio::sync::RwLock;
 // ponytail: counter removed — global counter lives in crate::log.
 pub use crate::log::next_trace_id;
 
-mod types;
-mod render;
 mod loader;
+mod render;
+mod types;
 
-pub use types::EmojiCache;
-pub use render::{LookupOutcome, RenderLookup};
 pub use loader::load_from_db;
+pub use render::{LookupOutcome, RenderLookup};
+pub use types::EmojiCache;
 
 pub static CACHE: OnceLock<Arc<RwLock<EmojiCache>>> = OnceLock::new();
 
@@ -17,14 +17,16 @@ pub fn global() -> Option<Arc<RwLock<EmojiCache>>> {
     CACHE.get().cloned()
 }
 
-
 /// Returns a short, log-safe preview of `text`, truncated at character
 /// boundaries to roughly `max_chars` (adds an ellipsis marker if cut).
 pub fn preview(text: &str, max_chars: usize) -> String {
     let mut taken = 0usize;
     let mut out = String::new();
     for c in text.chars() {
-        if taken >= max_chars { out.push('…'); break; }
+        if taken >= max_chars {
+            out.push('…');
+            break;
+        }
         out.push(c);
         taken += 1;
     }

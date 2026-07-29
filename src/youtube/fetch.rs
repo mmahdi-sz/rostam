@@ -41,12 +41,17 @@ pub async fn fetch_video_info(
     // `kill_on_drop` above ensures that actually kills the process instead of
     // leaking a yt-dlp/deno process stuck resolving a bad or empty URL.
     let output = match tokio::time::timeout(FETCH_TIMEOUT, child.wait_with_output()).await {
-        Ok(result) => result.map_err(|e| FetchError::Other(format!("failed to run yt-dlp: {e}")))?,
+        Ok(result) => {
+            result.map_err(|e| FetchError::Other(format!("failed to run yt-dlp: {e}")))?
+        }
         Err(_) => {
             log_trace(
                 trace_id,
                 "fetch_timeout",
-                &format!("no response after {}s, killing yt-dlp", FETCH_TIMEOUT.as_secs()),
+                &format!(
+                    "no response after {}s, killing yt-dlp",
+                    FETCH_TIMEOUT.as_secs()
+                ),
             );
             return Err(FetchError::Other(format!(
                 "yt-dlp timed out after {}s",
@@ -183,7 +188,11 @@ pub async fn fetch_video_info(
     let (playlist_item_count, playlist_items) = if is_playlist {
         match fetch_playlist_items(trace_id, url, yt_dlp_browser_spec).await {
             Ok((count, items)) => {
-                log_trace(trace_id, "playlist_items_fetched", &format!("count={}", count));
+                log_trace(
+                    trace_id,
+                    "playlist_items_fetched",
+                    &format!("count={}", count),
+                );
                 (Some(count), items)
             }
             Err(e) => {
@@ -213,7 +222,11 @@ pub async fn fetch_video_info(
                     subtitle_languages = rep.subtitle_languages;
                 }
                 Err(e) => {
-                    log_trace(trace_id, "playlist_representative_fetch_failed", &format!("{e:?}"));
+                    log_trace(
+                        trace_id,
+                        "playlist_representative_fetch_failed",
+                        &format!("{e:?}"),
+                    );
                 }
             }
         }
@@ -272,14 +285,24 @@ async fn fetch_playlist_items(
         Ok(result) => result.map_err(|e| format!("failed to run yt-dlp for playlist: {e}"))?,
         Err(_) => {
             log_trace(trace_id, "playlist_fetch_timeout", "yt-dlp timed out");
-            return Err(format!("yt-dlp timed out after {}s", FETCH_TIMEOUT.as_secs()));
+            return Err(format!(
+                "yt-dlp timed out after {}s",
+                FETCH_TIMEOUT.as_secs()
+            ));
         }
     };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        log_trace(trace_id, "playlist_yt_dlp_failed", stderr.lines().last().unwrap_or(""));
-        return Err(format!("yt-dlp failed: {}", stderr.lines().last().unwrap_or("")));
+        log_trace(
+            trace_id,
+            "playlist_yt_dlp_failed",
+            stderr.lines().last().unwrap_or(""),
+        );
+        return Err(format!(
+            "yt-dlp failed: {}",
+            stderr.lines().last().unwrap_or("")
+        ));
     }
 
     // --dump-json روی یک پلی‌لیست، برای هر ویدیو یک خط JSON جدا چاپ می‌کند (NDJSON)، نه یک JSON واحد.
@@ -388,11 +411,7 @@ fn extract_subtitle_languages(json: &serde_json::Value) -> Vec<SubtitleLanguage>
         .into_iter()
         .map(|(code, is_auto)| SubtitleLanguage { code, is_auto })
         .collect();
-    out.sort_by(|a, b| {
-        a.is_auto
-            .cmp(&b.is_auto)
-            .then_with(|| a.code.cmp(&b.code))
-    });
+    out.sort_by(|a, b| a.is_auto.cmp(&b.is_auto).then_with(|| a.code.cmp(&b.code)));
     out
 }
 

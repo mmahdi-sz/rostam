@@ -1,7 +1,7 @@
 use frankenstein::types::{MessageEntity, MessageEntityType};
 
-use super::lookup::t;
 use super::emoji_map::EMOJI_MAP;
+use super::lookup::t;
 
 pub fn entities_for_text(text: &str) -> Vec<MessageEntity> {
     let mut entities: Vec<MessageEntity> = Vec::new();

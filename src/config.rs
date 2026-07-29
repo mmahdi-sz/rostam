@@ -12,8 +12,9 @@ pub fn bot_username() -> &'static str {
 }
 
 pub fn bot_token() -> anyhow::Result<String> {
-    config_value("BOT_TOKEN")
-        .ok_or_else(|| anyhow::anyhow!("BOT_TOKEN is not set in .env, /etc/default/abc, or process env"))
+    config_value("BOT_TOKEN").ok_or_else(|| {
+        anyhow::anyhow!("BOT_TOKEN is not set in .env, /etc/default/abc, or process env")
+    })
 }
 
 pub fn admin_user_id() -> Option<i64> {
@@ -73,14 +74,22 @@ pub fn cookie_refresh_lock_ttl_secs() -> u64 {
 /// Short label identifying this deployment (used as the Redis refresh-lock owner
 /// for diagnostics). Falls back to dev/prod based on DEV_MODE.
 pub fn env_label() -> String {
-    config_value("ENV_LABEL").unwrap_or_else(|| if dev_mode() { "dev".into() } else { "prod".into() })
+    config_value("ENV_LABEL").unwrap_or_else(|| {
+        if dev_mode() {
+            "dev".into()
+        } else {
+            "prod".into()
+        }
+    })
 }
 
 /// Max accepted PDF size for the compression feature. Default 2GB.
 pub fn pdf_compress_max_bytes() -> u64 {
     config_value("PDF_COMPRESS_MAX_MB")
         .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(2048) * 1024 * 1024
+        .unwrap_or(2048)
+        * 1024
+        * 1024
 }
 
 /// Hard timeout for the `gs` subprocess — killed cleanly past this. Default 30 min.
@@ -129,8 +138,11 @@ pub fn surge_host() -> String {
 /// (`~/.mozilla/firefox` equivalent). Falls back to `$HOME/.mozilla/firefox`
 /// when unset; if `$HOME` is also unset, cookie discovery finds no profiles.
 pub fn firefox_profiles_root() -> Option<String> {
-    config_value("FIREFOX_PROFILES_ROOT")
-        .or_else(|| env::var("HOME").ok().map(|home| format!("{home}/.mozilla/firefox")))
+    config_value("FIREFOX_PROFILES_ROOT").or_else(|| {
+        env::var("HOME")
+            .ok()
+            .map(|home| format!("{home}/.mozilla/firefox"))
+    })
 }
 
 /// Path to the `deno` binary passed to yt-dlp's `--js-runtimes` flag. Defaults
@@ -174,7 +186,11 @@ fn value_from_env_file(path: &str, target_key: &str) -> Option<String> {
             return None;
         }
         let token = unquote_env_value(value.trim());
-        if token.is_empty() { None } else { Some(token.to_owned()) }
+        if token.is_empty() {
+            None
+        } else {
+            Some(token.to_owned())
+        }
     })
 }
 
@@ -188,4 +204,34 @@ fn unquote_env_value(value: &str) -> &str {
         }
     }
     value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_unquote_env_value() {
+        assert_eq!(unquote_env_value("\"hello\""), "hello");
+        assert_eq!(unquote_env_value("'world'"), "world");
+        assert_eq!(unquote_env_value("plain"), "plain");
+        assert_eq!(unquote_env_value(""), "");
+    }
+
+    #[test]
+    fn test_dev_mode_parsing() {
+        assert!(!dev_mode());
+    }
+
+    #[test]
+    fn test_redis_url_default() {
+        let url = redis_url();
+        assert!(!url.is_empty());
+    }
+
+    #[test]
+    fn test_pdf_compress_max_bytes_default() {
+        let bytes = pdf_compress_max_bytes();
+        assert!(bytes > 0);
+    }
 }

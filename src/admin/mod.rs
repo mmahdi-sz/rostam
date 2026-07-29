@@ -1,51 +1,56 @@
 use crate::i18n::{t, tf, to_fa_digits};
 use crate::stats::{
-    get_user_stats, get_download_stats, get_active_users, get_feature_stats,
-    get_action_breakdown, get_recent_errors, count_recent_errors,
-    fmt_bytes, fmt_secs, FeatureStats,
+    FeatureStats, count_recent_errors, fmt_bytes, fmt_secs, get_action_breakdown, get_active_users,
+    get_download_stats, get_feature_stats, get_recent_errors, get_user_stats,
 };
 use tokio_postgres::Client;
 
 // فیچرهای AI که در پنل آمار اصلی نشون داده می‌شن: (feature_key, نام i18n, آیا مدت زمان داره).
 // مدت‌دارها amount=ثانیه ثبت می‌کنن (stt/denoise/separation)؛ بقیه amount=تعداد.
 const AI_FEATURES: &[(&str, &str, bool)] = &[
-    ("stt",        "admin.stats.names.stt",        true),
-    ("denoise",    "admin.stats.names.denoise",    true),
-    ("upscale",    "admin.stats.names.upscale",    false),
+    ("stt", "admin.stats.names.stt", true),
+    ("denoise", "admin.stats.names.denoise", true),
+    ("upscale", "admin.stats.names.upscale", false),
     ("separation", "admin.stats.names.separation", true),
-    ("gwm",        "admin.stats.names.gwm",        false),
+    ("gwm", "admin.stats.names.gwm", false),
 ];
 
 // نام raw فیچر → نام فارسی برای «پرمصرف‌ترین فیچر». youtube جداست (در stats_downloads).
 fn feature_label(raw: &str) -> String {
     let key = match raw {
-        "stt"        => "admin.stats.names.stt",
-        "denoise"    => "admin.stats.names.denoise",
-        "upscale"    => "admin.stats.names.upscale",
+        "stt" => "admin.stats.names.stt",
+        "denoise" => "admin.stats.names.denoise",
+        "upscale" => "admin.stats.names.upscale",
         "separation" => "admin.stats.names.separation",
-        "gwm"        => "admin.stats.names.gwm",
-        "youtube"    => "admin.stats.names.youtube",
-        _            => return raw.to_string(),
+        "gwm" => "admin.stats.names.gwm",
+        "youtube" => "admin.stats.names.youtube",
+        _ => return raw.to_string(),
     };
     t(key)
 }
 
 fn render_feature_block(name: &str, fs: &FeatureStats, with_time: bool) -> String {
-    let mut block = tf("admin.stats.feature_count", &[
-        ("name", name),
-        ("ok_1d",  &fs.ok.d1.to_string()),
-        ("ok_3d",  &fs.ok.d3.to_string()),
-        ("ok_7d",  &fs.ok.d7.to_string()),
-        ("ok_30d", &fs.ok.d30.to_string()),
-        ("fail_30d", &fs.fail.d30.to_string()),
-    ]);
+    let mut block = tf(
+        "admin.stats.feature_count",
+        &[
+            ("name", name),
+            ("ok_1d", &fs.ok.d1.to_string()),
+            ("ok_3d", &fs.ok.d3.to_string()),
+            ("ok_7d", &fs.ok.d7.to_string()),
+            ("ok_30d", &fs.ok.d30.to_string()),
+            ("fail_30d", &fs.fail.d30.to_string()),
+        ],
+    );
     if with_time {
-        block.push_str(&tf("admin.stats.feature_time", &[
-            ("t_1d",  &fmt_secs(fs.amount.d1)),
-            ("t_3d",  &fmt_secs(fs.amount.d3)),
-            ("t_7d",  &fmt_secs(fs.amount.d7)),
-            ("t_30d", &fmt_secs(fs.amount.d30)),
-        ]));
+        block.push_str(&tf(
+            "admin.stats.feature_time",
+            &[
+                ("t_1d", &fmt_secs(fs.amount.d1)),
+                ("t_3d", &fmt_secs(fs.amount.d3)),
+                ("t_7d", &fmt_secs(fs.amount.d7)),
+                ("t_30d", &fmt_secs(fs.amount.d30)),
+            ],
+        ));
     }
     block
 }
@@ -76,13 +81,16 @@ pub async fn render_stats(client: &Client) -> String {
     let mut out = String::new();
 
     // ── کاربران ──
-    out.push_str(&tf("admin.stats.users", &[
-        ("total",   &users.total.to_string()),
-        ("new_1d",  &users.new_1d.to_string()),
-        ("new_3d",  &users.new_3d.to_string()),
-        ("new_7d",  &users.new_7d.to_string()),
-        ("new_30d", &users.new_30d.to_string()),
-    ]));
+    out.push_str(&tf(
+        "admin.stats.users",
+        &[
+            ("total", &users.total.to_string()),
+            ("new_1d", &users.new_1d.to_string()),
+            ("new_3d", &users.new_3d.to_string()),
+            ("new_7d", &users.new_7d.to_string()),
+            ("new_30d", &users.new_30d.to_string()),
+        ],
+    ));
 
     // ── کاربران فعال (DAU/WAU/بازگشت/پرمصرف‌ترین) ──
     // پرمصرف‌ترین فیچر: مقایسه‌ی پرمصرف‌ترین فیچر AI با درخواست‌های یوتیوب (۷ روز).
@@ -91,36 +99,39 @@ pub async fn render_stats(client: &Client) -> String {
     } else {
         (feature_label(&active.top_feature), active.top_feature_count)
     };
-    out.push_str(&tf("admin.stats.active", &[
-        ("dau",       &active.dau.to_string()),
-        ("wau",       &active.wau.to_string()),
-        ("returning", &active.returning_1d.to_string()),
-        ("top_name",  &top_label),
-        ("top_count", &top_count.to_string()),
-    ]));
+    out.push_str(&tf(
+        "admin.stats.active",
+        &[
+            ("dau", &active.dau.to_string()),
+            ("wau", &active.wau.to_string()),
+            ("returning", &active.returning_1d.to_string()),
+            ("top_name", &top_label),
+            ("top_count", &top_count.to_string()),
+        ],
+    ));
 
     // ── یوتیوب دانلودر ──
-    out.push_str(&tf("admin.stats.youtube", &[
-        ("req_1d",  &dl.requests_1d.to_string()),
-        ("req_3d",  &dl.requests_3d.to_string()),
-        ("req_7d",  &dl.requests_7d.to_string()),
-        ("req_30d", &dl.requests_30d.to_string()),
-
-        ("dl_1d",   &fmt_bytes(dl.bytes_downloaded_1d)),
-        ("dl_3d",   &fmt_bytes(dl.bytes_downloaded_3d)),
-        ("dl_7d",   &fmt_bytes(dl.bytes_downloaded_7d)),
-        ("dl_30d",  &fmt_bytes(dl.bytes_downloaded_30d)),
-
-        ("up_1d",   &dl.uploads_ok_1d.to_string()),
-        ("up_3d",   &dl.uploads_ok_3d.to_string()),
-        ("up_7d",   &dl.uploads_ok_7d.to_string()),
-        ("up_30d",  &dl.uploads_ok_30d.to_string()),
-
-        ("upb_1d",  &fmt_bytes(dl.bytes_uploaded_1d)),
-        ("upb_3d",  &fmt_bytes(dl.bytes_uploaded_3d)),
-        ("upb_7d",  &fmt_bytes(dl.bytes_uploaded_7d)),
-        ("upb_30d", &fmt_bytes(dl.bytes_uploaded_30d)),
-    ]));
+    out.push_str(&tf(
+        "admin.stats.youtube",
+        &[
+            ("req_1d", &dl.requests_1d.to_string()),
+            ("req_3d", &dl.requests_3d.to_string()),
+            ("req_7d", &dl.requests_7d.to_string()),
+            ("req_30d", &dl.requests_30d.to_string()),
+            ("dl_1d", &fmt_bytes(dl.bytes_downloaded_1d)),
+            ("dl_3d", &fmt_bytes(dl.bytes_downloaded_3d)),
+            ("dl_7d", &fmt_bytes(dl.bytes_downloaded_7d)),
+            ("dl_30d", &fmt_bytes(dl.bytes_downloaded_30d)),
+            ("up_1d", &dl.uploads_ok_1d.to_string()),
+            ("up_3d", &dl.uploads_ok_3d.to_string()),
+            ("up_7d", &dl.uploads_ok_7d.to_string()),
+            ("up_30d", &dl.uploads_ok_30d.to_string()),
+            ("upb_1d", &fmt_bytes(dl.bytes_uploaded_1d)),
+            ("upb_3d", &fmt_bytes(dl.bytes_uploaded_3d)),
+            ("upb_7d", &fmt_bytes(dl.bytes_uploaded_7d)),
+            ("upb_30d", &fmt_bytes(dl.bytes_uploaded_30d)),
+        ],
+    ));
 
     // ── فیچرهای هوش مصنوعی ──
     for (feature, name_key, with_time) in AI_FEATURES {
@@ -142,11 +153,11 @@ pub async fn render_stats(client: &Client) -> String {
 
 // فیچرهایی که در «آمار بیشتر» تفکیک action نشون داده می‌شن.
 const MORE_FEATURES: &[(&str, &str)] = &[
-    ("youtube",  "admin.stats.more.youtube"),
-    ("emoji",    "admin.stats.more.emoji"),
-    ("cookie",   "admin.stats.more.cookie"),
-    ("paywall",  "admin.stats.more.paywall"),
-    ("cpu",      "admin.stats.more.cpu"),
+    ("youtube", "admin.stats.more.youtube"),
+    ("emoji", "admin.stats.more.emoji"),
+    ("cookie", "admin.stats.more.cookie"),
+    ("paywall", "admin.stats.more.paywall"),
+    ("cpu", "admin.stats.more.cpu"),
 ];
 
 const MORE_MAX_ROWS: usize = 14;
@@ -180,7 +191,10 @@ pub async fn render_stats_more(client: &Client) -> String {
             ));
         }
         if rows.len() > MORE_MAX_ROWS {
-            out.push_str(&tf("admin.stats_more_rows", &[("n", &(rows.len() - MORE_MAX_ROWS).to_string())]));
+            out.push_str(&tf(
+                "admin.stats_more_rows",
+                &[("n", &(rows.len() - MORE_MAX_ROWS).to_string())],
+            ));
         }
     }
 
@@ -190,7 +204,9 @@ pub async fn render_stats_more(client: &Client) -> String {
 // ── «خطاهای ۱ روز گذشته» ─────────────────────────────────────────────────────────
 
 fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 // خروجی HTML (نقل‌قول جمع‌شو). با ParseMode::Html فرستاده می‌شه.
@@ -216,5 +232,56 @@ pub async fn render_errors_1d(client: &Client) -> String {
         body.push('\n');
     }
     // blockquote جمع‌شو — کاربر می‌زنه باز می‌شه.
-    format!("{}<blockquote expandable>{}</blockquote>", html_escape(&header), body.trim_end())
+    format!(
+        "{}<blockquote expandable>{}</blockquote>",
+        html_escape(&header),
+        body.trim_end()
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_admin_feature_label() {
+        let label = feature_label("stt");
+        assert!(!label.is_empty());
+        let unknown = feature_label("unknown_feat");
+        assert_eq!(unknown, "unknown_feat");
+    }
+
+    #[test]
+    fn test_admin_html_escape() {
+        assert_eq!(
+            html_escape("<script>&</script>"),
+            "&lt;script&gt;&amp;&lt;/script&gt;"
+        );
+    }
+
+    #[test]
+    fn test_admin_render_feature_block() {
+        let fs = FeatureStats {
+            ok: crate::stats::Periods {
+                d1: 1,
+                d3: 2,
+                d7: 3,
+                d30: 4,
+            },
+            fail: crate::stats::Periods {
+                d1: 0,
+                d3: 0,
+                d7: 0,
+                d30: 1,
+            },
+            amount: crate::stats::Periods {
+                d1: 10,
+                d3: 20,
+                d7: 30,
+                d30: 40,
+            },
+        };
+        let block = render_feature_block("STT", &fs, true);
+        assert!(block.contains("STT"));
+    }
 }

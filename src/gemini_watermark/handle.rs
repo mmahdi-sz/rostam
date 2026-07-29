@@ -7,7 +7,7 @@ use frankenstein::{
     types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, Message},
 };
 
-use crate::bot::{send_text, send_text_with_back, edit_to_ai_lab};
+use crate::bot::{edit_to_ai_lab, send_text, send_text_with_back};
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::t;
 use crate::log::next_trace_id;
@@ -26,10 +26,15 @@ fn cancel_keyboard() -> InlineKeyboardMarkup {
             } else {
                 Some(icon_id)
             },
-            url: None, login_url: None, web_app: None,
-            switch_inline_query: None, switch_inline_query_current_chat: None,
-            switch_inline_query_chosen_chat: None, copy_text: None,
-            callback_game: None, pay: None,
+            url: None,
+            login_url: None,
+            web_app: None,
+            switch_inline_query: None,
+            switch_inline_query_current_chat: None,
+            switch_inline_query_chosen_chat: None,
+            copy_text: None,
+            callback_game: None,
+            pay: None,
         }]])
         .build()
 }
@@ -72,11 +77,7 @@ pub async fn handle_gwm_cancel(
     log_ev!("gwm", trace_id, "cancel_done", "raw" => format!("ok={}", r.is_ok()));
 }
 
-pub async fn handle_gwm_image(
-    api: &Bot,
-    message: &Message,
-    user_id: i64,
-) {
+pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
 
@@ -85,7 +86,9 @@ pub async fn handle_gwm_image(
         message.photo.is_some(), message.document.is_some()));
 
     // Get file_id and extension from photo (largest) or document.
-    let file_id = message.photo.as_ref()
+    let file_id = message
+        .photo
+        .as_ref()
         .and_then(|photos| photos.last())
         .map(|p| p.file_id.clone())
         .or_else(|| message.document.as_ref().map(|d| d.file_id.clone()));
@@ -125,7 +128,8 @@ pub async fn handle_gwm_image(
             log_ev!("gwm", trace_id, "read_failed", "raw" => "err={e}");
             crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
             crate::stats::record_error_global("gwm", &format!("read failed: {e}")).await;
-            let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
+            let _ =
+                send_text_with_back(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
             std::fs::remove_dir_all(&work_dir).ok();
             return;
         }
@@ -138,7 +142,8 @@ pub async fn handle_gwm_image(
     // returns NoWatermark and we tell the user rather than inpainting a guess.
     log_ev!("gwm", trace_id, "remove_start", "raw" => format!("user_id={user_id} bytes={}", image_bytes.len()));
     let t_start = std::time::Instant::now();
-    let result_bytes = match crate::moebius::remove_watermark(image_bytes, user_id, trace_id).await {
+    let result_bytes = match crate::moebius::remove_watermark(image_bytes, user_id, trace_id).await
+    {
         Ok(v) => v,
         Err(crate::moebius::MoebiusError::NoWatermark) => {
             let elapsed = t_start.elapsed().as_secs_f64();
@@ -152,7 +157,8 @@ pub async fn handle_gwm_image(
             log_ev!("gwm", trace_id, "remove_failed", "raw" => format!("elapsed={elapsed:.2}s err={e}"));
             crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
             crate::stats::record_error_global("gwm", &format!("remove failed: {e}")).await;
-            let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
+            let _ =
+                send_text_with_back(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
             return;
         }
     };
@@ -206,7 +212,8 @@ fn detect_ext(message: &Message) -> String {
                 "image/webp" => "webp",
                 "image/bmp" => "bmp",
                 _ => "jpg",
-            }.to_string();
+            }
+            .to_string();
         }
     }
     "jpg".to_string()

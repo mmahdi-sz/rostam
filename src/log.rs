@@ -10,7 +10,11 @@ pub fn next_trace_id() -> u64 {
 pub fn trunc(s: &str) -> String {
     let mut chars = s.chars();
     let head: String = chars.by_ref().take(6).collect();
-    if chars.next().is_some() { format!("{head}…") } else { head }
+    if chars.next().is_some() {
+        format!("{head}…")
+    } else {
+        head
+    }
 }
 
 pub fn trunc_id(id: i64) -> String {
@@ -18,9 +22,8 @@ pub fn trunc_id(id: i64) -> String {
 }
 
 pub fn init_subscriber() {
-    use tracing_subscriber::{fmt, EnvFilter};
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    use tracing_subscriber::{EnvFilter, fmt};
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let _ = fmt()
         .with_env_filter(filter)
         .with_target(false)
@@ -74,7 +77,7 @@ macro_rules! log_actor_id {
         }); )*
         let line = format!("[{} trace={} actor] {}", $domain, $trace, parts.join(" "));
         tracing::info!(domain = $domain, trace = $trace, event = "actor", "{}", line);
-        
+
         #[cfg(feature = "testapi")]
         let _ = $crate::log::CAPTURED_TRACES.try_with(|arc| {
             if let Ok(mut lock) = arc.lock() {
@@ -201,8 +204,14 @@ mod tests {
     #[test]
     fn log_actor_no_panic() {
         // Minimal stub matching frankenstein::types::User shape used by the macro.
-        struct FakeUser { pub id: u64, pub username: Option<String> }
-        let user = FakeUser { id: 671234567, username: Some("parsa".to_string()) };
+        struct FakeUser {
+            pub id: u64,
+            pub username: Option<String>,
+        }
+        let user = FakeUser {
+            id: 671234567,
+            username: Some("parsa".to_string()),
+        };
         let trace = 99u64;
         log_actor!("test", trace, &user, "rank" => "Dalavar", "clicked" => "upscale:model:x");
     }

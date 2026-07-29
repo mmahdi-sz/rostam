@@ -19,31 +19,31 @@ pub enum AudioQuality {
 impl AudioQuality {
     pub fn format_spec(self) -> &'static str {
         match self {
-            Self::Best   => "bestaudio",
+            Self::Best => "bestaudio",
             Self::Medium => "bestaudio[abr<=128]/bestaudio",
-            Self::Low    => "bestaudio[abr<=64]/bestaudio",
+            Self::Low => "bestaudio[abr<=64]/bestaudio",
         }
     }
     pub fn label_key(self) -> &'static str {
         match self {
-            Self::Best   => "youtube.audio.quality.best",
+            Self::Best => "youtube.audio.quality.best",
             Self::Medium => "youtube.audio.quality.medium",
-            Self::Low    => "youtube.audio.quality.low",
+            Self::Low => "youtube.audio.quality.low",
         }
     }
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "best" => Some(Self::Best),
-            "mid"  => Some(Self::Medium),
-            "low"  => Some(Self::Low),
+            "mid" => Some(Self::Medium),
+            "low" => Some(Self::Low),
             _ => None,
         }
     }
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Best   => "best",
+            Self::Best => "best",
             Self::Medium => "mid",
-            Self::Low    => "low",
+            Self::Low => "low",
         }
     }
 }

@@ -1,8 +1,14 @@
-#[cfg(feature = "testapi")] pub mod dispatch;
-#[cfg(not(feature = "testapi"))] mod dispatch;
+//! Core bot application runtime, update dispatcher loop, state management, and graceful shutdown.
+
+#[cfg(feature = "testapi")]
+pub mod dispatch;
+#[cfg(not(feature = "testapi"))]
+mod dispatch;
 mod startup;
-#[cfg(feature = "testapi")] pub mod state;
-#[cfg(not(feature = "testapi"))] mod state;
+#[cfg(feature = "testapi")]
+pub mod state;
+#[cfg(not(feature = "testapi"))]
+mod state;
 use std::time::Duration;
 
 use frankenstein::{AsyncTelegramApi, methods::GetUpdatesParams, types::AllowedUpdate};
@@ -12,11 +18,26 @@ use crate::cookie_pool::CookiePool;
 use crate::emoji::FlowManager;
 
 use startup::{
-    build_bot_api, fetch_bot_username, init_database, init_emoji_cache,
-    set_bot_commands, spawn_cookie_refresher, spawn_cooldown_refresh, spawn_i18n_watcher,
-    spawn_redeem_sweeper, spawn_referral_confirm_sweeper,
+    build_bot_api, fetch_bot_username, init_database, init_emoji_cache, set_bot_commands,
+    spawn_cookie_refresher, spawn_cooldown_refresh, spawn_i18n_watcher, spawn_redeem_sweeper,
+    spawn_referral_confirm_sweeper,
 };
 use state::AppState;
+
+pub static ACTIVE_TASKS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub struct TaskGuard;
+impl TaskGuard {
+    pub fn new() -> Self {
+        ACTIVE_TASKS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Self
+    }
+}
+impl Drop for TaskGuard {
+    fn drop(&mut self) {
+        ACTIVE_TASKS.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
 
 pub async fn run() -> anyhow::Result<()> {
     crate::log::init_subscriber();
@@ -62,6 +83,9 @@ pub async fn run() -> anyhow::Result<()> {
         flow_manager: FlowManager::new(),
         rate_limit_tx,
         flow_clear_tx,
+        user_last_update: std::sync::Arc::new(tokio::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )),
     };
 
     crate::health::mark_healthy();
@@ -79,7 +103,9 @@ pub async fn run() -> anyhow::Result<()> {
         let sigterm = async {
             #[cfg(unix)]
             {
-                if let Ok(mut sig) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                if let Ok(mut sig) =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                {
                     sig.recv().await;
                 } else {
                     std::future::pending::<()>().await;
@@ -100,14 +126,29 @@ pub async fn run() -> anyhow::Result<()> {
 
     let mut params = GetUpdatesParams::builder()
         .timeout(30u32)
-        .allowed_updates(vec![AllowedUpdate::Message, AllowedUpdate::CallbackQuery, AllowedUpdate::ChatMember])
+        .allowed_updates(vec![
+            AllowedUpdate::Message,
+            AllowedUpdate::CallbackQuery,
+            AllowedUpdate::ChatMember,
+        ])
         .build();
 
     loop {
         if *shutdown_rx.borrow() {
-            tracing::info!(event = "shutdown_drain_start", "graceful shutdown initiated, draining tasks...");
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            tracing::info!(event = "shutdown_complete", "graceful shutdown complete");
+            tracing::info!(
+                event = "shutdown_drain_start",
+                "graceful shutdown initiated, draining tasks..."
+            );
+            let mut waited = 0;
+            while ACTIVE_TASKS.load(std::sync::atomic::Ordering::SeqCst) > 0 && waited < 30 {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                waited += 1;
+            }
+            tracing::info!(
+                event = "shutdown_complete",
+                waited_secs = waited,
+                "graceful shutdown complete"
+            );
             break;
         }
 
@@ -116,7 +157,11 @@ pub async fn run() -> anyhow::Result<()> {
             Err(error) => {
                 let wait = match &error {
                     frankenstein::Error::Api(e) if e.error_code == 429 => {
-                        e.parameters.as_ref().and_then(|p| p.retry_after).unwrap_or(5).max(1) as u64
+                        e.parameters
+                            .as_ref()
+                            .and_then(|p| p.retry_after)
+                            .unwrap_or(5)
+                            .max(1) as u64
                     }
                     _ => 2,
                 };
@@ -127,8 +172,14 @@ pub async fn run() -> anyhow::Result<()> {
         };
 
         while let Ok(cookie_id) = cooldown_done_rx.try_recv() {
-            println!("[cookie_refresher] cooldown refresh done, re-adding cookie_id={cookie_id} to pool");
-            state.cookie_pool.lock().await.remove_from_cooldown(&cookie_id);
+            println!(
+                "[cookie_refresher] cooldown refresh done, re-adding cookie_id={cookie_id} to pool"
+            );
+            state
+                .cookie_pool
+                .lock()
+                .await
+                .remove_from_cooldown(&cookie_id);
         }
 
         while let Ok(user_id) = flow_clear_rx.try_recv() {
@@ -141,8 +192,10 @@ pub async fn run() -> anyhow::Result<()> {
 
         for update in updates {
             params.offset = Some(update.update_id as i64 + 1);
+            let _guard = TaskGuard::new();
             if let Err(e) = dispatch::handle_update(&mut state, update.content).await {
                 eprintln!("[main event=update_error] {e}");
+                crate::stats::record_error_global("system", e).await;
             }
         }
     }

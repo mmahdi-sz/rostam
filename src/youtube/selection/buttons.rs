@@ -9,7 +9,11 @@ use crate::i18n::t;
 
 use super::constants::CB_NOP;
 
-pub fn button(text: &str, callback_data: String, style: Option<ButtonStyle>) -> InlineKeyboardButton {
+pub fn button(
+    text: &str,
+    callback_data: String,
+    style: Option<ButtonStyle>,
+) -> InlineKeyboardButton {
     InlineKeyboardButton {
         text: text.to_string(),
         icon_custom_emoji_id: None,
@@ -35,22 +39,40 @@ pub fn plain_button(text: &str, callback_data: String) -> InlineKeyboardButton {
     button(text, callback_data, None)
 }
 
-pub fn icon_button(text: &str, icon_key: &str, callback_data: String, style: Option<ButtonStyle>) -> InlineKeyboardButton {
+pub fn icon_button(
+    text: &str,
+    icon_key: &str,
+    callback_data: String,
+    style: Option<ButtonStyle>,
+) -> InlineKeyboardButton {
     let icon_id = t(icon_key);
     InlineKeyboardButton {
         text: text.to_string(),
-        icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') { None } else { Some(icon_id) },
+        icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') {
+            None
+        } else {
+            Some(icon_id)
+        },
         callback_data: Some(callback_data),
         style,
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
+        url: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
     }
 }
 
 pub fn choice_button(text: &str, callback_data: String, selected: bool) -> InlineKeyboardButton {
-    let style = if selected { Some(ButtonStyle::Success) } else { None };
+    let style = if selected {
+        Some(ButtonStyle::Success)
+    } else {
+        None
+    };
     button(text, callback_data, style)
 }
 
@@ -66,13 +88,22 @@ pub fn main_menu_button() -> InlineKeyboardButton {
     let icon_id = t("emoji.panel.icons.back");
     InlineKeyboardButton {
         text: t("start.back"),
-        icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') { None } else { Some(icon_id) },
+        icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') {
+            None
+        } else {
+            Some(icon_id)
+        },
         callback_data: Some(crate::bot::CB_START_PANEL.to_string()),
         style: Some(ButtonStyle::Primary),
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
+        url: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
     }
 }
 
@@ -89,5 +120,9 @@ pub async fn answer(api: &Bot, cq: &CallbackQuery, text_key: &str) {
 pub fn quality_label(height: u32) -> String {
     let key = format!("youtube.quality.buttons.{height}");
     let label = t(&key);
-    if label.starts_with('!') { format!("{height}p") } else { label }
+    if label.starts_with('!') {
+        format!("{height}p")
+    } else {
+        label
+    }
 }

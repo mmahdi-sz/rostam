@@ -21,7 +21,11 @@ pub struct GenSelection {
 impl Default for GenSelection {
     /// پیش‌فرض: اسفندیار، ۳۱ روز، ۱ عدد
     fn default() -> Self {
-        Self { rank: Rank::Esfandyar, days: 31, uses: 1 }
+        Self {
+            rank: Rank::Esfandyar,
+            days: 31,
+            uses: 1,
+        }
     }
 }
 
@@ -51,9 +55,18 @@ async fn conn() -> redis::RedisResult<MultiplexedConnection> {
 
 /// خواندن انتخاب فعلی؛ اگر نبود/خراب بود → پیش‌فرض
 pub async fn load(admin_id: i64) -> GenSelection {
-    let Ok(mut c) = conn().await else { return GenSelection::default() };
-    let val: Option<String> = redis::cmd("GET").arg(key(admin_id)).query_async(&mut c).await.ok().flatten();
-    val.as_deref().and_then(GenSelection::decode).unwrap_or_default()
+    let Ok(mut c) = conn().await else {
+        return GenSelection::default();
+    };
+    let val: Option<String> = redis::cmd("GET")
+        .arg(key(admin_id))
+        .query_async(&mut c)
+        .await
+        .ok()
+        .flatten();
+    val.as_deref()
+        .and_then(GenSelection::decode)
+        .unwrap_or_default()
 }
 
 /// نوشتن انتخاب با TTL یک‌ساعته
@@ -71,5 +84,8 @@ pub async fn save(admin_id: i64, sel: GenSelection) {
 /// پاک‌کردن state (بعد از ساخت موفق کد)
 pub async fn clear(admin_id: i64) {
     let Ok(mut c) = conn().await else { return };
-    let _: Result<i64, _> = redis::cmd("DEL").arg(key(admin_id)).query_async(&mut c).await;
+    let _: Result<i64, _> = redis::cmd("DEL")
+        .arg(key(admin_id))
+        .query_async(&mut c)
+        .await;
 }

@@ -12,31 +12,43 @@ coordinated by a Redis-backed CPU broker.
 
 ---
 
-## Quick install (bare server)
-
-On a fresh **Debian/Ubuntu** or **Arch** server, one command sets up everything:
+## 🚀 Quick Start (Docker & Compose)
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/mmahdi-sz/rostam/master/install.sh)
+# Clone the repository
+git clone https://github.com/mmahdi-sz/rostam.git && cd rostam
+
+# Configure environment
+cp .env.example .env
+
+# Launch bot, Postgres, and Redis stack
+docker-compose up -d
 ```
 
-The installer auto-elevates with `sudo`, clones the repo to `/opt/rostam`, and
-provisions the whole stack. It is **idempotent** — safe to re-run. It will prompt
-for your `BOT_TOKEN` (and, for the local Bot API, Telegram `api_id`/`api_hash`).
+---
 
-> The installer downloads ~4.2 GB of models, and builds
-> the Rust bot (and optionally the Telegram Bot API server) from source — the
-> first run takes a while and needs ~12 GB free disk.
+## 🧪 Testing & Observability
 
-### Installer options
+### Running TestAPI Suite & Unit Tests
+```bash
+# Run unit test matrix (90+ tests)
+cargo test
 
+# Run TestAPI integration suite (exercises end-to-end handlers)
+bash scripts/run_testapi_suite.sh
 ```
---dir <path>      install location (default /opt/rostam)
---branch <name>   git branch (default master)
---skip-bot-api    skip building the local Telegram Bot API server
---skip-firefox    skip Firefox (cookie-pool refresher)
---fresh           re-clone / rebuild from scratch
-```
+
+### Health & Metrics Endpoints
+- **Health Check:** `GET http://127.0.0.1:14380/health`
+- **Prometheus Metrics:** `GET http://127.0.0.1:14380/metrics`
+
+---
+
+## 📚 Documentation
+- **Architecture & Diagrams:** [docs/architecture.md](docs/architecture.md)
+- **Operations & Incident Runbook:** [docs/ops-runbook.md](docs/ops-runbook.md)
+- **Architecture Decision Records (ADRs):** [docs/adr/](docs/adr/)
+
 
 ---
 

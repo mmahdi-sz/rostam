@@ -1,7 +1,4 @@
-use std::{
-    path::PathBuf,
-    time::SystemTime,
-};
+use std::{path::PathBuf, time::SystemTime};
 
 #[derive(Clone, Debug)]
 pub struct CookieSource {

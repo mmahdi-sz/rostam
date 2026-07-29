@@ -57,9 +57,16 @@ pub fn window_around(cx: i64, cy: i64, width: u32, height: u32) -> CropWindow {
     let half = MODEL_SIZE as i64 / 2;
     let axis = |c: i64, dim: u32| -> i64 {
         let max0 = dim as i64 - MODEL_SIZE as i64; // negative if dim < 512
-        if max0 <= 0 { max0 } else { (c - half).clamp(0, max0) }
+        if max0 <= 0 {
+            max0
+        } else {
+            (c - half).clamp(0, max0)
+        }
     };
-    CropWindow { x0: axis(cx, width), y0: axis(cy, height) }
+    CropWindow {
+        x0: axis(cx, width),
+        y0: axis(cy, height),
+    }
 }
 
 /// Mask bbox (local 0..512 coords) for a dynamically-detected watermark.
@@ -73,7 +80,12 @@ pub fn bbox_from_detection(det: &Detection, window: CropWindow) -> WatermarkBBox
     let x2 = (lcx + half).clamp(0, m);
     let y1 = (lcy - half).clamp(0, m);
     let y2 = (lcy + half).clamp(0, m);
-    WatermarkBBox { x1: x1 as u32, y1: y1 as u32, x2: x2 as u32, y2: y2 as u32 }
+    WatermarkBBox {
+        x1: x1 as u32,
+        y1: y1 as u32,
+        x2: x2 as u32,
+        y2: y2 as u32,
+    }
 }
 
 /// Legacy fixed bottom-right crop window (used only in the ≥1024 fallback).
@@ -93,7 +105,12 @@ pub fn fixed_bbox_local() -> WatermarkBBox {
     let x1 = (m - margin - wm_size - MASK_PAD_MIN).clamp(0, m);
     let y2 = (m - margin + MASK_PAD_MIN).clamp(0, m);
     let y1 = (m - margin - wm_size - MASK_PAD_MIN).clamp(0, m);
-    WatermarkBBox { x1: x1 as u32, y1: y1 as u32, x2: x2 as u32, y2: y2 as u32 }
+    WatermarkBBox {
+        x1: x1 as u32,
+        y1: y1 as u32,
+        x2: x2 as u32,
+        y2: y2 as u32,
+    }
 }
 
 #[cfg(test)]
@@ -126,7 +143,12 @@ mod tests {
 
     #[test]
     fn detection_bbox_surrounds_local_center() {
-        let det = Detection { cx: 1000, cy: 1050, size: 60, score: 0.9 };
+        let det = Detection {
+            cx: 1000,
+            cy: 1050,
+            size: 60,
+            score: 0.9,
+        };
         let win = window_around(det.cx, det.cy, 2000, 2000);
         let b = bbox_from_detection(&det, win);
         // local center should be ~256,256 -> bbox straddles it

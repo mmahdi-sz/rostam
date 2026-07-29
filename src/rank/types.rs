@@ -1,11 +1,11 @@
 /// مقام‌های بات
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rank {
-    Dalavar,    // دلاور — رایگان
-    Sepahbod,   // سپهبد
-    Esfandyar,  // اسفندیار
-    Sohrab,     // سهراب
-    Rostam,     // رستم
+    Dalavar,   // دلاور — رایگان
+    Sepahbod,  // سپهبد
+    Esfandyar, // اسفندیار
+    Sohrab,    // سهراب
+    Rostam,    // رستم
 }
 
 impl Rank {
@@ -287,7 +287,9 @@ impl Rank {
 
 /// تقسیم صحیح گرد به بالا — مشترک بین کد هدیه و زیرمجموعه‌گیری برای تبدیل وزنی روزهای باقیمانده.
 pub fn ceil_div(a: i64, b: i64) -> i64 {
-    if b <= 0 { return 0; }
+    if b <= 0 {
+        return 0;
+    }
     (a + b - 1) / b
 }
 

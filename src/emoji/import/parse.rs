@@ -5,9 +5,13 @@ pub fn parse_sql(sql: &str) -> ParsedSql {
     for line in sql.lines() {
         let line = line.trim();
         if line.starts_with("INSERT INTO emoji_packs ") {
-            if let Some(pack) = parse_pack_insert(line) { result.packs.push(pack); }
+            if let Some(pack) = parse_pack_insert(line) {
+                result.packs.push(pack);
+            }
         } else if line.starts_with("INSERT INTO emoji_items ") {
-            if let Some(item) = parse_item_insert(line) { result.items.push(item); }
+            if let Some(item) = parse_item_insert(line) {
+                result.items.push(item);
+            }
         }
     }
     result
@@ -16,7 +20,9 @@ pub fn parse_sql(sql: &str) -> ParsedSql {
 fn parse_pack_insert(line: &str) -> Option<ParsedPack> {
     let values_str = extract_values_str(line)?;
     let tokens = parse_values(&values_str);
-    if tokens.len() < 5 { return None; }
+    if tokens.len() < 5 {
+        return None;
+    }
     Some(ParsedPack {
         old_id: tokens[0].as_deref()?.parse().ok()?,
         name: tokens[2].clone()?,
@@ -28,7 +34,9 @@ fn parse_pack_insert(line: &str) -> Option<ParsedPack> {
 fn parse_item_insert(line: &str) -> Option<ParsedItem> {
     let values_str = extract_values_str(line)?;
     let tokens = parse_values(&values_str);
-    if tokens.len() < 8 { return None; }
+    if tokens.len() < 8 {
+        return None;
+    }
     Some(ParsedItem {
         old_pack_id: tokens[1].as_deref()?.parse().ok()?,
         custom_emoji_id: tokens[3].clone()?,
@@ -42,7 +50,9 @@ fn parse_item_insert(line: &str) -> Option<ParsedItem> {
 fn extract_values_str(line: &str) -> Option<&str> {
     let start = line.find("VALUES (")? + "VALUES (".len();
     let end = line.rfind(')')?;
-    if end <= start { return None; }
+    if end <= start {
+        return None;
+    }
     Some(&line[start..end])
 }
 
@@ -51,23 +61,42 @@ fn parse_values(s: &str) -> Vec<Option<String>> {
     let chars: Vec<char> = s.chars().collect();
     let mut pos = 0;
     while pos < chars.len() {
-        while pos < chars.len() && (chars[pos] == ' ' || chars[pos] == ',') { pos += 1; }
-        if pos >= chars.len() { break; }
+        while pos < chars.len() && (chars[pos] == ' ' || chars[pos] == ',') {
+            pos += 1;
+        }
+        if pos >= chars.len() {
+            break;
+        }
         if chars[pos] == '\'' {
             pos += 1;
             let mut token = String::new();
             while pos < chars.len() {
                 if chars[pos] == '\'' {
-                    if pos + 1 < chars.len() && chars[pos + 1] == '\'' { token.push('\''); pos += 2; }
-                    else { pos += 1; break; }
-                } else { token.push(chars[pos]); pos += 1; }
+                    if pos + 1 < chars.len() && chars[pos + 1] == '\'' {
+                        token.push('\'');
+                        pos += 2;
+                    } else {
+                        pos += 1;
+                        break;
+                    }
+                } else {
+                    token.push(chars[pos]);
+                    pos += 1;
+                }
             }
             result.push(Some(token));
         } else {
             let mut token = String::new();
-            while pos < chars.len() && chars[pos] != ',' { token.push(chars[pos]); pos += 1; }
+            while pos < chars.len() && chars[pos] != ',' {
+                token.push(chars[pos]);
+                pos += 1;
+            }
             let token = token.trim().to_string();
-            if token.to_uppercase() == "NULL" { result.push(None); } else { result.push(Some(token)); }
+            if token.to_uppercase() == "NULL" {
+                result.push(None);
+            } else {
+                result.push(Some(token));
+            }
         }
     }
     result

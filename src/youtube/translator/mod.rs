@@ -34,7 +34,8 @@ pub fn parse_srt(content: &str) -> Vec<SrtItem> {
     for block in blocks {
         let lines: Vec<&str> = block.lines().collect();
         if lines.len() >= 3
-            && let Ok(index) = lines[0].trim().parse::<usize>() {
+            && let Ok(index) = lines[0].trim().parse::<usize>()
+        {
             let timestamp = lines[1].trim().to_string();
             let text = lines[2..].join("\n").trim().to_string();
             items.push(SrtItem {
@@ -51,7 +52,10 @@ pub fn parse_srt(content: &str) -> Vec<SrtItem> {
 pub fn format_srt(items: &[SrtItem]) -> String {
     let mut out = String::new();
     for item in items {
-        out.push_str(&format!("{}\n{}\n{}\n\n", item.index, item.timestamp, item.text));
+        out.push_str(&format!(
+            "{}\n{}\n{}\n\n",
+            item.index, item.timestamp, item.text
+        ));
     }
     out
 }
@@ -105,7 +109,10 @@ fn translate_batch_blocking(texts: &[String], target_lang: &str) -> Result<Vec<S
         .collect();
 
     // NLLB زبان مقصد را به‌صورت target-prefix می‌گیرد.
-    let prefixes: Vec<Vec<String>> = sources.iter().map(|_| vec![target_lang.to_string()]).collect();
+    let prefixes: Vec<Vec<String>> = sources
+        .iter()
+        .map(|_| vec![target_lang.to_string()])
+        .collect();
 
     let results = t
         .translate_batch_with_target_prefix(&sources, &prefixes, &Default::default(), None)
@@ -250,10 +257,16 @@ mod tests {
 
     #[test]
     fn test_clean_special_tokens() {
-        assert_eq!(clean_special_tokens("این یک آزمایش است.<unk>"), "این یک آزمایش است.");
+        assert_eq!(
+            clean_special_tokens("این یک آزمایش است.<unk>"),
+            "این یک آزمایش است."
+        );
         assert_eq!(clean_special_tokens("pes_Arab سلام دنیا"), "سلام دنیا");
         assert_eq!(clean_special_tokens("متن</s> بعدی"), "متن بعدی");
-        assert_eq!(clean_special_tokens("متن عادی بدون توکن"), "متن عادی بدون توکن");
+        assert_eq!(
+            clean_special_tokens("متن عادی بدون توکن"),
+            "متن عادی بدون توکن"
+        );
         // کلمه‌ی معمولی نباید اشتباهاً تگ زبان تشخیص داده شود.
         assert_eq!(clean_special_tokens("testing"), "testing");
     }
@@ -273,18 +286,41 @@ mod tests {
         )
         .unwrap();
 
-        translate_srt(&input, &output, "pes_Arab", 4, |_, _, _, _| {}).await.expect("translation failed");
+        translate_srt(&input, &output, "pes_Arab", 4, |_, _, _, _| {})
+            .await
+            .expect("translation failed");
 
         let result = std::fs::read_to_string(&output).unwrap();
         let items = parse_srt(&result);
         assert_eq!(items.len(), 2, "should keep both entries");
-        assert_eq!(items[0].timestamp, "00:00:01,000 --> 00:00:03,000", "timing preserved");
+        assert_eq!(
+            items[0].timestamp, "00:00:01,000 --> 00:00:03,000",
+            "timing preserved"
+        );
         // خروجی باید فارسی (غیر لاتین) و بدون توکن ویژه باشد و با انگلیسی فرق کند.
-        assert!(items[0].text.chars().any(|c| ('\u{0600}'..='\u{06FF}').contains(&c)), "expected Persian text, got: {}", items[0].text);
-        assert!(!items[0].text.contains("<unk>") && !items[0].text.contains("</s>"), "special tokens must be stripped: {}", items[0].text);
+        assert!(
+            items[0]
+                .text
+                .chars()
+                .any(|c| ('\u{0600}'..='\u{06FF}').contains(&c)),
+            "expected Persian text, got: {}",
+            items[0].text
+        );
+        assert!(
+            !items[0].text.contains("<unk>") && !items[0].text.contains("</s>"),
+            "special tokens must be stripped: {}",
+            items[0].text
+        );
         assert_ne!(items[0].text, "Hello, how are you?", "must be translated");
         // خروجی باید فارسی (غیر لاتین) باشد و با انگلیسی ورودی فرق کند.
-        assert!(items[0].text.chars().any(|c| ('\u{0600}'..='\u{06FF}').contains(&c)), "expected Persian text, got: {}", items[0].text);
+        assert!(
+            items[0]
+                .text
+                .chars()
+                .any(|c| ('\u{0600}'..='\u{06FF}').contains(&c)),
+            "expected Persian text, got: {}",
+            items[0].text
+        );
         assert_ne!(items[0].text, "Hello, how are you?", "must be translated");
 
         std::fs::remove_dir_all(&dir).ok();

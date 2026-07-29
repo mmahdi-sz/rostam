@@ -15,7 +15,10 @@ pub async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
     let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
     let res = client
         .post(format!("{SEP_BASE}/cpu/acquire"))
-        .form(&[("user_id", user_id.to_string()), ("is_vip", "false".to_string())])
+        .form(&[
+            ("user_id", user_id.to_string()),
+            ("is_vip", "false".to_string()),
+        ])
         .timeout(Duration::from_secs(120))
         .send()
         .await;

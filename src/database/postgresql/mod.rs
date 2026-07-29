@@ -26,7 +26,9 @@ impl PostgresDatabase {
         let mut client = client;
         Self::init_schema(&mut client).await?;
 
-        let database = Self { client: Arc::new(client) };
+        let database = Self {
+            client: Arc::new(client),
+        };
         Ok(database)
     }
 
@@ -38,7 +40,8 @@ impl PostgresDatabase {
         &self,
         snapshot: &CookiePoolSnapshot,
     ) -> Result<(), tokio_postgres::Error> {
-        self.save_available_cookies(&snapshot.available_cookies).await?;
+        self.save_available_cookies(&snapshot.available_cookies)
+            .await?;
         self.save_last_used(snapshot.last_used_cookie.as_deref())
             .await?;
         self.save_cooldowns(&snapshot.cooldown_list).await?;
@@ -52,7 +55,10 @@ impl PostgresDatabase {
 
         let last_used_cookie = self
             .client
-            .query_opt("SELECT last_used_cookie FROM cookie_pool_state WHERE id = TRUE", &[])
+            .query_opt(
+                "SELECT last_used_cookie FROM cookie_pool_state WHERE id = TRUE",
+                &[],
+            )
             .await?
             .and_then(|row| row.get::<_, Option<String>>(0));
 
@@ -99,10 +105,7 @@ impl PostgresDatabase {
         Ok(())
     }
 
-    pub async fn save_cooldown(
-        &self,
-        entry: &CooldownEntry,
-    ) -> Result<(), tokio_postgres::Error> {
+    pub async fn save_cooldown(&self, entry: &CooldownEntry) -> Result<(), tokio_postgres::Error> {
         self.client
             .execute(
                 "INSERT INTO cookie_pool_cooldowns (cookie_id, expire_at_epoch)
@@ -182,7 +185,10 @@ impl PostgresDatabase {
     #[allow(dead_code)]
     pub async fn get_user_lang(&self, user_id: i64) -> Option<String> {
         self.client
-            .query_opt("SELECT language FROM stats_users WHERE user_id = $1", &[&user_id])
+            .query_opt(
+                "SELECT language FROM stats_users WHERE user_id = $1",
+                &[&user_id],
+            )
             .await
             .ok()
             .flatten()
@@ -191,12 +197,15 @@ impl PostgresDatabase {
 
     #[allow(dead_code)]
     pub async fn set_user_lang(&self, user_id: i64, lang: &str) {
-        let _ = self.client.execute(
-            "INSERT INTO stats_users (user_id, first_seen, last_seen, language)
+        let _ = self
+            .client
+            .execute(
+                "INSERT INTO stats_users (user_id, first_seen, last_seen, language)
              VALUES ($1, NOW(), NOW(), $2)
              ON CONFLICT (user_id) DO UPDATE SET language = $2",
-            &[&user_id, &lang],
-        ).await;
+                &[&user_id, &lang],
+            )
+            .await;
     }
 
     async fn cleanup_expired_cooldowns(&self) -> Result<(), tokio_postgres::Error> {

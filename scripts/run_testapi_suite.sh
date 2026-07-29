@@ -152,4 +152,50 @@ fi
 echo "✅ PDF compress test passed!"
 
 echo ""
+echo "=== Running Extended TestAPI Endpoint Suite ==="
+
+echo "Testing /test/youtube/quality_select"
+RES_QS=$(curl -s -X POST "$BASE_URL/test/youtube/quality_select" -H "Content-Type: application/json" -d '{"request_id": 999, "height": 720}')
+if [ "$(echo "$RES_QS" | jq -r '.ok')" != "true" ]; then echo "Fail: quality_select"; exit 1; fi
+
+echo "Testing /test/youtube/cancel"
+RES_CAN=$(curl -s -X POST "$BASE_URL/test/youtube/cancel" -H "Content-Type: application/json" -d '{"request_id": 999}')
+if [ "$(echo "$RES_CAN" | jq -r '.ok')" != "true" ]; then echo "Fail: youtube cancel"; exit 1; fi
+
+echo "Testing /test/stt/recognize"
+RES_STT=$(curl -s -X POST "$BASE_URL/test/stt/recognize" -H "Content-Type: application/json" -d '{"file_id": "file_123", "lang": "fa"}')
+if [ "$(echo "$RES_STT" | jq -r '.ok')" != "true" ]; then echo "Fail: stt recognize"; exit 1; fi
+
+echo "Testing /test/separation/submit"
+RES_SEP=$(curl -s -X POST "$BASE_URL/test/separation/submit" -H "Content-Type: application/json" -d '{"file_id": "file_123", "mode": "stems2"}')
+if [ "$(echo "$RES_SEP" | jq -r '.ok')" != "true" ]; then echo "Fail: separation submit"; exit 1; fi
+
+echo "Testing /test/gwm/detect"
+RES_GWM=$(curl -s -X POST "$BASE_URL/test/gwm/detect" -H "Content-Type: application/json" -d '{"file_id": "file_123"}')
+if [ "$(echo "$RES_GWM" | jq -r '.ok')" != "true" ]; then echo "Fail: gwm detect"; exit 1; fi
+
+echo "Testing /test/admin/panel"
+RES_ADM=$(curl -s -X POST "$BASE_URL/test/admin/panel" -H "Content-Type: application/json" -d '{"user_id": 12345}')
+if [ "$(echo "$RES_ADM" | jq -r '.ok')" != "true" ]; then echo "Fail: admin panel"; exit 1; fi
+
+echo "Testing /test/surge/validate_url"
+RES_SURGE=$(curl -s -X POST "$BASE_URL/test/surge/validate_url" -H "Content-Type: application/json" -d '{"url": "https://example.com/file.zip"}')
+if [ "$(echo "$RES_SURGE" | jq -r '.valid')" != "true" ]; then echo "Fail: surge validate_url"; exit 1; fi
+
+echo "Testing /test/health/deep"
+RES_HLT=$(curl -s -X POST "$BASE_URL/test/health/deep")
+if [ "$(echo "$RES_HLT" | jq -r '.ok')" != "true" ]; then echo "Fail: health deep"; exit 1; fi
+
+echo "Testing /test/rank/panel"
+RES_RP=$(curl -s -X POST "$BASE_URL/test/rank/panel" -H "Content-Type: application/json" -d '{"user_id": 12345}')
+if [ "$(echo "$RES_RP" | jq -r '.ok')" != "true" ]; then echo "Fail: rank panel"; exit 1; fi
+
+echo "Testing /test/referral/spend"
+RES_REF=$(curl -s -X POST "$BASE_URL/test/referral/spend" -H "Content-Type: application/json" -d '{"points": 20, "tier": "Esfandyar"}')
+if [ "$(echo "$RES_REF" | jq -r '.ok')" != "true" ]; then echo "Fail: referral spend"; exit 1; fi
+
+echo "✅ Extended TestAPI Endpoint Suite passed!"
+
+echo ""
 echo "All tests passed successfully."
+

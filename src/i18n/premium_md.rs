@@ -1,5 +1,5 @@
-use super::lookup::t;
 use super::emoji_map::EMOJI_MAP;
+use super::lookup::t;
 
 /// Wrap known emojis in `<tg-emoji emoji-id="...">EMOJI</tg-emoji>` tags so a
 /// message sent with `ParseMode::Html` renders them as premium custom emoji.
@@ -12,11 +12,15 @@ pub fn apply_premium_to_html(text: &str) -> String {
     let mut rest = text;
     let mut in_tag = false;
     'outer: while !rest.is_empty() {
-        let c = rest.chars().next().unwrap();
+        let Some(c) = rest.chars().next() else {
+            break;
+        };
 
         if in_tag {
             result.push(c);
-            if c == '>' { in_tag = false; }
+            if c == '>' {
+                in_tag = false;
+            }
             rest = &rest[c.len_utf8()..];
             continue;
         }
@@ -40,7 +44,9 @@ pub fn apply_premium_to_html(text: &str) -> String {
             if rest.starts_with(emoji_str) {
                 let icon_id = t(&format!("emoji.panel.icons.{icon_key}"));
                 if !icon_id.is_empty() {
-                    result.push_str(&format!("<tg-emoji emoji-id=\"{icon_id}\">{emoji_str}</tg-emoji>"));
+                    result.push_str(&format!(
+                        "<tg-emoji emoji-id=\"{icon_id}\">{emoji_str}</tg-emoji>"
+                    ));
                     rest = &rest[emoji_str.len()..];
                     continue 'outer;
                 }
@@ -81,7 +87,9 @@ pub fn apply_premium_to_md(text: &str) -> String {
                 }
             }
         }
-        let c = rest.chars().next().unwrap();
+        let Some(c) = rest.chars().next() else {
+            break;
+        };
         result.push(c);
         rest = &rest[c.len_utf8()..];
     }

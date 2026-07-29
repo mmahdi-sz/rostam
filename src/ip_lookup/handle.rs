@@ -22,18 +22,27 @@ pub const CB_IP_LOOKUP_CANCEL: &str = "ip_lookup:cancel";
 
 fn cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon(&t("start.back"), CB_IP_LOOKUP_CANCEL, "back")]])
+        .inline_keyboard(vec![vec![btn_icon(
+            &t("start.back"),
+            CB_IP_LOOKUP_CANCEL,
+            "back",
+        )]])
         .build()
 }
 
 pub async fn enter_ip_lookup(
-    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &mut FlowManager,
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    user_id: i64,
+    flow_manager: &mut FlowManager,
 ) {
     let trace_id = next_trace_id();
     log_actor_id!("ip_lookup", trace_id, user_id, "clicked" => CB_TOOLS_IP_LOOKUP);
     flow_manager.set(user_id, FlowState::AwaitingIpLookupInput);
     let params = EditMessageTextParams::builder()
-        .chat_id(chat_id).message_id(message_id)
+        .chat_id(chat_id)
+        .message_id(message_id)
         .text(t("ip_lookup.prompt"))
         .reply_markup(cancel_keyboard())
         .build();
@@ -42,7 +51,11 @@ pub async fn enter_ip_lookup(
 }
 
 pub async fn handle_ip_lookup_cancel(
-    api: &Bot, chat_id: i64, message_id: i32, user_id: i64, flow_manager: &mut FlowManager,
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    user_id: i64,
+    flow_manager: &mut FlowManager,
 ) {
     let trace_id = next_trace_id();
     log_ev!("ip_lookup", trace_id, "cancel", "user_id" => user_id);
@@ -51,13 +64,18 @@ pub async fn handle_ip_lookup_cancel(
 }
 
 pub async fn handle_ip_lookup_text(
-    api: &Bot, message: &Message, user_id: i64, flow_manager: &mut FlowManager,
+    api: &Bot,
+    message: &Message,
+    user_id: i64,
+    flow_manager: &mut FlowManager,
 ) {
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
     log_actor_id!("ip_lookup", trace_id, user_id, "clicked" => "send_ip_text");
 
-    let Some(text) = message.text.as_deref() else { return };
+    let Some(text) = message.text.as_deref() else {
+        return;
+    };
     let Some((ip, note)) = parse_ip_input(text) else {
         log_ev!("ip_lookup", trace_id, "invalid_ip", "input" => text, "=>" => "reject");
         let _ = send_text(api, chat_id, &t("ip_lookup.invalid_ip")).await;
@@ -88,7 +106,13 @@ pub fn detect_ip(text: &str) -> Option<(IpAddr, Option<String>)> {
     parse_ip_input(text)
 }
 
-pub async fn handle_ip_lookup_auto(api: &Bot, chat_id: i64, user_id: i64, ip: IpAddr, note: Option<String>) {
+pub async fn handle_ip_lookup_auto(
+    api: &Bot,
+    chat_id: i64,
+    user_id: i64,
+    ip: IpAddr,
+    note: Option<String>,
+) {
     let trace_id = next_trace_id();
     log_actor_id!("ip_lookup", trace_id, user_id, "clicked" => "auto_detect_text");
     run_ip_lookup(api.clone(), chat_id, user_id, ip, trace_id, note).await;
@@ -110,18 +134,22 @@ fn parse_ip_input(text: &str) -> Option<(IpAddr, Option<String>)> {
     let ip: IpAddr = ip_part.trim().parse().ok()?;
     let prefix: u8 = prefix_part.trim().parse().ok()?;
     let max = if ip.is_ipv4() { 32 } else { 128 };
-    if prefix > max { return None; }
+    if prefix > max {
+        return None;
+    }
     Some((ip, Some(cidr_note(prefix, ip.is_ipv4()))))
 }
 
 /// Persian (۰-۹) and Arabic-Indic (٠-٩) digits → ASCII, so `std::net::IpAddr`'s
 /// parser (which only understands ASCII) can still recognize the address.
 fn normalize_digits(s: &str) -> String {
-    s.chars().map(|c| match c {
-        '۰'..='۹' => (b'0' + (c as u32 - '۰' as u32) as u8) as char,
-        '٠'..='٩' => (b'0' + (c as u32 - '٠' as u32) as u8) as char,
-        other => other,
-    }).collect()
+    s.chars()
+        .map(|c| match c {
+            '۰'..='۹' => (b'0' + (c as u32 - '۰' as u32) as u8) as char,
+            '٠'..='٩' => (b'0' + (c as u32 - '٠' as u32) as u8) as char,
+            other => other,
+        })
+        .collect()
 }
 
 // IANA special-purpose ranges (RFC 1918/3927/5737/etc) never carry real
@@ -132,38 +160,82 @@ fn special_range(ip: &IpAddr) -> Option<&'static str> {
     match ip {
         IpAddr::V4(v4) => {
             let o = v4.octets();
-            if v4.is_loopback() { Some("ip_lookup.special.loopback") }
-            else if v4.is_unspecified() { Some("ip_lookup.special.unspecified") }
-            else if v4.is_broadcast() { Some("ip_lookup.special.broadcast") }
-            else if v4.is_link_local() { Some("ip_lookup.special.link_local") }
-            else if v4.is_documentation() { Some("ip_lookup.special.documentation") }
-            else if v4.is_private() { Some("ip_lookup.special.private") }
-            else if v4.is_multicast() { Some("ip_lookup.special.multicast") }
-            else if o[0] == 100 && (64..=127).contains(&o[1]) { Some("ip_lookup.special.cgnat") } // RFC 6598
-            else if o[0] == 192 && o[1] == 0 && o[2] == 0 { Some("ip_lookup.special.ietf_protocol") } // RFC 6890
-            else if o[0] == 198 && (o[1] == 18 || o[1] == 19) { Some("ip_lookup.special.benchmarking") } // RFC 2544
-            else if o[0] >= 240 { Some("ip_lookup.special.reserved") } // Class E
-            else { None }
+            if v4.is_loopback() {
+                Some("ip_lookup.special.loopback")
+            } else if v4.is_unspecified() {
+                Some("ip_lookup.special.unspecified")
+            } else if v4.is_broadcast() {
+                Some("ip_lookup.special.broadcast")
+            } else if v4.is_link_local() {
+                Some("ip_lookup.special.link_local")
+            } else if v4.is_documentation() {
+                Some("ip_lookup.special.documentation")
+            } else if v4.is_private() {
+                Some("ip_lookup.special.private")
+            } else if v4.is_multicast() {
+                Some("ip_lookup.special.multicast")
+            } else if o[0] == 100 && (64..=127).contains(&o[1]) {
+                Some("ip_lookup.special.cgnat")
+            }
+            // RFC 6598
+            else if o[0] == 192 && o[1] == 0 && o[2] == 0 {
+                Some("ip_lookup.special.ietf_protocol")
+            }
+            // RFC 6890
+            else if o[0] == 198 && (o[1] == 18 || o[1] == 19) {
+                Some("ip_lookup.special.benchmarking")
+            }
+            // RFC 2544
+            else if o[0] >= 240 {
+                Some("ip_lookup.special.reserved")
+            }
+            // Class E
+            else {
+                None
+            }
         }
         IpAddr::V6(v6) => {
             if let Some(mapped) = v6.to_ipv4_mapped() {
                 return special_range(&IpAddr::V4(mapped));
             }
             let s = v6.segments();
-            if v6.is_loopback() { Some("ip_lookup.special.loopback") }
-            else if v6.is_unspecified() { Some("ip_lookup.special.unspecified") }
-            else if v6.is_unique_local() { Some("ip_lookup.special.private") }
-            else if v6.is_unicast_link_local() { Some("ip_lookup.special.link_local") }
-            else if v6.is_multicast() { Some("ip_lookup.special.multicast") }
-            else if s[0] == 0x2001 && s[1] == 0x0db8 { Some("ip_lookup.special.documentation_v6") } // RFC 3849
-            else if s[0] == 0x2001 && s[1] == 0 { Some("ip_lookup.special.teredo") } // RFC 4380
-            else if s[0] == 0x2002 { Some("ip_lookup.special.six_to_four") } // RFC 3056
-            else { None }
+            if v6.is_loopback() {
+                Some("ip_lookup.special.loopback")
+            } else if v6.is_unspecified() {
+                Some("ip_lookup.special.unspecified")
+            } else if v6.is_unique_local() {
+                Some("ip_lookup.special.private")
+            } else if v6.is_unicast_link_local() {
+                Some("ip_lookup.special.link_local")
+            } else if v6.is_multicast() {
+                Some("ip_lookup.special.multicast")
+            } else if s[0] == 0x2001 && s[1] == 0x0db8 {
+                Some("ip_lookup.special.documentation_v6")
+            }
+            // RFC 3849
+            else if s[0] == 0x2001 && s[1] == 0 {
+                Some("ip_lookup.special.teredo")
+            }
+            // RFC 4380
+            else if s[0] == 0x2002 {
+                Some("ip_lookup.special.six_to_four")
+            }
+            // RFC 3056
+            else {
+                None
+            }
         }
     }
 }
 
-async fn run_ip_lookup(api: Bot, chat_id: i64, user_id: i64, ip: IpAddr, trace_id: u64, note: Option<String>) {
+async fn run_ip_lookup(
+    api: Bot,
+    chat_id: i64,
+    user_id: i64,
+    ip: IpAddr,
+    trace_id: u64,
+    note: Option<String>,
+) {
     let (mut card_md, status_msg_id) = if let Some(key) = special_range(&ip) {
         log_ev!("ip_lookup", trace_id, "special_range", "kind" => key);
         (format_special(&ip.to_string(), key), None)
@@ -172,7 +244,11 @@ async fn run_ip_lookup(api: Bot, chat_id: i64, user_id: i64, ip: IpAddr, trace_i
             .chat_id(chat_id)
             .text(t("ip_lookup.processing"))
             .build();
-        let status_msg_id = api.send_message(&status).await.ok().map(|r| r.result.message_id);
+        let status_msg_id = api
+            .send_message(&status)
+            .await
+            .ok()
+            .map(|r| r.result.message_id);
 
         log_ev!("ip_lookup", trace_id, "fetch_start", "ip" => ip);
         let ip_str = ip.to_string();
@@ -189,11 +265,15 @@ async fn run_ip_lookup(api: Bot, chat_id: i64, user_id: i64, ip: IpAddr, trace_i
     let sent = if let Some(message_id) = status_msg_id {
         api.edit_message_text(
             &EditMessageTextParams::builder()
-                .chat_id(chat_id).message_id(message_id)
+                .chat_id(chat_id)
+                .message_id(message_id)
                 .text(&card)
                 .parse_mode(ParseMode::MarkdownV2)
                 .build(),
-        ).await.map(|_| ()).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        )
+        .await
+        .map(|_| ())
+        .map_err(anyhow::Error::from)
     } else {
         crate::bot::send_text_md(&api, chat_id, &card).await
     };

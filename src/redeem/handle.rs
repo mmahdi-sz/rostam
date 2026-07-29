@@ -11,7 +11,7 @@ use tokio_postgres::Client;
 use crate::bot::send_text;
 use crate::config;
 use crate::database::postgresql::PostgresDatabase;
-use crate::i18n::{t, tf, to_fa_digits, md_escape, apply_premium_to_md};
+use crate::i18n::{apply_premium_to_md, md_escape, t, tf, to_fa_digits};
 use crate::rank::types::Rank;
 use crate::youtube::jalali::gregorian_to_jalali;
 
@@ -29,15 +29,23 @@ fn now_epoch() -> i64 {
 
 /// تاریخ جلالی + ساعت به وقت تهران (+۳:۳۰)، با ارقام انگلیسی
 fn datetime_fa(epoch: i64) -> String {
-    let Some(utc) = Utc.timestamp_opt(epoch, 0).single() else { return String::new() };
+    let Some(utc) = Utc.timestamp_opt(epoch, 0).single() else {
+        return String::new();
+    };
     let dt = utc.with_timezone(&Tehran);
     let (jy, jm, jd) = gregorian_to_jalali(dt.year(), dt.month() as i32, dt.day() as i32);
-    format!("{jy:04}/{jm:02}/{jd:02} ساعت {:02}:{:02}", dt.hour(), dt.minute())
+    format!(
+        "{jy:04}/{jm:02}/{jd:02} ساعت {:02}:{:02}",
+        dt.hour(),
+        dt.minute()
+    )
 }
 
 /// فقط تاریخ جلالی به وقت تهران (برای نمایش انقضا)
 fn date_fa(epoch: i64) -> String {
-    let Some(utc) = Utc.timestamp_opt(epoch, 0).single() else { return String::new() };
+    let Some(utc) = Utc.timestamp_opt(epoch, 0).single() else {
+        return String::new();
+    };
     let dt = utc.with_timezone(&Tehran);
     let (jy, jm, jd) = gregorian_to_jalali(dt.year(), dt.month() as i32, dt.day() as i32);
     to_fa_digits(&format!("{jy:04}/{jm:02}/{jd:02}"))
@@ -54,18 +62,29 @@ enum Plan {
     /// مقام پایین‌تر از مقام فعلی → کد نباید مصرف شود
     Reject,
     /// اعمال مقام؛ expires_at = None یعنی نامحدود (total_days هم None)
-    Apply { rank: Rank, expires_at: Option<i64>, total_days: Option<i64> },
+    Apply {
+        rank: Rank,
+        expires_at: Option<i64>,
+        total_days: Option<i64>,
+    },
 }
 
 /// محاسبه‌ی پلن بر اساس مقام فعلی کاربر و مقام/مدت کد جدید
 async fn plan_redeem(client: &Client, user_id: i64, new_rank: Rank, new_days: i32) -> Plan {
     let now = now_epoch();
     let new_days = new_days as i64;
-    let user_rank = crate::rank::store::get_user_rank(client, user_id).await.ok().flatten();
+    let user_rank = crate::rank::store::get_user_rank(client, user_id)
+        .await
+        .ok()
+        .flatten();
 
     let Some(cur) = user_rank else {
         let total = new_days;
-        return Plan::Apply { rank: new_rank, expires_at: Some(now + total * 86_400), total_days: Some(total) };
+        return Plan::Apply {
+            rank: new_rank,
+            expires_at: Some(now + total * 86_400),
+            total_days: Some(total),
+        };
     };
 
     let active = match cur.expires_at {
@@ -75,7 +94,11 @@ async fn plan_redeem(client: &Client, user_id: i64, new_rank: Rank, new_days: i3
 
     if !active {
         let total = new_days;
-        return Plan::Apply { rank: new_rank, expires_at: Some(now + total * 86_400), total_days: Some(total) };
+        return Plan::Apply {
+            rank: new_rank,
+            expires_at: Some(now + total * 86_400),
+            total_days: Some(total),
+        };
     }
     let wc = cur.rank.weight();
     let wn = new_rank.weight();
@@ -87,7 +110,11 @@ async fn plan_redeem(client: &Client, user_id: i64, new_rank: Rank, new_days: i3
 
     // مقام فعلی نامحدود است → مقام جدید هم نامحدود می‌ماند (هم‌ارزش/ارتقا)
     let Some(cur_exp) = cur.expires_at else {
-        return Plan::Apply { rank: new_rank, expires_at: None, total_days: None };
+        return Plan::Apply {
+            rank: new_rank,
+            expires_at: None,
+            total_days: None,
+        };
     };
 
     let remaining_days = ceil_div((cur_exp - now).max(0), 86_400);
@@ -100,7 +127,11 @@ async fn plan_redeem(client: &Client, user_id: i64, new_rank: Rank, new_days: i3
         ceil_div(remaining_days.saturating_mul(wc), wn)
     };
     let total = new_days + converted;
-    Plan::Apply { rank: new_rank, expires_at: Some(now + total * 86_400), total_days: Some(total) }
+    Plan::Apply {
+        rank: new_rank,
+        expires_at: Some(now + total * 86_400),
+        total_days: Some(total),
+    }
 }
 
 // ──────────────────────────────── پنل گرافیکی ساخت کد (ادمین) ────────────────────────────────
@@ -149,7 +180,10 @@ pub async fn handle_panel_callback(
     if data == CB_GC_GO {
         let sel = panel_state::load(admin_id).await;
         panel_state::clear(admin_id).await;
-        do_generate(api, chat_id, admin_id, sel.rank, sel.days, sel.uses, database).await;
+        do_generate(
+            api, chat_id, admin_id, sel.rank, sel.days, sel.uses, database,
+        )
+        .await;
         return;
     }
 
@@ -158,15 +192,24 @@ pub async fn handle_panel_callback(
 
     if let Some(r) = data.strip_prefix(CB_GC_RANK) {
         if let Some(rank) = Rank::from_str(r) {
-            if sel.rank != rank { sel.rank = rank; changed = true; }
+            if sel.rank != rank {
+                sel.rank = rank;
+                changed = true;
+            }
         }
     } else if let Some(d) = data.strip_prefix(CB_GC_DAYS) {
         if let Ok(days) = d.parse::<i32>() {
-            if sel.days != days { sel.days = days; changed = true; }
+            if sel.days != days {
+                sel.days = days;
+                changed = true;
+            }
         }
     } else if let Some(u) = data.strip_prefix(CB_GC_USES) {
         if let Ok(uses) = u.parse::<i32>() {
-            if sel.uses != uses { sel.uses = uses; changed = true; }
+            if sel.uses != uses {
+                sel.uses = uses;
+                changed = true;
+            }
         }
     }
 
@@ -254,12 +297,19 @@ fn back_keyboard() -> InlineKeyboardMarkup {
         icon_custom_emoji_id: None,
         callback_data: Some(crate::bot::CB_START_PANEL.to_string()),
         style: Some(ButtonStyle::Primary),
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
+        url: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
     };
-    InlineKeyboardMarkup::builder().inline_keyboard(vec![vec![btn]]).build()
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn]])
+        .build()
 }
 
 /// ارسال پیام با دکمه‌ی برگشت (HTML)
@@ -334,21 +384,33 @@ pub async fn handle_redeem(
     }
 
     // محاسبه‌ی پلن با توجه به مقام فعلی — downgrade قبل از مصرف رد می‌شود
-    let (apply_rank, apply_expires, apply_total) = match plan_redeem(client, user_id, row.rank, row.duration_days).await {
-        Plan::Reject => {
-            eprintln!("[redeem event=downgrade_reject user_id={user_id} code={code} code_rank={}]", row.rank.as_str());
-            send_with_back(api, chat_id, &t("redeem.downgrade")).await;
-            return false;
-        }
-        Plan::Apply { rank, expires_at, total_days } => (rank, expires_at, total_days),
-    };
+    let (apply_rank, apply_expires, apply_total) =
+        match plan_redeem(client, user_id, row.rank, row.duration_days).await {
+            Plan::Reject => {
+                eprintln!(
+                    "[redeem event=downgrade_reject user_id={user_id} code={code} code_rank={}]",
+                    row.rank.as_str()
+                );
+                send_with_back(api, chat_id, &t("redeem.downgrade")).await;
+                return false;
+            }
+            Plan::Apply {
+                rank,
+                expires_at,
+                total_days,
+            } => (rank, expires_at, total_days),
+        };
 
     // مصرف اتمیک؛ false یعنی ظرفیت پر شده
     match store::mark_redeemed(client, code, user_id).await {
         Ok(true) => {}
         Ok(false) => {
             eprintln!("[redeem event=exhausted user_id={user_id} code={code}]");
-            let last = store::get_last_redemption(client, code).await.ok().flatten().unwrap_or_else(now_epoch);
+            let last = store::get_last_redemption(client, code)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(now_epoch);
             let msg = tf("redeem.consumed", &[("datetime", &datetime_fa(last))]);
             send_with_back(api, chat_id, &msg).await;
             return false;
@@ -360,7 +422,9 @@ pub async fn handle_redeem(
         }
     }
 
-    if let Err(e) = crate::rank::store::set_user_rank(client, user_id, apply_rank, apply_expires).await {
+    if let Err(e) =
+        crate::rank::store::set_user_rank(client, user_id, apply_rank, apply_expires).await
+    {
         eprintln!("[redeem event=apply_failed user_id={user_id} code={code} err={e}]");
         let _ = send_text(api, chat_id, &t("redeem.apply_error")).await;
         return false;
@@ -368,18 +432,23 @@ pub async fn handle_redeem(
 
     eprintln!(
         "[redeem event=redeem_ok user_id={user_id} code={code} rank={} total_days={:?} expires={:?}]",
-        apply_rank.as_str(), apply_total, apply_expires
+        apply_rank.as_str(),
+        apply_total,
+        apply_expires
     );
     crate::stats::record_event_user(user_id, "rank", "redeem", "ok", 0).await;
 
     // پیام موفقیت: مقام + تاریخ انقضای جلالی + مجموع روز (یا «نامحدود»)
     let apply_rank_name = apply_rank.display_name();
     let msg = match (apply_expires, apply_total) {
-        (Some(exp), Some(days)) => tf("redeem.success", &[
-            ("rank", &apply_rank_name),
-            ("date", &date_fa(exp)),
-            ("days", &to_fa_digits(&days.to_string())),
-        ]),
+        (Some(exp), Some(days)) => tf(
+            "redeem.success",
+            &[
+                ("rank", &apply_rank_name),
+                ("date", &date_fa(exp)),
+                ("days", &to_fa_digits(&days.to_string())),
+            ],
+        ),
         _ => tf("redeem.success_unlimited", &[("rank", &apply_rank_name)]),
     };
     let _ = send_text(api, chat_id, &msg).await;
@@ -393,15 +462,18 @@ pub async fn handle_redeem(
             .map(|d| md_escape(&tf("redeem.panel_days", &[("n", &d.to_string())])))
             .unwrap_or_else(|| t("rank.expiry_unlimited"));
         let apply_rank_name = apply_rank.display_name();
-        let raw_msg = tf("redeem.admin_notify", &[
-            ("code", &md_escape(code)),
-            ("name", &md_escape(first_name)),
-            ("username", &username_display),
-            ("user_id", &user_id.to_string()),
-            ("rank", &md_escape(&apply_rank_name)),
-            ("duration", &duration_display),
-            ("time", &md_escape(&datetime_fa(now_epoch()))),
-        ]);
+        let raw_msg = tf(
+            "redeem.admin_notify",
+            &[
+                ("code", &md_escape(code)),
+                ("name", &md_escape(first_name)),
+                ("username", &username_display),
+                ("user_id", &user_id.to_string()),
+                ("rank", &md_escape(&apply_rank_name)),
+                ("duration", &duration_display),
+                ("time", &md_escape(&datetime_fa(now_epoch()))),
+            ],
+        );
         let admin_msg = apply_premium_to_md(&raw_msg);
         let params = SendMessageParams::builder()
             .chat_id(admin_id)

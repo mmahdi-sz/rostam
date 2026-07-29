@@ -1,4 +1,4 @@
-use axum::{extract::Path, Json};
+use axum::{Json, extract::Path};
 use serde_json::Value;
 
 pub async fn intercept_bot_request(
@@ -10,8 +10,11 @@ pub async fn intercept_bot_request(
         obj.insert("_method".to_string(), Value::String(method.clone()));
     }
 
-    crate::testapi::state::CAPTURED_PAYLOADS.lock().unwrap().push(payload);
-    
+    crate::testapi::state::CAPTURED_PAYLOADS
+        .lock()
+        .unwrap()
+        .push(payload);
+
     // Return a dummy successful Telegram API response
     Json(serde_json::json!({
         "ok": true,

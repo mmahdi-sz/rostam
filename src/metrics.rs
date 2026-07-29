@@ -1,6 +1,8 @@
+//! Prometheus metrics registration and RAII metric guards.
+
 use prometheus::{
-    register_histogram_vec, register_int_counter_vec, register_int_gauge, HistogramVec,
-    IntCounterVec, IntGauge,
+    HistogramVec, IntCounterVec, IntGauge, register_histogram_vec, register_int_counter_vec,
+    register_int_gauge,
 };
 use std::sync::OnceLock;
 
@@ -28,11 +30,8 @@ pub fn init() {
             &["feature"]
         )
         .expect("metric registration failed"),
-        active_downloads: register_int_gauge!(
-            "bot_active_downloads",
-            "Currently active downloads"
-        )
-        .expect("metric registration failed"),
+        active_downloads: register_int_gauge!("bot_active_downloads", "Currently active downloads")
+            .expect("metric registration failed"),
         errors_total: register_int_counter_vec!(
             "bot_errors_total",
             "Total errors by feature",
@@ -45,4 +44,62 @@ pub fn init() {
 pub fn get() -> &'static Metrics {
     init();
     METRICS.get().expect("metrics not initialized")
+}
+
+pub struct ActiveDownloadGuard;
+impl ActiveDownloadGuard {
+    pub fn new() -> Self {
+        get().active_downloads.inc();
+        Self
+    }
+}
+impl Drop for ActiveDownloadGuard {
+    fn drop(&mut self) {
+        get().active_downloads.dec();
+    }
+}
+
+pub struct RequestDurationGuard {
+    feature: &'static str,
+    start: std::time::Instant,
+}
+impl RequestDurationGuard {
+    pub fn new(feature: &'static str) -> Self {
+        Self {
+            feature,
+            start: std::time::Instant::now(),
+        }
+    }
+}
+impl Drop for RequestDurationGuard {
+    fn drop(&mut self) {
+        let elapsed = self.start.elapsed().as_secs_f64();
+        get()
+            .request_duration
+            .with_label_values(&[self.feature])
+            .observe(elapsed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_active_download_guard() {
+        let initial = get().active_downloads.get();
+        {
+            let _guard = ActiveDownloadGuard::new();
+            assert_eq!(get().active_downloads.get(), initial + 1);
+        }
+        assert_eq!(get().active_downloads.get(), initial);
+    }
+
+    #[test]
+    fn test_request_duration_guard() {
+        {
+            let _guard = RequestDurationGuard::new("test_feature");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
 }

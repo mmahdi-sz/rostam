@@ -5,7 +5,7 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use ort::session::{builder::GraphOptimizationLevel, Session};
+use ort::session::{Session, builder::GraphOptimizationLevel};
 
 const MODEL_DIR: &str = "files/models/moebius";
 

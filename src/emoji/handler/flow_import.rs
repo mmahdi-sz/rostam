@@ -1,22 +1,19 @@
-use frankenstein::{
-    AsyncTelegramApi,
-    client_reqwest::Bot,
-    methods::GetFileParams,
-    types::Message,
-};
+use frankenstein::{AsyncTelegramApi, client_reqwest::Bot, methods::GetFileParams, types::Message};
 
-use crate::i18n::t;
 use crate::emoji::{FlowManager, FlowState, import as emoji_import, panel as emoji_panel};
+use crate::i18n::t;
 
 use super::{
-    helpers::send_with_ents,
-    pack_ops::send_cancel_and_panel,
-    pending::build_import_report,
+    helpers::send_with_ents, pack_ops::send_cancel_and_panel, pending::build_import_report,
 };
 
 pub(super) async fn handle_import_file(
-    api: &Bot, message: &Message, chat_id: i64, user_id: i64,
-    flow_manager: &mut FlowManager, client: &tokio_postgres::Client,
+    api: &Bot,
+    message: &Message,
+    chat_id: i64,
+    user_id: i64,
+    flow_manager: &mut FlowManager,
+    client: &tokio_postgres::Client,
     trace_id: u64,
 ) -> bool {
     let text = message.text.as_deref().unwrap_or("").trim();
@@ -48,7 +45,10 @@ pub(super) async fn handle_import_file(
             return true;
         }
     };
-    let file_path = match api.get_file(&GetFileParams::builder().file_id(file_id).build()).await {
+    let file_path = match api
+        .get_file(&GetFileParams::builder().file_id(file_id).build())
+        .await
+    {
         Ok(r) => match r.result.file_path {
             Some(p) => {
                 eprintln!("[emoji_msg trace={trace_id} event=import_file_path] path={p:?}");
@@ -67,10 +67,17 @@ pub(super) async fn handle_import_file(
         }
     };
     let url = format!("https://api.telegram.org/file/bot{token}/{file_path}");
-    let sql = match reqwest::get(&url).await {
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .unwrap_or_default();
+    let sql = match http_client.get(&url).send().await {
         Ok(resp) => match resp.text().await {
             Ok(t) => {
-                eprintln!("[emoji_msg trace={trace_id} event=import_downloaded] bytes={}", t.len());
+                eprintln!(
+                    "[emoji_msg trace={trace_id} event=import_downloaded] bytes={}",
+                    t.len()
+                );
                 t
             }
             Err(e) => {
@@ -88,7 +95,8 @@ pub(super) async fn handle_import_file(
     let parsed = emoji_import::parse_sql(&sql);
     eprintln!(
         "[emoji_msg trace={trace_id} event=import_parsed] packs={} items={}",
-        parsed.packs.len(), parsed.items.len()
+        parsed.packs.len(),
+        parsed.items.len()
     );
     if parsed.packs.is_empty() && parsed.items.is_empty() {
         eprintln!("[emoji_msg trace={trace_id} event=import_empty]");
@@ -104,15 +112,28 @@ pub(super) async fn handle_import_file(
     );
     let report = build_import_report(&analysis);
     let keyboard = emoji_panel::import_choice_keyboard(analysis.db_empty);
-    send_with_ents(api, chat_id, report, Some(::frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(keyboard))).await;
+    send_with_ents(
+        api,
+        chat_id,
+        report,
+        Some(::frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(
+            keyboard,
+        )),
+    )
+    .await;
     flow_manager.set(user_id, FlowState::AwaitingImportMode { sql });
     eprintln!("[emoji_msg trace={trace_id} event=state_transition] new_state=AwaitingImportMode");
     true
 }
 
 pub(super) async fn handle_import_mode(
-    api: &Bot, message: &Message, chat_id: i64, user_id: i64,
-    flow_manager: &mut FlowManager, trace_id: u64, sql: &str,
+    api: &Bot,
+    message: &Message,
+    chat_id: i64,
+    user_id: i64,
+    flow_manager: &mut FlowManager,
+    trace_id: u64,
+    sql: &str,
 ) -> bool {
     let text = message.text.as_deref().unwrap_or("").trim();
     eprintln!(

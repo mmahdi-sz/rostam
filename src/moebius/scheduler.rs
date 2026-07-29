@@ -37,11 +37,16 @@ pub fn make_ddim(num_steps: usize, strength: f64) -> Ddim {
     ts.reverse(); // [950, 900, ..., 0] for num_steps=20
 
     // Python's `int()` truncates (not rounds) — must match, or the trim point shifts.
-    let init_timestep = ((num_steps as f64) * strength).floor().min(num_steps as f64) as usize;
+    let init_timestep = ((num_steps as f64) * strength)
+        .floor()
+        .min(num_steps as f64) as usize;
     let t_start = num_steps.saturating_sub(init_timestep);
     let timesteps = ts[t_start..].to_vec();
 
-    Ddim { alphas_cumprod, timesteps }
+    Ddim {
+        alphas_cumprod,
+        timesteps,
+    }
 }
 
 /// One DDIM update (eta=0, clip_sample=false):
@@ -50,7 +55,11 @@ pub fn make_ddim(num_steps: usize, strength: f64) -> Ddim {
 /// `prev_t = -1` is the sentinel for the last step (uses final_alpha_cumprod=1.0).
 pub fn ddim_step(eps: &[f32], sample: &[f32], t: i64, prev_t: i64, ddim: &Ddim) -> Vec<f32> {
     let ac_t = ddim.alphas_cumprod[t as usize];
-    let ac_prev = if prev_t >= 0 { ddim.alphas_cumprod[prev_t as usize] } else { 1.0 };
+    let ac_prev = if prev_t >= 0 {
+        ddim.alphas_cumprod[prev_t as usize]
+    } else {
+        1.0
+    };
     let sqrt_ac_t = ac_t.sqrt();
     let sqrt_beta_t = (1.0 - ac_t).sqrt();
     let sqrt_ac_prev = ac_prev.sqrt();

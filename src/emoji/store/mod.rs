@@ -1,10 +1,14 @@
-mod pack;
-mod item;
 mod export;
+mod item;
+mod pack;
 
-pub use pack::{create_pack, find_pack_by_name, list_packs, set_default_pack, set_pack_alias, delete_pack};
-pub use item::{list_items, existing_custom_emoji_ids, allocate_smart_name, add_item, set_item_alias};
 pub use export::export_user_sql;
+pub use item::{
+    add_item, allocate_smart_name, existing_custom_emoji_ids, list_items, set_item_alias,
+};
+pub use pack::{
+    create_pack, delete_pack, find_pack_by_name, list_packs, set_default_pack, set_pack_alias,
+};
 
 #[derive(Debug, Clone)]
 pub struct EmojiPack {
@@ -30,7 +34,7 @@ pub struct EmojiItem {
     pub position: i32,
 }
 
-pub(self) fn row_to_pack(row: tokio_postgres::Row) -> EmojiPack {
+fn row_to_pack(row: tokio_postgres::Row) -> EmojiPack {
     EmojiPack {
         id: row.get(0),
         owner_user_id: row.get(1),
@@ -41,7 +45,7 @@ pub(self) fn row_to_pack(row: tokio_postgres::Row) -> EmojiPack {
     }
 }
 
-pub(self) fn row_to_item(row: tokio_postgres::Row) -> EmojiItem {
+fn row_to_item(row: tokio_postgres::Row) -> EmojiItem {
     EmojiItem {
         id: row.get(0),
         pack_id: row.get(1),

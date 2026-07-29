@@ -3,7 +3,7 @@ use frankenstein::{client_reqwest::Bot, types::Message};
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 
-use super::{flow_emojis, flow_pack_choice, flow_import, flow_misc};
+use super::{flow_emojis, flow_import, flow_misc, flow_pack_choice};
 
 pub async fn handle_emoji_flow_message(
     api: &Bot,
@@ -14,7 +14,9 @@ pub async fn handle_emoji_flow_message(
 ) -> bool {
     let trace_id = crate::log::next_trace_id();
     let chat_id = message.chat.id;
-    let text_preview = message.text.as_deref()
+    let text_preview = message
+        .text
+        .as_deref()
         .map(|t| crate::emoji::cache::preview(t, 80))
         .unwrap_or_else(|| "<no_text>".to_string());
     let has_doc = message.document.is_some();
@@ -38,27 +40,85 @@ pub async fn handle_emoji_flow_message(
             false
         }
         FlowState::AwaitingEmojis { collected } => {
-            eprintln!("[emoji_msg trace={trace_id} event=handler_call] handler=flow_emojis collected={}", collected.len());
-            flow_emojis::handle(api, message, chat_id, user_id, flow_manager, client, trace_id, collected).await
+            eprintln!(
+                "[emoji_msg trace={trace_id} event=handler_call] handler=flow_emojis collected={}",
+                collected.len()
+            );
+            flow_emojis::handle(
+                api,
+                message,
+                chat_id,
+                user_id,
+                flow_manager,
+                client,
+                trace_id,
+                collected,
+            )
+            .await
         }
         FlowState::AwaitingPackChoice { collected } => {
-            eprintln!("[emoji_msg trace={trace_id} event=handler_call] handler=flow_pack_choice collected={}", collected.len());
-            flow_pack_choice::handle(api, message, chat_id, user_id, flow_manager, client, trace_id, collected).await
+            eprintln!(
+                "[emoji_msg trace={trace_id} event=handler_call] handler=flow_pack_choice collected={}",
+                collected.len()
+            );
+            flow_pack_choice::handle(
+                api,
+                message,
+                chat_id,
+                user_id,
+                flow_manager,
+                client,
+                trace_id,
+                collected,
+            )
+            .await
         }
         FlowState::AwaitingPackAlias { pack_id } => {
-            eprintln!("[emoji_msg trace={trace_id} event=handler_call] handler=flow_misc::pack_alias pack_id={pack_id}");
-            flow_misc::handle_pack_alias(api, message, chat_id, user_id, flow_manager, client, trace_id, pack_id).await
+            eprintln!(
+                "[emoji_msg trace={trace_id} event=handler_call] handler=flow_misc::pack_alias pack_id={pack_id}"
+            );
+            flow_misc::handle_pack_alias(
+                api,
+                message,
+                chat_id,
+                user_id,
+                flow_manager,
+                client,
+                trace_id,
+                pack_id,
+            )
+            .await
         }
         FlowState::AwaitingImportFile => {
             eprintln!("[emoji_msg trace={trace_id} event=handler_call] handler=flow_import::file");
-            flow_import::handle_import_file(api, message, chat_id, user_id, flow_manager, client, trace_id).await
+            flow_import::handle_import_file(
+                api,
+                message,
+                chat_id,
+                user_id,
+                flow_manager,
+                client,
+                trace_id,
+            )
+            .await
         }
         FlowState::AwaitingImportMode { sql } => {
             eprintln!("[emoji_msg trace={trace_id} event=handler_call] handler=flow_import::mode");
-            flow_import::handle_import_mode(api, message, chat_id, user_id, flow_manager, trace_id, &sql).await
+            flow_import::handle_import_mode(
+                api,
+                message,
+                chat_id,
+                user_id,
+                flow_manager,
+                trace_id,
+                &sql,
+            )
+            .await
         }
         FlowState::AwaitingTestText => {
-            eprintln!("[emoji_msg trace={trace_id} event=handler_call] handler=flow_misc::test_text");
+            eprintln!(
+                "[emoji_msg trace={trace_id} event=handler_call] handler=flow_misc::test_text"
+            );
             flow_misc::handle_test_text(api, message, chat_id, user_id, flow_manager).await
         }
         FlowState::AwaitingSttConfig { .. } | FlowState::AwaitingSttAudio { .. } => {
@@ -73,7 +133,9 @@ pub async fn handle_emoji_flow_message(
             eprintln!("[emoji_msg trace={trace_id} event=upscale_skip] — handled in main");
             false
         }
-        FlowState::AwaitingSeparation | FlowState::AwaitingSeparationMode { .. } | FlowState::AwaitingSeparationQueued { .. } => {
+        FlowState::AwaitingSeparation
+        | FlowState::AwaitingSeparationMode { .. }
+        | FlowState::AwaitingSeparationQueued { .. } => {
             eprintln!("[emoji_msg trace={trace_id} event=separation_skip] — handled in main");
             false
         }

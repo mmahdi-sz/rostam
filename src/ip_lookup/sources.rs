@@ -16,7 +16,10 @@ pub async fn fetch_all(ip: &str, trace_id: u64) -> IpReport {
         fetch_abuseipdb(ip),
     );
 
-    let mut report = IpReport { ip: ip.to_string(), ..Default::default() };
+    let mut report = IpReport {
+        ip: ip.to_string(),
+        ..Default::default()
+    };
 
     match rdap {
         Some(v) => apply_rdap(&mut report, &v),
@@ -52,7 +55,10 @@ pub async fn fetch_all(ip: &str, trace_id: u64) -> IpReport {
 
 async fn get_json(url: &str, headers: &[(&str, &str)]) -> Option<Value> {
     let client = reqwest::Client::new();
-    let mut req = client.get(url).timeout(TIMEOUT).header("User-Agent", USER_AGENT);
+    let mut req = client
+        .get(url)
+        .timeout(TIMEOUT)
+        .header("User-Agent", USER_AGENT);
     for (k, v) in headers {
         req = req.header(*k, *v);
     }
@@ -61,7 +67,10 @@ async fn get_json(url: &str, headers: &[(&str, &str)]) -> Option<Value> {
 }
 
 fn s(v: &Value, key: &str) -> Option<String> {
-    v.get(key).and_then(|x| x.as_str()).map(|s| s.to_string()).filter(|s| !s.is_empty())
+    v.get(key)
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
 }
 
 fn f(v: &Value, key: &str) -> Option<f64> {
@@ -74,11 +83,16 @@ async fn fetch_rdap(ip: &str) -> Option<Value> {
 
 /// از یک entity آرایه vcardArray یک فیلد مشخص (email/tel/fn) رو استخراج می‌کنه.
 fn vcard_field(entity: &Value, field: &str) -> Option<String> {
-    entity.get("vcardArray")
+    entity
+        .get("vcardArray")
         .and_then(|vc| vc.as_array())
         .and_then(|vc| vc.get(1))
         .and_then(|fields| fields.as_array())
-        .and_then(|fields| fields.iter().find(|f| f.get(0).and_then(|n| n.as_str()) == Some(field)))
+        .and_then(|fields| {
+            fields
+                .iter()
+                .find(|f| f.get(0).and_then(|n| n.as_str()) == Some(field))
+        })
         .and_then(|entry| entry.get(3))
         .and_then(|v| v.as_str())
         .map(|s| s.trim_start_matches("tel:").to_string())
@@ -87,17 +101,23 @@ fn vcard_field(entity: &Value, field: &str) -> Option<String> {
 fn find_entity_by_role<'a>(v: &'a Value, role: &str) -> Option<&'a Value> {
     v.get("entities")
         .and_then(|e| e.as_array())
-        .and_then(|arr| arr.iter().find(|ent| {
-            ent.get("roles").and_then(|r| r.as_array())
-                .map(|roles| roles.iter().any(|r| r.as_str() == Some(role)))
-                .unwrap_or(false)
-        }))
+        .and_then(|arr| {
+            arr.iter().find(|ent| {
+                ent.get("roles")
+                    .and_then(|r| r.as_array())
+                    .map(|roles| roles.iter().any(|r| r.as_str() == Some(role)))
+                    .unwrap_or(false)
+            })
+        })
 }
 
 fn rdap_event(v: &Value, action: &str) -> Option<String> {
     v.get("events")
         .and_then(|e| e.as_array())
-        .and_then(|arr| arr.iter().find(|ev| ev.get("eventAction").and_then(|a| a.as_str()) == Some(action)))
+        .and_then(|arr| {
+            arr.iter()
+                .find(|ev| ev.get("eventAction").and_then(|a| a.as_str()) == Some(action))
+        })
         .and_then(|ev| s(ev, "eventDate"))
 }
 
@@ -113,9 +133,13 @@ fn apply_rdap(report: &mut IpReport, v: &Value) {
     report.rdap_updated = rdap_event(v, "last changed");
 
     let registrant = find_entity_by_role(v, "registrant").or_else(|| {
-        v.get("entities").and_then(|e| e.as_array()).and_then(|a| a.first())
+        v.get("entities")
+            .and_then(|e| e.as_array())
+            .and_then(|a| a.first())
     });
-    report.rdap_org = registrant.and_then(|ent| vcard_field(ent, "fn")).or_else(|| s(v, "name"));
+    report.rdap_org = registrant
+        .and_then(|ent| vcard_field(ent, "fn"))
+        .or_else(|| s(v, "name"));
 
     if let Some(abuse) = find_entity_by_role(v, "abuse") {
         report.rdap_abuse_email = vcard_field(abuse, "email");
@@ -126,7 +150,9 @@ fn apply_rdap(report: &mut IpReport, v: &Value) {
 async fn fetch_ip_api(ip: &str) -> Option<Value> {
     let fields = "status,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,asname,mobile,proxy,hosting,query";
     let v = get_json(&format!("http://ip-api.com/json/{ip}?fields={fields}"), &[]).await?;
-    if v.get("status").and_then(|s| s.as_str()) != Some("success") { return None; }
+    if v.get("status").and_then(|s| s.as_str()) != Some("success") {
+        return None;
+    }
     Some(v)
 }
 
@@ -179,10 +205,14 @@ fn apply_ipinfo(report: &mut IpReport, v: &Value) {
 async fn fetch_bgpview(ip: &str) -> Option<Value> {
     let ip_resp = get_json(&format!("https://api.ipctl.io/v1/ip/{ip}"), &[]).await?;
     let data = ip_resp.get("data")?.clone();
-    let asn_num = data.get("asn").and_then(|a| a.get("asn")).and_then(|x| x.as_i64());
+    let asn_num = data
+        .get("asn")
+        .and_then(|a| a.get("asn"))
+        .and_then(|x| x.as_i64());
 
     let other_prefixes = if let Some(asn) = asn_num {
-        get_json(&format!("https://api.ipctl.io/v1/asn/{asn}"), &[]).await
+        get_json(&format!("https://api.ipctl.io/v1/asn/{asn}"), &[])
+            .await
             .and_then(|v| v.get("data").and_then(|d| d.get("prefixes")).cloned())
             .unwrap_or(Value::Array(vec![]))
     } else {
@@ -209,7 +239,8 @@ fn apply_bgpview(report: &mut IpReport, v: &Value) {
         }
     }
     if let Some(others) = v.get("other_prefixes").and_then(|p| p.as_array()) {
-        report.bgp_other_prefixes = others.iter()
+        report.bgp_other_prefixes = others
+            .iter()
             .filter_map(|p| s(p, "prefix").map(|prefix| (prefix, s(p, "country_code"))))
             .filter(|(prefix, _)| Some(prefix.as_str()) != report.bgp_prefix.as_deref())
             .take(5)
@@ -222,7 +253,8 @@ async fn fetch_abuseipdb(ip: &str) -> Option<Value> {
     let v = get_json(
         &format!("https://api.abuseipdb.com/api/v2/check?ipAddress={ip}&maxAgeInDays=90"),
         &[("Key", &key), ("Accept", "application/json")],
-    ).await?;
+    )
+    .await?;
     v.get("data").cloned()
 }
 

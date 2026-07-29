@@ -38,7 +38,14 @@ pub async fn create_code(
         .execute(
             "INSERT INTO redeem_codes (code, rank, duration_days, max_uses, created_by, expires_at)
              VALUES ($1, $2, $3, $4, $5, $6)",
-            &[&code, &rank.as_str(), &duration_days, &max_uses, &created_by, &expires_at],
+            &[
+                &code,
+                &rank.as_str(),
+                &duration_days,
+                &max_uses,
+                &created_by,
+                &expires_at,
+            ],
         )
         .await?;
     Ok(())
@@ -138,8 +145,12 @@ pub async fn mark_redeemed(
 
 /// حذف یک کد و مصرف‌هایش (هنگام انقضای lazy)
 pub async fn delete_code(client: &Client, code: &str) -> Result<(), tokio_postgres::Error> {
-    client.execute("DELETE FROM redeem_redemptions WHERE code = $1", &[&code]).await?;
-    client.execute("DELETE FROM redeem_codes WHERE code = $1", &[&code]).await?;
+    client
+        .execute("DELETE FROM redeem_redemptions WHERE code = $1", &[&code])
+        .await?;
+    client
+        .execute("DELETE FROM redeem_codes WHERE code = $1", &[&code])
+        .await?;
     Ok(())
 }
 

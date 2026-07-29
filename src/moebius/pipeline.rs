@@ -49,7 +49,6 @@ pub enum MoebiusError {
     NoWatermark,
 }
 
-
 /// Public entry point. Downloads/decoding of the source image already
 /// happened in `gemini_watermark::handle`; this takes raw image bytes and
 /// returns a PNG-encoded result (the model's output is a fresh synthesis of
@@ -75,11 +74,16 @@ pub async fn remove_watermark(
     result
 }
 
-fn run_pipeline_sync(image_bytes: &[u8], trace_id: u64, threads: usize) -> Result<Vec<u8>, MoebiusError> {
+fn run_pipeline_sync(
+    image_bytes: &[u8],
+    trace_id: u64,
+    threads: usize,
+) -> Result<Vec<u8>, MoebiusError> {
     let t_total = Instant::now();
 
     log_ev!("gwm", trace_id, "moebius_decode_start", "bytes" => image_bytes.len());
-    let dynimg = image::load_from_memory(image_bytes).map_err(|e| MoebiusError::Decode(e.to_string()))?;
+    let dynimg =
+        image::load_from_memory(image_bytes).map_err(|e| MoebiusError::Decode(e.to_string()))?;
     let mut full = dynimg.into_rgb8();
     let (width, height) = (full.width(), full.height());
     log_ev!("gwm", trace_id, "moebius_decode_done", "width" => width, "height" => height);
@@ -97,7 +101,10 @@ fn run_pipeline_sync(image_bytes: &[u8], trace_id: u64, threads: usize) -> Resul
         None if width >= 1024 && height >= 1024 => {
             log_ev!("gwm", trace_id, "moebius_detect_miss",
                 "width" => width, "height" => height, "=>" => "fallback_fixed_corner");
-            (crop::fixed_crop_window(width, height), crop::fixed_bbox_local())
+            (
+                crop::fixed_crop_window(width, height),
+                crop::fixed_bbox_local(),
+            )
         }
         None => {
             log_ev!("gwm", trace_id, "moebius_detect_miss",
@@ -170,9 +177,12 @@ fn run_pipeline_sync(image_bytes: &[u8], trace_id: u64, threads: usize) -> Resul
 /// (the un-masked crop's own latent is never used: with strength≈0.99 the
 /// initial sample is effectively pure noise, not a noised copy of the input).
 fn encode(sessions: &model::Sessions, masked_chw: &[f32]) -> Result<Vec<f32>, MoebiusError> {
-    let tensor = Tensor::from_array(([1usize, 3, MODEL_SIZE as usize, MODEL_SIZE as usize], masked_chw.to_vec()))
-        .map_err(|e| MoebiusError::Onnx(e.to_string()))?;
-    let mut sess = sessions.encoder.lock().unwrap();
+    let tensor = Tensor::from_array((
+        [1usize, 3, MODEL_SIZE as usize, MODEL_SIZE as usize],
+        masked_chw.to_vec(),
+    ))
+    .map_err(|e| MoebiusError::Onnx(e.to_string()))?;
+    let mut sess = crate::sync_util::lock_or_recover(&sessions.encoder);
     let outputs = sess
         .run(ort::inputs!["image" => tensor])
         .map_err(|e| MoebiusError::Onnx(e.to_string()))?;
@@ -194,7 +204,7 @@ fn decode(sessions: &model::Sessions, latents: &[f32]) -> Result<Vec<f32>, Moebi
     let scaled: Vec<f32> = latents.iter().map(|&v| v / SCALING_FACTOR).collect();
     let tensor = Tensor::from_array(([1usize, 4, LAT as usize, LAT as usize], scaled))
         .map_err(|e| MoebiusError::Onnx(e.to_string()))?;
-    let mut sess = sessions.decoder.lock().unwrap();
+    let mut sess = crate::sync_util::lock_or_recover(&sessions.decoder);
     let outputs = sess
         .run(ort::inputs!["latent" => tensor])
         .map_err(|e| MoebiusError::Onnx(e.to_string()))?;
@@ -235,11 +245,12 @@ fn unet_cfg(
 
     let latent_tensor = Tensor::from_array(([2usize, 9, LAT as usize, LAT as usize], nine2))
         .map_err(|e| MoebiusError::Onnx(e.to_string()))?;
-    let ts_tensor = Tensor::from_array(([2usize], ts)).map_err(|e| MoebiusError::Onnx(e.to_string()))?;
-    let ids_tensor =
-        Tensor::from_array(([2usize, HALF_IDS as usize], ids)).map_err(|e| MoebiusError::Onnx(e.to_string()))?;
+    let ts_tensor =
+        Tensor::from_array(([2usize], ts)).map_err(|e| MoebiusError::Onnx(e.to_string()))?;
+    let ids_tensor = Tensor::from_array(([2usize, HALF_IDS as usize], ids))
+        .map_err(|e| MoebiusError::Onnx(e.to_string()))?;
 
-    let mut sess = sessions.unet.lock().unwrap();
+    let mut sess = crate::sync_util::lock_or_recover(&sessions.unet);
     let outputs = sess
         .run(ort::inputs![
             "latent" => latent_tensor,
@@ -300,7 +311,10 @@ mod integration {
         });
         let mut bytes = Vec::new();
         image::DynamicImage::ImageRgb8(img)
-            .write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
             .unwrap();
 
         // No detectable sparkle, but ≥1024 in both dims -> fixed-corner

@@ -11,8 +11,8 @@ fn escape_md_text(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     for c in s.chars() {
         match c {
-            '_' | '*' | '[' | ']' | '(' | ')' | '~' | '`' | '>' | '#'
-            | '+' | '-' | '=' | '|' | '{' | '}' | '.' | '!' | '\\' => {
+            '_' | '*' | '[' | ']' | '(' | ')' | '~' | '`' | '>' | '#' | '+' | '-' | '=' | '|'
+            | '{' | '}' | '.' | '!' | '\\' => {
                 out.push('\\');
                 out.push(c);
             }
@@ -35,7 +35,11 @@ fn escape_md_link_text(s: &str) -> String {
 
 #[derive(Debug, Clone)]
 pub enum LookupOutcome {
-    CacheHit { custom_emoji_id: String, fallback: String, group_size: usize },
+    CacheHit {
+        custom_emoji_id: String,
+        fallback: String,
+        group_size: usize,
+    },
     RawId,
     NotFound,
     UnclosedBrace,
@@ -48,10 +52,7 @@ pub struct RenderLookup {
 }
 
 impl EmojiCache {
-    pub fn render_markdown_with_trace(
-        &self,
-        template: &str,
-    ) -> (String, Vec<RenderLookup>) {
+    pub fn render_markdown_with_trace(&self, template: &str) -> (String, Vec<RenderLookup>) {
         let mut result = String::new();
         let mut lookups: Vec<RenderLookup> = Vec::new();
         let mut rest = template;
@@ -114,15 +115,16 @@ impl EmojiCache {
 
         while let Some(open) = rest.find('{') {
             let prefix = &rest[..open];
-            for c in prefix.chars() { utf16_offset += c.len_utf16() as u32; }
+            for c in prefix.chars() {
+                utf16_offset += c.len_utf16() as u32;
+            }
             text.push_str(prefix);
             let after = &rest[open + 1..];
             if let Some(close) = after.find('}') {
                 let key = &after[..close];
                 if let Some(entry) = self.pick(key) {
                     let group_size = self.group_size(key);
-                    let len_utf16: u32 =
-                        entry.fallback.chars().map(|c| c.len_utf16() as u32).sum();
+                    let len_utf16: u32 = entry.fallback.chars().map(|c| c.len_utf16() as u32).sum();
                     lookups.push(RenderLookup {
                         key: key.to_string(),
                         outcome: LookupOutcome::CacheHit {
@@ -135,9 +137,12 @@ impl EmojiCache {
                         type_field: MessageEntityType::CustomEmoji,
                         offset: utf16_offset as u16,
                         length: len_utf16 as u16,
-                        url: None, user: None, language: None,
+                        url: None,
+                        user: None,
+                        language: None,
                         custom_emoji_id: Some(entry.custom_emoji_id.clone()),
-                        unix_time: None, date_time_format: None,
+                        unix_time: None,
+                        date_time_format: None,
                     });
                     text.push_str(&entry.fallback);
                     utf16_offset += len_utf16;
@@ -152,9 +157,12 @@ impl EmojiCache {
                         type_field: MessageEntityType::CustomEmoji,
                         offset: utf16_offset as u16,
                         length: len_utf16 as u16,
-                        url: None, user: None, language: None,
+                        url: None,
+                        user: None,
+                        language: None,
                         custom_emoji_id: Some(key.to_string()),
-                        unix_time: None, date_time_format: None,
+                        unix_time: None,
+                        date_time_format: None,
                     });
                     text.push_str(fallback);
                     utf16_offset += len_utf16;
@@ -164,7 +172,9 @@ impl EmojiCache {
                         outcome: LookupOutcome::NotFound,
                     });
                     let s = format!("{{{key}}}");
-                    for c in s.chars() { utf16_offset += c.len_utf16() as u32; }
+                    for c in s.chars() {
+                        utf16_offset += c.len_utf16() as u32;
+                    }
                     text.push_str(&s);
                 }
                 rest = &after[close + 1..];
@@ -184,7 +194,9 @@ impl EmojiCache {
 
     pub(super) fn pick(&self, key: &str) -> Option<EmojiEntry> {
         let entries = self.by_key.get(key)?;
-        if entries.is_empty() { return None; }
+        if entries.is_empty() {
+            return None;
+        }
         let mut rng = rand::thread_rng();
         entries.choose(&mut rng).cloned()
     }

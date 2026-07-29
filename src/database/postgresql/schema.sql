@@ -76,6 +76,9 @@ CREATE TABLE IF NOT EXISTS stats_downloads (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE stats_downloads ADD COLUMN IF NOT EXISTS duration INT;
+ALTER TABLE stats_downloads ADD COLUMN IF NOT EXISTS bitrate BIGINT;
+
 CREATE INDEX IF NOT EXISTS stats_downloads_created_idx
     ON stats_downloads (created_at);
 

@@ -22,7 +22,11 @@ pub struct CpuStatus {
 
 impl CpuStatus {
     fn busy() -> Self {
-        Self { available_cores: 0, overloaded: true, queue_length: 0 }
+        Self {
+            available_cores: 0,
+            overloaded: true,
+            queue_length: 0,
+        }
     }
 }
 
@@ -43,13 +47,20 @@ pub async fn fetch_cpu_status() -> CpuStatus {
         Err(_) => return CpuStatus::busy(),
     };
     CpuStatus {
-        available_cores: json.get("available_cores").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-        overloaded: json.get("overloaded").and_then(|v| v.as_bool()).unwrap_or(true),
-        queue_length: json.get("queue_length").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        available_cores: json
+            .get("available_cores")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
+        overloaded: json
+            .get("overloaded")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
+        queue_length: json
+            .get("queue_length")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32,
     }
 }
-
-
 
 pub async fn separate_audio(
     audio_bytes: Vec<u8>,
@@ -62,7 +73,9 @@ pub async fn separate_audio(
     let file_size = audio_bytes.len();
     let mode_str = mode.as_str();
 
-    eprintln!("[separation trace={trace_id} event=request_start] user_id={user_id} mode={mode_str} file_size_bytes={file_size}");
+    eprintln!(
+        "[separation trace={trace_id} event=request_start] user_id={user_id} mode={mode_str} file_size_bytes={file_size}"
+    );
 
     let client = reqwest::Client::builder()
         .timeout(TIMEOUT)
@@ -75,7 +88,10 @@ pub async fn separate_audio(
     let part = reqwest::multipart::Part::bytes(audio_bytes)
         .file_name(filename.to_string())
         .mime_str("application/octet-stream")
-        .unwrap();
+        .map_err(|e| {
+            eprintln!("[separation trace={trace_id} event=error] type=mime_build err={e}");
+            SeparationError::ServiceUnavailable
+        })?;
     let form = reqwest::multipart::Form::new()
         .part("file", part)
         .text("mode", mode_str.to_string())
@@ -90,24 +106,36 @@ pub async fn separate_audio(
         Err(e) => {
             let elapsed_ms = t_start.elapsed().as_millis();
             if e.is_timeout() {
-                eprintln!("[separation trace={trace_id} event=error] type=timeout elapsed_ms={elapsed_ms}");
+                eprintln!(
+                    "[separation trace={trace_id} event=error] type=timeout elapsed_ms={elapsed_ms}"
+                );
                 return Err(SeparationError::Timeout);
             }
             if e.is_connect() {
-                eprintln!("[separation trace={trace_id} event=error] type=service_unavailable err={e} elapsed_ms={elapsed_ms}");
+                eprintln!(
+                    "[separation trace={trace_id} event=error] type=service_unavailable err={e} elapsed_ms={elapsed_ms}"
+                );
                 return Err(SeparationError::ServiceUnavailable);
             }
-            eprintln!("[separation trace={trace_id} event=error] type=http_send err={e} elapsed_ms={elapsed_ms}");
+            eprintln!(
+                "[separation trace={trace_id} event=error] type=http_send err={e} elapsed_ms={elapsed_ms}"
+            );
             return Err(SeparationError::ProcessingFailed(e.to_string()));
         }
     };
 
     let elapsed_ms = t_start.elapsed().as_millis();
     let status = response.status();
-    eprintln!("[separation trace={trace_id} event=service_response] status={status} duration_ms={elapsed_ms}");
+    eprintln!(
+        "[separation trace={trace_id} event=service_response] status={status} duration_ms={elapsed_ms}"
+    );
 
-    if status == reqwest::StatusCode::SERVICE_UNAVAILABLE || status == reqwest::StatusCode::BAD_GATEWAY {
-        eprintln!("[separation trace={trace_id} event=error] type=service_unavailable status={status}");
+    if status == reqwest::StatusCode::SERVICE_UNAVAILABLE
+        || status == reqwest::StatusCode::BAD_GATEWAY
+    {
+        eprintln!(
+            "[separation trace={trace_id} event=error] type=service_unavailable status={status}"
+        );
         return Err(SeparationError::ServiceUnavailable);
     }
     if status == reqwest::StatusCode::BAD_REQUEST {
@@ -117,15 +145,21 @@ pub async fn separate_audio(
     }
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
-        eprintln!("[separation trace={trace_id} event=error] type=processing_failed status={status} body={body}");
-        return Err(SeparationError::ProcessingFailed(format!("HTTP {status}: {body}")));
+        eprintln!(
+            "[separation trace={trace_id} event=error] type=processing_failed status={status} body={body}"
+        );
+        return Err(SeparationError::ProcessingFailed(format!(
+            "HTTP {status}: {body}"
+        )));
     }
 
     let json: serde_json::Value = match response.json().await {
         Ok(v) => v,
         Err(e) => {
             eprintln!("[separation trace={trace_id} event=error] type=json_parse err={e}");
-            return Err(SeparationError::ProcessingFailed(format!("JSON parse: {e}")));
+            return Err(SeparationError::ProcessingFailed(format!(
+                "JSON parse: {e}"
+            )));
         }
     };
 
@@ -134,10 +168,15 @@ pub async fn separate_audio(
         return Err(SeparationError::ProcessingFailed(err_msg.to_string()));
     }
 
-    let vocals_b64 = json.get("vocals_wav").and_then(|v| v.as_str()).ok_or_else(|| {
-        eprintln!("[separation trace={trace_id} event=error] type=missing_field field=vocals_wav");
-        SeparationError::ProcessingFailed("missing vocals_wav field".into())
-    })?;
+    let vocals_b64 = json
+        .get("vocals_wav")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            eprintln!(
+                "[separation trace={trace_id} event=error] type=missing_field field=vocals_wav"
+            );
+            SeparationError::ProcessingFailed("missing vocals_wav field".into())
+        })?;
     let instrumental_b64 = json.get("instrumental_wav").and_then(|v| v.as_str()).ok_or_else(|| {
         eprintln!("[separation trace={trace_id} event=error] type=missing_field field=instrumental_wav");
         SeparationError::ProcessingFailed("missing instrumental_wav field".into())
@@ -150,8 +189,15 @@ pub async fn separate_audio(
         eprintln!("[separation trace={trace_id} event=error] type=missing_field field=instrumental_compressed");
         SeparationError::ProcessingFailed("missing instrumental_compressed field".into())
     })?;
-    let compressed_ext = json.get("compressed_ext").and_then(|v| v.as_str()).unwrap_or("mp3").to_string();
-    let duration_seconds = json.get("duration_seconds").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let compressed_ext = json
+        .get("compressed_ext")
+        .and_then(|v| v.as_str())
+        .unwrap_or("mp3")
+        .to_string();
+    let duration_seconds = json
+        .get("duration_seconds")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
 
     let vocals_wav = b64_decode(vocals_b64).map_err(|e| {
         eprintln!("[separation trace={trace_id} event=error] type=base64_vocals_wav err={e}");
@@ -162,20 +208,34 @@ pub async fn separate_audio(
         SeparationError::ProcessingFailed(format!("base64 instrumental_wav: {e}"))
     })?;
     let vocals_compressed = b64_decode(vocals_compressed_b64).map_err(|e| {
-        eprintln!("[separation trace={trace_id} event=error] type=base64_vocals_compressed err={e}");
+        eprintln!(
+            "[separation trace={trace_id} event=error] type=base64_vocals_compressed err={e}"
+        );
         SeparationError::ProcessingFailed(format!("base64 vocals_compressed: {e}"))
     })?;
     let instrumental_compressed = b64_decode(instrumental_compressed_b64).map_err(|e| {
-        eprintln!("[separation trace={trace_id} event=error] type=base64_instrumental_compressed err={e}");
+        eprintln!(
+            "[separation trace={trace_id} event=error] type=base64_instrumental_compressed err={e}"
+        );
         SeparationError::ProcessingFailed(format!("base64 instrumental_compressed: {e}"))
     })?;
 
     eprintln!(
         "[separation trace={trace_id} event=decode_complete] vocals_wav={} instrumental_wav={} vocals_compressed={} instrumental_compressed={} ext={compressed_ext} duration={duration_seconds:.1}s",
-        vocals_wav.len(), instrumental_wav.len(), vocals_compressed.len(), instrumental_compressed.len()
+        vocals_wav.len(),
+        instrumental_wav.len(),
+        vocals_compressed.len(),
+        instrumental_compressed.len()
     );
 
-    Ok(SeparationResult { vocals_wav, instrumental_wav, vocals_compressed, instrumental_compressed, compressed_ext, duration_seconds })
+    Ok(SeparationResult {
+        vocals_wav,
+        instrumental_wav,
+        vocals_compressed,
+        instrumental_compressed,
+        compressed_ext,
+        duration_seconds,
+    })
 }
 
 // Simple RFC-4648 base64 decoder — no external crate needed.
@@ -196,19 +256,39 @@ fn b64_decode(s: &str) -> Result<Vec<u8>, &'static str> {
     let mut out = Vec::with_capacity(s.len() * 3 / 4 + 3);
     let mut i = 0;
     while i < s.len() {
-        if s[i] == b'=' { break; }
+        if s[i] == b'=' {
+            break;
+        }
         let a = TABLE[s[i] as usize];
-        if a < 0 { return Err("invalid base64 char"); }
-        let b_val = if i + 1 < s.len() { TABLE[s[i+1] as usize] } else { return Err("truncated"); };
-        if b_val < 0 { return Err("invalid base64 char"); }
+        if a < 0 {
+            return Err("invalid base64 char");
+        }
+        let b_val = if i + 1 < s.len() {
+            TABLE[s[i + 1] as usize]
+        } else {
+            return Err("truncated");
+        };
+        if b_val < 0 {
+            return Err("invalid base64 char");
+        }
         out.push((a as u8) << 2 | (b_val as u8) >> 4);
-        if i + 2 >= s.len() || s[i+2] == b'=' { i += 4; break; }
-        let c_val = TABLE[s[i+2] as usize];
-        if c_val < 0 { return Err("invalid base64 char"); }
+        if i + 2 >= s.len() || s[i + 2] == b'=' {
+            i += 4;
+            break;
+        }
+        let c_val = TABLE[s[i + 2] as usize];
+        if c_val < 0 {
+            return Err("invalid base64 char");
+        }
         out.push((b_val as u8) << 4 | (c_val as u8) >> 2);
-        if i + 3 >= s.len() || s[i+3] == b'=' { i += 4; break; }
-        let d_val = TABLE[s[i+3] as usize];
-        if d_val < 0 { return Err("invalid base64 char"); }
+        if i + 3 >= s.len() || s[i + 3] == b'=' {
+            i += 4;
+            break;
+        }
+        let d_val = TABLE[s[i + 3] as usize];
+        if d_val < 0 {
+            return Err("invalid base64 char");
+        }
         out.push((c_val as u8) << 6 | d_val as u8);
         i += 4;
     }

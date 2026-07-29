@@ -14,11 +14,13 @@ use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::{apply_premium_to_md, t};
 use crate::rank;
 
+use super::download::types::AudioQuality;
 use super::download::{YoutubeRequest, cancel_download, get_request, store_request};
-use super::selection::{enter_selection_menu, handle_selection_callback, CB_BACK_TO_QUALITY_PREFIX, CB_SELECTION_PREFIX};
+use super::selection::{
+    CB_BACK_TO_QUALITY_PREFIX, CB_SELECTION_PREFIX, enter_selection_menu, handle_selection_callback,
+};
 use super::trace::log_trace;
 use super::types::{VideoCodec, VideoFormatOption, VideoInfo};
-use super::download::types::AudioQuality;
 use crate::bot::CB_START_PANEL;
 
 const CB_QUALITY_PREFIX: &str = "yt:q:";
@@ -31,11 +33,11 @@ const QUALITY_OPTIONS: &[(u32, &str, &str)] = &[
     (2160, "youtube.quality.buttons.2160", "diamond"),
     (1440, "youtube.quality.buttons.1440", "fire_yt"),
     (1080, "youtube.quality.buttons.1080", "sparkles"),
-    (720,  "youtube.quality.buttons.720",  "star_yt"),
-    (480,  "youtube.quality.buttons.480",  "phone"),
-    (360,  "youtube.quality.buttons.360",  "signal"),
-    (240,  "youtube.quality.buttons.240",  "signal"),
-    (144,  "youtube.quality.buttons.144",  "signal"),
+    (720, "youtube.quality.buttons.720", "star_yt"),
+    (480, "youtube.quality.buttons.480", "phone"),
+    (360, "youtube.quality.buttons.360", "signal"),
+    (240, "youtube.quality.buttons.240", "signal"),
+    (144, "youtube.quality.buttons.144", "signal"),
 ];
 
 const CODEC_ORDER: &[VideoCodec] = &[
@@ -52,7 +54,7 @@ pub async fn send_quality_prompt(
     user_id: Option<i64>,
     cookie_spec: &str,
     info: &VideoInfo,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> crate::error::Result<()> {
     let options = quality_options(info);
     if options.is_empty() {
         log_trace(
@@ -134,7 +136,11 @@ pub async fn send_quality_prompt(
     Ok(())
 }
 
-pub async fn handle_quality_callback(api: &Bot, callback_query: &CallbackQuery, database: &Option<PostgresDatabase>) -> bool {
+pub async fn handle_quality_callback(
+    api: &Bot,
+    callback_query: &CallbackQuery,
+    database: &Option<PostgresDatabase>,
+) -> bool {
     let Some(data) = callback_query.data.as_deref() else {
         return false;
     };
@@ -161,7 +167,12 @@ pub async fn handle_quality_callback(api: &Bot, callback_query: &CallbackQuery, 
     false
 }
 
-async fn handle_resolution_callback(api: &Bot, callback_query: &CallbackQuery, data: &str, database: &Option<PostgresDatabase>) -> bool {
+async fn handle_resolution_callback(
+    api: &Bot,
+    callback_query: &CallbackQuery,
+    data: &str,
+    database: &Option<PostgresDatabase>,
+) -> bool {
     let Some((request_id, height)) = parse_quality_callback(data) else {
         eprintln!(
             "[youtube callback event=quality_malformed user_id={} data={data}]",
@@ -206,7 +217,10 @@ async fn handle_resolution_callback(api: &Bot, callback_query: &CallbackQuery, d
             log_trace(
                 trace_id,
                 "quality_paywall",
-                &format!("user_id={uid} height={height} max={max} rank={}", user_rank.as_str()),
+                &format!(
+                    "user_id={uid} height={height} max={max} rank={}",
+                    user_rank.as_str()
+                ),
             );
             answer_callback(api, callback_query, "").await;
             let limit = format!("{}p", max);
@@ -244,9 +258,24 @@ fn quality_keyboard(request_id: u64, options: &[QualityOption]) -> InlineKeyboar
         })
         .collect();
 
-    rows.push(vec![quality_button(&t("youtube.audio.quality.best"),   &format!("{CB_AUDIO_PREFIX}{request_id}:best"), ButtonStyle::Success, "music_note")]);
-    rows.push(vec![quality_button(&t("youtube.audio.quality.medium"), &format!("{CB_AUDIO_PREFIX}{request_id}:mid"),  ButtonStyle::Primary, "music_note")]);
-    rows.push(vec![quality_button(&t("youtube.audio.quality.low"),    &format!("{CB_AUDIO_PREFIX}{request_id}:low"),  ButtonStyle::Danger,  "music_note")]);
+    rows.push(vec![quality_button(
+        &t("youtube.audio.quality.best"),
+        &format!("{CB_AUDIO_PREFIX}{request_id}:best"),
+        ButtonStyle::Success,
+        "music_note",
+    )]);
+    rows.push(vec![quality_button(
+        &t("youtube.audio.quality.medium"),
+        &format!("{CB_AUDIO_PREFIX}{request_id}:mid"),
+        ButtonStyle::Primary,
+        "music_note",
+    )]);
+    rows.push(vec![quality_button(
+        &t("youtube.audio.quality.low"),
+        &format!("{CB_AUDIO_PREFIX}{request_id}:low"),
+        ButtonStyle::Danger,
+        "music_note",
+    )]);
     rows.push(vec![main_menu_button()]);
 
     InlineKeyboardMarkup::builder()
@@ -258,13 +287,22 @@ fn main_menu_button() -> InlineKeyboardButton {
     let icon_id = t("emoji.panel.icons.back");
     InlineKeyboardButton {
         text: t("start.back"),
-        icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') { None } else { Some(icon_id) },
+        icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') {
+            None
+        } else {
+            Some(icon_id)
+        },
         callback_data: Some(CB_START_PANEL.to_string()),
         style: Some(ButtonStyle::Primary),
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
+        url: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
     }
 }
 
@@ -314,7 +352,12 @@ fn button_style(height: u32) -> ButtonStyle {
     }
 }
 
-fn quality_button(text: &str, callback_data: &str, style: ButtonStyle, icon_key: &str) -> InlineKeyboardButton {
+fn quality_button(
+    text: &str,
+    callback_data: &str,
+    style: ButtonStyle,
+    icon_key: &str,
+) -> InlineKeyboardButton {
     let icon_id = t(&format!("emoji.panel.icons.{icon_key}"));
     InlineKeyboardButton {
         text: text.to_string(),
@@ -360,8 +403,8 @@ async fn handle_audio_quality_callback(api: &Bot, cq: &CallbackQuery, data: &str
         return true;
     }
 
-    use super::download::types::{Selection, SelectionView, SubtitleMode};
     use super::download::spawn_download;
+    use super::download::types::{Selection, SelectionView, SubtitleMode};
     use crate::i18n::tf;
 
     let selection = Selection {
@@ -374,18 +417,33 @@ async fn handle_audio_quality_callback(api: &Bot, cq: &CallbackQuery, data: &str
         audio_only: Some(audio_quality),
     };
 
-    let status_text = tf("youtube.audio.starting", &[("quality", &t(audio_quality.label_key()))]);
-    let edit_result = api.edit_message_text(
-        &EditMessageTextParams::builder()
-            .chat_id(message.chat.id)
-            .message_id(message.message_id)
-            .text(&status_text)
-            .build(),
-    ).await;
+    let status_text = tf(
+        "youtube.audio.starting",
+        &[("quality", &t(audio_quality.label_key()))],
+    );
+    let edit_result = api
+        .edit_message_text(
+            &EditMessageTextParams::builder()
+                .chat_id(message.chat.id)
+                .message_id(message.message_id)
+                .text(&status_text)
+                .build(),
+        )
+        .await;
 
     if edit_result.is_ok() {
-        spawn_download(api.clone(), request_id, selection, message.chat.id, message.message_id);
-        log_trace(0, "audio_quality_dispatch", &format!("request_id={request_id} quality={quality_str}"));
+        spawn_download(
+            api.clone(),
+            request_id,
+            selection,
+            message.chat.id,
+            message.message_id,
+        );
+        log_trace(
+            0,
+            "audio_quality_dispatch",
+            &format!("request_id={request_id} quality={quality_str}"),
+        );
     }
 
     answer_callback(api, cq, "").await;
@@ -413,12 +471,21 @@ async fn handle_back_to_quality_callback(api: &Bot, cq: &CallbackQuery, data: &s
             let codecs: Vec<super::types::VideoCodec> = CODEC_ORDER
                 .iter()
                 .copied()
-                .filter(|codec| req.formats.iter().any(|f| f.height == *height && f.codec == *codec))
+                .filter(|codec| {
+                    req.formats
+                        .iter()
+                        .any(|f| f.height == *height && f.codec == *codec)
+                })
                 .collect();
             if codecs.is_empty() {
                 return None;
             }
-            Some(QualityOption { height: *height, label_key, icon_key, codecs })
+            Some(QualityOption {
+                height: *height,
+                label_key,
+                icon_key,
+                codecs,
+            })
         })
         .collect();
     let raw = t("youtube.quality.prompt");
@@ -463,7 +530,8 @@ async fn handle_cancel_callback(api: &Bot, callback_query: &CallbackQuery, data:
         "cancel",
         if cancelled { "ok" } else { "not_found" },
         0,
-    ).await;
+    )
+    .await;
     answer_callback(api, callback_query, "").await;
     true
 }

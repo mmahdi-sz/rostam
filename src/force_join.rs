@@ -9,7 +9,10 @@ use frankenstein::{
     AsyncTelegramApi,
     client_reqwest::Bot,
     methods::{EditMessageTextParams, GetChatMemberParams, GetChatParams, SendMessageParams},
-    types::{Chat, ChatId, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, ReplyMarkup},
+    types::{
+        Chat, ChatId, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions,
+        ReplyMarkup,
+    },
 };
 use redis::aio::MultiplexedConnection;
 use tokio::sync::OnceCell;
@@ -63,18 +66,23 @@ pub struct Lock {
     pub display_override: String,
     pub mode: String,
     pub created_at: i64,
-    pub expires_at: i64,   // 0 = بدون حد زمان
-    pub member_cap: i64,   // 0 = بدون سقف عضو
+    pub expires_at: i64, // 0 = بدون حد زمان
+    pub member_cap: i64, // 0 = بدون سقف عضو
     pub reserve_link: String,
 }
 
 impl Lock {
     /// نام نمایشی: بازنویسی دستی ادمین، وگرنه اسم واقعی چت (getChat)، وگرنه شناسه، وگرنه لینک.
     fn display_name(&self) -> String {
-        if !self.display_override.is_empty() { self.display_override.clone() }
-        else if !self.title.is_empty() { self.title.clone() }
-        else if !self.identifier.is_empty() { self.identifier.clone() }
-        else { self.link.clone() }
+        if !self.display_override.is_empty() {
+            self.display_override.clone()
+        } else if !self.title.is_empty() {
+            self.title.clone()
+        } else if !self.identifier.is_empty() {
+            self.identifier.clone()
+        } else {
+            self.link.clone()
+        }
     }
 
     fn is_mandatory(&self) -> bool {
@@ -103,26 +111,37 @@ fn chat_id_for(identifier: &str) -> Option<ChatId> {
 }
 
 fn now_epoch() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 /// ارقام فارسی/عربی → انگلیسی، برای پارس کردن ورودی عددی ادمین.
 fn to_en_digits(s: &str) -> String {
-    s.chars().map(|c| match c {
-        '۰'..='۹' => ((c as u32 - '۰' as u32) as u8 + b'0') as char,
-        '٠'..='٩' => ((c as u32 - '٠' as u32) as u8 + b'0') as char,
-        other => other,
-    }).collect()
+    s.chars()
+        .map(|c| match c {
+            '۰'..='۹' => ((c as u32 - '۰' as u32) as u8 + b'0') as char,
+            '٠'..='٩' => ((c as u32 - '٠' as u32) as u8 + b'0') as char,
+            other => other,
+        })
+        .collect()
 }
 
 /// تاریخ/ساعت شمسی به‌وقت تهران با ارقام انگلیسی — از مسیر مطمئن chrono + gregorian_to_jalali.
 fn fmt_jalali_dt(epoch: i64) -> String {
     use chrono::{Datelike, Timelike};
     use chrono_tz::Asia::Tehran;
-    let Some(utc) = chrono::DateTime::from_timestamp(epoch, 0) else { return "—".to_string() };
+    let Some(utc) = chrono::DateTime::from_timestamp(epoch, 0) else {
+        return "—".to_string();
+    };
     let dt = utc.with_timezone(&Tehran);
     let (jy, jm, jd) = gregorian_to_jalali(dt.year(), dt.month() as i32, dt.day() as i32);
-    format!("🗓 {jy}/{jm:02}/{jd:02} ⏰ {:02}:{:02}", dt.hour(), dt.minute())
+    format!(
+        "🗓 {jy}/{jm:02}/{jd:02} ⏰ {:02}:{:02}",
+        dt.hour(),
+        dt.minute()
+    )
 }
 
 fn no_preview() -> LinkPreviewOptions {
@@ -131,29 +150,58 @@ fn no_preview() -> LinkPreviewOptions {
 
 /// مثل `crate::bot::edit_text` ولی همیشه پیش‌نمایش لینک را خاموش می‌کنه —
 /// قفل‌ها متن خام لینک رو نشون می‌دن و نباید پیش‌نمایش بسازن.
-async fn edit_text_np(api: &Bot, chat_id: i64, message_id: i32, text: &str, kb: Option<InlineKeyboardMarkup>) {
+async fn edit_text_np(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    text: &str,
+    kb: Option<InlineKeyboardMarkup>,
+) {
     let _ = match kb {
-        Some(kb) => api.edit_message_text(
-            &EditMessageTextParams::builder()
-                .chat_id(chat_id).message_id(message_id).text(text)
-                .link_preview_options(no_preview()).reply_markup(kb).build(),
-        ).await,
-        None => api.edit_message_text(
-            &EditMessageTextParams::builder()
-                .chat_id(chat_id).message_id(message_id).text(text)
-                .link_preview_options(no_preview()).build(),
-        ).await,
+        Some(kb) => {
+            api.edit_message_text(
+                &EditMessageTextParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(message_id)
+                    .text(text)
+                    .link_preview_options(no_preview())
+                    .reply_markup(kb)
+                    .build(),
+            )
+            .await
+        }
+        None => {
+            api.edit_message_text(
+                &EditMessageTextParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(message_id)
+                    .text(text)
+                    .link_preview_options(no_preview())
+                    .build(),
+            )
+            .await
+        }
     };
 }
 
 /// مثل `crate::bot::send_text` ولی همیشه پیش‌نمایش لینک را خاموش می‌کنه.
 async fn send_text_np(api: &Bot, chat_id: i64, text: &str) {
-    let params = SendMessageParams::builder().chat_id(chat_id).text(text).link_preview_options(no_preview()).build();
+    let params = SendMessageParams::builder()
+        .chat_id(chat_id)
+        .text(text)
+        .link_preview_options(no_preview())
+        .build();
     let _ = api.send_message(&params).await;
 }
 
 fn is_member_status(m: &ChatMember) -> bool {
-    matches!(m, ChatMember::Creator(_) | ChatMember::Administrator(_) | ChatMember::Member(_) | ChatMember::Restricted(_))
+    matches!(
+        m,
+        ChatMember::Creator(_)
+            | ChatMember::Administrator(_)
+            | ChatMember::Member(_)
+            | ChatMember::Restricted(_)
+    )
 }
 
 fn chat_member_user_id(m: &ChatMember) -> i64 {
@@ -167,11 +215,21 @@ fn chat_member_user_id(m: &ChatMember) -> i64 {
     }) as i64
 }
 
-fn lock_hash_key(id: i64) -> String { format!("force_join:lock:{id}") }
-fn joined_key(lock_id: i64, user_id: i64) -> String { format!("force_join:joined:{lock_id}:{user_id}") }
-fn counted_key(lock_id: i64, user_id: i64) -> String { format!("force_join:counted:{lock_id}:{user_id}") }
-fn already_count_key(lock_id: i64) -> String { format!("force_join:lock:{lock_id}:already_count") }
-fn linked_count_key(lock_id: i64) -> String { format!("force_join:lock:{lock_id}:linked_count") }
+fn lock_hash_key(id: i64) -> String {
+    format!("force_join:lock:{id}")
+}
+fn joined_key(lock_id: i64, user_id: i64) -> String {
+    format!("force_join:joined:{lock_id}:{user_id}")
+}
+fn counted_key(lock_id: i64, user_id: i64) -> String {
+    format!("force_join:counted:{lock_id}:{user_id}")
+}
+fn already_count_key(lock_id: i64) -> String {
+    format!("force_join:lock:{lock_id}:already_count")
+}
+fn linked_count_key(lock_id: i64) -> String {
+    format!("force_join:lock:{lock_id}:linked_count")
+}
 
 /// شناسه‌ی چت را از یک لینک عمومی `t.me/username` استخراج می‌کند؛ برای لینک‌های
 /// خصوصی (`+`) یا غیر-تلگرامی (اینستاگرام و…) چیزی برنمی‌گرداند.
@@ -197,30 +255,50 @@ async fn fetch_chat_title(api: &Bot, chat_id: ChatId) -> String {
 
 /// افزودن قفل جدید (پیش‌فرض: اختیاری). شناسه‌ی چت اگه داده نشده باشه، از لینک استخراج می‌شه.
 pub async fn add_lock(api: &Bot, link: &str, identifier: Option<&str>) -> i64 {
-    let resolved = identifier.map(|s| s.to_string()).or_else(|| derive_identifier(link)).unwrap_or_default();
+    let resolved = identifier
+        .map(|s| s.to_string())
+        .or_else(|| derive_identifier(link))
+        .unwrap_or_default();
     let title = match chat_id_for(&resolved) {
         Some(chat_id) => fetch_chat_title(api, chat_id).await,
         None => String::new(),
     };
 
     let Ok(mut c) = conn().await else { return 0 };
-    let id: i64 = redis::cmd("INCR").arg(NEXT_ID_KEY).query_async(&mut c).await.unwrap_or(0);
+    let id: i64 = redis::cmd("INCR")
+        .arg(NEXT_ID_KEY)
+        .query_async(&mut c)
+        .await
+        .unwrap_or(0);
     let _: Result<(), _> = redis::cmd("HSET")
         .arg(lock_hash_key(id))
-        .arg("link").arg(link)
-        .arg("identifier").arg(&resolved)
-        .arg("title").arg(&title)
-        .arg("mode").arg("optional")
-        .arg("created_at").arg(now_epoch())
+        .arg("link")
+        .arg(link)
+        .arg("identifier")
+        .arg(&resolved)
+        .arg("title")
+        .arg(&title)
+        .arg("mode")
+        .arg("optional")
+        .arg("created_at")
+        .arg(now_epoch())
         .query_async::<()>(&mut c)
         .await;
-    let _: Result<i64, _> = redis::cmd("RPUSH").arg(LOCK_IDS_KEY).arg(id).query_async(&mut c).await;
+    let _: Result<i64, _> = redis::cmd("RPUSH")
+        .arg(LOCK_IDS_KEY)
+        .arg(id)
+        .query_async(&mut c)
+        .await;
     id
 }
 
 async fn get_lock(id: i64) -> Option<Lock> {
     let mut c = conn().await.ok()?;
-    let map: HashMap<String, String> = redis::cmd("HGETALL").arg(lock_hash_key(id)).query_async(&mut c).await.ok()?;
+    let map: HashMap<String, String> = redis::cmd("HGETALL")
+        .arg(lock_hash_key(id))
+        .query_async(&mut c)
+        .await
+        .ok()?;
     if map.is_empty() {
         return None;
     }
@@ -230,28 +308,51 @@ async fn get_lock(id: i64) -> Option<Lock> {
         identifier: map.get("identifier").cloned().unwrap_or_default(),
         title: map.get("title").cloned().unwrap_or_default(),
         display_override: map.get("display_override").cloned().unwrap_or_default(),
-        mode: map.get("mode").cloned().unwrap_or_else(|| "optional".to_string()),
-        created_at: map.get("created_at").and_then(|s| s.parse().ok()).unwrap_or(0),
-        expires_at: map.get("expires_at").and_then(|s| s.parse().ok()).unwrap_or(0),
-        member_cap: map.get("member_cap").and_then(|s| s.parse().ok()).unwrap_or(0),
+        mode: map
+            .get("mode")
+            .cloned()
+            .unwrap_or_else(|| "optional".to_string()),
+        created_at: map
+            .get("created_at")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0),
+        expires_at: map
+            .get("expires_at")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0),
+        member_cap: map
+            .get("member_cap")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0),
         reserve_link: map.get("reserve_link").cloned().unwrap_or_default(),
     })
 }
 
 async fn set_field(id: i64, field: &str, value: &str) {
     let Ok(mut c) = conn().await else { return };
-    let _: Result<(), _> = redis::cmd("HSET").arg(lock_hash_key(id)).arg(field).arg(value).query_async::<()>(&mut c).await;
+    let _: Result<(), _> = redis::cmd("HSET")
+        .arg(lock_hash_key(id))
+        .arg(field)
+        .arg(value)
+        .query_async::<()>(&mut c)
+        .await;
 }
 
 /// حذف کامل یک قفل (از لیست + هش + شمارنده‌ها).
 pub async fn delete_lock(id: i64) {
     let Ok(mut c) = conn().await else { return };
-    let _: Result<i64, _> = redis::cmd("LREM").arg(LOCK_IDS_KEY).arg(0).arg(id).query_async(&mut c).await;
+    let _: Result<i64, _> = redis::cmd("LREM")
+        .arg(LOCK_IDS_KEY)
+        .arg(0)
+        .arg(id)
+        .query_async(&mut c)
+        .await;
     let _: Result<i64, _> = redis::cmd("DEL")
         .arg(lock_hash_key(id))
         .arg(already_count_key(id))
         .arg(linked_count_key(id))
-        .query_async(&mut c).await;
+        .query_async(&mut c)
+        .await;
 }
 
 /// ذخیره‌ی نام نمایشی دلخواه ادمین.
@@ -299,12 +400,26 @@ pub async fn set_reserve_link(id: i64, link: &str) {
 
 async fn linked_count(lock_id: i64) -> i64 {
     let Ok(mut c) = conn().await else { return 0 };
-    redis::cmd("GET").arg(linked_count_key(lock_id)).query_async(&mut c).await.ok().flatten().unwrap_or(0)
+    redis::cmd("GET")
+        .arg(linked_count_key(lock_id))
+        .query_async(&mut c)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(0)
 }
 
 async fn list_locks() -> Vec<Lock> {
-    let Ok(mut c) = conn().await else { return Vec::new() };
-    let ids: Vec<i64> = redis::cmd("LRANGE").arg(LOCK_IDS_KEY).arg(0).arg(-1).query_async(&mut c).await.unwrap_or_default();
+    let Ok(mut c) = conn().await else {
+        return Vec::new();
+    };
+    let ids: Vec<i64> = redis::cmd("LRANGE")
+        .arg(LOCK_IDS_KEY)
+        .arg(0)
+        .arg(-1)
+        .query_async(&mut c)
+        .await
+        .unwrap_or_default();
     let mut out = Vec::new();
     for id in ids {
         if let Some(l) = get_lock(id).await {
@@ -332,10 +447,18 @@ async fn mandatory_locks() -> Vec<Lock> {
 /// ربات باید ادمینِ آن چت (با دسترسی کامل) باشه تا بشه اون قفل رو اجباری کرد —
 /// وگرنه getChatMember روی کاربرهای دیگه هم جواب نمی‌ده.
 async fn bot_has_full_access(api: &Bot, chat_id: ChatId) -> bool {
-    let Ok(me) = api.get_me().await else { return false };
-    let params = GetChatMemberParams::builder().chat_id(chat_id).user_id(me.result.id).build();
+    let Ok(me) = api.get_me().await else {
+        return false;
+    };
+    let params = GetChatMemberParams::builder()
+        .chat_id(chat_id)
+        .user_id(me.result.id)
+        .build();
     match api.get_chat_member(&params).await {
-        Ok(resp) => matches!(resp.result, ChatMember::Administrator(_) | ChatMember::Creator(_)),
+        Ok(resp) => matches!(
+            resp.result,
+            ChatMember::Administrator(_) | ChatMember::Creator(_)
+        ),
         Err(_) => false,
     }
 }
@@ -350,20 +473,31 @@ pub enum ToggleModeResult {
 }
 
 pub async fn toggle_lock_mode(api: &Bot, id: i64) -> ToggleModeResult {
-    let Some(lock) = get_lock(id).await else { return ToggleModeResult::NotFound };
+    let Some(lock) = get_lock(id).await else {
+        return ToggleModeResult::NotFound;
+    };
 
     let new_mode = if lock.is_mandatory() {
         "optional"
     } else {
-        let Some(chat_id) = lock.chat_id() else { return ToggleModeResult::NoChatId };
+        let Some(chat_id) = lock.chat_id() else {
+            return ToggleModeResult::NoChatId;
+        };
         if !bot_has_full_access(api, chat_id).await {
             return ToggleModeResult::BotNotAdmin;
         }
         "mandatory"
     };
 
-    let Ok(mut c) = conn().await else { return ToggleModeResult::NotFound };
-    let _: Result<(), _> = redis::cmd("HSET").arg(lock_hash_key(id)).arg("mode").arg(new_mode).query_async::<()>(&mut c).await;
+    let Ok(mut c) = conn().await else {
+        return ToggleModeResult::NotFound;
+    };
+    let _: Result<(), _> = redis::cmd("HSET")
+        .arg(lock_hash_key(id))
+        .arg("mode")
+        .arg(new_mode)
+        .query_async::<()>(&mut c)
+        .await;
     ToggleModeResult::Ok
 }
 
@@ -371,7 +505,11 @@ pub async fn toggle_lock_mode(api: &Bot, id: i64) -> ToggleModeResult {
 /// «از طریق لینک عضو شد» را به‌روز نگه می‌دارد.
 pub async fn cache_status(lock_id: i64, user_id: i64, joined: bool) {
     let Ok(mut c) = conn().await else { return };
-    let ttl = if joined { JOINED_TTL_SECS } else { NOT_JOINED_TTL_SECS };
+    let ttl = if joined {
+        JOINED_TTL_SECS
+    } else {
+        NOT_JOINED_TTL_SECS
+    };
     let _: Result<(), _> = redis::cmd("SET")
         .arg(joined_key(lock_id, user_id))
         .arg(if joined { "1" } else { "0" })
@@ -417,14 +555,24 @@ async fn check_lock_membership(api: &Bot, lock: &Lock, user_id: i64, force: bool
     if !force {
         let Ok(mut c) = conn().await else { return true };
         let jkey = joined_key(lock.id, user_id);
-        let cached: Option<String> = redis::cmd("GET").arg(&jkey).query_async(&mut c).await.ok().flatten();
+        let cached: Option<String> = redis::cmd("GET")
+            .arg(&jkey)
+            .query_async(&mut c)
+            .await
+            .ok()
+            .flatten();
         if let Some(v) = cached {
             return v == "1";
         }
     }
 
-    let Some(chat_id) = lock.chat_id() else { return true };
-    let params = GetChatMemberParams::builder().chat_id(chat_id).user_id(user_id as u64).build();
+    let Some(chat_id) = lock.chat_id() else {
+        return true;
+    };
+    let params = GetChatMemberParams::builder()
+        .chat_id(chat_id)
+        .user_id(user_id as u64)
+        .build();
     let joined = match api.get_chat_member(&params).await {
         Ok(resp) => is_member_status(&resp.result),
         Err(_) => true, // نبود اطلاعات نباید کاربر را ناحق قفل کند
@@ -481,14 +629,25 @@ pub async fn on_chat_member_update(chat: &Chat, new_member: &ChatMember) {
 
 /// روشن/خاموش بودن قفل اجباری (سوییچ کلی ادمین، مستقل از تک‌تک قفل‌ها).
 pub async fn is_enabled() -> bool {
-    let Ok(mut c) = conn().await else { return false };
-    let v: Option<String> = redis::cmd("GET").arg(ENABLED_KEY).query_async(&mut c).await.ok().flatten();
+    let Ok(mut c) = conn().await else {
+        return false;
+    };
+    let v: Option<String> = redis::cmd("GET")
+        .arg(ENABLED_KEY)
+        .query_async(&mut c)
+        .await
+        .ok()
+        .flatten();
     v.as_deref() == Some("1")
 }
 
 async fn set_enabled(enabled: bool) {
     let Ok(mut c) = conn().await else { return };
-    let _: Result<(), _> = redis::cmd("SET").arg(ENABLED_KEY).arg(if enabled { "1" } else { "0" }).query_async::<()>(&mut c).await;
+    let _: Result<(), _> = redis::cmd("SET")
+        .arg(ENABLED_KEY)
+        .arg(if enabled { "1" } else { "0" })
+        .query_async::<()>(&mut c)
+        .await;
 }
 
 pub async fn toggle_enabled() -> bool {
@@ -499,18 +658,30 @@ pub async fn toggle_enabled() -> bool {
 
 fn menu_text() -> String {
     let username = config::bot_username();
-    let at_username = if username.is_empty() { String::new() } else { format!("@{username}") };
+    let at_username = if username.is_empty() {
+        String::new()
+    } else {
+        format!("@{username}")
+    };
     tf("force_join.info_text", &[("bot_username", &at_username)])
 }
 
 fn menu_keyboard(enabled: bool) -> InlineKeyboardMarkup {
-    let status_text = if enabled { t("force_join.status_on") } else { t("force_join.status_off") };
+    let status_text = if enabled {
+        t("force_join.status_on")
+    } else {
+        t("force_join.status_off")
+    };
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![btn_icon(&status_text, CB_FJ_TOGGLE, "")],
             vec![btn_icon_plain("\u{200F}", CB_FJ_NOOP, "")],
             vec![btn_icon(&t("force_join.view_button"), CB_FJ_VIEW, "")],
-            vec![btn_icon(&t("force_join.back_to_admin_button"), crate::bot::CB_ADMIN_PANEL, "back")],
+            vec![btn_icon(
+                &t("force_join.back_to_admin_button"),
+                crate::bot::CB_ADMIN_PANEL,
+                "back",
+            )],
         ])
         .build()
 }
@@ -518,7 +689,14 @@ fn menu_keyboard(enabled: bool) -> InlineKeyboardMarkup {
 /// نمایش/رفرش زیرمنوی «قفل اجباری» در پنل ادمین
 pub async fn open_menu(api: &Bot, chat_id: i64, message_id: i32) {
     let enabled = is_enabled().await;
-    let _ = edit_text_np(api, chat_id, message_id, &menu_text(), Some(menu_keyboard(enabled))).await;
+    let _ = edit_text_np(
+        api,
+        chat_id,
+        message_id,
+        &menu_text(),
+        Some(menu_keyboard(enabled)),
+    )
+    .await;
 }
 
 fn locks_list_view(locks: &[Lock]) -> (String, InlineKeyboardMarkup) {
@@ -526,7 +704,11 @@ fn locks_list_view(locks: &[Lock]) -> (String, InlineKeyboardMarkup) {
 
     if locks.is_empty() {
         let kb = InlineKeyboardMarkup::builder()
-            .inline_keyboard(vec![vec![btn_icon(&t("force_join.add_new_button"), CB_FJ_ADD_NEW, "")]])
+            .inline_keyboard(vec![vec![btn_icon(
+                &t("force_join.add_new_button"),
+                CB_FJ_ADD_NEW,
+                "",
+            )]])
             .build();
         return (t("force_join.no_locks_text"), kb);
     }
@@ -540,10 +722,23 @@ fn locks_list_view(locks: &[Lock]) -> (String, InlineKeyboardMarkup) {
         ]);
     }
     rows.push(vec![btn_icon_plain("\u{200F}", CB_FJ_NOOP, "")]);
-    rows.push(vec![btn_icon(&t("force_join.add_new_button"), CB_FJ_ADD_NEW, "")]);
-    rows.push(vec![btn_icon(&t("force_join.back_to_prev_button"), CB_ADMIN_FORCE_JOIN, "back")]);
+    rows.push(vec![btn_icon(
+        &t("force_join.add_new_button"),
+        CB_FJ_ADD_NEW,
+        "",
+    )]);
+    rows.push(vec![btn_icon(
+        &t("force_join.back_to_prev_button"),
+        CB_ADMIN_FORCE_JOIN,
+        "back",
+    )]);
 
-    (t("force_join.locks_list_title"), InlineKeyboardMarkup::builder().inline_keyboard(rows).build())
+    (
+        t("force_join.locks_list_title"),
+        InlineKeyboardMarkup::builder()
+            .inline_keyboard(rows)
+            .build(),
+    )
 }
 
 /// نمایش صفحه‌ی «مشاهده و تنظیم قفل» — لیست قفل‌های تنظیم‌شده (ویرایش پیام موجود).
@@ -565,35 +760,72 @@ pub async fn send_locks_list(api: &Bot, chat_id: i64) {
 }
 
 /// متن + کیبورد پنل «⚙️ مدیریت قفل». اگر قفل نبود، None.
-async fn build_manage(lock_id: i64, database: &Option<PostgresDatabase>) -> Option<(String, InlineKeyboardMarkup)> {
+async fn build_manage(
+    lock_id: i64,
+    database: &Option<PostgresDatabase>,
+) -> Option<(String, InlineKeyboardMarkup)> {
     let lock = get_lock(lock_id).await?;
 
     let Ok(mut c) = conn().await else { return None };
-    let already_joined: i64 = redis::cmd("GET").arg(already_count_key(lock_id)).query_async(&mut c).await.ok().flatten().unwrap_or(0);
-    let joined_via_link: i64 = redis::cmd("GET").arg(linked_count_key(lock_id)).query_async(&mut c).await.ok().flatten().unwrap_or(0);
+    let already_joined: i64 = redis::cmd("GET")
+        .arg(already_count_key(lock_id))
+        .query_async(&mut c)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(0);
+    let joined_via_link: i64 = redis::cmd("GET")
+        .arg(linked_count_key(lock_id))
+        .query_async(&mut c)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(0);
 
     let total_users = match database {
-        Some(db) => crate::stats::get_user_stats(db.client()).await.map(|s| s.total).unwrap_or(0),
+        Some(db) => crate::stats::get_user_stats(db.client())
+            .await
+            .map(|s| s.total)
+            .unwrap_or(0),
         None => 0,
     };
     let not_joined_or_left = (total_users - already_joined - joined_via_link).max(0);
-    let identifier_display = if lock.identifier.is_empty() { "—".to_string() } else { lock.identifier.clone() };
+    let identifier_display = if lock.identifier.is_empty() {
+        "—".to_string()
+    } else {
+        lock.identifier.clone()
+    };
 
-    let text = tf("force_join.status_text", &[
-        ("link", &lock.link),
-        ("channel_username", &identifier_display),
-        ("since_date", &fmt_jalali_dt(lock.created_at)),
-        ("started_count", &total_users.to_string()),
-        ("joined_via_link_count", &joined_via_link.to_string()),
-        ("already_joined_count", &already_joined.to_string()),
-        ("not_joined_count", &not_joined_or_left.to_string()),
-        ("now_date", &fmt_jalali_dt(now_epoch())),
-    ]);
+    let text = tf(
+        "force_join.status_text",
+        &[
+            ("link", &lock.link),
+            ("channel_username", &identifier_display),
+            ("since_date", &fmt_jalali_dt(lock.created_at)),
+            ("started_count", &total_users.to_string()),
+            ("joined_via_link_count", &joined_via_link.to_string()),
+            ("already_joined_count", &already_joined.to_string()),
+            ("not_joined_count", &not_joined_or_left.to_string()),
+            ("now_date", &fmt_jalali_dt(now_epoch())),
+        ],
+    );
 
     let none = t("force_join.limit_none");
-    let mode_value = if lock.is_mandatory() { t("force_join.mode_mandatory") } else { t("force_join.mode_optional") };
-    let time_value = if lock.expires_at == 0 { none.clone() } else { fmt_jalali_dt(lock.expires_at) };
-    let member_value = if lock.member_cap == 0 { none.clone() } else { lock.member_cap.to_string() };
+    let mode_value = if lock.is_mandatory() {
+        t("force_join.mode_mandatory")
+    } else {
+        t("force_join.mode_optional")
+    };
+    let time_value = if lock.expires_at == 0 {
+        none.clone()
+    } else {
+        fmt_jalali_dt(lock.expires_at)
+    };
+    let member_value = if lock.member_cap == 0 {
+        none.clone()
+    } else {
+        lock.member_cap.to_string()
+    };
 
     // چیدمان RTL: [value, label] → مقدار سمت چپ، برچسب «>» سمت راست (مطابق تصویر).
     let name_cb = format!("{FJ_NAME_PREFIX}{lock_id}");
@@ -605,34 +837,68 @@ async fn build_manage(lock_id: i64, database: &Option<PostgresDatabase>) -> Opti
 
     let kb = InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
-            vec![btn_icon(&lock.display_name(), &name_cb, ""), btn_icon(&t("force_join.field_name"), &name_cb, "")],
-            vec![btn_icon(&mode_value, &mode_cb, ""), btn_icon(&t("force_join.field_mode"), &mode_cb, "")],
-            vec![btn_icon(&time_value, &time_cb, ""), btn_icon(&t("force_join.field_time"), &time_cb, "")],
-            vec![btn_icon(&member_value, &member_cb, ""), btn_icon(&t("force_join.field_member"), &member_cb, "")],
+            vec![
+                btn_icon(&lock.display_name(), &name_cb, ""),
+                btn_icon(&t("force_join.field_name"), &name_cb, ""),
+            ],
+            vec![
+                btn_icon(&mode_value, &mode_cb, ""),
+                btn_icon(&t("force_join.field_mode"), &mode_cb, ""),
+            ],
+            vec![
+                btn_icon(&time_value, &time_cb, ""),
+                btn_icon(&t("force_join.field_time"), &time_cb, ""),
+            ],
+            vec![
+                btn_icon(&member_value, &member_cb, ""),
+                btn_icon(&t("force_join.field_member"), &member_cb, ""),
+            ],
             vec![btn_icon(&t("force_join.reserve_button"), &reserve_cb, "")],
             vec![btn_icon_plain("\u{200F}", CB_FJ_NOOP, "")],
             vec![btn_icon(&t("force_join.delete_button"), &delete_cb, "")],
-            vec![btn_icon(&t("force_join.back_to_prev_button"), CB_FJ_VIEW, "back")],
+            vec![btn_icon(
+                &t("force_join.back_to_prev_button"),
+                CB_FJ_VIEW,
+                "back",
+            )],
         ])
         .build();
     Some((text, kb))
 }
 
 /// نمایش پنل مدیریت قفل با ویرایش پیام موجود.
-pub async fn open_manage(api: &Bot, chat_id: i64, message_id: i32, lock_id: i64, database: &Option<PostgresDatabase>) {
+pub async fn open_manage(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    lock_id: i64,
+    database: &Option<PostgresDatabase>,
+) {
     match build_manage(lock_id, database).await {
         Some((text, kb)) => edit_text_np(api, chat_id, message_id, &text, Some(kb)).await,
         None => {
             let kb = InlineKeyboardMarkup::builder()
                 .inline_keyboard(vec![vec![btn_icon(&t("admin.back"), CB_FJ_VIEW, "back")]])
                 .build();
-            edit_text_np(api, chat_id, message_id, &t("force_join.lock_not_found"), Some(kb)).await;
+            edit_text_np(
+                api,
+                chat_id,
+                message_id,
+                &t("force_join.lock_not_found"),
+                Some(kb),
+            )
+            .await;
         }
     }
 }
 
 /// پنل مدیریت قفل به‌صورت پیام جدید (بعد از ورودی متنی ادمین — UX بهتر).
-pub async fn send_manage(api: &Bot, chat_id: i64, lock_id: i64, database: &Option<PostgresDatabase>) {
+pub async fn send_manage(
+    api: &Bot,
+    chat_id: i64,
+    lock_id: i64,
+    database: &Option<PostgresDatabase>,
+) {
     if let Some((text, kb)) = build_manage(lock_id, database).await {
         let params = SendMessageParams::builder()
             .chat_id(chat_id)
@@ -646,24 +912,50 @@ pub async fn send_manage(api: &Bot, chat_id: i64, lock_id: i64, database: &Optio
 
 /// نمایش «⚙️ مدیریت قفل» یک قفل مشخص — منوی حذف (تایید).
 pub async fn open_delete_confirm(api: &Bot, chat_id: i64, message_id: i32, lock_id: i64) {
-    let name = get_lock(lock_id).await.map(|l| l.display_name()).unwrap_or_default();
+    let name = get_lock(lock_id)
+        .await
+        .map(|l| l.display_name())
+        .unwrap_or_default();
     let yes_cb = format!("{FJ_DELETE_YES_PREFIX}{lock_id}");
     let back_cb = format!("{FJ_MANAGE_PREFIX}{lock_id}");
     let kb = InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![btn_icon(&t("force_join.delete_confirm_yes"), &yes_cb, "")],
-            vec![btn_icon(&t("force_join.delete_confirm_no"), &back_cb, "back")],
+            vec![btn_icon(
+                &t("force_join.delete_confirm_no"),
+                &back_cb,
+                "back",
+            )],
         ])
         .build();
-    edit_text_np(api, chat_id, message_id, &tf("force_join.delete_confirm_text", &[("name", &name)]), Some(kb)).await;
+    edit_text_np(
+        api,
+        chat_id,
+        message_id,
+        &tf("force_join.delete_confirm_text", &[("name", &name)]),
+        Some(kb),
+    )
+    .await;
 }
 
 /// شروع ویزارد ویرایش یک فیلد قفل (نام/زمان/عضو/رزرو): پیام پنل را به پرامپت ورودی
 /// تبدیل می‌کند و منتظر پیام متنی بعدی می‌مونه.
-pub async fn prompt_field(api: &Bot, chat_id: i64, message_id: i32, lock_id: i64, field: &str, flow_manager: &mut crate::emoji::FlowManager, user_id: i64) {
-    flow_manager.set(user_id, crate::emoji::FlowState::AwaitingForceJoinField {
-        lock_id, field: field.to_string(),
-    });
+pub async fn prompt_field(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    lock_id: i64,
+    field: &str,
+    flow_manager: &mut crate::emoji::FlowManager,
+    user_id: i64,
+) {
+    flow_manager.set(
+        user_id,
+        crate::emoji::FlowState::AwaitingForceJoinField {
+            lock_id,
+            field: field.to_string(),
+        },
+    );
     let prompt_key = match field {
         "name" => "force_join.prompt_name",
         "time" => "force_join.prompt_time",
@@ -690,10 +982,16 @@ pub async fn handle_field_message(
     database: &Option<PostgresDatabase>,
 ) {
     let ok = match field {
-        "name" => { set_display_name(lock_id, text).await; true }
+        "name" => {
+            set_display_name(lock_id, text).await;
+            true
+        }
         "time" => set_time_limit(lock_id, text).await,
         "member" => set_member_cap(lock_id, text).await,
-        "reserve" => { set_reserve_link(lock_id, text).await; true }
+        "reserve" => {
+            set_reserve_link(lock_id, text).await;
+            true
+        }
         _ => false,
     };
     if !ok {
@@ -707,12 +1005,29 @@ pub async fn handle_field_message(
 }
 
 /// دکمه‌ی «افزودن قفل جدید»: راهنمای فرمت لینک را نشون میده و منتظر پیام بعدی می‌مونه.
-pub async fn prompt_add_new(api: &Bot, chat_id: i64, message_id: i32, flow_manager: &mut crate::emoji::FlowManager, user_id: i64) {
+pub async fn prompt_add_new(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    flow_manager: &mut crate::emoji::FlowManager,
+    user_id: i64,
+) {
     flow_manager.set(user_id, crate::emoji::FlowState::AwaitingForceJoinLink);
     let kb = InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon(&t("admin.back"), CB_FJ_ADD_CANCEL, "back")]])
+        .inline_keyboard(vec![vec![btn_icon(
+            &t("admin.back"),
+            CB_FJ_ADD_CANCEL,
+            "back",
+        )]])
         .build();
-    edit_text_np(api, chat_id, message_id, &t("force_join.add_prompt"), Some(kb)).await;
+    edit_text_np(
+        api,
+        chat_id,
+        message_id,
+        &t("force_join.add_prompt"),
+        Some(kb),
+    )
+    .await;
 }
 
 fn is_private_tme_link(text: &str) -> bool {
@@ -720,9 +1035,20 @@ fn is_private_tme_link(text: &str) -> bool {
 }
 
 /// وقتی ادمین در حالت AwaitingForceJoinLink پیام متنی می‌فرسته.
-pub async fn handle_link_message(api: &Bot, chat_id: i64, text: &str, flow_manager: &mut crate::emoji::FlowManager, user_id: i64) {
+pub async fn handle_link_message(
+    api: &Bot,
+    chat_id: i64,
+    text: &str,
+    flow_manager: &mut crate::emoji::FlowManager,
+    user_id: i64,
+) {
     if is_private_tme_link(text) {
-        flow_manager.set(user_id, crate::emoji::FlowState::AwaitingForceJoinPrivateInfo { link: text.to_string() });
+        flow_manager.set(
+            user_id,
+            crate::emoji::FlowState::AwaitingForceJoinPrivateInfo {
+                link: text.to_string(),
+            },
+        );
         send_text_np(api, chat_id, &t("force_join.private_link_saved")).await;
     } else {
         add_lock(api, text, None).await;
@@ -745,8 +1071,20 @@ pub async fn handle_private_info_message(
 
     let identifier = if let Some(origin) = &message.forward_origin {
         match origin.as_ref() {
-            MessageOrigin::Channel(o) => Some(o.chat.username.as_ref().map(|u| format!("@{u}")).unwrap_or_else(|| o.chat.id.to_string())),
-            MessageOrigin::Chat(o) => Some(o.sender_chat.username.as_ref().map(|u| format!("@{u}")).unwrap_or_else(|| o.sender_chat.id.to_string())),
+            MessageOrigin::Channel(o) => Some(
+                o.chat
+                    .username
+                    .as_ref()
+                    .map(|u| format!("@{u}"))
+                    .unwrap_or_else(|| o.chat.id.to_string()),
+            ),
+            MessageOrigin::Chat(o) => Some(
+                o.sender_chat
+                    .username
+                    .as_ref()
+                    .map(|u| format!("@{u}"))
+                    .unwrap_or_else(|| o.sender_chat.id.to_string()),
+            ),
             _ => None,
         }
     } else if let Some(text) = message.text.as_deref() {
@@ -777,10 +1115,14 @@ fn url_button(text: &str, url: &str) -> InlineKeyboardButton {
         callback_data: None,
         style: None,
         url: Some(url.to_string()),
-        login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
     }
 }
 
@@ -788,15 +1130,27 @@ fn url_button(text: &str, url: &str) -> InlineKeyboardButton {
 /// لینک رزرو (اگه باشه) در همون ردیف کنار لینک اصلی می‌آد.
 pub async fn send_lock_message(api: &Bot, chat_id: i64) {
     let locks = list_locks().await;
-    let mut rows: Vec<Vec<InlineKeyboardButton>> = locks.iter().map(|l| {
-        let mut row = vec![url_button(&l.display_name(), &l.link)];
-        if !l.reserve_link.is_empty() {
-            row.push(url_button(&t("force_join.reserve_link_label"), &l.reserve_link));
-        }
-        row
-    }).collect();
-    rows.push(vec![btn_icon_success(&t("force_join.check_button"), CB_FJ_CHECK, "check")]);
-    let kb = InlineKeyboardMarkup::builder().inline_keyboard(rows).build();
+    let mut rows: Vec<Vec<InlineKeyboardButton>> = locks
+        .iter()
+        .map(|l| {
+            let mut row = vec![url_button(&l.display_name(), &l.link)];
+            if !l.reserve_link.is_empty() {
+                row.push(url_button(
+                    &t("force_join.reserve_link_label"),
+                    &l.reserve_link,
+                ));
+            }
+            row
+        })
+        .collect();
+    rows.push(vec![btn_icon_success(
+        &t("force_join.check_button"),
+        CB_FJ_CHECK,
+        "check",
+    )]);
+    let kb = InlineKeyboardMarkup::builder()
+        .inline_keyboard(rows)
+        .build();
     let params = SendMessageParams::builder()
         .chat_id(chat_id)
         .text(t("force_join.locked_message"))

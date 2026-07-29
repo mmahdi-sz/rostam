@@ -35,7 +35,10 @@ pub async fn load_from_db(client: &Client, admin_id: i64) -> EmojiCache {
         let pack_name: String = row.get(6);
         let pack_alias: Option<String> = row.get(7);
 
-        let entry = EmojiEntry { custom_emoji_id: custom_emoji_id.clone(), fallback };
+        let entry = EmojiEntry {
+            custom_emoji_id: custom_emoji_id.clone(),
+            fallback,
+        };
 
         let prefix = smart_name.trim_end_matches(|c: char| c.is_ascii_digit());
         let has_prefix = !prefix.is_empty() && prefix != smart_name;
@@ -43,12 +46,14 @@ pub async fn load_from_db(client: &Client, admin_id: i64) -> EmojiCache {
         let pack_alias_str: Option<&str> = pack_alias.as_deref().filter(|a| !a.is_empty());
 
         // ── global keys ──────────────────────────────────────────────
-        push(&mut by_key, &smart_name, entry.clone());          // {fire1}
-        if has_prefix { push(&mut by_key, prefix, entry.clone()); } // {fire}
+        push(&mut by_key, &smart_name, entry.clone()); // {fire1}
+        if has_prefix {
+            push(&mut by_key, prefix, entry.clone());
+        } // {fire}
         if let Some(a) = alias_str {
-            push(&mut by_key, a, entry.clone());                // {boss}
+            push(&mut by_key, a, entry.clone()); // {boss}
         }
-        push(&mut by_key, &custom_emoji_id, entry.clone());     // {5188481279963715781}
+        push(&mut by_key, &custom_emoji_id, entry.clone()); // {5188481279963715781}
         push(&mut by_key, &item_id.to_string(), entry.clone()); // {43}
 
         // ── pack-scoped keys ─────────────────────────────────────────
@@ -64,9 +69,9 @@ pub async fn load_from_db(client: &Client, admin_id: i64) -> EmojiCache {
                 push(&mut by_key, &format!("{pi}:{prefix}"), entry.clone()); // {terraria:fire}
             }
             if let Some(a) = alias_str {
-                push(&mut by_key, &format!("{pi}:{a}"), entry.clone());      // {terraria:boss}
+                push(&mut by_key, &format!("{pi}:{a}"), entry.clone()); // {terraria:boss}
             }
-            push(&mut by_key, &format!("{pi}:{item_id}"), entry.clone());    // {2:43}
+            push(&mut by_key, &format!("{pi}:{item_id}"), entry.clone()); // {2:43}
         }
     }
 

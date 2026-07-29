@@ -5,7 +5,7 @@
 
 use image::{Rgb, RgbImage};
 
-use super::crop::{CropWindow, WatermarkBBox, MODEL_SIZE};
+use super::crop::{CropWindow, MODEL_SIZE, WatermarkBBox};
 
 const LAT: u32 = 64; // 512 / 8 (VAE downsample factor)
 
@@ -178,7 +178,11 @@ pub fn feather_blend(result: &RgbImage, original: &RgbImage, mask512: &[f32]) ->
             let r = result.get_pixel(x, y);
             let o = original.get_pixel(x, y);
             let blend = |a: u8, b: u8| ((a as f32) * m + (b as f32) * (1.0 - m)).round() as u8;
-            out.put_pixel(x, y, Rgb([blend(r[0], o[0]), blend(r[1], o[1]), blend(r[2], o[2])]));
+            out.put_pixel(
+                x,
+                y,
+                Rgb([blend(r[0], o[0]), blend(r[1], o[1]), blend(r[2], o[2])]),
+            );
         }
     }
     out
@@ -197,7 +201,12 @@ mod tests {
 
     #[test]
     fn mask_downsample_shrinks_by_8() {
-        let bbox = WatermarkBBox { x1: 400, y1: 400, x2: 480, y2: 480 };
+        let bbox = WatermarkBBox {
+            x1: 400,
+            y1: 400,
+            x2: 480,
+            y2: 480,
+        };
         let mask = mask_from_bbox(bbox);
         let lat = mask_to_latent(&mask);
         assert_eq!(lat.len(), (LAT * LAT) as usize);
@@ -208,7 +217,12 @@ mod tests {
     fn feather_blend_matches_original_far_from_mask() {
         let orig = RgbImage::from_pixel(MODEL_SIZE, MODEL_SIZE, Rgb([1, 2, 3]));
         let result = RgbImage::from_pixel(MODEL_SIZE, MODEL_SIZE, Rgb([250, 251, 252]));
-        let bbox = WatermarkBBox { x1: 400, y1: 400, x2: 480, y2: 480 };
+        let bbox = WatermarkBBox {
+            x1: 400,
+            y1: 400,
+            x2: 480,
+            y2: 480,
+        };
         let mask = mask_from_bbox(bbox);
         let out = feather_blend(&result, &orig, &mask);
         // top-left corner is far from the mask -> should be ~unchanged original.

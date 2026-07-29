@@ -1,4 +1,7 @@
 .env
+*.pem
+*.key
+cookies.sqlite
 target/
 git-server/
 cookie_profiles_cache/

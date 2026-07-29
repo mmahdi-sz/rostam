@@ -6,7 +6,9 @@ use std::time::Duration;
 use frankenstein::{
     AsyncTelegramApi,
     client_reqwest::Bot,
-    methods::{DeleteMessageParams, PinChatMessageParams, SendMessageParams, UnpinChatMessageParams},
+    methods::{
+        DeleteMessageParams, PinChatMessageParams, SendMessageParams, UnpinChatMessageParams,
+    },
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::Notify;
@@ -15,23 +17,23 @@ use crate::i18n::{entities_for_text, t, tf};
 use crate::stats;
 
 use super::super::trace::log_trace;
-use super::cancel::{register_cancel, unregister_cancel, UnregisterGuard};
+use super::cancel::{UnregisterGuard, register_cancel, unregister_cancel};
 use super::helpers::{
-    cleanup_dir, fetch_thumbnail, pick_largest_file, quality_label_for, send_subtitle_files,
-    sanitize_video_filename, sanitize_audio_filename, maybe_send_non_h264_notice,
+    cleanup_dir, fetch_thumbnail, maybe_send_non_h264_notice, pick_largest_file, quality_label_for,
+    sanitize_audio_filename, sanitize_video_filename, send_subtitle_files,
 };
-use super::progress::{format_progress_body, parse_progress_line, ProgressSnapshot};
+use super::progress::{ProgressSnapshot, format_progress_body, parse_progress_line};
 use super::selection_helpers::find_format;
 use super::split::split_video;
 use super::status::{edit_progress_status, edit_status};
 use super::store::take_request;
-use super::types::{Selection, SubtitleMode};
-use crate::youtube::types::VideoCodec;
 use super::types::AudioQuality;
+use super::types::{Selection, SubtitleMode};
 use super::upload::{
-    build_part_doc_params, build_part_params, build_single_doc_params, build_single_params,
-    send_audio_file, send_media_with_progress, MediaPayload,
+    MediaPayload, build_part_doc_params, build_part_params, build_single_doc_params,
+    build_single_params, send_audio_file, send_media_with_progress,
 };
+use crate::youtube::types::VideoCodec;
 
 pub const EDIT_THROTTLE: Duration = Duration::from_secs(1);
 const MAX_SIZE_MB: u64 = 2000;
@@ -49,11 +51,27 @@ pub fn spawn_download(
         // check اگر playlist است یا single video
         if let Some(req_peek) = super::store::get_request(request_id) {
             if req_peek.is_playlist && !req_peek.playlist_items.is_empty() {
-                run_playlist_download(api, request_id, selection, status_chat_id, status_message_id, cancel).await;
+                run_playlist_download(
+                    api,
+                    request_id,
+                    selection,
+                    status_chat_id,
+                    status_message_id,
+                    cancel,
+                )
+                .await;
                 return;
             }
         }
-        run_download(api, request_id, selection, status_chat_id, status_message_id, cancel).await
+        run_download(
+            api,
+            request_id,
+            selection,
+            status_chat_id,
+            status_message_id,
+            cancel,
+        )
+        .await
     });
 }
 
@@ -66,7 +84,13 @@ async fn run_playlist_download(
     _cancel: Arc<Notify>,
 ) {
     let Some(mut req) = super::store::take_request(request_id) else {
-        edit_status(&api, status_chat_id, status_message_id, t("youtube.download.request_expired")).await;
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            t("youtube.download.request_expired"),
+        )
+        .await;
         unregister_cancel(request_id);
         return;
     };
@@ -74,6 +98,8 @@ async fn run_playlist_download(
     let trace_id = req.trace_id;
     let user_id = req.user_id.unwrap_or(0);
     let stats_job_id = stats::record_download_start(user_id).await;
+    let _active_dl_guard = crate::metrics::ActiveDownloadGuard::new();
+    let _duration_guard = crate::metrics::RequestDurationGuard::new("youtube");
 
     let user_rank = if user_id > 0 {
         if let Some(db) = stats::get_db_client().await {
@@ -90,30 +116,47 @@ async fn run_playlist_download(
         if req.playlist_items.len() > limit {
             let original_count = req.playlist_items.len();
             req.playlist_items.truncate(limit);
-            log_trace(trace_id, "playlist_items_truncated", &format!(
-                "user_id={user_id} rank={} original={original_count} limit={limit}",
-                user_rank.as_str()
-            ));
+            log_trace(
+                trace_id,
+                "playlist_items_truncated",
+                &format!(
+                    "user_id={user_id} rank={} original={original_count} limit={limit}",
+                    user_rank.as_str()
+                ),
+            );
             let note = if limit == 0 {
-                format!("⚠️ دانلود پلی‌لیست برای سطح کاربری شما ({}) غیرمجاز است.", user_rank.as_str())
+                format!(
+                    "⚠️ دانلود پلی‌لیست برای سطح کاربری شما ({}) غیرمجاز است.",
+                    user_rank.as_str()
+                )
             } else {
-                format!("⚠️ به دلیل محدودیت سطح کاربری ({})، فقط {limit} ویدیوی اول از {original_count} ویدیو دانلود می‌شود.", user_rank.as_str())
+                format!(
+                    "⚠️ به دلیل محدودیت سطح کاربری ({})، فقط {limit} ویدیوی اول از {original_count} ویدیو دانلود می‌شود.",
+                    user_rank.as_str()
+                )
             };
-            let _ = api.send_message(
-                &SendMessageParams::builder()
-                    .chat_id(status_chat_id)
-                    .text(note)
-                    .build()
-            ).await;
+            let _ = api
+                .send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(status_chat_id)
+                        .text(note)
+                        .build(),
+                )
+                .await;
         }
     }
 
     let total_videos = req.playlist_items.len();
 
-    log_trace(trace_id, "playlist_download_begin", &format!(
-        "total_videos={total_videos} height={} codec={}",
-        selection.height, selection.codec.key()
-    ));
+    log_trace(
+        trace_id,
+        "playlist_download_begin",
+        &format!(
+            "total_videos={total_videos} height={} codec={}",
+            selection.height,
+            selection.codec.key()
+        ),
+    );
 
     // پیام شروع
     let start_msg = tf(
@@ -123,13 +166,15 @@ async fn run_playlist_download(
     edit_status(&api, status_chat_id, status_message_id, start_msg).await;
 
     // پیام وضعیت را پین می‌کنیم تا لای فایل‌های ارسالی گم نشود.
-    let _ = api.pin_chat_message(
-        &PinChatMessageParams::builder()
-            .chat_id(status_chat_id)
-            .message_id(status_message_id)
-            .disable_notification(true)
-            .build(),
-    ).await;
+    let _ = api
+        .pin_chat_message(
+            &PinChatMessageParams::builder()
+                .chat_id(status_chat_id)
+                .message_id(status_message_id)
+                .disable_notification(true)
+                .build(),
+        )
+        .await;
 
     let mut sent = 0usize;
     // (video_num, title, reason) برای هر ویدیویی که ارسال نشد
@@ -162,8 +207,17 @@ async fn run_playlist_download(
 
         // دانلود + ارسال تک ویدیو به پیوی کاربر
         match download_single_playlist_item(
-            &api, &video_url, &req, &selection, &item.title, video_num, total_videos, trace_id,
-        ).await {
+            &api,
+            &video_url,
+            &req,
+            &selection,
+            &item.title,
+            video_num,
+            total_videos,
+            trace_id,
+        )
+        .await
+        {
             Ok(bytes) => {
                 sent += 1;
                 if let Some(job_id) = stats_job_id {
@@ -171,9 +225,11 @@ async fn run_playlist_download(
                 }
             }
             Err(reason) => {
-                log_trace(trace_id, "playlist_item_not_sent", &format!(
-                    "num={video_num} id={} reason={reason}", item.id
-                ));
+                log_trace(
+                    trace_id,
+                    "playlist_item_not_sent",
+                    &format!("num={video_num} id={} reason={reason}", item.id),
+                );
                 failures.push((video_num, title_short.clone(), reason));
             }
         }
@@ -223,18 +279,22 @@ async fn run_playlist_download(
     }
 
     // آنپین پیام وضعیت — کار تمام شده و گزارش نهایی روی همان پیام است.
-    let _ = api.unpin_chat_message(
-        &UnpinChatMessageParams::builder()
-            .chat_id(status_chat_id)
-            .message_id(status_message_id)
-            .build(),
-    ).await;
+    let _ = api
+        .unpin_chat_message(
+            &UnpinChatMessageParams::builder()
+                .chat_id(status_chat_id)
+                .message_id(status_message_id)
+                .build(),
+        )
+        .await;
 
-    log_trace(trace_id, "playlist_download_end", &format!(
-        "sent={sent} failed={} total={total_videos}", failures.len()
-    ));
+    log_trace(
+        trace_id,
+        "playlist_download_end",
+        &format!("sent={sent} failed={} total={total_videos}", failures.len()),
+    );
     if let Some(job_id) = stats_job_id {
-        stats::record_download_done(job_id, (sent as i64) * 100_000_000).await;
+        stats::record_download_done(job_id, (sent as i64) * 100_000_000, None, None).await;
     }
 }
 
@@ -259,7 +319,11 @@ async fn download_single_playlist_item(
         crate::config::youtube_download_root()
     ));
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
-        log_trace(trace_id, "playlist_item_mkdir_failed", &format!("url={video_url} err={e}"));
+        log_trace(
+            trace_id,
+            "playlist_item_mkdir_failed",
+            &format!("url={video_url} err={e}"),
+        );
         return Err(e.to_string());
     }
 
@@ -279,19 +343,28 @@ async fn download_single_playlist_item(
 
     let output_template = format!("{}/%(id)s.%(ext)s", dir.display());
     let mut cmd = tokio::process::Command::new("yt-dlp");
-    cmd.arg("--js-runtimes").arg(format!("deno:{}", crate::config::deno_path()))
-        .arg("--cookies-from-browser").arg(&req.cookie_spec)
-        .arg("--no-warnings").arg("--no-playlist")
-        .arg("-f").arg(&format_spec)
-        .arg("--merge-output-format").arg(merge_format)
-        .arg("--print").arg("after_move:filepath")
-        .arg("-o").arg(&output_template);
+    cmd.arg("--js-runtimes")
+        .arg(format!("deno:{}", crate::config::deno_path()))
+        .arg("--cookies-from-browser")
+        .arg(&req.cookie_spec)
+        .arg("--no-warnings")
+        .arg("--no-playlist")
+        .arg("-f")
+        .arg(&format_spec)
+        .arg("--merge-output-format")
+        .arg(merge_format)
+        .arg("--print")
+        .arg("after_move:filepath")
+        .arg("-o")
+        .arg(&output_template);
 
     // handling subtitles اگر موجود است
     if !selection.subtitle_langs.is_empty() {
         let sub_langs = selection.subtitle_langs.join(",");
-        cmd.arg("--write-subs").arg("--write-auto-subs")
-            .arg("--sub-langs").arg(&sub_langs);
+        cmd.arg("--write-subs")
+            .arg("--write-auto-subs")
+            .arg("--sub-langs")
+            .arg(&sub_langs);
         if let SubtitleMode::Embedded = selection.subtitle_mode {
             cmd.arg("--embed-subs");
         } else {
@@ -306,7 +379,11 @@ async fn download_single_playlist_item(
     let output = match cmd.output().await {
         Ok(o) => o,
         Err(e) => {
-            log_trace(trace_id, "playlist_item_spawn_failed", &format!("url={video_url} error={e}"));
+            log_trace(
+                trace_id,
+                "playlist_item_spawn_failed",
+                &format!("url={video_url} error={e}"),
+            );
             cleanup_dir(&dir, trace_id).await;
             return Err(e.to_string());
         }
@@ -318,14 +395,25 @@ async fn download_single_playlist_item(
         let reason = if lower.contains("members-only") || lower.contains("join this channel") {
             t("youtube.download.playlist.reason_members_only")
         } else {
-            stderr.lines().rev().find(|l| !l.trim().is_empty())
+            stderr
+                .lines()
+                .rev()
+                .find(|l| !l.trim().is_empty())
                 .map(|l| {
                     let l = l.trim();
-                    if l.chars().count() > 120 { l.chars().take(120).collect::<String>() + "…" } else { l.to_string() }
+                    if l.chars().count() > 120 {
+                        l.chars().take(120).collect::<String>() + "…"
+                    } else {
+                        l.to_string()
+                    }
                 })
                 .unwrap_or_else(|| t("youtube.download.playlist.reason_no_format"))
         };
-        log_trace(trace_id, "playlist_item_download_failed", &format!("url={video_url} reason={reason}"));
+        log_trace(
+            trace_id,
+            "playlist_item_download_failed",
+            &format!("url={video_url} reason={reason}"),
+        );
         cleanup_dir(&dir, trace_id).await;
         return Err(reason);
     }
@@ -341,7 +429,11 @@ async fn download_single_playlist_item(
         .filter(|p| std::path::Path::new(p).exists())
         .or_else(|| pick_largest_file(&dir));
     let Some(path) = path else {
-        log_trace(trace_id, "playlist_item_no_file", &format!("url={video_url}"));
+        log_trace(
+            trace_id,
+            "playlist_item_no_file",
+            &format!("url={video_url}"),
+        );
         cleanup_dir(&dir, trace_id).await;
         return Err(t("youtube.download.playlist.reason_no_file"));
     };
@@ -350,7 +442,10 @@ async fn download_single_playlist_item(
         super::helpers::fix_embedded_subtitle_flags(&path, trace_id).await;
     }
 
-    let file_size_bytes = tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0);
+    let file_size_bytes = tokio::fs::metadata(&path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
 
     // کپشن مثل دانلود تکی
     let quality_label = quality_label_for(height);
@@ -366,7 +461,13 @@ async fn download_single_playlist_item(
     };
     let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
 
-    let clean_name = sanitize_video_filename(item_title, &quality_label, &codec_name, &bitrate_str, merge_format);
+    let clean_name = sanitize_video_filename(
+        item_title,
+        &quality_label,
+        &codec_name,
+        &bitrate_str,
+        merge_format,
+    );
     let new_path = dir.join(&clean_name);
     let path = if tokio::fs::rename(&path, &new_path).await.is_ok() {
         new_path.to_string_lossy().into_owned()
@@ -375,37 +476,54 @@ async fn download_single_playlist_item(
     };
     let bot_username = crate::config::bot_username().to_string();
     let width = total_videos.to_string().len();
-    let caption = tf("youtube.download.playlist.caption", &[
-        ("title", item_title),
-        ("part", &format!("{video_num:0width$}")),
-        ("total", &format!("{total_videos:0width$}")),
-        ("quality", &quality_label),
-        ("codec", &codec_name),
-        ("bitrate", &bitrate_str), ("sub_tag", sub_tag),
-        ("username", &bot_username),
-        ("url", video_url),
-    ]);
+    let caption = tf(
+        "youtube.download.playlist.caption",
+        &[
+            ("title", item_title),
+            ("part", &format!("{video_num:0width$}")),
+            ("total", &format!("{total_videos:0width$}")),
+            ("quality", &quality_label),
+            ("codec", &codec_name),
+            ("bitrate", &bitrate_str),
+            ("sub_tag", sub_tag),
+            ("username", &bot_username),
+            ("url", video_url),
+        ],
+    );
     let caption_entities = entities_for_text(&caption);
     let send_res = if is_h264 {
         let params = build_single_params(
-            &path, req.chat_id, &thumb_path, caption, caption_entities, height, None,
+            &path,
+            req.chat_id,
+            &thumb_path,
+            caption,
+            caption_entities,
+            height,
+            None,
         );
         api.send_video(&params).await.map(|_| ())
     } else {
-        let params = build_single_doc_params(
-            &path, req.chat_id, &thumb_path, caption, caption_entities,
-        );
+        let params =
+            build_single_doc_params(&path, req.chat_id, &thumb_path, caption, caption_entities);
         api.send_document(&params).await.map(|_| ())
     };
 
     cleanup_dir(&dir, trace_id).await;
     match send_res {
         Ok(_) => {
-            log_trace(trace_id, "playlist_item_upload_ok", &format!("num={video_num}"));
+            log_trace(
+                trace_id,
+                "playlist_item_upload_ok",
+                &format!("num={video_num}"),
+            );
             Ok(file_size_bytes)
         }
         Err(e) => {
-            log_trace(trace_id, "playlist_item_upload_failed", &format!("num={video_num} err={e}"));
+            log_trace(
+                trace_id,
+                "playlist_item_upload_failed",
+                &format!("num={video_num} err={e}"),
+            );
             Err(e.to_string())
         }
     }
@@ -422,7 +540,13 @@ async fn run_download(
     let height = selection.height;
     let codec = selection.codec;
     let Some(req) = take_request(request_id) else {
-        edit_status(&api, status_chat_id, status_message_id, t("youtube.download.request_expired")).await;
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            t("youtube.download.request_expired"),
+        )
+        .await;
         unregister_cancel(request_id);
         return;
     };
@@ -433,32 +557,66 @@ async fn run_download(
 
     // ثبت شروع دانلود
     let stats_job_id = stats::record_download_start(user_id).await;
+    let _active_dl_guard = crate::metrics::ActiveDownloadGuard::new();
+    let _duration_guard = crate::metrics::RequestDurationGuard::new("youtube");
 
     // audio-only path
     if let Some(audio_quality) = selection.audio_only {
-        run_audio_download(api, request_id, audio_quality, req, stats_job_id,
-            status_chat_id, status_message_id, cancel_fut).await;
+        run_audio_download(
+            api,
+            request_id,
+            audio_quality,
+            req,
+            stats_job_id,
+            status_chat_id,
+            status_message_id,
+            cancel_fut,
+        )
+        .await;
         return;
     }
 
     let quality_label = quality_label_for(height);
-    log_trace(trace_id, "download_begin", &format!(
-        "request_id={request_id} height={height} codec={} url={}", codec.key(), req.webpage_url
-    ));
+    log_trace(
+        trace_id,
+        "download_begin",
+        &format!(
+            "request_id={request_id} height={height} codec={} url={}",
+            codec.key(),
+            req.webpage_url
+        ),
+    );
 
     let Some(fmt) = find_format(&req, height, codec) else {
-        log_trace(trace_id, "download_format_missing", &format!("height={height} codec={}", codec.key()));
-        edit_status(&api, status_chat_id, status_message_id,
-            tf("youtube.download.failed", &[("error", "format not found")])).await;
+        log_trace(
+            trace_id,
+            "download_format_missing",
+            &format!("height={height} codec={}", codec.key()),
+        );
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            tf("youtube.download.failed", &[("error", "format not found")]),
+        )
+        .await;
         return;
     };
     let format_id = fmt.format_id.clone();
 
-    let dir = PathBuf::from(format!("{}/{trace_id}", crate::config::youtube_download_root()));
+    let dir = PathBuf::from(format!(
+        "{}/{trace_id}",
+        crate::config::youtube_download_root()
+    ));
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         log_trace(trace_id, "download_mkdir_failed", &e.to_string());
-        edit_status(&api, status_chat_id, status_message_id,
-            tf("youtube.download.failed", &[("error", &e.to_string())])).await;
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            tf("youtube.download.failed", &[("error", &e.to_string())]),
+        )
+        .await;
         return;
     }
 
@@ -467,31 +625,55 @@ async fn run_download(
     let merge_format = if is_h264 { "mp4" } else { "mkv" };
     let format_spec = match codec {
         super::super::types::VideoCodec::H264 => format!("{format_id}+bestaudio/best"),
-        _ => format!("{format_id}+bestaudio/{format_id}/bestvideo[height<={height}]+bestaudio/best"),
+        _ => {
+            format!("{format_id}+bestaudio/{format_id}/bestvideo[height<={height}]+bestaudio/best")
+        }
     };
     let progress_template = format!(
         "YT_PROGRESS|%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
     );
 
     let initial = ProgressSnapshot {
-        percent: "0.0%".into(), downloaded: "0B".into(), total: "?".into(),
-        speed: "?".into(), eta: "?".into(), elapsed: "00:00".into(), percent_int: 0,
+        percent: "0.0%".into(),
+        downloaded: "0B".into(),
+        total: "?".into(),
+        speed: "?".into(),
+        eta: "?".into(),
+        elapsed: "00:00".into(),
+        percent_int: 0,
     };
-    edit_progress_status(&api, status_chat_id, status_message_id,
-        format_progress_body(&initial, &quality_label), request_id).await;
+    edit_progress_status(
+        &api,
+        status_chat_id,
+        status_message_id,
+        format_progress_body(&initial, &quality_label),
+        request_id,
+    )
+    .await;
 
     let postprocess_template = progress_template.clone();
     let mut cmd = tokio::process::Command::new("yt-dlp");
-    cmd.arg("--js-runtimes").arg(format!("deno:{}", crate::config::deno_path()))
-        .arg("--cookies-from-browser").arg(&req.cookie_spec)
-        .arg("--no-warnings").arg("--no-playlist").arg("--progress")
-        .arg("--no-color").arg("-f").arg(&format_spec)
-        .arg("--merge-output-format").arg(merge_format)
+    cmd.arg("--js-runtimes")
+        .arg(format!("deno:{}", crate::config::deno_path()))
+        .arg("--cookies-from-browser")
+        .arg(&req.cookie_spec)
+        .arg("--no-warnings")
+        .arg("--no-playlist")
+        .arg("--progress")
+        .arg("--no-color")
+        .arg("-f")
+        .arg(&format_spec)
+        .arg("--merge-output-format")
+        .arg(merge_format)
         .arg("--newline")
-        .arg("--progress-template").arg(format!("download:{progress_template}"))
-        .arg("--progress-template").arg(format!("postprocess:{postprocess_template}"))
-        .arg("--print").arg("after_move:filepath")
-        .arg("-o").arg(&output_template);
+        .arg("--progress-template")
+        .arg(format!("download:{progress_template}"))
+        .arg("--progress-template")
+        .arg(format!("postprocess:{postprocess_template}"))
+        .arg("--print")
+        .arg("after_move:filepath")
+        .arg("-o")
+        .arg(&output_template);
 
     if !selection.subtitle_langs.is_empty() {
         let sub_langs = selection.subtitle_langs.join(",");
@@ -504,42 +686,89 @@ async fn run_download(
         // muxes subtitles into the mp4 (it also has to add translated tracks
         // yt-dlp doesn't know about). Letting yt-dlp embed here too would
         // double-embed the same language when a translation pass follows.
-        cmd.arg("--write-subs").arg("--write-auto-subs")
-            .arg("--sub-langs").arg(&sub_langs)
-            .arg("--convert-subs").arg("srt")
+        cmd.arg("--write-subs")
+            .arg("--write-auto-subs")
+            .arg("--sub-langs")
+            .arg(&sub_langs)
+            .arg("--convert-subs")
+            .arg("srt")
             .arg("--ignore-errors");
-        log_trace(trace_id, "download_subtitle_args", &format!(
-            "sub_langs={sub_langs} mode={:?} write_auto=true ignore_errors=true", selection.subtitle_mode
-        ));
+        log_trace(
+            trace_id,
+            "download_subtitle_args",
+            &format!(
+                "sub_langs={sub_langs} mode={:?} write_auto=true ignore_errors=true",
+                selection.subtitle_mode
+            ),
+        );
     }
 
-    cmd.arg(&req.webpage_url).stdout(Stdio::piped()).stderr(Stdio::piped());
-    log_trace(trace_id, "download_args", &format!(
-        "cookie_spec={} format_spec={format_spec}", req.cookie_spec
-    ));
+    cmd.arg(&req.webpage_url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    log_trace(
+        trace_id,
+        "download_args",
+        &format!("cookie_spec={} format_spec={format_spec}", req.cookie_spec),
+    );
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
             log_trace(trace_id, "download_spawn_failed", &e.to_string());
-            edit_status(&api, status_chat_id, status_message_id,
-                tf("youtube.download.failed", &[("error", &e.to_string())])).await;
+            edit_status(
+                &api,
+                status_chat_id,
+                status_message_id,
+                tf("youtube.download.failed", &[("error", &e.to_string())]),
+            )
+            .await;
             return;
         }
     };
 
-    let stdout = child.stdout.take().expect("piped stdout");
-    let stderr = child.stderr.take().expect("piped stderr");
+    let Some(stdout) = child.stdout.take() else {
+        log_trace(trace_id, "download_spawn_failed", "piped stdout missing");
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            tf(
+                "youtube.download.failed",
+                &[("error", "piped stdout missing")],
+            ),
+        )
+        .await;
+        return;
+    };
+    let Some(stderr) = child.stderr.take() else {
+        log_trace(trace_id, "download_spawn_failed", "piped stderr missing");
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            tf(
+                "youtube.download.failed",
+                &[("error", "piped stderr missing")],
+            ),
+        )
+        .await;
+        return;
+    };
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(&'static str, String)>(64);
     let tx_out = tx.clone();
     let stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = reader.next_line().await { let _ = tx_out.send(("stdout", line)).await; }
+        while let Ok(Some(line)) = reader.next_line().await {
+            let _ = tx_out.send(("stdout", line)).await;
+        }
     });
     let tx_err = tx;
     let stderr_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = reader.next_line().await { let _ = tx_err.send(("stderr", line)).await; }
+        while let Ok(Some(line)) = reader.next_line().await {
+            let _ = tx_err.send(("stderr", line)).await;
+        }
     });
 
     let mut filepath: Option<String> = None;
@@ -594,17 +823,35 @@ async fn run_download(
         Ok(s) => s,
         Err(e) => {
             log_trace(trace_id, "download_wait_failed", &e.to_string());
-            edit_status(&api, status_chat_id, status_message_id,
-                tf("youtube.download.failed", &[("error", &e.to_string())])).await;
+            edit_status(
+                &api,
+                status_chat_id,
+                status_message_id,
+                tf("youtube.download.failed", &[("error", &e.to_string())]),
+            )
+            .await;
             return;
         }
     };
 
     if !status.success() {
-        let err = if stderr_tail.is_empty() { format!("exit {status}") } else { stderr_tail };
-        log_trace(trace_id, "download_failed", &format!("status={status} err={err}"));
-        edit_status(&api, status_chat_id, status_message_id,
-            tf("youtube.download.failed", &[("error", &err)])).await;
+        let err = if stderr_tail.is_empty() {
+            format!("exit {status}")
+        } else {
+            stderr_tail
+        };
+        log_trace(
+            trace_id,
+            "download_failed",
+            &format!("status={status} err={err}"),
+        );
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            tf("youtube.download.failed", &[("error", &err)]),
+        )
+        .await;
         cleanup_dir(&dir, trace_id).await;
         return;
     }
@@ -613,8 +860,13 @@ async fn run_download(
         Some(p) => p,
         None => {
             log_trace(trace_id, "download_no_filepath", "no output file located");
-            edit_status(&api, status_chat_id, status_message_id,
-                tf("youtube.download.failed", &[("error", "no output file")])).await;
+            edit_status(
+                &api,
+                status_chat_id,
+                status_message_id,
+                tf("youtube.download.failed", &[("error", "no output file")]),
+            )
+            .await;
             cleanup_dir(&dir, trace_id).await;
             return;
         }
@@ -623,17 +875,38 @@ async fn run_download(
     log_trace(trace_id, "download_complete", &format!("path={path}"));
 
     let sub_pipeline_res = super::helpers::process_subtitle_pipeline(
-        &api, status_chat_id, status_message_id, &dir, &path,
-        &selection, &req.cookie_spec, &req.webpage_url, req.duration, trace_id, user_id,
-    ).await;
+        &api,
+        status_chat_id,
+        status_message_id,
+        &dir,
+        &path,
+        &selection,
+        &req.cookie_spec,
+        &req.webpage_url,
+        req.duration,
+        trace_id,
+        user_id,
+    )
+    .await;
 
     if let super::helpers::SubtitlePipelineResult::VideoUpdated(new_path) = sub_pipeline_res {
         path = new_path;
     }
 
-    let file_size_bytes = tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0);
+    let file_size_bytes = tokio::fs::metadata(&path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
     if let Some(jid) = stats_job_id {
-        stats::record_download_done(jid, file_size_bytes as i64).await;
+        let duration_i32 = req.duration.map(|d| d as i32);
+        let bitrate = req.duration.and_then(|d| {
+            if d > 0 {
+                Some((file_size_bytes as i64 * 8) / (d as i64))
+            } else {
+                None
+            }
+        });
+        stats::record_download_done(jid, file_size_bytes as i64, duration_i32, bitrate).await;
     }
 
     let hardsub_transcoded = matches!(selection.subtitle_mode, SubtitleMode::Hardsub)
@@ -658,28 +931,59 @@ async fn run_download(
     };
     let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
 
-    let clean_name = sanitize_video_filename(&req.title, &quality_label, &codec_name, &bitrate_str, merge_format);
+    let clean_name = sanitize_video_filename(
+        &req.title,
+        &quality_label,
+        &codec_name,
+        &bitrate_str,
+        merge_format,
+    );
     let new_path = dir.join(&clean_name);
     if tokio::fs::rename(&path, &new_path).await.is_ok() {
-        log_trace(trace_id, "download_renamed", &format!("old={path} new={}", new_path.display()));
+        log_trace(
+            trace_id,
+            "download_renamed",
+            &format!("old={path} new={}", new_path.display()),
+        );
         path = new_path.to_string_lossy().into_owned();
     }
 
     let file_size_mb = file_size_bytes / (1024 * 1024);
-    log_trace(trace_id, "upload_size_check", &format!("size_mb={file_size_mb} max_mb={MAX_SIZE_MB}"));
+    log_trace(
+        trace_id,
+        "upload_size_check",
+        &format!("size_mb={file_size_mb} max_mb={MAX_SIZE_MB}"),
+    );
 
     let upload_ok = if file_size_mb > MAX_SIZE_MB {
         let num_parts = ((file_size_mb + TARGET_PART_MB - 1) / TARGET_PART_MB) as usize;
-        log_trace(trace_id, "split_needed", &format!("size_mb={file_size_mb} parts={num_parts}"));
-        edit_status(&api, status_chat_id, status_message_id,
-            tf("youtube.download.splitting", &[("parts", &num_parts.to_string())])).await;
+        log_trace(
+            trace_id,
+            "split_needed",
+            &format!("size_mb={file_size_mb} parts={num_parts}"),
+        );
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            tf(
+                "youtube.download.splitting",
+                &[("parts", &num_parts.to_string())],
+            ),
+        )
+        .await;
 
         let part_paths = match split_video(&path, &dir, num_parts, req.duration, trace_id).await {
             Ok(p) => p,
             Err(e) => {
                 log_trace(trace_id, "split_failed", &e);
-                edit_status(&api, status_chat_id, status_message_id,
-                    tf("youtube.download.split_failed", &[("error", &e)])).await;
+                edit_status(
+                    &api,
+                    status_chat_id,
+                    status_message_id,
+                    tf("youtube.download.split_failed", &[("error", &e)]),
+                )
+                .await;
                 cleanup_dir(&dir, trace_id).await;
                 return;
             }
@@ -689,77 +993,189 @@ async fn run_download(
         let mut all_ok = true;
         for (i, part_path) in part_paths.iter().enumerate() {
             let part_num = i + 1;
-            let part_size_mb = tokio::fs::metadata(part_path).await
-                .map(|m| m.len() / (1024 * 1024)).unwrap_or(0);
-            log_trace(trace_id, "split_part_size", &format!("part={part_num}/{total} size_mb={part_size_mb}"));
+            let part_size_mb = tokio::fs::metadata(part_path)
+                .await
+                .map(|m| m.len() / (1024 * 1024))
+                .unwrap_or(0);
+            log_trace(
+                trace_id,
+                "split_part_size",
+                &format!("part={part_num}/{total} size_mb={part_size_mb}"),
+            );
             if part_size_mb > MAX_SIZE_MB {
-                log_trace(trace_id, "split_part_too_large", &format!("part={part_num} size_mb={part_size_mb}"));
-                edit_status(&api, status_chat_id, status_message_id,
-                    tf("youtube.download.split_failed", &[("error", &format!("part {part_num} still {part_size_mb}MB"))])).await;
+                log_trace(
+                    trace_id,
+                    "split_part_too_large",
+                    &format!("part={part_num} size_mb={part_size_mb}"),
+                );
+                edit_status(
+                    &api,
+                    status_chat_id,
+                    status_message_id,
+                    tf(
+                        "youtube.download.split_failed",
+                        &[("error", &format!("part {part_num} still {part_size_mb}MB"))],
+                    ),
+                )
+                .await;
                 cleanup_dir(&dir, trace_id).await;
                 return;
             }
 
-            edit_status(&api, status_chat_id, status_message_id,
-                tf("youtube.download.uploading_part", &[
-                    ("part", &part_num.to_string()), ("total", &total.to_string()),
-                ])).await;
+            edit_status(
+                &api,
+                status_chat_id,
+                status_message_id,
+                tf(
+                    "youtube.download.uploading_part",
+                    &[
+                        ("part", &part_num.to_string()),
+                        ("total", &total.to_string()),
+                    ],
+                ),
+            )
+            .await;
 
             let bot_username = crate::config::bot_username().to_string();
-            let caption = tf("youtube.download.caption_part", &[
-                ("title", &req.title), ("quality", &quality_label),
-                ("codec", &codec_name), ("bitrate", &bitrate_str), ("sub_tag", sub_tag),
-                ("part", &part_num.to_string()), ("total", &total.to_string()),
-                ("username", &bot_username), ("url", &req.webpage_url),
-            ]);
+            let caption = tf(
+                "youtube.download.caption_part",
+                &[
+                    ("title", &req.title),
+                    ("quality", &quality_label),
+                    ("codec", &codec_name),
+                    ("bitrate", &bitrate_str),
+                    ("sub_tag", sub_tag),
+                    ("part", &part_num.to_string()),
+                    ("total", &total.to_string()),
+                    ("username", &bot_username),
+                    ("url", &req.webpage_url),
+                ],
+            );
             let caption_entities = entities_for_text(&caption);
             let payload = if is_h264 {
-                let params = build_part_params(part_path, req.chat_id, &thumb_path,
-                    caption, caption_entities, height);
+                let params = build_part_params(
+                    part_path,
+                    req.chat_id,
+                    &thumb_path,
+                    caption,
+                    caption_entities,
+                    height,
+                );
                 MediaPayload::Video(params)
             } else {
-                let params = build_part_doc_params(part_path, req.chat_id, &thumb_path,
-                    caption, caption_entities);
+                let params = build_part_doc_params(
+                    part_path,
+                    req.chat_id,
+                    &thumb_path,
+                    caption,
+                    caption_entities,
+                );
                 MediaPayload::Document(params)
             };
 
-            log_trace(trace_id, "upload_part_start", &format!("part={part_num}/{total} path={part_path}"));
-            let ok = send_media_with_progress(&api, payload, req.chat_id, status_chat_id,
-                status_message_id, request_id, &quality_label, &mut cancel_fut, trace_id).await;
-            if !ok { all_ok = false; break; }
-            log_trace(trace_id, "upload_part_ok", &format!("part={part_num}/{total}"));
+            log_trace(
+                trace_id,
+                "upload_part_start",
+                &format!("part={part_num}/{total} path={part_path}"),
+            );
+            let ok = send_media_with_progress(
+                &api,
+                payload,
+                req.chat_id,
+                status_chat_id,
+                status_message_id,
+                request_id,
+                &quality_label,
+                &mut cancel_fut,
+                trace_id,
+            )
+            .await;
+            if !ok {
+                all_ok = false;
+                break;
+            }
+            log_trace(
+                trace_id,
+                "upload_part_ok",
+                &format!("part={part_num}/{total}"),
+            );
         }
         all_ok
     } else {
-        edit_status(&api, status_chat_id, status_message_id, t("youtube.download.uploading")).await;
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            t("youtube.download.uploading"),
+        )
+        .await;
         let bot_username = crate::config::bot_username().to_string();
-        let caption = tf("youtube.download.caption", &[
-            ("title", &req.title), ("quality", &quality_label),
-            ("codec", &codec_name), ("bitrate", &bitrate_str), ("sub_tag", sub_tag),
-            ("username", &bot_username), ("url", &req.webpage_url),
-        ]);
+        let caption = tf(
+            "youtube.download.caption",
+            &[
+                ("title", &req.title),
+                ("quality", &quality_label),
+                ("codec", &codec_name),
+                ("bitrate", &bitrate_str),
+                ("sub_tag", sub_tag),
+                ("username", &bot_username),
+                ("url", &req.webpage_url),
+            ],
+        );
         let caption_entities = entities_for_text(&caption);
         let payload = if is_h264 {
-            let params = build_single_params(&path, req.chat_id, &thumb_path,
-                caption, caption_entities, height, req.duration);
+            let params = build_single_params(
+                &path,
+                req.chat_id,
+                &thumb_path,
+                caption,
+                caption_entities,
+                height,
+                req.duration,
+            );
             MediaPayload::Video(params)
         } else {
-            let params = build_single_doc_params(&path, req.chat_id, &thumb_path,
-                caption, caption_entities);
+            let params =
+                build_single_doc_params(&path, req.chat_id, &thumb_path, caption, caption_entities);
             MediaPayload::Document(params)
         };
         log_trace(trace_id, "upload_start", &format!("path={path}"));
-        send_media_with_progress(&api, payload, req.chat_id, status_chat_id,
-            status_message_id, request_id, &quality_label, &mut cancel_fut, trace_id).await
+        send_media_with_progress(
+            &api,
+            payload,
+            req.chat_id,
+            status_chat_id,
+            status_message_id,
+            request_id,
+            &quality_label,
+            &mut cancel_fut,
+            trace_id,
+        )
+        .await
     };
 
     // In File mode, deliver the standalone subtitle file(s) as documents.
     // (Embedded mode bakes them into the mp4 and needs no separate upload.)
     // زیرنویس‌های ترجمه‌شده (translated_<lang>.srt) در مرحله‌ی ترجمه‌ی پیش از
     // این ساخته شده‌اند و همین‌جا کنار بقیه فرستاده می‌شوند.
-    if upload_ok && selection.subtitle_mode == SubtitleMode::File && !selection.subtitle_langs.is_empty() {
-        let count = send_subtitle_files(&api, &dir, req.chat_id, &req.title, &selection.subtitle_langs, trace_id).await;
-        log_trace(trace_id, "subtitle_upload_done", &format!("files_sent={count}"));
+    if upload_ok
+        && selection.subtitle_mode == SubtitleMode::File
+        && !selection.subtitle_langs.is_empty()
+    {
+        let count = send_subtitle_files(
+            &api,
+            &dir,
+            req.chat_id,
+            &req.title,
+            &selection.subtitle_langs,
+            trace_id,
+        )
+        .await;
+        log_trace(
+            trace_id,
+            "subtitle_upload_done",
+            &format!("files_sent={count}"),
+        );
     }
 
     if upload_ok {
@@ -769,12 +1185,14 @@ async fn run_download(
         if let Some(jid) = stats_job_id {
             stats::record_upload_done(jid, user_id, file_size_bytes as i64).await;
         }
-        let _ = api.delete_message(
-            &DeleteMessageParams::builder()
-                .chat_id(status_chat_id)
-                .message_id(status_message_id)
-                .build(),
-        ).await;
+        let _ = api
+            .delete_message(
+                &DeleteMessageParams::builder()
+                    .chat_id(status_chat_id)
+                    .message_id(status_message_id)
+                    .build(),
+            )
+            .await;
     }
 
     cleanup_dir(&dir, trace_id).await;
@@ -792,50 +1210,114 @@ async fn run_audio_download(
 ) {
     let trace_id = req.trace_id;
     let user_id = req.user_id.unwrap_or(0);
-    log_trace(trace_id, "audio_download_begin", &format!(
-        "request_id={request_id} quality={} url={}", audio_quality.as_str(), req.webpage_url
+    log_trace(
+        trace_id,
+        "audio_download_begin",
+        &format!(
+            "request_id={request_id} quality={} url={}",
+            audio_quality.as_str(),
+            req.webpage_url
+        ),
+    );
+    let dir = PathBuf::from(format!(
+        "{}/{trace_id}",
+        crate::config::youtube_download_root()
     ));
-    let dir = PathBuf::from(format!("{}/{trace_id}", crate::config::youtube_download_root()));
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         log_trace(trace_id, "audio_mkdir_failed", &e.to_string());
-        edit_status(&api, status_chat_id, status_message_id,
-            tf("youtube.download.failed", &[("error", &e.to_string())])).await;
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            tf("youtube.download.failed", &[("error", &e.to_string())]),
+        )
+        .await;
         return;
     }
     let output_template = format!("{}/%(id)s.%(ext)s", dir.display());
     let format_spec = audio_quality.format_spec();
     let mut cmd = tokio::process::Command::new("yt-dlp");
-    cmd.arg("--js-runtimes").arg(format!("deno:{}", crate::config::deno_path()))
-        .arg("--cookies-from-browser").arg(&req.cookie_spec)
-        .arg("--no-warnings").arg("--no-playlist")
-        .arg("-f").arg(format_spec)
-        .arg("--extract-audio").arg("--audio-format").arg("mp3").arg("--audio-quality").arg("0")
-        .arg("--print").arg("after_move:filepath")
-        .arg("-o").arg(&output_template)
+    cmd.arg("--js-runtimes")
+        .arg(format!("deno:{}", crate::config::deno_path()))
+        .arg("--cookies-from-browser")
+        .arg(&req.cookie_spec)
+        .arg("--no-warnings")
+        .arg("--no-playlist")
+        .arg("-f")
+        .arg(format_spec)
+        .arg("--extract-audio")
+        .arg("--audio-format")
+        .arg("mp3")
+        .arg("--audio-quality")
+        .arg("0")
+        .arg("--print")
+        .arg("after_move:filepath")
+        .arg("-o")
+        .arg(&output_template)
         .arg(&req.webpage_url)
-        .stdout(Stdio::piped()).stderr(Stdio::piped());
-    log_trace(trace_id, "audio_download_args", &format!("cookie_spec={} format_spec={format_spec}", req.cookie_spec));
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    log_trace(
+        trace_id,
+        "audio_download_args",
+        &format!("cookie_spec={} format_spec={format_spec}", req.cookie_spec),
+    );
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
             log_trace(trace_id, "audio_spawn_failed", &e.to_string());
-            edit_status(&api, status_chat_id, status_message_id,
-                tf("youtube.download.failed", &[("error", &e.to_string())])).await;
+            edit_status(
+                &api,
+                status_chat_id,
+                status_message_id,
+                tf("youtube.download.failed", &[("error", &e.to_string())]),
+            )
+            .await;
             return;
         }
     };
-    let stdout = child.stdout.take().expect("piped stdout");
-    let stderr = child.stderr.take().expect("piped stderr");
+    let Some(stdout) = child.stdout.take() else {
+        log_trace(trace_id, "audio_spawn_failed", "piped stdout missing");
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            tf(
+                "youtube.download.failed",
+                &[("error", "piped stdout missing")],
+            ),
+        )
+        .await;
+        return;
+    };
+    let Some(stderr) = child.stderr.take() else {
+        log_trace(trace_id, "audio_spawn_failed", "piped stderr missing");
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            tf(
+                "youtube.download.failed",
+                &[("error", "piped stderr missing")],
+            ),
+        )
+        .await;
+        return;
+    };
     let (tx, mut rx) = tokio::sync::mpsc::channel::<(&'static str, String)>(64);
     let tx_out = tx.clone();
     let stdout_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = reader.next_line().await { let _ = tx_out.send(("stdout", line)).await; }
+        while let Ok(Some(line)) = reader.next_line().await {
+            let _ = tx_out.send(("stdout", line)).await;
+        }
     });
     let tx_err = tx;
     let stderr_task = tokio::spawn(async move {
         let mut reader = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = reader.next_line().await { let _ = tx_err.send(("stderr", line)).await; }
+        while let Ok(Some(line)) = reader.next_line().await {
+            let _ = tx_err.send(("stderr", line)).await;
+        }
     });
     let mut filepath: Option<String> = None;
     let mut stderr_tail = String::new();
@@ -868,17 +1350,36 @@ async fn run_audio_download(
         Ok(s) => s,
         Err(e) => {
             log_trace(trace_id, "audio_wait_failed", &e.to_string());
-            edit_status(&api, status_chat_id, status_message_id,
-                tf("youtube.download.failed", &[("error", &e.to_string())])).await;
+            edit_status(
+                &api,
+                status_chat_id,
+                status_message_id,
+                tf("youtube.download.failed", &[("error", &e.to_string())]),
+            )
+            .await;
             return;
         }
     };
     if !status.success() {
-        let err = if stderr_tail.is_empty() { format!("exit {status}") } else { stderr_tail };
-        log_trace(trace_id, "audio_download_failed", &format!("status={status} err={err}"));
-        crate::stats::record_error_global("youtube", &format!("audio_download_failed: {err}")).await;
-        edit_status(&api, status_chat_id, status_message_id,
-            tf("youtube.download.failed", &[("error", &err)])).await;
+        let err = if stderr_tail.is_empty() {
+            format!("exit {status}")
+        } else {
+            stderr_tail
+        };
+        log_trace(
+            trace_id,
+            "audio_download_failed",
+            &format!("status={status} err={err}"),
+        );
+        crate::stats::record_error_global("youtube", &format!("audio_download_failed: {err}"))
+            .await;
+        edit_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            tf("youtube.download.failed", &[("error", &err)]),
+        )
+        .await;
         cleanup_dir(&dir, trace_id).await;
         return;
     }
@@ -886,18 +1387,40 @@ async fn run_audio_download(
         Some(p) => p,
         None => {
             log_trace(trace_id, "audio_no_filepath", "no output file");
-            edit_status(&api, status_chat_id, status_message_id,
-                tf("youtube.download.failed", &[("error", "no output file")])).await;
+            edit_status(
+                &api,
+                status_chat_id,
+                status_message_id,
+                tf("youtube.download.failed", &[("error", "no output file")]),
+            )
+            .await;
             cleanup_dir(&dir, trace_id).await;
             return;
         }
     };
     log_trace(trace_id, "audio_download_complete", &format!("path={path}"));
-    let file_size_bytes = tokio::fs::metadata(&path).await.map(|m| m.len()).unwrap_or(0);
+    let file_size_bytes = tokio::fs::metadata(&path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
     if let Some(jid) = stats_job_id {
-        stats::record_download_done(jid, file_size_bytes as i64).await;
+        let duration_i32 = req.duration.map(|d| d as i32);
+        let bitrate = req.duration.and_then(|d| {
+            if d > 0 {
+                Some((file_size_bytes as i64 * 8) / (d as i64))
+            } else {
+                None
+            }
+        });
+        stats::record_download_done(jid, file_size_bytes as i64, duration_i32, bitrate).await;
     }
-    edit_status(&api, status_chat_id, status_message_id, t("youtube.audio.uploading")).await;
+    edit_status(
+        &api,
+        status_chat_id,
+        status_message_id,
+        t("youtube.audio.uploading"),
+    )
+    .await;
     let quality_label = t(audio_quality.label_key());
     let clean_audio_name = sanitize_audio_filename(&req.title, &quality_label, "mp3");
     let new_audio_path = dir.join(&clean_audio_name);
@@ -907,24 +1430,43 @@ async fn run_audio_download(
         path
     };
     let bot_username = crate::config::bot_username().to_string();
-    let caption = tf("youtube.audio.caption", &[
-        ("title", &req.title), ("quality", &quality_label), ("username", &bot_username),
-        ("url", &req.webpage_url),
-    ]);
+    let caption = tf(
+        "youtube.audio.caption",
+        &[
+            ("title", &req.title),
+            ("quality", &quality_label),
+            ("username", &bot_username),
+            ("url", &req.webpage_url),
+        ],
+    );
     let caption_entities = entities_for_text(&caption);
     let upload_ok = send_audio_file(
-        &api, req.chat_id, &path, req.title.clone(), req.channel.clone(),
-        caption, caption_entities,
-        status_chat_id, status_message_id, request_id, &mut cancel_fut, trace_id,
-    ).await;
+        &api,
+        req.chat_id,
+        &path,
+        req.title.clone(),
+        req.channel.clone(),
+        caption,
+        caption_entities,
+        status_chat_id,
+        status_message_id,
+        request_id,
+        &mut cancel_fut,
+        trace_id,
+    )
+    .await;
     if upload_ok {
         if let Some(jid) = stats_job_id {
             stats::record_upload_done(jid, user_id, file_size_bytes as i64).await;
         }
-        let _ = api.delete_message(
-            &DeleteMessageParams::builder()
-                .chat_id(status_chat_id).message_id(status_message_id).build(),
-        ).await;
+        let _ = api
+            .delete_message(
+                &DeleteMessageParams::builder()
+                    .chat_id(status_chat_id)
+                    .message_id(status_message_id)
+                    .build(),
+            )
+            .await;
     }
     cleanup_dir(&dir, trace_id).await;
 }

@@ -9,9 +9,9 @@ use super::panel_state::GenSelection;
 
 // ── callback constants ──
 pub const CB_GC_PREFIX: &str = "gc:";
-pub const CB_GC_RANK: &str = "gc:r:";   // gc:r:{rank_str}
-pub const CB_GC_DAYS: &str = "gc:d:";   // gc:d:{days}
-pub const CB_GC_USES: &str = "gc:u:";   // gc:u:{uses}
+pub const CB_GC_RANK: &str = "gc:r:"; // gc:r:{rank_str}
+pub const CB_GC_DAYS: &str = "gc:d:"; // gc:d:{days}
+pub const CB_GC_USES: &str = "gc:u:"; // gc:u:{uses}
 pub const CB_GC_GO: &str = "gc:go";
 pub const CB_GC_NOP: &str = "gc:nop";
 
@@ -29,16 +29,29 @@ fn btn(text: String, cb: String, style: Option<ButtonStyle>) -> InlineKeyboardBu
         icon_custom_emoji_id: None,
         callback_data: Some(cb),
         style,
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
+        url: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
     }
 }
 
 /// دکمه‌ی انتخابی: انتخاب‌شده → سبز (Success)
 fn choice(text: String, cb: String, selected: bool) -> InlineKeyboardButton {
-    btn(text, cb, if selected { Some(ButtonStyle::Success) } else { None })
+    btn(
+        text,
+        cb,
+        if selected {
+            Some(ButtonStyle::Success)
+        } else {
+            None
+        },
+    )
 }
 
 fn header(text: &str) -> InlineKeyboardButton {
@@ -48,11 +61,14 @@ fn header(text: &str) -> InlineKeyboardButton {
 /// متن بالای پنل با خلاصه‌ی انتخاب فعلی
 pub fn panel_text(sel: &GenSelection) -> String {
     let rank_name = sel.rank.display_name();
-    to_fa_digits(&tf("redeem.panel_title", &[
-        ("rank", &rank_name),
-        ("days", &sel.days.to_string()),
-        ("uses", &sel.uses.to_string()),
-    ]))
+    to_fa_digits(&tf(
+        "redeem.panel_title",
+        &[
+            ("rank", &rank_name),
+            ("days", &sel.days.to_string()),
+            ("uses", &sel.uses.to_string()),
+        ],
+    ))
 }
 
 /// کیبورد پنل بر اساس انتخاب فعلی
@@ -108,8 +124,17 @@ pub fn build_keyboard(sel: &GenSelection) -> InlineKeyboardMarkup {
     }
 
     // ── تایید + برگشت ──
-    rows.push(vec![btn(t("redeem.panel_create_btn"), CB_GC_GO.to_string(), Some(ButtonStyle::Success))]);
-    rows.push(vec![plain(t("redeem.back_button"), crate::bot::CB_ADMIN_PANEL)]);
+    rows.push(vec![btn(
+        t("redeem.panel_create_btn"),
+        CB_GC_GO.to_string(),
+        Some(ButtonStyle::Success),
+    )]);
+    rows.push(vec![plain(
+        t("redeem.back_button"),
+        crate::bot::CB_ADMIN_PANEL,
+    )]);
 
-    InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(rows)
+        .build()
 }

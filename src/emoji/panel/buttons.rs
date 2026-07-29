@@ -22,10 +22,15 @@ pub fn btn_icon_success(text: &str, callback_data: &str, icon_key: &str) -> Inli
         icon_custom_emoji_id: icon_id,
         callback_data: Some(callback_data.to_string()),
         style: Some(ButtonStyle::Success),
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
+        url: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
     }
 }
 
@@ -36,17 +41,28 @@ pub fn btn_icon_danger(text: &str, callback_data: &str, icon_key: &str) -> Inlin
         icon_custom_emoji_id: icon_id,
         callback_data: Some(callback_data.to_string()),
         style: Some(ButtonStyle::Danger),
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
+        url: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
     }
 }
 
 fn resolve_icon(icon_key: &str) -> Option<String> {
-    if icon_key.is_empty() { return None; }
+    if icon_key.is_empty() {
+        return None;
+    }
     let id = t(&format!("emoji.panel.icons.{icon_key}"));
-    if id.is_empty() || id.starts_with('!') { None } else { Some(id) }
+    if id.is_empty() || id.starts_with('!') {
+        None
+    } else {
+        Some(id)
+    }
 }
 
 pub fn btn_icon(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardButton {
@@ -54,17 +70,26 @@ pub fn btn_icon(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboa
         None
     } else {
         let id = t(&format!("emoji.panel.icons.{icon_key}"));
-        if id.is_empty() || id.starts_with('!') { None } else { Some(id) }
+        if id.is_empty() || id.starts_with('!') {
+            None
+        } else {
+            Some(id)
+        }
     };
     InlineKeyboardButton {
         text: text.to_string(),
         icon_custom_emoji_id: icon_id,
         callback_data: Some(callback_data.to_string()),
         style: Some(ButtonStyle::Primary),
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
+        url: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
     }
 }
 
@@ -73,17 +98,26 @@ pub fn btn_icon_plain(text: &str, callback_data: &str, icon_key: &str) -> Inline
         None
     } else {
         let id = t(&format!("emoji.panel.icons.{icon_key}"));
-        if id.is_empty() || id.starts_with('!') { None } else { Some(id) }
+        if id.is_empty() || id.starts_with('!') {
+            None
+        } else {
+            Some(id)
+        }
     };
     InlineKeyboardButton {
         text: text.to_string(),
         icon_custom_emoji_id: icon_id,
         callback_data: Some(callback_data.to_string()),
         style: None,
-        url: None, login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
+        url: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
     }
 }
 
@@ -95,9 +129,13 @@ pub fn btn_icon_url(text: &str, url: &str, icon_key: &str) -> InlineKeyboardButt
         url: Some(url.to_string()),
         callback_data: None,
         style: None,
-        login_url: None, web_app: None,
-        switch_inline_query: None, switch_inline_query_current_chat: None,
-        switch_inline_query_chosen_chat: None, copy_text: None,
-        callback_game: None, pay: None,
+        login_url: None,
+        web_app: None,
+        switch_inline_query: None,
+        switch_inline_query_current_chat: None,
+        switch_inline_query_chosen_chat: None,
+        copy_text: None,
+        callback_game: None,
+        pay: None,
     }
 }

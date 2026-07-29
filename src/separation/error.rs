@@ -11,4 +11,3 @@ pub enum SeparationError {
     #[error("timeout")]
     Timeout,
 }
-

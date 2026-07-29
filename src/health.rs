@@ -1,3 +1,5 @@
+//! Minimal HTTP server for health checks (/health) and Prometheus metrics (/metrics).
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
@@ -79,5 +81,37 @@ pub async fn serve(port: u16) {
                 let _ = stream.write_all(resp.as_bytes()).await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mark_healthy_and_ready() {
+        mark_healthy();
+        assert!(is_healthy());
+        mark_ready();
+        assert!(is_ready());
+    }
+
+    #[test]
+    fn test_health_json_serialization() {
+        let healthy = true;
+        let ready = true;
+        let body = serde_json::json!({
+            "healthy": healthy,
+            "ready": ready,
+        })
+        .to_string();
+        assert!(body.contains("\"healthy\":true"));
+        assert!(body.contains("\"ready\":true"));
+    }
+
+    #[test]
+    fn test_metrics_gather() {
+        let metric_families = prometheus::gather();
+        let _ = metric_families;
     }
 }

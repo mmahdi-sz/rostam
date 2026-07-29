@@ -1,15 +1,21 @@
-use frankenstein::{
-    AsyncTelegramApi, ParseMode, client_reqwest::Bot, methods::SendMessageParams,
-    types::{InlineKeyboardMarkup, ReplyMarkup},
-};
-use crate::i18n::{t, apply_premium_to_html};
 use crate::bot::CB_USER_PANEL;
 use crate::emoji::panel::btn_icon;
+use crate::i18n::{apply_premium_to_html, t};
+use frankenstein::{
+    AsyncTelegramApi, ParseMode,
+    client_reqwest::Bot,
+    methods::SendMessageParams,
+    types::{InlineKeyboardMarkup, ReplyMarkup},
+};
 
 pub async fn send_rank_menu(api: &Bot, chat_id: i64) {
     crate::stats::record_event_global("paywall", "menu", "ok", 0).await;
     let kb = InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon(&t("panel.back_button"), CB_USER_PANEL, "back")]])
+        .inline_keyboard(vec![vec![btn_icon(
+            &t("panel.back_button"),
+            CB_USER_PANEL,
+            "back",
+        )]])
         .build();
     let params = SendMessageParams::builder()
         .chat_id(chat_id)

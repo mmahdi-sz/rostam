@@ -11,16 +11,17 @@ fn active_downloads() -> &'static Mutex<HashMap<u64, Arc<Notify>>> {
 
 pub fn register_cancel(request_id: u64) -> Arc<Notify> {
     let notify = Arc::new(Notify::new());
-    active_downloads().lock().unwrap().insert(request_id, notify.clone());
+    crate::sync_util::lock_or_recover(active_downloads()).insert(request_id, notify.clone());
     notify
 }
 
 pub fn unregister_cancel(request_id: u64) {
-    active_downloads().lock().unwrap().remove(&request_id);
+    crate::sync_util::lock_or_recover(active_downloads()).remove(&request_id);
 }
 
 pub fn cancel_download(request_id: u64) -> bool {
-    if let Some(notify) = active_downloads().lock().unwrap().remove(&request_id) {
+    if let Some(notify) = crate::sync_util::lock_or_recover(active_downloads()).remove(&request_id)
+    {
         notify.notify_one();
         true
     } else {

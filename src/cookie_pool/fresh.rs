@@ -18,7 +18,9 @@ pub struct FreshStore {
 
 impl FreshStore {
     pub fn new(url: &str) -> RedisResult<Self> {
-        Ok(Self { client: Client::open(url)? })
+        Ok(Self {
+            client: Client::open(url)?,
+        })
     }
 
     /// A fresh multiplexed connection. Failure here means Redis is unreachable.
@@ -37,12 +39,20 @@ fn lock_key(profile: &str) -> String {
 
 /// True if the profile's cookies are still considered fresh.
 pub async fn is_fresh(conn: &mut MultiplexedConnection, profile: &str) -> RedisResult<bool> {
-    let n: i64 = redis::cmd("EXISTS").arg(fresh_key(profile)).query_async(conn).await?;
+    let n: i64 = redis::cmd("EXISTS")
+        .arg(fresh_key(profile))
+        .query_async(conn)
+        .await?;
     Ok(n > 0)
 }
 
 /// Mark the profile fresh for `ttl_secs`. `ts` is the refresh time (epoch secs), stored as the value.
-pub async fn mark_fresh(conn: &mut MultiplexedConnection, profile: &str, ttl_secs: u64, ts: i64) -> RedisResult<()> {
+pub async fn mark_fresh(
+    conn: &mut MultiplexedConnection,
+    profile: &str,
+    ttl_secs: u64,
+    ts: i64,
+) -> RedisResult<()> {
     redis::cmd("SET")
         .arg(fresh_key(profile))
         .arg(ts)
@@ -53,7 +63,12 @@ pub async fn mark_fresh(conn: &mut MultiplexedConnection, profile: &str, ttl_sec
 }
 
 /// Try to acquire the refresh lock (SET NX EX). Returns true if acquired.
-pub async fn try_lock(conn: &mut MultiplexedConnection, profile: &str, owner: &str, lock_ttl_secs: u64) -> RedisResult<bool> {
+pub async fn try_lock(
+    conn: &mut MultiplexedConnection,
+    profile: &str,
+    owner: &str,
+    lock_ttl_secs: u64,
+) -> RedisResult<bool> {
     let res: Option<String> = redis::cmd("SET")
         .arg(lock_key(profile))
         .arg(owner)
@@ -67,7 +82,10 @@ pub async fn try_lock(conn: &mut MultiplexedConnection, profile: &str, owner: &s
 
 /// Release the refresh lock (called only on a successful refresh).
 pub async fn unlock(conn: &mut MultiplexedConnection, profile: &str) -> RedisResult<()> {
-    let _: i64 = redis::cmd("DEL").arg(lock_key(profile)).query_async(conn).await?;
+    let _: i64 = redis::cmd("DEL")
+        .arg(lock_key(profile))
+        .query_async(conn)
+        .await?;
     Ok(())
 }
 

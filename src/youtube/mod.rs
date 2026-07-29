@@ -1,15 +1,17 @@
-mod types;
+//! YouTube downloading subsystem, quality/format selection, cookie pool integration, and subtitle processing.
+
+pub mod download;
 mod extract;
 mod fetch;
 mod format;
+mod handle;
 pub mod jalali;
-pub mod download;
 mod lang_names;
 mod quality_keyboard;
 mod selection;
 pub mod trace;
-mod handle;
 pub mod translator;
+mod types;
 
 pub use extract::extract_youtube_urls;
 pub use format::escape_markdown_v2;
