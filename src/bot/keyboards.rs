@@ -134,7 +134,7 @@ pub fn back_keyboard() -> InlineKeyboardMarkup {
 pub fn ai_lab_back_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![vec![btn_icon(
-            &t("start.back"),
+            &t("start.back_to_ai_lab"),
             CB_START_AI_LAB,
             "back",
         )]])

@@ -39,12 +39,58 @@ pub fn extract_youtube_urls(text: &str) -> Vec<String> {
             || host_part == "m.youtube.com"
             || host_part == "music.youtube.com";
 
-        if is_yt && !urls.contains(&normalized) {
-            urls.push(normalized);
+        if is_yt {
+            let cleaned = clean_youtube_url(&normalized);
+            if !urls.contains(&cleaned) {
+                urls.push(cleaned);
+            }
         }
     }
 
     urls
+}
+
+fn clean_youtube_url(url: &str) -> String {
+    // Some URLs copied from Google Search have URL-encoded delimiters
+    let url_decoded = url.replace("%3F", "?").replace("%3D", "=");
+    let mut parts = url_decoded.splitn(2, '?');
+    let base = parts.next().unwrap_or("");
+    let query_str = match parts.next() {
+        Some(q) => q,
+        None => return url.to_string(),
+    };
+
+    let mut query_parts = query_str.splitn(2, '#');
+    let query = query_parts.next().unwrap_or("");
+    let fragment = query_parts.next();
+
+    let allowed_keys = ["v", "list", "index", "t"];
+    let mut kept_params = Vec::new();
+
+    for pair in query.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let key = pair.split('=').next().unwrap_or("");
+        if allowed_keys.contains(&key) {
+            kept_params.push(pair);
+        }
+    }
+
+    if kept_params.is_empty() {
+        if let Some(f) = fragment {
+            format!("{}#{}", base, f)
+        } else {
+            base.to_string()
+        }
+    } else {
+        let new_query = kept_params.join("&");
+        if let Some(f) = fragment {
+            format!("{}?{}#{}", base, new_query, f)
+        } else {
+            format!("{}?{}", base, new_query)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -53,10 +99,10 @@ mod tests {
 
     #[test]
     fn test_extract_plain_youtube_url() {
-        let msg = "https://www.youtube.com/watch?v=dQw4w9WgXcQ ببین";
+        let msg = "https://www.youtube.com/watch%3Fv%3DzNb2DjlZ530&ved=2ahUKEwjS9I2yuPOVAxUe8bsIHTbPDqwQwqsBegQIFBAB&sqi=2&usg=AOvVaw1ZF2BrTuDvKqmX-QRuWxOy ببین";
         let urls = extract_youtube_urls(msg);
         assert_eq!(urls.len(), 1);
-        assert!(urls[0].contains("youtube.com"));
+        assert_eq!(urls[0], "https://www.youtube.com/watch?v=zNb2DjlZ530");
     }
 
     #[test]

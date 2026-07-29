@@ -303,3 +303,8 @@ pub async fn send_text_with_back(api: &Bot, chat_id: i64, text: &str) -> crate::
     let kb = super::keyboards::back_keyboard();
     send_text_with_keyboard(api, chat_id, text, kb).await
 }
+
+pub async fn send_text_with_ai_back(api: &Bot, chat_id: i64, text: &str) -> crate::error::Result<()> {
+    let kb = super::keyboards::ai_lab_back_keyboard();
+    send_text_with_keyboard(api, chat_id, text, kb).await
+}

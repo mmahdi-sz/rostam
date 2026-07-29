@@ -13,7 +13,7 @@ use frankenstein::{
 };
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::bot::{edit_to_ai_lab, send_text, send_text_with_back};
+use crate::bot::{edit_to_ai_lab, send_text_with_ai_back};
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
 use crate::emoji::{FlowManager, FlowState};
@@ -148,7 +148,7 @@ pub async fn handle_separation_audio(
 
     let Some(file_id) = file_id else {
         log_trace(trace_id, "no_file_id", "");
-        let _ = send_text_with_back(api, chat_id, &t("separation.error.invalid_audio")).await;
+        let _ = send_text_with_ai_back(api, chat_id, &t("separation.error.invalid_audio")).await;
         return;
     };
 
@@ -295,7 +295,7 @@ pub async fn handle_separation_callback(
         other => {
             log_trace(trace_id, "wrong_state", &format!("state={other:?}"));
             let _ =
-                send_text_with_back(api, chat_id, &t("separation.error.service_unavailable")).await;
+                send_text_with_ai_back(api, chat_id, &t("separation.error.service_unavailable")).await;
             return;
         }
     };
@@ -332,7 +332,7 @@ pub async fn handle_separation_callback(
             crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
             crate::stats::record_error_global("separation", &format!("download failed: {e}")).await;
             let _ =
-                send_text_with_back(api, chat_id, &t("separation.error.service_unavailable")).await;
+                send_text_with_ai_back(api, chat_id, &t("separation.error.service_unavailable")).await;
             let _ = delete_message(api, chat_id, message_id).await;
             return;
         }
@@ -360,7 +360,7 @@ pub async fn handle_separation_callback(
                     &format!("audio extraction failed: {e}"),
                 )
                 .await;
-                let _ = send_text_with_back(
+                let _ = send_text_with_ai_back(
                     api,
                     chat_id,
                     &t("separation.error.audio_extraction_failed"),
@@ -460,7 +460,7 @@ pub async fn handle_separation_callback(
                 if let Some(min_rank) = next_rank {
                     crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
                 } else {
-                    let _ = send_text(api, chat_id, &label).await;
+                    let _ = crate::bot::send_text_with_ai_back(api, chat_id, &label).await;
                 }
                 return;
             }
@@ -633,7 +633,7 @@ pub async fn handle_separation_callback(
                 crate::stats::record_event_user(user_id, "separation", mode_label, "timeout", 0)
                     .await;
                 crate::stats::record_error_global("separation", "queue timeout (35min)").await;
-                let _ = send_text(&api_task, chat_id, &t("separation.error.queue_timeout")).await;
+                let _ = crate::bot::send_text_with_ai_back(&api_task, chat_id, &t("separation.error.queue_timeout")).await;
                 let _ = delete_message(&api_task, chat_id, message_id).await;
                 std::fs::remove_dir_all(&tmp_dir).ok();
                 return;
@@ -779,7 +779,7 @@ pub async fn handle_separation_callback(
                     SeparationError::Timeout => "separation.error.timeout",
                     SeparationError::ProcessingFailed(_) => "separation.error.processing_failed",
                 };
-                let _ = send_text(&api_task, chat_id, &t(key)).await;
+                let _ = crate::bot::send_text_with_ai_back(&api_task, chat_id, &t(key)).await;
                 std::fs::remove_dir_all(&tmp_dir).ok();
             }
         }
