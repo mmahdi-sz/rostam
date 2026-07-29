@@ -41,10 +41,10 @@ mod tests {
 
     #[test]
     fn cookie_outage_alert_contains_actionable_details() {
-        let message = format_cookie_outage_admin_message(42, 3, 3, "3h 59m");
+        let message = format_cookie_outage_admin_message(42, 3, 3, "0h 59m");
         assert!(message.contains("هر 3 کوکی/Gmail"));
         assert!(message.contains("429"));
-        assert!(message.contains("3h 59m"));
+        assert!(message.contains("0h 59m"));
         assert!(message.contains("Trace: 42"));
         assert!(message.contains("Firefox"));
     }

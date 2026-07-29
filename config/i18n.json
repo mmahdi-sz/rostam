@@ -100,7 +100,7 @@
       "status_line_next_available": "next_available_in: {wait}",
       "selected": "selected_cookie: {id}\nprofile: {profile}\ncookies_file: {file}\nyt-dlp:\nyt-dlp --cookies-from-browser '{spec}'",
       "none_available": "کوکی قابل استفاده موجود نیست. باید حدود {wait} صبر کرد.",
-      "youtube_unavailable": "⛔ دانلودر یوتیوب موقتاً در دسترس نیست. لطفاً به ادمین اطلاع دهید: @mmahdi_sz",
+      "youtube_unavailable": "⛔ دانلودر یوتیوب به‌دلیل محدودیت موقت، تا حدود یک ساعت در دسترس نیست. لطفاً به ادمین اطلاع دهید: @mmahdi_sz",
       "marked_429": "آخرین کوکی انتخاب‌شده وارد cooldown بیست ساعته شد.",
       "already_cooldown": "آخرین کوکی از قبل داخل cooldown است یا cooldown پر شده.",
       "no_selection_yet": "هنوز هیچ کوکی‌ای انتخاب نشده است."
@@ -1026,7 +1026,7 @@
       "status_line_next_available": "next_available_in: {wait}",
       "selected": "selected_cookie: {id}\nprofile: {profile}\ncookies_file: {file}\nyt-dlp:\nyt-dlp --cookies-from-browser '{spec}'",
       "none_available": "No usable cookie available. Please wait ~{wait}.",
-      "youtube_unavailable": "⛔ YouTube downloader is temporarily unavailable. Please inform the admin: @mmahdi_sz",
+      "youtube_unavailable": "⛔ Due to a temporary limit, the YouTube downloader may be unavailable for up to one hour. Please inform the admin: @mmahdi_sz",
       "marked_429": "The last selected cookie entered a 20-hour cooldown.",
       "already_cooldown": "The last cookie is already in cooldown or the cooldown list is full.",
       "no_selection_yet": "No cookie has been selected yet."
@@ -1952,7 +1952,7 @@
       "status_line_next_available": "next_available_in: {wait}",
       "selected": "selected_cookie: {id}\nprofile: {profile}\ncookies_file: {file}\nyt-dlp:\nyt-dlp --cookies-from-browser '{spec}'",
       "none_available": "Nessun cookie disponibile. Attendere ~{wait}.",
-      "youtube_unavailable": "⛔ Il downloader YouTube è temporaneamente non disponibile. Informa l'amministratore: @mmahdi_sz",
+      "youtube_unavailable": "⛔ A causa di un limite temporaneo, il downloader YouTube potrebbe non essere disponibile per circa un'ora. Informa l'amministratore: @mmahdi_sz",
       "marked_429": "L'ultimo cookie selezionato è entrato in cooldown di 20 ore.",
       "already_cooldown": "L'ultimo cookie è già in cooldown o la lista è piena.",
       "no_selection_yet": "Nessun cookie ancora selezionato."

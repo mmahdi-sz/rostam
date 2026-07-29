@@ -9,6 +9,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [1.24.4] — 2026-07-29
+
+### Fixed
+- Reduce the YouTube rate-limit safety cooldown from four hours to one hour.
+- Tell users the downloader may remain unavailable for up to one hour while cookie refresh can recover it earlier.
+
 ## [1.24.3] — 2026-07-29
 
 ### Fixed

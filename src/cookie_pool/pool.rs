@@ -236,4 +236,9 @@ mod tests {
         assert_eq!(selectable.len(), 1);
         assert_ne!(pool.available_cookies[selectable[0]].id, last_id);
     }
+
+    #[test]
+    fn rate_limit_safety_cooldown_is_one_hour() {
+        assert_eq!(REFRESH_COOLDOWN, Duration::from_secs(60 * 60));
+    }
 }
