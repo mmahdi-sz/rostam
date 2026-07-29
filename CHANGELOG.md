@@ -9,6 +9,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [1.24.1] — 2026-07-29
+
+### Fixed
+- Escape the English start-menu hyphen for Telegram MarkdownV2.
+- Reject malformed, credential-bearing, shell-like, and private direct-download URLs.
+- Sanitize downloaded filenames and prevent Telegram file paths/tokens from entering logs.
+
 ## [1.20.0] — 2026-07-29 (۱۴۰۴-۰۵-۰۸)
 
 ### Added

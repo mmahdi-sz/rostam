@@ -937,7 +937,11 @@ async fn download_file(api: &Bot, file_id: &str, trace_id: u64) -> crate::error:
         .file_path
         .ok_or_else(|| anyhow::anyhow!("no file_path"))?;
 
-    log_trace(trace_id, "file_path", &format!("file_path={file_path}"));
+    let path_label = std::path::Path::new(&file_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("<file>");
+    log_trace(trace_id, "file_path", &format!("file_name={path_label}"));
 
     if file_path.starts_with('/') {
         let bytes = std::fs::read(&file_path)?;
@@ -955,11 +959,7 @@ async fn download_file(api: &Bot, file_id: &str, trace_id: u64) -> crate::error:
         )
     };
 
-    log_trace(
-        trace_id,
-        "http_download",
-        &format!("url_prefix={}", &url[..url.len().min(60)]),
-    );
+    log_trace(trace_id, "http_download", "source=telegram_api");
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(120))
         .build()?;

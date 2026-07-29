@@ -662,7 +662,21 @@ fn filename_from_url(url: &str) -> String {
         .next()
         .filter(|s| !s.is_empty())
         .unwrap_or("file");
-    percent_decode(name)
+    safe_download_filename(&percent_decode(name))
+}
+
+fn safe_download_filename(name: &str) -> String {
+    let cleaned = name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | ' '))
+        .take(255)
+        .collect::<String>();
+    let cleaned = cleaned.trim().trim_matches('.');
+    if cleaned.is_empty() {
+        "file".to_string()
+    } else {
+        cleaned.to_string()
+    }
 }
 
 fn extract_content_disposition_filename(header: &str) -> Option<String> {
@@ -696,7 +710,7 @@ async fn probe_url(url: &str) -> (String, Option<u64>) {
         .get(reqwest::header::CONTENT_DISPOSITION)
         .and_then(|v| v.to_str().ok())
         .and_then(extract_content_disposition_filename)
-        .map(|s| percent_decode(&s))
+        .map(|s| safe_download_filename(&percent_decode(&s)))
         .unwrap_or(fallback);
     let size = resp
         .headers()
@@ -922,7 +936,7 @@ fn sanitize_rename(typed: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_direct_link, sanitize_rename};
+    use super::{is_direct_link, safe_download_filename, sanitize_rename};
 
     #[test]
     fn test_is_direct_link_ignores_telegram_urls() {
@@ -931,6 +945,21 @@ mod tests {
         assert!(!is_direct_link("http://telegram.me/user"));
         assert!(is_direct_link("https://example.com/file.zip"));
         assert!(is_direct_link("http://direct.download.com/video.mp4"));
+    }
+
+    #[test]
+    fn direct_link_rejects_shell_like_and_private_targets() {
+        assert!(!is_direct_link("https://test123 ; sleep 10"));
+        assert!(!is_direct_link("http://$(sleep 10)"));
+        assert!(!is_direct_link("http://127.0.0.1/private"));
+        assert!(!is_direct_link("http://169.254.169.254/latest/meta-data"));
+    }
+
+    #[test]
+    fn download_filename_drops_shell_metacharacters_and_paths() {
+        assert_eq!(safe_download_filename("sleep 15; .pdf"), "sleep 15 .pdf");
+        assert_eq!(safe_download_filename("../../etc/passwd"), "etcpasswd");
+        assert_eq!(safe_download_filename("$()`|&"), "file");
     }
 
     #[test]

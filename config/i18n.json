@@ -925,7 +925,7 @@
   },
   "en": {
     "start": {
-      "welcome": "👋 *Welcome to Rostam Bot\\!*\nYour comprehensive AI media and utility suite\\.\n\n✨ *Features \\& Tools:*\n\n🎬 *YouTube Downloader*\n└ Download video and audio in all qualities, select codecs \\(AV1/VP9/H264\\), and translate subtitles\n\n🧪 *AI Laboratory*\n├ 🎙️ Speech to Text \\(Persian \\& English\\)\n├ 🔇 Neural Audio Denoise\n├ 🎵 Vocal \\& Music Separation\n├ 🖼️ Image Upscale \\(up to 4x\\)\n└ ✨ AI Watermark Removal\n\n🧰 *Utility Toolbox*\n├ 📄 PDF Compression\n├ ⚡ High-speed Direct Download\n└ 🌐 IP Address Intelligence\n\n👤 *User Account \\& Ranks*\n└ Manage rank, traffic quota, and redeem codes\n\n👇 *Select an option from the menu below:*",
+      "welcome": "👋 *Welcome to Rostam Bot\\!*\nYour comprehensive AI media and utility suite\\.\n\n✨ *Features \\& Tools:*\n\n🎬 *YouTube Downloader*\n└ Download video and audio in all qualities, select codecs \\(AV1/VP9/H264\\), and translate subtitles\n\n🧪 *AI Laboratory*\n├ 🎙️ Speech to Text \\(Persian \\& English\\)\n├ 🔇 Neural Audio Denoise\n├ 🎵 Vocal \\& Music Separation\n├ 🖼️ Image Upscale \\(up to 4x\\)\n└ ✨ AI Watermark Removal\n\n🧰 *Utility Toolbox*\n├ 📄 PDF Compression\n├ ⚡ High\\-speed Direct Download\n└ 🌐 IP Address Intelligence\n\n👤 *User Account \\& Ranks*\n└ Manage rank, traffic quota, and redeem codes\n\n👇 *Select an option from the menu below:*",
       "emoji_button": "Emoji Panel",
       "youtube_button": "YouTube Download",
       "back": "Main Menu",

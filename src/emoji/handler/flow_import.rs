@@ -51,7 +51,11 @@ pub(super) async fn handle_import_file(
     {
         Ok(r) => match r.result.file_path {
             Some(p) => {
-                eprintln!("[emoji_msg trace={trace_id} event=import_file_path] path={p:?}");
+                let name = std::path::Path::new(&p)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("<file>");
+                eprintln!("[emoji_msg trace={trace_id} event=import_file_path] file_name={name:?}");
                 p
             }
             None => {

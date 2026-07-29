@@ -36,7 +36,11 @@ pub async fn download_telegram_file(
     let file_path = file_info.result.file_path.ok_or("no file_path")?;
 
     let trace = next_trace_id();
-    log_trace(trace, "download_file", &format!("file_path={file_path}"));
+    let path_label = std::path::Path::new(&file_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("<file>");
+    log_trace(trace, "download_file", &format!("file_name={path_label}"));
 
     // Local Bot API returns an absolute filesystem path in --local mode.
     if file_path.starts_with('/') {

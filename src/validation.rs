@@ -5,7 +5,14 @@ pub fn sanitize_url(url: &str) -> Option<String> {
     if url.len() > 2048 {
         return None;
     }
-    if !url.starts_with("http://") && !url.starts_with("https://") {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return None;
+    }
+    if parsed.username() != ""
+        || parsed.password().is_some()
+        || parsed.host_str()?.chars().any(|c| c.is_control())
+    {
         return None;
     }
     Some(url.to_string())
@@ -28,17 +35,11 @@ pub fn is_safe_url(url: &str) -> bool {
         return false;
     };
 
-    // Extract host part
-    let host = match sanitized.split("://").nth(1) {
-        Some(rest) => {
-            let host_port = rest.split('/').next().unwrap_or("");
-            host_port
-                .split(':')
-                .next()
-                .unwrap_or("")
-                .trim_matches(&['[', ']'][..])
-        }
-        None => return false,
+    let Ok(parsed) = reqwest::Url::parse(&sanitized) else {
+        return false;
+    };
+    let Some(host) = parsed.host_str() else {
+        return false;
     };
 
     if host.is_empty() {
@@ -147,5 +148,8 @@ mod tests {
         assert!(!is_safe_url("http://10.0.0.1/internal"));
         assert!(!is_safe_url("http://192.168.1.1/router"));
         assert!(!is_safe_url("http://169.254.169.254/latest/meta-data/"));
+        assert!(!is_safe_url("https://test123 ; sleep 10"));
+        assert!(!is_safe_url("http://$(sleep 10)"));
+        assert!(!is_safe_url("http://user:pass@example.com/file"));
     }
 }

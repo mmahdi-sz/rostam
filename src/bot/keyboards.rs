@@ -277,4 +277,11 @@ mod tests {
         let kbd = ai_lab_keyboard();
         assert!(!kbd.inline_keyboard.is_empty());
     }
+
+    #[test]
+    fn start_menu_escapes_markdown_hyphens() {
+        let rendered = apply_premium_to_md("High\\-speed Direct Download");
+        assert!(rendered.contains("High\\-speed"));
+        assert!(!rendered.contains("High-speed"));
+    }
 }
