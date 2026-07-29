@@ -751,6 +751,10 @@ pub async fn handle_separation_callback(
                     result.duration_seconds.ceil() as i64,
                 )
                 .await;
+                crate::metrics::get()
+                    .separation_requests_total
+                    .with_label_values(&["success"])
+                    .inc();
 
                 std::fs::remove_dir_all(&tmp_dir).ok();
                 log_trace(trace_id, "cleanup_done", "");
@@ -758,6 +762,10 @@ pub async fn handle_separation_callback(
             Err(e) => {
                 log_trace(trace_id, "separate_error", &format!("err={e}"));
                 crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
+                crate::metrics::get()
+                    .separation_requests_total
+                    .with_label_values(&["fail"])
+                    .inc();
                 crate::stats::record_error_global(
                     "separation",
                     &format!("processing error: {e:?}"),

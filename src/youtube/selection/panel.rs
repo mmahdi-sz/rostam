@@ -39,7 +39,13 @@ pub async fn enter_selection_menu(
         *slot = Some(selection);
     });
 
-    let sel = with_selection(&req, |slot| slot.clone()).unwrap();
+    let sel = match with_selection(&req, |slot| slot.clone()) {
+        Some(s) => s,
+        None => {
+            eprintln!("selection panel: no active selection for request_id={request_id}");
+            return;
+        }
+    };
     let (text, entities) = build_selection_text(&req, &sel);
     let keyboard = build_keyboard(&req, request_id);
     let mut params = EditMessageTextParams::builder()

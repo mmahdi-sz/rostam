@@ -46,3 +46,38 @@ pub fn extract_youtube_urls(text: &str) -> Vec<String> {
 
     urls
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_plain_youtube_url() {
+        let msg = "https://www.youtube.com/watch?v=dQw4w9WgXcQ ببین";
+        let urls = extract_youtube_urls(msg);
+        assert_eq!(urls.len(), 1);
+        assert!(urls[0].contains("youtube.com"));
+    }
+
+    #[test]
+    fn test_extract_youtu_be_short_url() {
+        let msg = "https://youtu.be/dQw4w9WgXcQ";
+        let urls = extract_youtube_urls(msg);
+        assert_eq!(urls.len(), 1);
+    }
+
+    #[test]
+    fn test_no_youtube_url() {
+        let msg = "این یک متن معمولی بدون لینک یوتیوب است";
+        let urls = extract_youtube_urls(msg);
+        assert!(urls.is_empty());
+    }
+
+    #[test]
+    fn test_extract_without_scheme() {
+        let msg = "youtube.com/watch?v=dQw4w9WgXcQ";
+        let urls = extract_youtube_urls(msg);
+        assert_eq!(urls.len(), 1);
+        assert!(urls[0].starts_with("https://"));
+    }
+}

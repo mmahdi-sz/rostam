@@ -54,6 +54,10 @@ pub async fn fetch_all(ip: &str, trace_id: u64) -> IpReport {
 }
 
 async fn get_json(url: &str, headers: &[(&str, &str)]) -> Option<Value> {
+    if !crate::validation::is_safe_url(url) {
+        eprintln!("[ip_lookup] SSRF block: rejected url={url}");
+        return None;
+    }
     let client = reqwest::Client::new();
     let mut req = client
         .get(url)

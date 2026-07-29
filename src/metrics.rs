@@ -12,6 +12,11 @@ pub struct Metrics {
     pub request_duration: HistogramVec,
     pub active_downloads: IntGauge,
     pub errors_total: IntCounterVec,
+    pub youtube_downloads_total: IntCounterVec,
+    pub stt_requests_total: IntCounterVec,
+    pub pdf_compress_total: IntCounterVec,
+    pub separation_requests_total: IntCounterVec,
+    pub gwm_requests_total: IntCounterVec,
 }
 
 static METRICS: OnceLock<Metrics> = OnceLock::new();
@@ -36,6 +41,36 @@ pub fn init() {
             "bot_errors_total",
             "Total errors by feature",
             &["feature"]
+        )
+        .expect("metric registration failed"),
+        youtube_downloads_total: register_int_counter_vec!(
+            "bot_youtube_downloads_total",
+            "YouTube downloads by quality and status",
+            &["quality", "status"]
+        )
+        .expect("metric registration failed"),
+        stt_requests_total: register_int_counter_vec!(
+            "bot_stt_requests_total",
+            "STT requests by model and status",
+            &["model", "status"]
+        )
+        .expect("metric registration failed"),
+        pdf_compress_total: register_int_counter_vec!(
+            "bot_pdf_compress_total",
+            "PDF compress requests by level and status",
+            &["level", "status"]
+        )
+        .expect("metric registration failed"),
+        separation_requests_total: register_int_counter_vec!(
+            "bot_separation_requests_total",
+            "Vocal separation requests by status",
+            &["status"]
+        )
+        .expect("metric registration failed"),
+        gwm_requests_total: register_int_counter_vec!(
+            "bot_gwm_requests_total",
+            "Gemini watermark removal requests by status",
+            &["status"]
         )
         .expect("metric registration failed"),
     });

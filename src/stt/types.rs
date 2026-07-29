@@ -17,6 +17,15 @@ pub enum SttModelSize {
     Small,
 }
 
+impl SttModelSize {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Large => "large",
+            Self::Small => "small",
+        }
+    }
+}
+
 impl SttConfig {
     pub fn model_path(&self, base: &str) -> String {
         let name = match (self.lang, self.model_size) {

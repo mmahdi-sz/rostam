@@ -385,6 +385,10 @@ async fn run_pdf_compress(
                 )
                 .await;
             crate::stats::record_event_user(user_id, "pdfcompress", &level, "ok", 0).await;
+            crate::metrics::get()
+                .pdf_compress_total
+                .with_label_values(&[&level, "success"])
+                .inc();
         }
         Err(e) => {
             log_ev!("pdfcompress", trace_id, "result_send_failed", "=>" => format!("fail err={e}"));
@@ -398,6 +402,10 @@ async fn run_pdf_compress(
             )
             .await;
             crate::stats::record_event_user(user_id, "pdfcompress", &level, "fail", 0).await;
+            crate::metrics::get()
+                .pdf_compress_total
+                .with_label_values(&[&level, "fail"])
+                .inc();
         }
     }
     std::fs::remove_dir_all(&work_dir).ok();

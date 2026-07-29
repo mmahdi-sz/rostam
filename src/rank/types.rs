@@ -305,4 +305,26 @@ mod tests {
         assert_eq!(Rank::Esfandyar.playlist_limit(), None);
         assert_eq!(Rank::Rostam.playlist_limit(), None);
     }
+
+    #[test]
+    fn test_rank_from_str_and_as_str() {
+        assert_eq!(Rank::from_str("dalavar"), Some(Rank::Dalavar));
+        assert_eq!(Rank::from_str("rostam"), Some(Rank::Rostam));
+        assert_eq!(Rank::from_str("invalid"), None);
+        assert_eq!(Rank::Rostam.as_str(), "rostam");
+    }
+
+    #[test]
+    fn test_rank_weights() {
+        assert!(Rank::Rostam.weight() > Rank::Esfandyar.weight());
+        assert!(Rank::Esfandyar.weight() > Rank::Dalavar.weight());
+    }
+
+    #[test]
+    fn test_ceil_div() {
+        assert_eq!(ceil_div(10, 3), 4);
+        assert_eq!(ceil_div(9, 3), 3);
+        assert_eq!(ceil_div(0, 5), 0);
+        assert_eq!(ceil_div(5, 0), 0);
+    }
 }

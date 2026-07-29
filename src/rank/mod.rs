@@ -1,3 +1,9 @@
+//! Rank and paywall system.
+//!
+//! Defines the five user ranks (`Dalavar` → `Rostam`) and all paywall logic.
+//! Use [`effective_rank`] to get the live rank for any user — never cache.
+//! Use [`block_feature`] / [`block_limit`] to enforce rank gates on callback clicks.
+
 pub mod menu;
 pub mod panel;
 pub mod paywall;

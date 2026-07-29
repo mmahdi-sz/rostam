@@ -48,3 +48,20 @@ pub struct CookiePoolSnapshot {
     pub last_used_cookie: Option<String>,
     pub cooldown_list: Vec<CooldownEntry>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cookie_source_browser_spec() {
+        let source = CookieSource {
+            id: "cookie-1".to_string(),
+            profile_name: "profile-1".to_string(),
+            profile_dir: PathBuf::from("/tmp/profile1"),
+            cookies_sqlite: PathBuf::from("/tmp/profile1/cookies.sqlite"),
+            source_profile_dir: PathBuf::from("/home/user/profile1"),
+        };
+        assert_eq!(source.yt_dlp_browser_spec(), "firefox:/tmp/profile1");
+    }
+}

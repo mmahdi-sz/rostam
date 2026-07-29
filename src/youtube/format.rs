@@ -165,3 +165,45 @@ pub fn build_description_blockquotes(description: &str) -> Vec<String> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_duration_seconds() {
+        assert_eq!(format_duration(45), "0:45");
+    }
+
+    #[test]
+    fn test_format_duration_minutes() {
+        assert_eq!(format_duration(125), "2:05");
+    }
+
+    #[test]
+    fn test_format_duration_hours() {
+        assert_eq!(format_duration(3661), "1:01:01");
+    }
+
+    #[test]
+    fn test_format_count() {
+        assert_eq!(format_count(0), "0");
+        assert_eq!(format_count(999), "999");
+        assert_eq!(format_count(1000), "1,000");
+        assert_eq!(format_count(1234567), "1,234,567");
+    }
+
+    #[test]
+    fn test_escape_markdown_v2() {
+        assert_eq!(escape_markdown_v2("hello_world"), "hello\\_world");
+        assert_eq!(escape_markdown_v2("test. [link]"), "test\\. \\[link\\]");
+    }
+
+    #[test]
+    fn test_build_description_blockquotes() {
+        let desc = "Line 1\nLine 2";
+        let chunks = build_description_blockquotes(desc);
+        assert_eq!(chunks.len(), 1);
+        assert!(chunks[0].contains("Line 1"));
+    }
+}

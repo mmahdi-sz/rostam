@@ -323,7 +323,7 @@ pub fn detect_watermark(img: &RgbImage) -> Option<Detection> {
         }
         cy += GSTEP;
     }
-    cands.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+    cands.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut kept: Vec<(usize, usize)> = Vec::new();
     for &(_, cx, cy) in &cands {

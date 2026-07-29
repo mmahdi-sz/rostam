@@ -711,6 +711,10 @@ pub async fn handle_stt_audio(
         duration_secs as i64,
     )
     .await;
+    crate::metrics::get()
+        .stt_requests_total
+        .with_label_values(&[config.model_size.as_str(), "success"])
+        .inc();
 
     // ثبت مصرف quota
     if let Some(db) = database.as_ref() {

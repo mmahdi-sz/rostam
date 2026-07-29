@@ -138,3 +138,22 @@ pub fn build_keyboard(sel: &GenSelection) -> InlineKeyboardMarkup {
         .inline_keyboard(rows)
         .build()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constants_prefix() {
+        assert!(CB_GC_RANK.starts_with(CB_GC_PREFIX));
+        assert!(CB_GC_DAYS.starts_with(CB_GC_PREFIX));
+        assert!(CB_GC_USES.starts_with(CB_GC_PREFIX));
+    }
+
+    #[test]
+    fn test_render_gen_panel_keyboard_structure() {
+        let sel = GenSelection::default();
+        let keyboard = build_keyboard(&sel);
+        assert!(!keyboard.inline_keyboard.is_empty());
+    }
+}

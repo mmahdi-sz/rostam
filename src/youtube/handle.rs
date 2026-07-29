@@ -222,6 +222,7 @@ pub async fn handle_youtube_url(
                 return Ok(());
             }
             Err(FetchError::RateLimited) => {
+                crate::stats::record_error_global("youtube", "rate_limited").await;
                 let (source, snapshot) = {
                     let mut pool = cookie_pool.lock().await;
                     let source = pool.mark_last_rate_limited();
@@ -253,6 +254,7 @@ pub async fn handle_youtube_url(
                 continue;
             }
             Err(FetchError::BadCookie(msg)) => {
+                crate::stats::record_error_global("youtube", &format!("bad_cookie: {msg}")).await;
                 eprintln!("bad cookie {}: {msg}; trying next", cookie.id);
                 log_trace(
                     trace_id,
@@ -262,6 +264,8 @@ pub async fn handle_youtube_url(
                 continue;
             }
             Err(FetchError::Other(msg)) => {
+                crate::stats::record_error_global("youtube", &format!("yt_dlp_failed: {msg}"))
+                    .await;
                 eprintln!("yt-dlp failed for {url}: {msg}");
                 log_trace(trace_id, "fetch_failed", &msg);
                 let _ = send_text(

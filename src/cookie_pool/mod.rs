@@ -1,3 +1,9 @@
+//! YouTube cookie pool management.
+//!
+//! Manages a rotating pool of Firefox-profile cookies for yt-dlp.
+//! Handles per-cookie rate-limit state, fresh-cookie detection, and pool selection.
+//! Background refresher: [`modules::spawn_cookie_refresher`].
+
 use std::time::Duration;
 
 mod discover;

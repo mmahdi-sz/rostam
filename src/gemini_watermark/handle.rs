@@ -111,7 +111,18 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
     std::fs::create_dir_all(&work_dir).ok();
     let input_path = work_dir.join(format!("input.{ext}"));
 
-    if let Err(e) = download_file(api, &file_id, input_path.to_str().unwrap(), trace_id).await {
+    let path_str = match input_path.to_str() {
+        Some(s) => s,
+        None => {
+            log_ev!("gwm", trace_id, "download_failed", "raw" => "invalid_path_encoding");
+            crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
+            crate::stats::record_error_global("gwm", "invalid_path_encoding").await;
+            let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.download_failed")).await;
+            std::fs::remove_dir_all(&work_dir).ok();
+            return;
+        }
+    };
+    if let Err(e) = download_file(api, &file_id, path_str, trace_id).await {
         log_ev!("gwm", trace_id, "download_failed", "raw" => "err={e}");
         crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
         crate::stats::record_error_global("gwm", &format!("download failed: {e}")).await;
@@ -188,10 +199,18 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
         Ok(_) => {
             log_ev!("gwm", trace_id, "result_sent");
             crate::stats::record_event_user(user_id, "gwm", "", "ok", 1).await;
+            crate::metrics::get()
+                .gwm_requests_total
+                .with_label_values(&["success"])
+                .inc();
         }
         Err(e) => {
             log_ev!("gwm", trace_id, "result_send_failed", "raw" => "err={e}");
             crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
+            crate::metrics::get()
+                .gwm_requests_total
+                .with_label_values(&["fail"])
+                .inc();
             crate::stats::record_error_global("gwm", &format!("send failed: {e}")).await;
         }
     }
