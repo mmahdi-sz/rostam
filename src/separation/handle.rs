@@ -552,7 +552,7 @@ pub async fn handle_separation_callback(
             if !server_free {
                 return;
             } // already showing queue msg
-            let text = t("separation.queue.waiting");
+            let text = t("separation.processing");
             let entities = entities_for_text(&text);
             let kb = queue_cancel_keyboard();
             let mut params = EditMessageTextParams::builder()
