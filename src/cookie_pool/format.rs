@@ -44,14 +44,6 @@ pub fn format_selected_cookie(cookie: &SelectedCookie) -> String {
     )
 }
 
-pub fn format_no_cookie_available(status: &CookiePoolStatus) -> String {
-    let wait = status
-        .next_available_in
-        .map(format_duration)
-        .unwrap_or_else(|| "20h".to_owned());
-    tf("cookie.none_available", &[("wait", &wait)])
-}
-
 pub fn format_duration(duration: Duration) -> String {
     let total_seconds = duration.as_secs();
     let hours = total_seconds / 3600;

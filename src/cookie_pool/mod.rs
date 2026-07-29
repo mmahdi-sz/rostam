@@ -13,7 +13,6 @@ mod pool;
 mod snapshot;
 mod types;
 
-pub use format::format_no_cookie_available;
 pub use pool::CookiePool;
 pub use snapshot::save_snapshot;
 pub use types::{CookiePoolSnapshot, CookieSource, CooldownEntry};

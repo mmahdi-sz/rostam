@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
@@ -11,7 +12,7 @@ use frankenstein::{
 use tokio::sync::Mutex;
 
 use crate::bot::send_text;
-use crate::cookie_pool::{CookiePool, CookieSource, format_no_cookie_available, save_snapshot};
+use crate::cookie_pool::{CookiePool, CookieSource, save_snapshot};
 use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::{t, tf};
 
@@ -20,6 +21,80 @@ use super::format::{build_caption, build_description_blockquotes};
 use super::quality_keyboard::send_quality_prompt;
 use super::trace::log_trace;
 use super::types::FetchError;
+
+static LAST_COOKIE_OUTAGE_ALERT: AtomicU64 = AtomicU64::new(0);
+
+fn format_cookie_outage_admin_message(
+    trace_id: u64,
+    available: usize,
+    cooldown: usize,
+    wait: &str,
+) -> String {
+    format!(
+        "⚠️ اختلال کامل دانلودر یوتیوب\n\nهر {available} کوکی/Gmail شکست خورده یا با خطای 429 وارد cooldown شده‌اند.\nتعداد cooldown: {cooldown}\nزمان ایمنی بازگشت: حدود {wait}\nTrace: {trace_id}\n\nلطفاً ورود Gmailها، پروفایل‌های Firefox و رفرش کوکی‌ها را بررسی کنید."
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_cookie_outage_admin_message;
+
+    #[test]
+    fn cookie_outage_alert_contains_actionable_details() {
+        let message = format_cookie_outage_admin_message(42, 3, 3, "3h 59m");
+        assert!(message.contains("هر 3 کوکی/Gmail"));
+        assert!(message.contains("429"));
+        assert!(message.contains("3h 59m"));
+        assert!(message.contains("Trace: 42"));
+        assert!(message.contains("Firefox"));
+    }
+}
+
+async fn report_cookie_outage(
+    api: &Bot,
+    trace_id: u64,
+    available: usize,
+    cooldown: usize,
+    wait: &str,
+) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let last = LAST_COOKIE_OUTAGE_ALERT.load(Ordering::Relaxed);
+    if now.saturating_sub(last) < 30 * 60 {
+        return;
+    }
+    if LAST_COOKIE_OUTAGE_ALERT
+        .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+        .is_err()
+    {
+        return;
+    }
+    let Some(admin_id) = crate::config::admin_user_id() else {
+        return;
+    };
+    let message = format_cookie_outage_admin_message(trace_id, available, cooldown, wait);
+    crate::modules::notify_admin(api, admin_id, &message).await;
+}
+
+async fn send_cookie_outage_message(
+    api: &Bot,
+    chat_id: i64,
+    trace_id: u64,
+    available: usize,
+    cooldown: usize,
+    next_available_in: Option<std::time::Duration>,
+) {
+    let _ = send_text(api, chat_id, &t("cookie.youtube_unavailable")).await;
+    let wait = next_available_in
+        .map(|duration| {
+            let seconds = duration.as_secs();
+            format!("{}h {}m", seconds / 3600, (seconds % 3600) / 60)
+        })
+        .unwrap_or_else(|| "unknown".to_owned());
+    report_cookie_outage(api, trace_id, available, cooldown, &wait).await;
+}
 
 pub async fn handle_youtube_url(
     api: &Bot,
@@ -91,7 +166,15 @@ pub async fn handle_youtube_url(
                             status.selectable_cookies, status.cooldown_cookies
                         ),
                     );
-                    let _ = send_text(api, chat_id, &format_no_cookie_available(&status)).await;
+                    send_cookie_outage_message(
+                        api,
+                        chat_id,
+                        trace_id,
+                        status.available_cookies,
+                        status.cooldown_cookies,
+                        status.next_available_in,
+                    )
+                    .await;
                     anyhow::bail!("no cookie available");
                 }
             };
@@ -105,7 +188,15 @@ pub async fn handle_youtube_url(
                         status.selectable_cookies, status.cooldown_cookies
                     ),
                 );
-                let _ = send_text(api, chat_id, &format_no_cookie_available(&status)).await;
+                send_cookie_outage_message(
+                    api,
+                    chat_id,
+                    trace_id,
+                    status.available_cookies,
+                    status.cooldown_cookies,
+                    status.next_available_in,
+                )
+                .await;
                 anyhow::bail!("retry exhausted, no suitable cookie");
             }
             tried.insert(cookie.id.clone());

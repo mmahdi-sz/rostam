@@ -9,6 +9,12 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [1.24.3] — 2026-07-29
+
+### Fixed
+- Show users a clear temporary-unavailability message when the entire YouTube cookie pool fails.
+- Notify the admin with cookie/Gmail diagnostics when all profiles are unavailable, throttled to one alert per 30 minutes.
+
 ## [1.24.2] — 2026-07-29
 
 ### Fixed
