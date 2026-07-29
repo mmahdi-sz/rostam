@@ -921,7 +921,8 @@
       "error": {
         "download_failed": "دانلود با مشکل مواجه شد، دوباره امتحان کن.",
         "send_failed": "فایل دانلود شد ولی ارسالش به مشکل خورد، دوباره امتحان کن.",
-        "invalid_name": "این اسم فایل معتبر نیست، یک اسم دیگه بفرست."
+        "invalid_name": "این اسم فایل معتبر نیست، یک اسم دیگه بفرست.",
+        "too_large": "حجم این فایل بیشتر از حد مجاز دیسک سرور است (حداکثر {max})."
       }
     }
   },
@@ -1847,7 +1848,8 @@
       "error": {
         "download_failed": "The download failed, try again.",
         "send_failed": "The file was downloaded but sending it failed, try again.",
-        "invalid_name": "That file name is not valid, send another one."
+        "invalid_name": "That file name is not valid, send another one.",
+        "too_large": "The file size exceeds the server's available disk space limit (max {max})."
       }
     }
   },
@@ -2773,7 +2775,8 @@
       "error": {
         "download_failed": "Il download non è riuscito, riprova.",
         "send_failed": "Il file è stato scaricato ma l'invio è fallito, riprova.",
-        "invalid_name": "Questo nome file non è valido, inviane un altro."
+        "invalid_name": "Questo nome file non è valido, inviane un altro.",
+        "too_large": "La dimensione del file supera il limite di spazio su disco disponibile (max {max})."
       }
     }
   }

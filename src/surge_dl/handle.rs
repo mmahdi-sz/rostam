@@ -104,36 +104,48 @@ pub async fn handle_surge_cancel(
 
 // ── URL intake ─────────────────────────────────────────────────────────────
 
+pub fn available_disk_space(path: &str) -> std::io::Result<u64> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let path_obj = Path::new(path);
+    let c_path = CString::new(path_obj.as_os_str().as_bytes())?;
+    unsafe {
+        let mut stat: libc::statvfs = std::mem::zeroed();
+        if libc::statvfs(c_path.as_ptr(), &mut stat) == 0 {
+            let free_bytes = (stat.f_bavail as u64) * (stat.f_frsize as u64);
+            Ok(free_bytes)
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+}
+
 pub fn is_direct_link(text: &str) -> bool {
     let text = text.trim();
     if !crate::validation::is_safe_url(text) {
         return false;
     }
 
-    let lower = text.to_lowercase();
-    let rest = if let Some(r) = lower.strip_prefix("https://") {
-        r
-    } else if let Some(r) = lower.strip_prefix("http://") {
-        r
-    } else {
+    let Ok(parsed) = reqwest::Url::parse(text) else {
         return false;
     };
 
-    let host = rest
-        .split('/')
-        .next()
-        .unwrap_or("")
-        .split(':')
-        .next()
-        .unwrap_or("");
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return false;
+    }
 
-    if host == "t.me"
-        || host.ends_with(".t.me")
-        || host == "telegram.org"
-        || host.ends_with(".telegram.org")
-        || host == "telegram.me"
-        || host.ends_with(".telegram.me")
-    {
+    if let Some(host) = parsed.host_str() {
+        let host = host.to_lowercase();
+        if host == "t.me"
+            || host.ends_with(".t.me")
+            || host == "telegram.org"
+            || host.ends_with(".telegram.org")
+            || host == "telegram.me"
+            || host.ends_with(".telegram.me")
+        {
+            return false;
+        }
+    } else {
         return false;
     }
 
@@ -160,7 +172,30 @@ pub async fn handle_surge_text(
         return;
     }
 
-    // ── چک ترافیک (روزانه + ماهانه) قبل از شروع دانلود ──
+    log_ev!("surge_dl", trace_id, "url_accepted", "url" => url);
+
+    let (filename, size_bytes) = probe_url(url).await;
+    log_ev!("surge_dl", trace_id, "probed", "name" => &filename, "size" => format!("{size_bytes:?}"));
+
+    // ── چک فضای آزاد دیسک (کسر ۲۰٪ بافر) ──
+    let downloads_root = crate::config::surge_downloads_root();
+    if let Ok(free_bytes) = available_disk_space(&downloads_root) {
+        let max_allowed = (free_bytes as f64 * 0.8) as u64;
+        if let Some(sb) = size_bytes {
+            if sb > max_allowed {
+                log_ev!("surge_dl", trace_id, "disk_space_exceeded", "file_size" => sb, "max_allowed" => max_allowed, "=>" => "reject");
+                let _ = crate::bot::send_text_with_back(
+                    api,
+                    chat_id,
+                    &tf("surge.error.too_large", &[("max", &fmt_bytes(max_allowed))]),
+                )
+                .await;
+                return;
+            }
+        }
+    }
+
+    // ── چک ترافیک (روزانه + ماهانه) با احتساب حجم فایل جدید ──
     if let Some(db) = database.as_ref() {
         let client = db.client();
         let user_rank = rank::effective_rank(client, user_id).await;
@@ -176,7 +211,8 @@ pub async fn handle_surge_text(
             .await
             .unwrap_or(0) as u64;
 
-        let block = if daily_used >= daily_limit {
+        let file_sz = size_bytes.unwrap_or(0);
+        let block = if daily_used + file_sz > daily_limit {
             Some((
                 tf(
                     "youtube.traffic_daily_limit",
@@ -184,7 +220,7 @@ pub async fn handle_surge_text(
                 ),
                 user_rank.traffic_daily_next_rank(),
             ))
-        } else if monthly_used >= monthly_limit {
+        } else if monthly_used + file_sz > monthly_limit {
             Some((
                 tf(
                     "youtube.traffic_monthly_limit",
@@ -206,11 +242,6 @@ pub async fn handle_surge_text(
             return;
         }
     }
-
-    log_ev!("surge_dl", trace_id, "url_accepted", "url" => url);
-
-    let (filename, size_bytes) = probe_url(url).await;
-    log_ev!("surge_dl", trace_id, "probed", "name" => &filename, "size" => format!("{size_bytes:?}"));
 
     flow_manager.set(
         user_id,
@@ -392,6 +423,16 @@ struct SurgeDetail {
     status: String,
 }
 
+struct DirCleanupGuard(PathBuf);
+impl Drop for DirCleanupGuard {
+    fn drop(&mut self) {
+        let path = self.0.clone();
+        tokio::spawn(async move {
+            let _ = tokio::fs::remove_dir_all(path).await;
+        });
+    }
+}
+
 async fn run_surge_download(
     api: Bot,
     chat_id: i64,
@@ -404,14 +445,17 @@ async fn run_surge_download(
     let stats_job_id = crate::stats::record_download_start(user_id).await;
     let _active_dl_guard = crate::metrics::ActiveDownloadGuard::new();
     let _duration_guard = crate::metrics::RequestDurationGuard::new("surge_dl");
-    let dir = format!("{}/{user_id}", crate::config::surge_downloads_root());
+    let job_nonce = rand::random::<u32>();
+    let dir = format!("{}/{user_id}/job_{trace_id}_{job_nonce}", crate::config::surge_downloads_root());
+    let dir_path = PathBuf::from(&dir);
+    let _cleanup_guard = DirCleanupGuard(dir_path);
+
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         log_ev!("surge_dl", trace_id, "mkdir_failed", "=>" => format!("fail err={e}"));
+        crate::stats::record_error_global("surge_dl", &format!("mkdir failed: {e}")).await;
         edit_status(&api, chat_id, message_id, &t("surge.error.download_failed")).await;
         return;
     }
-
-    let before_ids = list_ids(trace_id).await;
 
     log_ev!("surge_dl", trace_id, "add_spawn", "url" => &url, "dir" => &dir);
     let add_ok = run_surge_add(&url, &dir).await;
@@ -422,7 +466,7 @@ async fn run_surge_download(
         return;
     }
 
-    let Some(job_id) = find_new_id(&before_ids, trace_id).await else {
+    let Some(job_id) = find_job_id_by_dir(&dir, trace_id).await else {
         log_ev!("surge_dl", trace_id, "job_not_found", "=>" => "fail");
         crate::stats::record_error_global("surge_dl", "surge job id not found after add").await;
         edit_status(&api, chat_id, message_id, &t("surge.error.download_failed")).await;
@@ -504,7 +548,7 @@ async fn run_surge_download(
     let result = if detail.downloaded <= MAX_PART_BYTES {
         send_single_file(&api, chat_id, &file_path).await
     } else {
-        send_split_file(&api, chat_id, &file_path, trace_id).await
+        send_split_file(&api, chat_id, &file_path, user_id, trace_id).await
     };
     let upload_elapsed = upload_start.elapsed();
 
@@ -553,7 +597,6 @@ async fn send_single_file(
         .document(path.to_path_buf())
         .build();
     api.send_document(&params).await?;
-    let _ = tokio::fs::remove_file(path).await;
     Ok(())
 }
 
@@ -561,10 +604,14 @@ async fn send_split_file(
     api: &Bot,
     chat_id: i64,
     path: &Path,
+    user_id: i64,
     trace_id: u64,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let archive_base = path.with_extension("rar");
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+    let archive_base = path.with_file_name(format!("{stem}.archive.rar"));
     log_ev!("surge_dl", trace_id, "rar_spawn", "archive" => archive_base.display());
+
+    let cores = acquire_cpu(user_id, trace_id).await;
 
     let mut cmd = tokio::process::Command::new("rar");
     cmd.arg("a")
@@ -578,6 +625,8 @@ async fn send_split_file(
     let mut child = cmd.spawn()?;
     let status =
         tokio::time::timeout(Duration::from_secs(DOWNLOAD_TIMEOUT_SECS), child.wait()).await??;
+    release_cpu(cores, trace_id).await;
+
     if !status.success() {
         return Err(format!("rar exit {status}").into());
     }
@@ -604,10 +653,6 @@ async fn send_split_file(
         log_ev!("surge_dl", trace_id, "part_sent", "n" => i + 1, "total" => total);
     }
 
-    let _ = tokio::fs::remove_file(path).await;
-    for part in parts {
-        let _ = tokio::fs::remove_file(part).await;
-    }
     Ok(())
 }
 
@@ -629,7 +674,15 @@ async fn list_rar_parts(
             parts.push(entry.path());
         }
     }
-    parts.sort();
+    parts.sort_by_key(|p| {
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|s| {
+                let part_str = s.rsplit(".part").next()?;
+                part_str.split('.').next()?.parse::<u32>().ok()
+            })
+            .unwrap_or(0)
+    });
     Ok(parts)
 }
 
@@ -680,11 +733,23 @@ fn safe_download_filename(name: &str) -> String {
 }
 
 fn extract_content_disposition_filename(header: &str) -> Option<String> {
-    header.split(';').find_map(|part| {
-        part.trim()
-            .strip_prefix("filename=")
-            .map(|v| v.trim_matches('"').to_string())
-    })
+    for part in header.split(';') {
+        let part = part.trim();
+        if let Some(v) = part.strip_prefix("filename*=") {
+            let val = v.trim_matches('"');
+            if let Some(idx) = val.find("''") {
+                let encoded = &val[idx + 2..];
+                return Some(percent_decode(encoded));
+            }
+        }
+    }
+    for part in header.split(';') {
+        let part = part.trim();
+        if let Some(v) = part.strip_prefix("filename=") {
+            return Some(v.trim_matches('"').to_string());
+        }
+    }
+    None
 }
 
 /// حدس اسم + حجم فایل با یه درخواست HEAD قبل از شروع دانلود واقعی — surge CLI
@@ -869,33 +934,27 @@ async fn run_surge_add(url: &str, dir: &str) -> bool {
     }
 }
 
-async fn list_ids(trace_id: u64) -> Vec<String> {
-    let output = surge_cmd(&["ls", "--json"]).output().await;
-    let Ok(output) = output else {
-        log_ev!("surge_dl", trace_id, "list_ids_spawn_failed");
-        return vec![];
-    };
-    let entries: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
-    entries
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|e| e.get("id")?.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-async fn find_new_id(before: &[String], trace_id: u64) -> Option<String> {
-    // `surge add` doesn't print the new job's id, so we diff `ls` before/after —
-    // retry a few times in case the daemon hasn't registered the job yet.
-    for _ in 0..5 {
-        let after = list_ids(trace_id).await;
-        if let Some(id) = after.into_iter().find(|id| !before.contains(id)) {
-            return Some(id);
+async fn find_job_id_by_dir(dir: &str, trace_id: u64) -> Option<String> {
+    for _ in 0..10 {
+        let output = surge_cmd(&["ls", "--json"]).output().await;
+        let Ok(output) = output else {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            continue;
+        };
+        let entries: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
+        if let Some(arr) = entries.as_array() {
+            for entry in arr {
+                let dest = entry.get("dest_path").and_then(|v| v.as_str()).unwrap_or("");
+                if dest.contains(dir) {
+                    if let Some(id) = entry.get("id").and_then(|v| v.as_str()) {
+                        return Some(id.to_string());
+                    }
+                }
+            }
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
+    log_ev!("surge_dl", trace_id, "find_job_id_timeout", "dir" => dir);
     None
 }
 
@@ -926,21 +985,69 @@ fn sanitize_rename(typed: &str) -> Option<String> {
         .and_then(|n| n.to_str())
         .filter(|n| !n.is_empty() && *n != "." && *n != "..")
         .map(|n| {
-            let mut s = n.to_string();
-            if s.len() > 200 {
-                s.truncate(200);
-            }
+            let s: String = n.chars().take(200).collect();
             s
         })
 }
 
+use std::sync::OnceLock;
+
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
+    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
+    let res = client
+        .post("http://127.0.0.1:6589/cpu/acquire")
+        .form(&[
+            ("user_id", user_id.to_string()),
+            ("is_vip", "false".to_string()),
+        ])
+        .timeout(Duration::from_secs(120))
+        .send()
+        .await;
+    match res {
+        Ok(r) => {
+            let json: serde_json::Value = r.json().await.unwrap_or_default();
+            let cores: Vec<i32> = json
+                .get("cores")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            log_ev!("surge_dl", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
+            cores
+        }
+        Err(e) => {
+            log_ev!("surge_dl", trace_id, "cpu_acquire_failed", "=>" => format!("fail err={e}"));
+            vec![]
+        }
+    }
+}
+
+async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
+    if cores.is_empty() {
+        return;
+    }
+    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
+    let body = serde_json::json!({ "cores": cores });
+    let r = client
+        .post("http://127.0.0.1:6589/cpu/release")
+        .json(&body)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await;
+    log_ev!("surge_dl", trace_id, "cpu_released", "cores" => format!("{cores:?}"), "=>" => if r.is_ok() { "ok" } else { "fail" });
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{is_direct_link, safe_download_filename, sanitize_rename};
+    use super::{
+        available_disk_space, extract_content_disposition_filename, is_direct_link,
+        safe_download_filename, sanitize_rename,
+    };
 
     #[test]
     fn test_is_direct_link_ignores_telegram_urls() {
         assert!(!is_direct_link("https://t.me/c/3310766784/162"));
+        assert!(!is_direct_link("https://user@t.me/c/3310766784/162"));
         assert!(!is_direct_link("https://telegram.org/blog"));
         assert!(!is_direct_link("http://telegram.me/user"));
         assert!(is_direct_link("https://example.com/file.zip"));
@@ -966,6 +1073,34 @@ mod tests {
     fn keeps_plain_names() {
         assert_eq!(sanitize_rename("movie.mp4").as_deref(), Some("movie.mp4"));
         assert_eq!(sanitize_rename("my file").as_deref(), Some("my file"));
+    }
+
+    #[test]
+    fn test_sanitize_rename_multibyte_utf8() {
+        let long_farsi = "نام_فایل_بسیار_طولانی_برای_تست_سیستم_دانلود_که_نباید_در_زمان_برش_بایتی_باعث_پنیک_در_رست_شود_چون_کاراکترهای_فارسی_چندبایتی_هستند_و_برش_روی_مرز_بایت_نامعتبر_موجب_کرش_پروسه_میگردد.mp4";
+        let sanitized = sanitize_rename(long_farsi);
+        assert!(sanitized.is_some());
+        let res = sanitized.unwrap();
+        assert!(res.chars().count() <= 200);
+    }
+
+    #[test]
+    fn test_extract_content_disposition_filename() {
+        assert_eq!(
+            extract_content_disposition_filename("attachment; filename=\"test.mp4\""),
+            Some("test.mp4".to_string())
+        );
+        assert_eq!(
+            extract_content_disposition_filename("attachment; filename*=UTF-8''%D9%81%D8%A7%DB%8C%D9%84.mp4"),
+            Some("فایل.mp4".to_string())
+        );
+    }
+
+    #[test]
+    fn test_available_disk_space() {
+        let space = available_disk_space("/tmp");
+        assert!(space.is_ok());
+        assert!(space.unwrap() > 0);
     }
 
     #[test]
