@@ -42,7 +42,8 @@
       "progress_body": "🎙 *در حال ساخت صدا\\.\\.\\.*\n\n{bar}  {percent}%\n⏱️ *زمان سپری‌شده:* {elapsed}\n⏳ *زمان باقی‌مانده تخمینی:* {eta}",
       "result_caption": "✅ **صدا با موفقیت ساخته شد\\!**",
       "process_failed": "پردازش هوش مصنوعی با خطا مواجه شد\\. دوباره تلاش کنید\\.",
-      "voice_forbidden_error": "⚠️ *خطا در ارسال صدا*\n\nبه نظر می‌رسد در تنظیمات حریم خصوصی تلگرام خود، دریافت پیام‌های صوتی \\(Voice\\) را محدود کرده‌اید\\.\n\nلطفاً برای دریافت خروجی، به مسیر زیر بروید:\n⚙️ `Settings > Privacy and Security > Voice Messages`\nو ربات ما را در بخش *Exceptions \\(استثناها\\)* اضافه کنید، یا تنظیمات را روی *Everybody* قرار دهید\\."
+      "voice_forbidden_error": "⚠️ *خطا در ارسال صدا*\n\nبه نظر می‌رسد در تنظیمات حریم خصوصی تلگرام خود، دریافت پیام‌های صوتی \\(Voice\\) را محدود کرده‌اید\\.\n\nلطفاً برای دریافت خروجی، به مسیر زیر بروید:\n⚙️ `Settings > Privacy and Security > Voice Messages`\nو ربات ما را در بخش *Exceptions \\(استثناها\\)* اضافه کنید، یا تنظیمات را روی *Everybody* قرار دهید\\.",
+      "quota_weekly_limit": "سقف هفتگی تبدیل متن به صدا \\\\({limit} دقیقه در هفته\\\\) پر شده\\\\. برای سهمیه بیشتر رتبه خود را ارتقا دهید\\\\."
     },
     "deoldify": {
       "prompt": "🎨 **بخش رنگ‌آمیزی هوشمند عکس‌های قدیمی**\n\nاین ابزار با شبکه عصبی عمیق، تصاویر سیاه و سفید یا تک‌رنگ قدیمی شما را با حفظ بافت و روشنایی اصلی به عکس‌های رنگی طبیعی تبدیل می‌کند\\.\n\n📥 **لطفاً عکس سیاه و سفید خود را ارسال کنید:**\n*\\(پشتیبانی از فرمت‌های JPG, PNG, WEBP و فایل تصویری\\)*",
@@ -53,7 +54,8 @@
       "download_failed": "دانلود تصویر با خطا مواجه شد\\. دوباره تلاش کنید\\.",
       "process_failed": "پردازش هوش مصنوعی با خطا مواجه شد\\. دوباره تلاش کنید\\.",
       "result_caption": "🎨 **تصویر رنگ‌آمیزی‌شده شما آماده است\\!**",
-      "report": "📊 **گزارش رنگ‌آمیزی:**\n└── ⚡ **زمان پردازش:** {processing} ثانیه"
+      "report": "📊 **گزارش رنگ‌آمیزی:**\n└── ⚡ **زمان پردازش:** {processing} ثانیه",
+      "quota_weekly_limit": "سقف هفتگی رنگ‌آمیزی عکس \\\\({limit} تصویر در هفته\\\\) پر شده\\\\. برای سهمیه بیشتر رتبه خود را ارتقا دهید\\\\."
     },
     "nobg": {
       "prompt": "✂️ **بخش حذف پس‌زمینه**\n\n\n📥 **لطفاً تصویر خود را ارسال کنید:**\n*\\(پشتیبانی از JPG, PNG, WEBP — به صورت عکس یا فایل\\)*",
@@ -304,7 +306,8 @@
           "wrench": "5264908182886557148",
           "question_mark": "5897846616966041652"
         },
-        "guide": "راهنما"
+        "guide": "راهنما",
+        "add_emojis": "افزودن ایموجی"
       },
       "pack_detail": "📁 مدیریت مجموعه\n\nشناسه: {id}\nنام: {name}\nلقب: {alias}\nتعداد: {count}\nپیش‌فرض: {default}",
       "pending": {
@@ -1102,7 +1105,8 @@
       "progress_body": "🎙 *Generating voice with\\.\\.\\.*\n\n{bar}  {percent}%\n⏱️ *Elapsed time:* {elapsed}\n⏳ *Estimated ETA:* {eta}",
       "result_caption": "✅ **Voice generated successfully\\!**",
       "process_failed": "AI processing failed\\. Please try again\\.",
-      "voice_forbidden_error": "⚠️ *Voice Message Error*\n\nIt seems you have restricted receiving Voice messages in your Telegram Privacy Settings\\.\n\nPlease go to:\n⚙️ `Settings > Privacy and Security > Voice Messages`\nAnd add our bot to the *Exceptions* list, or set the setting to *Everybody* to receive output\\."
+      "voice_forbidden_error": "⚠️ *Voice Message Error*\n\nIt seems you have restricted receiving Voice messages in your Telegram Privacy Settings\\.\n\nPlease go to:\n⚙️ `Settings > Privacy and Security > Voice Messages`\nAnd add our bot to the *Exceptions* list, or set the setting to *Everybody* to receive output\\.",
+      "quota_weekly_limit": "Weekly text\\-to\\-speech quota \\\\({limit} minutes per week\\\\) exceeded\\\\. Upgrade your rank for more quota\\\\."
     },
     "deoldify": {
       "prompt": "🎨 **Smart Image Colorizer**\n\nThis tool uses deep neural networks to convert your old black & white or monochrome photos into natural colored photos while preserving original luminosity\\.\n\n📥 **Please send your black & white photo:**\n*\\(Supports JPG, PNG, WEBP and image documents\\)*",
@@ -1113,7 +1117,8 @@
       "download_failed": "Failed to download image\\. Please try again\\.",
       "process_failed": "AI processing failed\\. Please try again\\.",
       "result_caption": "🎨 **Your colorized image is ready\\!**",
-      "report": "📊 **Colorization Report:**\n└── ⚡ **Processing Time:** {processing} seconds"
+      "report": "📊 **Colorization Report:**\n└── ⚡ **Processing Time:** {processing} seconds",
+      "quota_weekly_limit": "Weekly photo colorization quota \\\\({limit} images per week\\\\) exceeded\\\\. Upgrade your rank for more quota\\\\."
     },
     "nobg": {
       "prompt": "✂️ **Background Removal**\n\n\n📥 **Please send your image:**\n*\\(Supports JPG, PNG, WEBP — as photo or file\\)*",
@@ -1364,7 +1369,8 @@
           "wrench": "5264908182886557148",
           "question_mark": "5897846616966041652"
         },
-        "guide": "Guide"
+        "guide": "Guide",
+        "add_emojis": "Add Emoji"
       },
       "pack_detail": "📁 Pack Management\n\nID: {id}\nName: {name}\nAlias: {alias}\nCount: {count}\nDefault: {default}",
       "pending": {
@@ -2188,7 +2194,8 @@
       "progress_body": "🎙 *Generazione voce\\.\\.\\.*\n\n{bar}  {percent}%\n⏱️ *Tempo trascorso:* {elapsed}\n⏳ *Tempo stimato rimanente:* {eta}",
       "result_caption": "✅ **Voce generata con successo\\!**",
       "process_failed": "Elaborazione AI fallita\\. Riprova\\.",
-      "voice_forbidden_error": "⚠️ *Errore Messaggio Vocale*\n\nSembra che tu abbia limitato la ricezione di messaggi vocali nelle impostazioni della privacy di Telegram\\.\n\nVai su:\n⚙️ `Impostazioni > Privacy e sicurezza > Messaggi vocali`\nE aggiungi il nostro bot alla lista delle *Eccezioni*, oppure imposta su *Tutti* per ricevere l'output di\\."
+      "voice_forbidden_error": "⚠️ *Errore Messaggio Vocale*\n\nSembra che tu abbia limitato la ricezione di messaggi vocali nelle impostazioni della privacy di Telegram\\.\n\nVai su:\n⚙️ `Impostazioni > Privacy e sicurezza > Messaggi vocali`\nE aggiungi il nostro bot alla lista delle *Eccezioni*, oppure imposta su *Tutti* per ricevere l'output di\\.",
+      "quota_weekly_limit": "Quota settimanale sintesi vocale \\\\({limit} minuti a settimana\\\\) esaurita\\\\. Aumenta il tuo rango per più quota\\\\."
     },
     "deoldify": {
       "prompt": "🎨 **Colorizzazione Foto**\n\nQuesto strumento utilizza reti neurali profonde per convertire le tue vecchie foto in bianco e nero in foto a colori naturali preservando la luminosità originale\\.\n\n📥 **Invia la tua foto in bianco e nero:**\n*\\(Supporta JPG, PNG, WEBP e documenti immagine\\)*",
@@ -2199,7 +2206,8 @@
       "download_failed": "Download dell'immagine fallito\\. Riprova\\.",
       "process_failed": "Elaborazione AI fallita\\. Riprova\\.",
       "result_caption": "🎨 **La tua foto colorata è pronta\\!**",
-      "report": "📊 **Rapporto Colorizzazione:**\n└── ⚡ **Tempo di Elaborazione:** {processing} secondi"
+      "report": "📊 **Rapporto Colorizzazione:**\n└── ⚡ **Tempo di Elaborazione:** {processing} secondi",
+      "quota_weekly_limit": "Quota settimanale colorizzazione foto \\\\({limit} immagini a settimana\\\\) esaurita\\\\. Aumenta il tuo rango per più quota\\\\."
     },
     "nobg": {
       "prompt": "✂️ **Rimozione Sfondo**\n\n\n📥 **Invia la tua immagine:**\n*\\(Supporta JPG, PNG, WEBP — come foto o file\\)*",
@@ -2450,7 +2458,8 @@
           "wrench": "5264908182886557148",
           "question_mark": "5897846616966041652"
         },
-        "guide": "Guida"
+        "guide": "Guida",
+        "add_emojis": "Aggiungi Emoji"
       },
       "pack_detail": "📁 Gestione Pack\n\nID: {id}\nNome: {name}\nAlias: {alias}\nQuantità: {count}\nPredefinito: {default}",
       "pending": {
@@ -3248,7 +3257,8 @@
       "progress_body": "🎙 *Генерация голоса\\.\\.\\.*\n\n{bar}  {percent}%\n⏱️ *Прошло времени:* {elapsed}\n⏳ *Примерное оставшееся время:* {eta}",
       "result_caption": "✅ **Аудио успешно создано\\!**",
       "process_failed": "Ошибка ИИ\\-обработки\\. Попробуйте снова\\.",
-      "voice_forbidden_error": "⚠️ *Ошибка отправки аудио*\n\nПохоже, в настройках конфиденциальности Telegram ограничено получение голосовых сообщений\\.\n\nПерейдите в:\n⚙️ `Настройки > Конфиденциальность > Голосовые сообщения`\nи добавьте бота в исключения."
+      "voice_forbidden_error": "⚠️ *Ошибка отправки аудио*\n\nПохоже, в настройках конфиденциальности Telegram ограничено получение голосовых сообщений\\.\n\nПерейдите в:\n⚙️ `Настройки > Конфиденциальность > Голосовые сообщения`\nи добавьте бота в исключения.",
+      "quota_weekly_limit": "Недельный лимит синтеза речи \\\\({limit} минут в неделю\\\\) исчерпан\\\\. Повысьте ранг для увеличения лимита\\\\."
     },
     "deoldify": {
       "prompt": "🎨 **Раскрашивание черно-белых фото**\n\nПревращает черно-белые снимки в цветные с помощью глубокой нейросети\\.\n\n📥 **Отправьте черно-белое фото:**\n*\\(Поддерживаются JPG, PNG, WEBP\\)*",
@@ -3259,7 +3269,8 @@
       "download_failed": "Ошибка скачивания изображения\\. Попробуйте снова\\.",
       "process_failed": "Ошибка ИИ\\-обработки\\. Попробуйте снова\\.",
       "result_caption": "🎨 **Ваше цветное изображение готово\\!**",
-      "report": "📊 **Отчет о раскрашивании:**\n└── ⚡ **Время обработки:** {processing} сек"
+      "report": "📊 **Отчет о раскрашивании:**\n└── ⚡ **Время обработки:** {processing} сек",
+      "quota_weekly_limit": "Недельный лимит раскраски фото \\\\({limit} фото в неделю\\\\) исчерпан\\\\. Повысьте ранг для увеличения лимита\\\\."
     },
     "nobg": {
       "prompt": "✂️ **Удаление фона**\n\n\n📥 **Отправьте изображение:**\n*\\(Поддерживаются JPG, PNG, WEBP\\)*",
@@ -3510,7 +3521,8 @@
           "wrench": "5264908182886557148",
           "question_mark": "5897846616966041652"
         },
-        "guide": "Guide"
+        "guide": "Guide",
+        "add_emojis": "Add Emoji"
       },
       "pack_detail": "📁 Pack Management\n\nID: {id}\nName: {name}\nAlias: {alias}\nCount: {count}\nDefault: {default}",
       "pending": {
