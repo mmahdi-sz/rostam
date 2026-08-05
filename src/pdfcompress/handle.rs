@@ -445,8 +445,8 @@ async fn run_gs(
 
     #[cfg(unix)]
     unsafe {
-        cmd.pre_exec(|| {
-            let mem_limit = 1024 * 1024 * 1024; // 1GB
+        cmd.pre_exec(move || {
+            let mem_limit = 4 * 1024 * 1024 * 1024; // 4GB
             let rlim_mem = libc::rlimit {
                 rlim_cur: mem_limit,
                 rlim_max: mem_limit,
@@ -455,7 +455,7 @@ async fn run_gs(
                 return Err(std::io::Error::last_os_error());
             }
 
-            let cpu_limit = 60; // 60 seconds
+            let cpu_limit = timeout_secs as libc::rlim_t; // use the config timeout
             let rlim_cpu = libc::rlimit {
                 rlim_cur: cpu_limit,
                 rlim_max: cpu_limit,

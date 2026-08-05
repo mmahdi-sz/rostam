@@ -8,7 +8,7 @@ use rand::Rng;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::constants::*;
-use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_plain, btn_icon_success};
+use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_plain, btn_icon_primary, btn_icon_success};
 use crate::i18n::{apply_premium_to_md, t};
 
 pub async fn send_lang_picker(api: &Bot, chat_id: i64) -> crate::error::Result<()> {
@@ -17,12 +17,13 @@ pub async fn send_lang_picker(api: &Bot, chat_id: i64) -> crate::error::Result<(
             vec![btn_icon_plain("🇮🇷 پارسی | Parsi", "lang:set:fa", "")],
             vec![btn_icon_plain("🇬🇧 English", "lang:set:en", "")],
             vec![btn_icon_plain("🇮🇹 Italiano | Italian", "lang:set:it", "")],
+            vec![btn_icon_plain("🇷🇺 Русский | Russian", "lang:set:ru", "")],
         ])
         .build();
     api.send_message(
         &SendMessageParams::builder()
             .chat_id(chat_id)
-            .text("زبان خود را انتخاب کنید\nChoose your language\nScegli la tua lingua")
+            .text("زبان خود را انتخاب کنید\nChoose your language\nScegli la tua lingua\nВыберите ваш язык")
             .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard))
             .build(),
     )
@@ -102,7 +103,12 @@ pub fn start_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup {
             CB_START_YOUTUBE,
             "clapper",
         )],
-        vec![btn_icon(&t("start.tools_button"), CB_START_TOOLS, "")],
+        vec![btn_icon(&t("start.tools_button"), CB_START_TOOLS, "wrench")],
+        vec![btn_icon_success(
+            &t("start.leaderboard_button"),
+            CB_START_LEADERBOARD,
+            "trophy",
+        )],
         vec![btn_icon_success(
             &t("start.panel_button"),
             CB_USER_PANEL,
@@ -123,7 +129,7 @@ pub fn start_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup {
 
 pub fn back_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon(
+        .inline_keyboard(vec![vec![btn_icon_primary(
             &t("start.back"),
             CB_START_PANEL,
             "back",
@@ -133,7 +139,7 @@ pub fn back_keyboard() -> InlineKeyboardMarkup {
 
 pub fn ai_lab_back_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon(
+        .inline_keyboard(vec![vec![btn_icon_primary(
             &t("start.back_to_ai_lab"),
             CB_START_AI_LAB,
             "back",
@@ -169,6 +175,21 @@ pub fn ai_lab_keyboard() -> InlineKeyboardMarkup {
                 CB_AI_GWM,
                 "gemini_logo",
             )],
+            vec![btn_icon_success(
+                &t("start.ai_tts_button"),
+                CB_AI_TTS,
+                "microphone",
+            )],
+            vec![btn_icon_success(
+                &t("start.ai_deoldify_button"),
+                CB_AI_DEOLDIFY,
+                "sparkles",
+            )],
+            vec![btn_icon_success(
+                &t("start.ai_nobg_button"),
+                CB_AI_NOBG,
+                "edit",
+            )],
             vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
         ])
         .build()
@@ -187,23 +208,40 @@ pub async fn edit_to_ai_lab(api: &Bot, chat_id: i64, message_id: i32) -> crate::
     Ok(())
 }
 
+pub async fn send_ai_lab(api: &Bot, chat_id: i64) -> crate::error::Result<()> {
+    let text = apply_premium_to_md(&t("start.ai_lab_title"));
+    let params = frankenstein::methods::SendMessageParams::builder()
+        .chat_id(chat_id)
+        .text(&text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(ai_lab_keyboard()))
+        .build();
+    api.send_message(&params).await?;
+    Ok(())
+}
+
 pub fn tools_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![btn_icon(
+                &t("tools.fc_button"),
+                crate::filecompress::CB_TOOLS_FILECOMPRESS,
+                "pack_folder",
+            )],
+            vec![btn_icon(
                 &t("tools.pdf_compress_button"),
                 crate::pdfcompress::CB_TOOLS_PDF_COMPRESS,
-                "",
+                "page",
             )],
             vec![btn_icon(
                 &t("tools.ip_lookup_button"),
                 crate::ip_lookup::CB_TOOLS_IP_LOOKUP,
-                "",
+                "search",
             )],
             vec![btn_icon(
                 &t("tools.surge_button"),
                 crate::surge_dl::CB_TOOLS_SURGE,
-                "",
+                "import",
             )],
             vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
         ])
@@ -218,6 +256,30 @@ pub async fn edit_to_tools(api: &Bot, chat_id: i64, message_id: i32) -> crate::e
         .text(&text)
         .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(tools_keyboard())
+        .build();
+    api.edit_message_text(&params).await?;
+    Ok(())
+}
+
+pub async fn edit_to_leaderboard(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    database: Option<&crate::database::postgresql::PostgresDatabase>,
+) -> crate::error::Result<()> {
+    let top_referrers = if let Some(db) = database {
+        crate::referral::get_top_referrers(db.client(), 10).await
+    } else {
+        Vec::new()
+    };
+    let text_raw = crate::referral::render_leaderboard_text(&top_referrers);
+    let text = apply_premium_to_md(&text_raw);
+    let params = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(&text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(back_keyboard())
         .build();
     api.edit_message_text(&params).await?;
     Ok(())

@@ -1,9 +1,47 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+
+static ACTIVE_DENOISE_JOBS: OnceLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> = OnceLock::new();
+
+fn active_denoise_jobs() -> &'static Mutex<HashMap<i64, Arc<AtomicBool>>> {
+    ACTIVE_DENOISE_JOBS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn register_denoise_cancel(user_id: i64) -> Arc<AtomicBool> {
+    let flag = Arc::new(AtomicBool::new(false));
+    crate::sync_util::lock_or_recover(active_denoise_jobs()).insert(user_id, flag.clone());
+    flag
+}
+
+pub fn unregister_denoise_cancel(user_id: i64) {
+    crate::sync_util::lock_or_recover(active_denoise_jobs()).remove(&user_id);
+}
+
+pub fn cancel_denoise_job(user_id: i64) -> bool {
+    if let Some(flag) = crate::sync_util::lock_or_recover(active_denoise_jobs()).remove(&user_id) {
+        flag.store(true, Ordering::SeqCst);
+        true
+    } else {
+        false
+    }
+}
+
+pub struct DenoiseUnregisterGuard(pub i64);
+impl Drop for DenoiseUnregisterGuard {
+    fn drop(&mut self) {
+        unregister_denoise_cancel(self.0);
+    }
+}
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
-    methods::{EditMessageTextParams, SendAudioParams, SendVoiceParams},
+    methods::{
+        DeleteMessageParams, EditMessageTextParams, SendAudioParams, SendMessageParams,
+        SendVideoParams, SendVoiceParams,
+    },
     types::{InlineKeyboardMarkup, Message},
 };
 
@@ -77,11 +115,12 @@ pub async fn handle_denoise_cancel(
     flow_manager: &mut FlowManager,
 ) {
     flow_manager.clear(user_id);
+    let cancelled = cancel_denoise_job(user_id);
     let r = crate::bot::edit_to_ai_lab(api, chat_id, message_id).await;
     log_trace(
         next_trace_id(),
         "denoise_cancel_done",
-        &format!("ok={}", r.is_ok()),
+        &format!("user_id={user_id} cancelled={cancelled} ok={}", r.is_ok()),
     );
 }
 
@@ -95,6 +134,8 @@ pub async fn handle_denoise_audio(
     // Flow state is cleared by the dispatcher before spawning this task.
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
+    let cancel_flag = register_denoise_cancel(user_id);
+    let _cancel_guard = DenoiseUnregisterGuard(user_id);
     log_actor_id!("denoise", trace_id, user_id, "clicked" => "audio/voice");
 
     let file_id = message
@@ -102,6 +143,7 @@ pub async fn handle_denoise_audio(
         .as_ref()
         .map(|v| &v.file_id)
         .or_else(|| message.audio.as_ref().map(|a| &a.file_id))
+        .or_else(|| message.video.as_ref().map(|v| &v.file_id))
         .or_else(|| message.document.as_ref().map(|d| &d.file_id));
 
     let Some(file_id) = file_id else {
@@ -111,6 +153,7 @@ pub async fn handle_denoise_audio(
 
     let is_voice = message.voice.is_some();
     let is_audio = message.audio.is_some();
+    let is_video = message.video.is_some();
     let is_doc = message.document.is_some();
     let orig_ext = detect_format(message);
 
@@ -121,6 +164,12 @@ pub async fn handle_denoise_audio(
         .and_then(|a| a.file_name.as_deref())
         .or_else(|| {
             message
+                .video
+                .as_ref()
+                .and_then(|v| v.file_name.as_deref())
+        })
+        .or_else(|| {
+            message
                 .document
                 .as_ref()
                 .and_then(|d| d.file_name.as_deref())
@@ -129,18 +178,32 @@ pub async fn handle_denoise_audio(
             let dot = name.rfind('.')?;
             Some(&name[..dot])
         })
-        .unwrap_or("voice");
+        .unwrap_or(if is_video { "video" } else { "voice" });
     let clean_filename = format!("{orig_stem}_clean.{orig_ext}");
 
     log_trace(
         trace_id,
         "denoise_audio_received",
         &format!(
-            "user_id={user_id} chat_id={chat_id} voice={is_voice} audio={is_audio} doc={is_doc} ext={orig_ext} stem={orig_stem} clean={clean_filename}"
+            "user_id={user_id} chat_id={chat_id} voice={is_voice} audio={is_audio} video={is_video} doc={is_doc} ext={orig_ext} stem={orig_stem} clean={clean_filename}"
         ),
     );
 
-    let _ = send_text(api, chat_id, &t("denoise.preparing")).await;
+    let status_msg_id = match api
+        .send_message(
+            &SendMessageParams::builder()
+                .chat_id(chat_id)
+                .text(t("denoise.preparing"))
+                .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(
+                    denoise_keyboard(),
+                ))
+                .build(),
+        )
+        .await
+    {
+        Ok(m) => Some(m.result.message_id),
+        Err(_) => None,
+    };
 
     let work_dir = std::env::temp_dir().join(format!("denoise_{trace_id}"));
     std::fs::create_dir_all(&work_dir).ok();
@@ -286,6 +349,63 @@ pub async fn handle_denoise_audio(
     }
 
     // 3. Denoise via DeepFilterNet — blocking (std::process::Command), run on thread pool.
+    let est_total_secs = (audio_duration / 5.1).max(2.0);
+    let cancel_flag_ticker = cancel_flag.clone();
+    let progress_ticker = if let Some(msg_id) = status_msg_id {
+        let api_clone = api.clone();
+        let start_inst = std::time::Instant::now();
+        Some(tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(1500));
+            loop {
+                interval.tick().await;
+                if cancel_flag_ticker.load(Ordering::SeqCst) {
+                    break;
+                }
+                let elapsed_secs = start_inst.elapsed().as_secs_f64();
+                let percent = ((elapsed_secs / est_total_secs) * 100.0).min(99.0) as f32;
+                let eta_secs = (est_total_secs - elapsed_secs).max(0.0);
+
+                let bar = crate::youtube::download::progress::build_bar(percent);
+                let elapsed_str = crate::youtube::download::progress::format_elapsed(
+                    start_inst.elapsed(),
+                );
+                let eta_str = crate::youtube::download::progress::format_elapsed(
+                    std::time::Duration::from_secs_f64(eta_secs),
+                );
+
+                let text = apply_premium_to_md(&tf(
+                    "denoise.progress",
+                    &[
+                        ("bar", &bar),
+                        ("percent", &format!("{percent:.0}")),
+                        ("elapsed", &elapsed_str),
+                        ("eta", &eta_str),
+                    ],
+                ));
+
+                if cancel_flag_ticker.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                let params = EditMessageTextParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(msg_id)
+                    .text(&text)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .reply_markup(denoise_keyboard())
+                    .build();
+                if let Err(e) = api_clone.edit_message_text(&params).await {
+                    let desc = e.to_string();
+                    if !desc.contains("message is not modified") {
+                        log_trace(trace_id, "denoise_progress_edit_failed", &desc);
+                    }
+                }
+            }
+        }))
+    } else {
+        None
+    };
+
     let denoise_res = {
         let wav_in = wav_str.to_string();
         let wav_out = denoised_str.to_string();
@@ -295,6 +415,20 @@ pub async fn handle_denoise_audio(
         .await
         .unwrap_or_else(|e| Err(format!("denoise task panicked: {e}")))
     };
+
+    if let Some(ticker) = progress_ticker {
+        ticker.abort();
+    }
+
+    if cancel_flag.load(Ordering::SeqCst) {
+        log_trace(
+            trace_id,
+            "denoise_cancelled_at_completion",
+            &format!("user_id={user_id}"),
+        );
+        clean_up(&work_dir);
+        return;
+    }
     let processing_secs = match denoise_res {
         Ok(s) => {
             log_trace(trace_id, "denoise_done", &format!("elapsed={s:.1}s"));
@@ -315,9 +449,14 @@ pub async fn handle_denoise_audio(
     let reconvert_res = {
         let inp = denoised_str.to_string();
         let outp = output_str.to_string();
+        let orig_inp = input_str.to_string();
         let ext = orig_ext.clone();
         tokio::task::spawn_blocking(move || {
-            convert_from_wav(&inp, &outp, &ext).map_err(|e| e.to_string())
+            if is_video {
+                convert_from_wav_video(&orig_inp, &inp, &outp).map_err(|e| e.to_string())
+            } else {
+                convert_from_wav(&inp, &outp, &ext).map_err(|e| e.to_string())
+            }
         })
         .await
         .unwrap_or_else(|e| Err(format!("reconvert task panicked: {e}")))
@@ -330,7 +469,17 @@ pub async fn handle_denoise_audio(
         clean_up(&work_dir);
         return;
     }
-    log_trace(trace_id, "denoise_reconverted", &format!("ext={orig_ext}"));
+    log_trace(trace_id, "denoise_reconverted", &format!("ext={orig_ext} video={is_video}"));
+
+    if cancel_flag.load(Ordering::SeqCst) {
+        log_trace(
+            trace_id,
+            "denoise_cancelled_before_send",
+            &format!("user_id={user_id}"),
+        );
+        clean_up(&work_dir);
+        return;
+    }
 
     // 5. Send denoised file
     let efficiency = if processing_secs > 0.0 {
@@ -350,6 +499,15 @@ pub async fn handle_denoise_audio(
             .build();
         let r = api.send_voice(&params).await;
         log_trace(trace_id, "denoise_voice_sent", &format!("ok={}", r.is_ok()));
+    } else if is_video {
+        let params = SendVideoParams::builder()
+            .chat_id(chat_id)
+            .video(PathBuf::from(output_str))
+            .caption(&caption)
+            .parse_mode(ParseMode::MarkdownV2)
+            .build();
+        let r = api.send_video(&params).await;
+        log_trace(trace_id, "denoise_video_sent", &format!("ok={}", r.is_ok()));
     } else {
         let params = SendAudioParams::builder()
             .chat_id(chat_id)
@@ -359,6 +517,17 @@ pub async fn handle_denoise_audio(
             .build();
         let r = api.send_audio(&params).await;
         log_trace(trace_id, "denoise_audio_sent", &format!("ok={}", r.is_ok()));
+    }
+
+    if let Some(msg_id) = status_msg_id {
+        let _ = api
+            .delete_message(
+                &DeleteMessageParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(msg_id)
+                    .build(),
+            )
+            .await;
     }
 
     // 6. ثبت مصرف quota
@@ -414,6 +583,17 @@ fn detect_format(message: &Message) -> String {
     if message.voice.is_some() {
         return "ogg".to_string();
     }
+    if let Some(video) = &message.video {
+        if let Some(name) = &video.file_name {
+            if let Some(ext) = name.rsplit('.').next() {
+                return ext.to_lowercase();
+            }
+        }
+        if let Some(mime) = &video.mime_type {
+            return mime_to_ext(mime);
+        }
+        return "mp4".to_string();
+    }
     if let Some(audio) = &message.audio {
         if let Some(mime) = &audio.mime_type {
             return mime_to_ext(mime);
@@ -440,11 +620,12 @@ fn detect_format(message: &Message) -> String {
 fn mime_to_ext(mime: &str) -> String {
     match mime {
         "audio/mpeg" | "audio/mp3" => "mp3",
-        "audio/mp4" | "audio/aac" => "m4a",
+        "audio/mp4" | "audio/aac" | "video/mp4" => "mp4",
         "audio/ogg" | "audio/opus" => "ogg",
         "audio/wav" | "audio/wave" => "wav",
         "audio/flac" => "flac",
-        "audio/webm" => "webm",
+        "audio/webm" | "video/webm" => "webm",
+        "video/x-matroska" => "mkv",
         _ => "wav",
     }
     .to_string()
@@ -519,6 +700,39 @@ fn convert_from_wav(input: &str, output: &str, ext: &str) -> crate::error::Resul
     };
     if !status.success() {
         anyhow::bail!("ffmpeg reconversion failed");
+    }
+    Ok(())
+}
+
+fn convert_from_wav_video(
+    video_input: &str,
+    wav_input: &str,
+    output_video: &str,
+) -> crate::error::Result<()> {
+    let status = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-i",
+            video_input,
+            "-i",
+            wav_input,
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-shortest",
+            output_video,
+        ])
+        .status()
+        .map_err(|e| anyhow::anyhow!("ffmpeg video remux failed: {e}"))?;
+    if !status.success() {
+        anyhow::bail!("ffmpeg video remux failed");
     }
     Ok(())
 }

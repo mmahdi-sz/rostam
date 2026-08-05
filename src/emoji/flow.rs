@@ -9,10 +9,30 @@ pub struct PendingEmoji {
     pub fallback: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BroadcastMode {
+    Copy,
+    Forward,
+}
+
 #[derive(Debug, Clone, Default)]
 pub enum FlowState {
     #[default]
     Idle,
+    AwaitingBroadcastBanner {
+        mode: BroadcastMode,
+        pin: bool,
+    },
+    AwaitingBroadcastTarget {
+        mode: BroadcastMode,
+        pin: bool,
+        banner_chat_id: i64,
+        banner_message_id: i32,
+        #[allow(dead_code)]
+        total_users: i64,
+        #[allow(dead_code)]
+        active_users: i64,
+    },
     AwaitingEmojis {
         collected: Vec<PendingEmoji>,
     },
@@ -51,6 +71,13 @@ pub enum FlowState {
         cancel: Arc<AtomicBool>,
     },
     AwaitingGeminiWmImage,
+    AwaitingDeoldifyImage,
+    AwaitingNobgImage,
+    AwaitingTtsModeSelect,
+    AwaitingTtsText {
+        prompt_path: Option<String>,
+    },
+    AwaitingTtsVoiceSample,
     AwaitingPdfCompressFile,
     AwaitingPdfCompressLevel {
         file_id: String,
@@ -82,6 +109,31 @@ pub enum FlowState {
         lock_id: i64,
         field: String,
     },
+    /// کاربر در حال انتخاب فرمت فشرده‌سازی است
+    #[allow(dead_code)]
+    AwaitingCompressFormatSelect,
+    /// فرمت انتخاب شده، کاربر تنظیمات را تغییر می‌دهد
+    AwaitingCompressOptions {
+        config: crate::filecompress::CompressConfig,
+    },
+    /// منتظر ورود رمز فایل هستیم
+    AwaitingCompressPassword {
+        config: crate::filecompress::CompressConfig,
+    },
+    /// منتظر دریافت فایل‌های ورودی فشرده‌سازی هستیم
+    AwaitingCompressFiles {
+        config: Box<crate::filecompress::CompressConfig>,
+        files: Vec<CompressFileEntry>,
+        prompt_msg_id: i32,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct CompressFileEntry {
+    pub file_id: String,
+    pub filename: String,
+    #[allow(dead_code)]
+    pub size: u64,
 }
 
 #[derive(Debug, Clone, Default)]

@@ -163,8 +163,19 @@ pub async fn handle_emoji_flow_message(
         }
         FlowState::AwaitingForceJoinLink
         | FlowState::AwaitingForceJoinPrivateInfo { .. }
-        | FlowState::AwaitingForceJoinField { .. } => {
-            eprintln!("[emoji_msg trace={trace_id} event=force_join_skip] — handled in main");
+        | FlowState::AwaitingForceJoinField { .. }
+        | FlowState::AwaitingBroadcastBanner { .. }
+        | FlowState::AwaitingBroadcastTarget { .. }
+        | FlowState::AwaitingDeoldifyImage
+        | FlowState::AwaitingNobgImage
+        | FlowState::AwaitingTtsModeSelect
+        | FlowState::AwaitingTtsText { .. }
+        | FlowState::AwaitingTtsVoiceSample
+        | FlowState::AwaitingCompressFormatSelect
+        | FlowState::AwaitingCompressOptions { .. }
+        | FlowState::AwaitingCompressPassword { .. }
+        | FlowState::AwaitingCompressFiles { .. } => {
+            eprintln!("[emoji_msg trace={trace_id} event=skip] — handled in main");
             false
         }
     }
@@ -173,6 +184,8 @@ pub async fn handle_emoji_flow_message(
 fn state_name(state: &FlowState) -> &'static str {
     match state {
         FlowState::Idle => "Idle",
+        FlowState::AwaitingBroadcastBanner { .. } => "AwaitingBroadcastBanner",
+        FlowState::AwaitingBroadcastTarget { .. } => "AwaitingBroadcastTarget",
         FlowState::AwaitingEmojis { .. } => "AwaitingEmojis",
         FlowState::AwaitingPackChoice { .. } => "AwaitingPackChoice",
         FlowState::AwaitingPackAlias { .. } => "AwaitingPackAlias",
@@ -187,6 +200,11 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingSeparationMode { .. } => "AwaitingSeparationMode",
         FlowState::AwaitingSeparationQueued { .. } => "AwaitingSeparationQueued",
         FlowState::AwaitingGeminiWmImage => "AwaitingGeminiWmImage",
+        FlowState::AwaitingDeoldifyImage => "AwaitingDeoldifyImage",
+        FlowState::AwaitingNobgImage => "AwaitingNobgImage",
+        FlowState::AwaitingTtsModeSelect => "AwaitingTtsModeSelect",
+        FlowState::AwaitingTtsText { .. } => "AwaitingTtsText",
+        FlowState::AwaitingTtsVoiceSample => "AwaitingTtsVoiceSample",
         FlowState::AwaitingPdfCompressFile => "AwaitingPdfCompressFile",
         FlowState::AwaitingPdfCompressLevel { .. } => "AwaitingPdfCompressLevel",
         FlowState::AwaitingIpLookupInput => "AwaitingIpLookupInput",
@@ -197,5 +215,9 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingForceJoinLink => "AwaitingForceJoinLink",
         FlowState::AwaitingForceJoinPrivateInfo { .. } => "AwaitingForceJoinPrivateInfo",
         FlowState::AwaitingForceJoinField { .. } => "AwaitingForceJoinField",
+        FlowState::AwaitingCompressFormatSelect => "AwaitingCompressFormatSelect",
+        FlowState::AwaitingCompressOptions { .. } => "AwaitingCompressOptions",
+        FlowState::AwaitingCompressPassword { .. } => "AwaitingCompressPassword",
+        FlowState::AwaitingCompressFiles { .. } => "AwaitingCompressFiles",
     }
 }

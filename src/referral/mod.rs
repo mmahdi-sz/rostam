@@ -305,4 +305,114 @@ pub mod tests {
         assert_eq!(PENDING_DAYS, 2);
         assert_eq!(ACTIVATION_DAYS, 31);
     }
+
+    #[test]
+    fn test_render_leaderboard_text_formatting() {
+        let sample = vec![
+            TopReferrer {
+                user_id: 1001,
+                username: Some("mmahdi_sz".to_string()),
+                referral_count: 25,
+            },
+            TopReferrer {
+                user_id: 1002,
+                username: Some("username".to_string()),
+                referral_count: 20,
+            },
+            TopReferrer {
+                user_id: 1003,
+                username: Some("third_user".to_string()),
+                referral_count: 15,
+            },
+            TopReferrer {
+                user_id: 1004,
+                username: Some("fourth_user".to_string()),
+                referral_count: 10,
+            },
+        ];
+
+        let rendered = render_leaderboard_text(&sample);
+        assert!(rendered.contains("\u{200F}🥇 mmahdi\\_sz : 25"));
+        assert!(rendered.contains("\u{200F}🥈 username : 20"));
+        assert!(rendered.contains("\u{200F}🥉 third\\_user : 15"));
+        assert!(rendered.contains("\u{200F}4\\. fourth\\_user : 10"));
+        assert!(rendered.contains('\u{200F}'));
+    }
+
+    #[test]
+    fn test_render_leaderboard_text_empty() {
+        let rendered = render_leaderboard_text(&[]);
+        assert!(!rendered.is_empty());
+    }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TopReferrer {
+    pub user_id: i64,
+    pub username: Option<String>,
+    pub referral_count: i64,
+}
+
+pub async fn get_top_referrers(client: &Client, limit: i64) -> Vec<TopReferrer> {
+    let rows = match client
+        .query(
+            "SELECT r.referrer_id, COUNT(*) AS count, u.username
+             FROM referrals r
+             LEFT JOIN stats_users u ON r.referrer_id = u.user_id
+             GROUP BY r.referrer_id, u.username
+             ORDER BY count DESC, r.referrer_id ASC
+             LIMIT $1",
+            &[&limit],
+        )
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            eprintln!("[referral event=get_top_referrers_failed] err={e}");
+            crate::stats::record_error_global("referral", &e.to_string()).await;
+            return Vec::new();
+        }
+    };
+
+    rows.into_iter()
+        .map(|row| TopReferrer {
+            user_id: row.get(0),
+            referral_count: row.get(1),
+            username: row.get(2),
+        })
+        .collect()
+}
+
+pub fn render_leaderboard_text(top_users: &[TopReferrer]) -> String {
+    let header = crate::i18n::t("start.leaderboard_title");
+    if top_users.is_empty() {
+        let empty_msg = crate::i18n::t("start.leaderboard_empty");
+        return format!("{header}\n\n{empty_msg}");
+    }
+
+    let mut list_lines = Vec::new();
+    for (idx, top) in top_users.iter().enumerate() {
+        let rank_num = idx + 1;
+        let rank_prefix = match rank_num {
+            1 => "🥇".to_string(),
+            2 => "🥈".to_string(),
+            3 => "🥉".to_string(),
+            n => format!("{n}\\."),
+        };
+        let fallback = format!("user_{}", top.user_id);
+        let display_name = top
+            .username
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&fallback);
+        let escaped_name = crate::i18n::md_escape(display_name);
+        list_lines.push(format!(
+            "\u{200F}{rank_prefix} {escaped_name} : {}",
+            top.referral_count
+        ));
+    }
+
+    let list_str = list_lines.join("\n");
+    format!("{header}\n\n{list_str}")
+}
+

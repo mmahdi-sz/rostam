@@ -1,4 +1,4 @@
-use frankenstein::types::{InlineKeyboardButton, InlineKeyboardMarkup};
+use frankenstein::types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup};
 
 use crate::i18n::{t, tf};
 
@@ -8,8 +8,7 @@ use super::super::download::{
 use super::super::lang_names::lang_name;
 use super::super::types::VideoCodec;
 use super::buttons::{
-    choice_button, confirm_button, header_button, icon_button, main_menu_button, plain_button,
-    primary_button,
+    choice_button, header_button, icon_button, icon_choice_button, main_menu_button,
 };
 use super::constants::*;
 
@@ -104,39 +103,48 @@ fn build_main_keyboard(
         if !quick_row.is_empty() {
             rows.push(quick_row);
         }
-        rows.push(vec![plain_button(
+        rows.push(vec![icon_button(
             &t("youtube.selection.subtitle_menu"),
+            "emoji.panel.icons.packs",
             format!("{CB_SUB_MENU}{request_id}"),
+            None,
         )]);
         if !sel.subtitle_langs.is_empty() {
             let mode_selected = sel.subtitle_mode;
             rows.push(vec![
-                choice_button(
+                icon_choice_button(
                     &t("youtube.selection.subtitle_mode_file"),
+                    "emoji.panel.icons.page",
                     format!("{CB_SUB_MODE}{request_id}:file"),
                     mode_selected == SubtitleMode::File,
                 ),
-                choice_button(
+                icon_choice_button(
                     &t("youtube.selection.subtitle_mode_embedded"),
+                    "emoji.panel.icons.tv",
                     format!("{CB_SUB_MODE}{request_id}:embedded"),
                     mode_selected == SubtitleMode::Embedded,
                 ),
             ]);
-            rows.push(vec![choice_button(
+            rows.push(vec![icon_choice_button(
                 &t("youtube.selection.subtitle_mode_hardsub"),
+                "emoji.panel.icons.fire1",
                 format!("{CB_SUB_MODE}{request_id}:hardsub"),
                 mode_selected == SubtitleMode::Hardsub,
             )]);
         }
     }
 
-    rows.push(vec![confirm_button(
+    rows.push(vec![icon_button(
         &t("youtube.selection.confirm"),
+        "emoji.panel.icons.check",
         format!("{CB_GO}{request_id}"),
+        Some(ButtonStyle::Success),
     )]);
-    rows.push(vec![primary_button(
+    rows.push(vec![icon_button(
         &t("youtube.selection.back_to_quality"),
+        "emoji.panel.icons.reply",
         format!("{CB_BACK_TO_QUALITY_PREFIX}{request_id}"),
+        Some(ButtonStyle::Primary),
     )]);
     rows.push(vec![main_menu_button()]);
 

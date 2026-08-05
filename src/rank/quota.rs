@@ -10,7 +10,8 @@ pub enum QuotaKind {
     Upscale2xWeekly,
     Upscale3xWeekly,
     Upscale4xWeekly,
-    AiChatMonthly,
+    DeoldifyWeekly,
+    TtsWeekly,
     DenoiseDaily,
     DenoiseWeekly,
     SttFastDaily,
@@ -19,6 +20,9 @@ pub enum QuotaKind {
     SttAccurateWeekly,
     SeparationDaily,
     SeparationWeekly,
+    NobgWeekly,
+    CompressCpuDaily,
+    CompressCpuMonthly,
 }
 
 impl QuotaKind {
@@ -30,7 +34,8 @@ impl QuotaKind {
             Self::Upscale2xWeekly => "upscale_2x_weekly",
             Self::Upscale3xWeekly => "upscale_3x_weekly",
             Self::Upscale4xWeekly => "upscale_4x_weekly",
-            Self::AiChatMonthly => "ai_chat_monthly",
+            Self::DeoldifyWeekly => "deoldify_weekly",
+            Self::TtsWeekly => "tts_weekly",
             Self::DenoiseDaily => "denoise_daily",
             Self::DenoiseWeekly => "denoise_weekly",
             Self::SttFastDaily => "stt_fast_daily",
@@ -39,6 +44,9 @@ impl QuotaKind {
             Self::SttAccurateWeekly => "stt_accurate_weekly",
             Self::SeparationDaily => "separation_daily",
             Self::SeparationWeekly => "separation_weekly",
+            Self::NobgWeekly => "nobg_weekly",
+            Self::CompressCpuDaily => "compress_cpu_daily",
+            Self::CompressCpuMonthly => "compress_cpu_monthly",
         }
     }
 }
@@ -223,7 +231,8 @@ pub mod tests {
         assert_eq!(QuotaKind::Upscale2xWeekly.as_str(), "upscale_2x_weekly");
         assert_eq!(QuotaKind::Upscale3xWeekly.as_str(), "upscale_3x_weekly");
         assert_eq!(QuotaKind::Upscale4xWeekly.as_str(), "upscale_4x_weekly");
-        assert_eq!(QuotaKind::AiChatMonthly.as_str(), "ai_chat_monthly");
+        assert_eq!(QuotaKind::DeoldifyWeekly.as_str(), "deoldify_weekly");
+        assert_eq!(QuotaKind::TtsWeekly.as_str(), "tts_weekly");
         assert_eq!(QuotaKind::DenoiseDaily.as_str(), "denoise_daily");
         assert_eq!(QuotaKind::DenoiseWeekly.as_str(), "denoise_weekly");
         assert_eq!(QuotaKind::SttFastDaily.as_str(), "stt_fast_daily");
@@ -232,6 +241,7 @@ pub mod tests {
         assert_eq!(QuotaKind::SttAccurateWeekly.as_str(), "stt_accurate_weekly");
         assert_eq!(QuotaKind::SeparationDaily.as_str(), "separation_daily");
         assert_eq!(QuotaKind::SeparationWeekly.as_str(), "separation_weekly");
+        assert_eq!(QuotaKind::NobgWeekly.as_str(), "nobg_weekly");
     }
 
     #[test]

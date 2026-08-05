@@ -414,7 +414,7 @@ pub async fn handle_surge_rename_text(
 
 struct SurgeDetail {
     filename: String,
-    dest_path: String,
+    url: String,
     total_size: u64,
     downloaded: u64,
     progress: f64,
@@ -457,6 +457,7 @@ async fn run_surge_download(
         return;
     }
 
+    let before_ids = list_surge_job_ids().await;
     log_ev!("surge_dl", trace_id, "add_spawn", "url" => &url, "dir" => &dir);
     let add_ok = run_surge_add(&url, &dir).await;
     if !add_ok {
@@ -466,7 +467,7 @@ async fn run_surge_download(
         return;
     }
 
-    let Some(job_id) = find_job_id_by_dir(&dir, trace_id).await else {
+    let Some(job_id) = find_job_id_by_url(&url, &before_ids, trace_id).await else {
         log_ev!("surge_dl", trace_id, "job_not_found", "=>" => "fail");
         crate::stats::record_error_global("surge_dl", "surge job id not found after add").await;
         edit_status(&api, chat_id, message_id, &t("surge.error.download_failed")).await;
@@ -523,11 +524,10 @@ async fn run_surge_download(
     };
     let download_elapsed = download_start.elapsed();
 
-    log_ev!("surge_dl", trace_id, "download_done", "filename" => &detail.filename, "path" => &detail.dest_path,
+    let file_path = std::path::Path::new(&dir).join(&detail.filename);
+    log_ev!("surge_dl", trace_id, "download_done", "filename" => &detail.filename, "path" => file_path.display(),
         "size" => fmt_bytes(detail.downloaded), "avg_speed" => fmt_speed(detail.avg_speed));
     edit_status(&api, chat_id, message_id, &t("surge.done")).await;
-
-    let file_path = PathBuf::from(&detail.dest_path);
     let file_path = match rename_to {
         Some(new_name) => {
             let renamed = file_path.with_file_name(&new_name);
@@ -934,7 +934,23 @@ async fn run_surge_add(url: &str, dir: &str) -> bool {
     }
 }
 
-async fn find_job_id_by_dir(dir: &str, trace_id: u64) -> Option<String> {
+async fn list_surge_job_ids() -> Vec<String> {
+    let output = surge_cmd(&["ls", "--json"]).output().await;
+    let Ok(output) = output else {
+        return vec![];
+    };
+    let entries: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
+    entries
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|e| e.get("id")?.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+async fn find_job_id_by_url(url: &str, before_ids: &[String], trace_id: u64) -> Option<String> {
     for _ in 0..10 {
         let output = surge_cmd(&["ls", "--json"]).output().await;
         let Ok(output) = output else {
@@ -943,18 +959,33 @@ async fn find_job_id_by_dir(dir: &str, trace_id: u64) -> Option<String> {
         };
         let entries: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap_or_default();
         if let Some(arr) = entries.as_array() {
-            for entry in arr {
-                let dest = entry.get("dest_path").and_then(|v| v.as_str()).unwrap_or("");
-                if dest.contains(dir) {
-                    if let Some(id) = entry.get("id").and_then(|v| v.as_str()) {
-                        return Some(id.to_string());
+            let mut candidate_ids: Vec<String> = arr
+                .iter()
+                .rev()
+                .filter_map(|e| e.get("id")?.as_str().map(str::to_string))
+                .filter(|id| !before_ids.contains(id))
+                .collect();
+
+            if candidate_ids.is_empty() {
+                candidate_ids = arr
+                    .iter()
+                    .rev()
+                    .take(10)
+                    .filter_map(|e| e.get("id")?.as_str().map(str::to_string))
+                    .collect();
+            }
+
+            for id in candidate_ids {
+                if let Some(detail) = fetch_detail(&id).await {
+                    if detail.url == url {
+                        return Some(id);
                     }
                 }
             }
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    log_ev!("surge_dl", trace_id, "find_job_id_timeout", "dir" => dir);
+    log_ev!("surge_dl", trace_id, "find_job_id_timeout", "url" => url);
     None
 }
 
@@ -963,7 +994,7 @@ async fn fetch_detail(id: &str) -> Option<SurgeDetail> {
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
     Some(SurgeDetail {
         filename: json.get("filename")?.as_str()?.to_string(),
-        dest_path: json.get("dest_path")?.as_str()?.to_string(),
+        url: json.get("url")?.as_str()?.to_string(),
         total_size: json.get("total_size")?.as_u64()?,
         downloaded: json.get("downloaded")?.as_u64()?,
         progress: json.get("progress")?.as_f64()?,

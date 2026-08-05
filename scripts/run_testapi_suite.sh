@@ -8,7 +8,7 @@ echo "Building dev mode..."
 cargo build --features testapi
 
 echo "Starting test API server..."
-TESTAPI_ENABLED=1 BOT_API_BASE_URL="http://127.0.0.1:$PORT/bot" ./target/debug/ros-telegram-bot > testapi.log 2>&1 &
+TESTAPI_ENABLED=1 BOT_API_BASE_URL="http://127.0.0.1:$PORT/bot" ./target/debug/rostam-dev > testapi.log 2>&1 &
 SERVER_PID=$!
 
 function cleanup {
@@ -52,15 +52,15 @@ if [ "$OK" != "true" ]; then
     exit 1
 fi
 
-TEXT=$(echo "$RES" | jq -r '.message.rendered_text')
-if [[ ! "$TEXT" == *"TestFeature"* ]]; then
-    echo "Fail: Message text doesn't contain feature name. Got: $TEXT"
+WARNING_TEXT=$(echo "$RES" | jq -r '.warning_message.rendered_text')
+if [[ ! "$WARNING_TEXT" == *"TestFeature"* ]]; then
+    echo "Fail: Warning message text doesn't contain feature name. Got: $WARNING_TEXT"
     exit 1
 fi
 
 INLINE_KBD=$(echo "$RES" | jq -r '.inline_keyboard[0][0].callback_data')
-if [ "$INLINE_KBD" != "rank:menu" ]; then
-    echo "Fail: Incorrect inline keyboard callback data. Got: $INLINE_KBD"
+if [[ ! "$INLINE_KBD" == *"rank:select:"* ]]; then
+    echo "Fail: Incorrect inline keyboard callback data for shop menu. Got: $INLINE_KBD"
     exit 1
 fi
 
@@ -123,6 +123,24 @@ fi
 
 echo "Router callback dispatched successfully, responded with: ${TEXT:0:50}..."
 
+echo "Testing /test/router/callback (rank:shop)"
+RES_SHOP=$(curl -s -X POST "$BASE_URL/test/router/callback" \
+    -H "Content-Type: application/json" \
+    -d '{"callback_data": "rank:shop", "user_id": 12345, "username": "testuser"}')
+if [ "$(echo "$RES_SHOP" | jq -r '.ok')" != "true" ]; then echo "Fail: rank:shop callback"; exit 1; fi
+
+echo "Testing /test/router/callback (rank:select:esfandyar)"
+RES_DETAIL=$(curl -s -X POST "$BASE_URL/test/router/callback" \
+    -H "Content-Type: application/json" \
+    -d '{"callback_data": "rank:select:esfandyar", "user_id": 12345, "username": "testuser"}')
+if [ "$(echo "$RES_DETAIL" | jq -r '.ok')" != "true" ]; then echo "Fail: rank:select:esfandyar callback"; exit 1; fi
+
+echo "Testing /test/router/callback (rank:guide)"
+RES_GUIDE=$(curl -s -X POST "$BASE_URL/test/router/callback" \
+    -H "Content-Type: application/json" \
+    -d '{"callback_data": "rank:guide", "user_id": 12345, "username": "testuser"}')
+if [ "$(echo "$RES_GUIDE" | jq -r '.ok')" != "true" ]; then echo "Fail: rank:guide callback"; exit 1; fi
+
 echo "✅ Router callback test passed!"
 
 echo ""
@@ -174,9 +192,29 @@ echo "Testing /test/gwm/detect"
 RES_GWM=$(curl -s -X POST "$BASE_URL/test/gwm/detect" -H "Content-Type: application/json" -d '{"file_id": "file_123"}')
 if [ "$(echo "$RES_GWM" | jq -r '.ok')" != "true" ]; then echo "Fail: gwm detect"; exit 1; fi
 
+echo "Testing /test/denoise/process"
+RES_DN=$(curl -s -X POST "$BASE_URL/test/denoise/process" -H "Content-Type: application/json" -d '{"file_id": "file_video_123", "is_video": true}')
+if [ "$(echo "$RES_DN" | jq -r '.ok')" != "true" ]; then echo "Fail: denoise process"; exit 1; fi
+
+echo "Testing /test/tts/generate"
+RES_TTS=$(curl -s -X POST "$BASE_URL/test/tts/generate" -H "Content-Type: application/json" -d '{"text": "سلام این یک تست است", "mode": "default"}')
+if [ "$(echo "$RES_TTS" | jq -r '.ok')" != "true" ]; then echo "Fail: tts generate"; exit 1; fi
+
+echo "Testing /test/deoldify/colorized"
+RES_DEO=$(curl -s -X POST "$BASE_URL/test/deoldify/colorized" -H "Content-Type: application/json" -d '{"file_id": "file_bw_123", "render_factor": 24}')
+if [ "$(echo "$RES_DEO" | jq -r '.ok')" != "true" ]; then echo "Fail: deoldify colorized"; exit 1; fi
+
+echo "Testing /test/nobg/process"
+RES_NOBG=$(curl -s -X POST "$BASE_URL/test/nobg/process" -H "Content-Type: application/json" -d '{"file_id": "file_nobg_123"}')
+if [ "$(echo "$RES_NOBG" | jq -r '.ok')" != "true" ]; then echo "Fail: nobg process"; exit 1; fi
+
 echo "Testing /test/admin/panel"
 RES_ADM=$(curl -s -X POST "$BASE_URL/test/admin/panel" -H "Content-Type: application/json" -d '{"user_id": 12345}')
 if [ "$(echo "$RES_ADM" | jq -r '.ok')" != "true" ]; then echo "Fail: admin panel"; exit 1; fi
+
+echo "Testing /test/admin/broadcast"
+RES_BC=$(curl -s -X POST "$BASE_URL/test/admin/broadcast" -H "Content-Type: application/json" -d '{"mode": "Copy", "pin": true, "target_count": 50}')
+if [ "$(echo "$RES_BC" | jq -r '.ok')" != "true" ]; then echo "Fail: admin broadcast"; exit 1; fi
 
 echo "Testing /test/surge/validate_url"
 RES_SURGE=$(curl -s -X POST "$BASE_URL/test/surge/validate_url" -H "Content-Type: application/json" -d '{"url": "https://example.com/file.zip"}')
@@ -193,6 +231,18 @@ if [ "$(echo "$RES_RP" | jq -r '.ok')" != "true" ]; then echo "Fail: rank panel"
 echo "Testing /test/referral/spend"
 RES_REF=$(curl -s -X POST "$BASE_URL/test/referral/spend" -H "Content-Type: application/json" -d '{"points": 20, "tier": "Esfandyar"}')
 if [ "$(echo "$RES_REF" | jq -r '.ok')" != "true" ]; then echo "Fail: referral spend"; exit 1; fi
+
+echo "Testing /test/referral/leaderboard"
+RES_LDB=$(curl -s -X POST "$BASE_URL/test/referral/leaderboard" -H "Content-Type: application/json" -d '{}')
+if [ "$(echo "$RES_LDB" | jq -r '.ok')" != "true" ]; then echo "Fail: referral leaderboard ok"; exit 1; fi
+if [ "$(echo "$RES_LDB" | jq -r '.has_rlm')" != "true" ]; then echo "Fail: referral leaderboard has_rlm"; exit 1; fi
+LDB_TEXT=$(echo "$RES_LDB" | jq -r '.rendered_text')
+if [[ ! "$LDB_TEXT" == *"mmahdi"* ]]; then echo "Fail: referral leaderboard text missing sample username"; exit 1; fi
+echo "✅ Referral leaderboard test passed!"
+
+echo "Testing /test/compress/submit"
+RES_FC=$(curl -s -X POST "$BASE_URL/test/compress/submit" -H "Content-Type: application/json" -d '{"user_id": 12345, "fmt": "7z", "level": 5, "algo": "lzma2"}')
+if [ "$(echo "$RES_FC" | jq -r '.ok')" != "true" ]; then echo "Fail: compress submit"; exit 1; fi
 
 echo "✅ Extended TestAPI Endpoint Suite passed!"
 

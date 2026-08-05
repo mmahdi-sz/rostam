@@ -3,6 +3,8 @@
 //! Accessible only to `ADMIN_USER_ID`. Callbacks prefixed `admin:`.
 //! Renders: stats, errors-1d, force-join controls, redeem code generation.
 
+pub mod broadcast;
+
 use crate::i18n::{t, tf, to_fa_digits};
 use crate::stats::{
     FeatureStats, count_recent_errors, fmt_bytes, fmt_secs, get_action_breakdown, get_active_users,

@@ -68,6 +68,9 @@ pub async fn run() -> anyhow::Result<()> {
     spawn_cookie_refresher(&api, &mut cookie_pool);
     spawn_i18n_watcher();
     crate::ip_lookup::spawn_refresher();
+    crate::feynobg::engine::spawn_session_reaper();
+    crate::deoldify::engine::spawn_session_reaper();
+    crate::moebius::spawn_session_reaper();
     set_bot_commands(&api).await;
 
     println!("Bot is running. Send /start to open the green button.");
@@ -194,8 +197,14 @@ pub async fn run() -> anyhow::Result<()> {
             params.offset = Some(update.update_id as i64 + 1);
             let _guard = TaskGuard::new();
             if let Err(e) = dispatch::handle_update(&mut state, update.content).await {
-                eprintln!("[main event=update_error] {e}");
-                crate::stats::record_error_global("system", e).await;
+                let err_str = e.to_string();
+                eprintln!("[main event=update_error] {err_str}");
+                let ignored = err_str.contains("not enough rights")
+                    || err_str.contains("Forbidden")
+                    || err_str.contains("bot was blocked");
+                if !ignored {
+                    crate::stats::record_error_global("system", err_str).await;
+                }
             }
         }
     }

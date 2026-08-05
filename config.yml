@@ -1,0 +1,40 @@
+# قیمت‌های اشتراک ربات رستم
+# تغییرات این فایل با دستور /i18n_reload اعمال می‌شود.
+
+admin_username: "mmahdi_sz"
+
+ranks:
+  dalavar:
+    original_toman: 0
+    final_toman: 0
+    discount_pct: 0
+    is_free: true
+    buy_url: ""
+
+  sepahbod:
+    original_toman: 180000
+    final_toman: 150000
+    discount_pct: 16
+    is_free: false
+    buy_url: ""
+
+  sohrab:
+    original_toman: 240000
+    final_toman: 200000
+    discount_pct: 16
+    is_free: false
+    buy_url: ""
+
+  esfandyar:
+    original_toman: 300000
+    final_toman: 250000
+    discount_pct: 16
+    is_free: false
+    buy_url: ""
+
+  rostam:
+    original_toman: 480000
+    final_toman: 400000
+    discount_pct: 16
+    is_free: false
+    buy_url: ""

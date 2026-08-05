@@ -3,7 +3,7 @@ mod constants;
 mod format;
 mod keyboards;
 
-pub use buttons::{btn, btn_icon, btn_icon_danger, btn_icon_plain, btn_icon_success, btn_icon_url};
+pub use buttons::{btn, btn_icon, btn_icon_danger, btn_icon_plain, btn_icon_primary, btn_icon_success, btn_icon_url, btn_icon_url_success};
 pub use constants::*;
 pub use format::{build_list_page, format_pending_emojis};
 pub use keyboards::{

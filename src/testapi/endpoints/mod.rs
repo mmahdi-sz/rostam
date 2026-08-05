@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod ai;
+pub mod compress;
 pub mod emoji;
 pub mod health;
 pub mod pdfcompress;

@@ -68,6 +68,7 @@ pub async fn init_database(
             let client_ref: &'static tokio_postgres::Client =
                 unsafe { &*(database.client() as *const _) };
             stats::init(client_ref);
+            crate::rank::prices::load();
             println!("PostgreSQL cookie pool storage is enabled.");
             Some(database)
         }
@@ -457,7 +458,7 @@ pub async fn set_bot_commands(api: &Bot) {
     }
 
     // ۲. ست کردن اختصاصی برای هر زبان
-    for lang in ["fa", "en", "it"] {
+    for lang in ["fa", "en", "it", "ru"] {
         let commands = LANG
             .scope(lang.to_owned(), async {
                 vec![

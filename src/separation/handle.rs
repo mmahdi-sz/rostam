@@ -756,6 +756,8 @@ pub async fn handle_separation_callback(
                     .with_label_values(&["success"])
                     .inc();
 
+                let _ = crate::bot::send_ai_lab(&api_task, chat_id).await;
+
                 std::fs::remove_dir_all(&tmp_dir).ok();
                 log_trace(trace_id, "cleanup_done", "");
             }

@@ -299,6 +299,67 @@ pub async fn count_recent_errors(client: &Client) -> Result<i64, tokio_postgres:
     Ok(row.get(0))
 }
 
+pub struct BroadcastCounts {
+    pub total: i64,
+    pub active: i64,
+}
+
+pub async fn get_broadcast_user_counts(
+    client: &Client,
+) -> Result<BroadcastCounts, tokio_postgres::Error> {
+    let row = client
+        .query_one(
+            "SELECT
+                COUNT(*)::BIGINT AS total,
+                COUNT(*) FILTER (WHERE is_blocked = FALSE)::BIGINT AS active
+             FROM stats_users",
+            &[],
+        )
+        .await?;
+
+    Ok(BroadcastCounts {
+        total: row.get(0),
+        active: row.get(1),
+    })
+}
+
+pub async fn get_broadcast_user_ids(
+    client: &Client,
+    only_active: bool,
+    limit: Option<i64>,
+) -> Result<Vec<i64>, tokio_postgres::Error> {
+    let rows = if only_active {
+        if let Some(lim) = limit {
+            client
+                .query(
+                    "SELECT user_id FROM stats_users WHERE is_blocked = FALSE ORDER BY last_seen DESC LIMIT $1",
+                    &[&lim],
+                )
+                .await?
+        } else {
+            client
+                .query(
+                    "SELECT user_id FROM stats_users WHERE is_blocked = FALSE ORDER BY last_seen DESC",
+                    &[],
+                )
+                .await?
+        }
+    } else if let Some(lim) = limit {
+        client
+            .query(
+                "SELECT user_id FROM stats_users ORDER BY last_seen DESC LIMIT $1",
+                &[&lim],
+            )
+            .await?
+    } else {
+        client
+            .query("SELECT user_id FROM stats_users ORDER BY last_seen DESC", &[])
+            .await?
+    };
+
+    Ok(rows.iter().map(|r| r.get::<_, i64>(0)).collect())
+}
+
 // ثانیه → نمایش فارسی فشرده برای پنل آمار (مثل "۱۲ ساعت" / "۴۵ دقیقه").
 pub fn fmt_secs(total: i64) -> String {
     if total <= 0 {

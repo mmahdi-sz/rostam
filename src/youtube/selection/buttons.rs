@@ -35,6 +35,7 @@ pub fn header_button(text: &str) -> InlineKeyboardButton {
     button(text, CB_NOP.to_string(), None)
 }
 
+#[allow(dead_code)]
 pub fn plain_button(text: &str, callback_data: String) -> InlineKeyboardButton {
     button(text, callback_data, None)
 }
@@ -76,10 +77,26 @@ pub fn choice_button(text: &str, callback_data: String, selected: bool) -> Inlin
     button(text, callback_data, style)
 }
 
+pub fn icon_choice_button(
+    text: &str,
+    icon_key: &str,
+    callback_data: String,
+    selected: bool,
+) -> InlineKeyboardButton {
+    let style = if selected {
+        Some(ButtonStyle::Success)
+    } else {
+        None
+    };
+    icon_button(text, icon_key, callback_data, style)
+}
+
+#[allow(dead_code)]
 pub fn confirm_button(text: &str, callback_data: String) -> InlineKeyboardButton {
     button(text, callback_data, Some(ButtonStyle::Success))
 }
 
+#[allow(dead_code)]
 pub fn primary_button(text: &str, callback_data: String) -> InlineKeyboardButton {
     button(text, callback_data, Some(ButtonStyle::Primary))
 }

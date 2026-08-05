@@ -1,0 +1,1 @@
+ALTER TABLE stats_users ADD COLUMN IF NOT EXISTS username TEXT;

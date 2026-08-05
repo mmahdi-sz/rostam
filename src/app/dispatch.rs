@@ -4,17 +4,20 @@ use frankenstein::{
 };
 
 use crate::bot::{
-    CB_ADMIN_ERRORS, CB_ADMIN_FORCE_JOIN, CB_ADMIN_GEN_CODE, CB_ADMIN_PANEL, CB_ADMIN_STATS,
-    CB_ADMIN_STATS_MORE, CB_AI_DENOISE, CB_AI_GWM, CB_AI_SEP, CB_AI_STT, CB_AI_UPSCALE,
-    CB_DENOISE_CANCEL, CB_LANG_SET, CB_START_AI_LAB, CB_START_EMOJI, CB_START_TOOLS,
-    CB_START_YOUTUBE, CB_USER_PANEL,
+    CB_ADMIN_BROADCAST, CB_ADMIN_ERRORS, CB_ADMIN_FORCE_JOIN, CB_ADMIN_GEN_CODE, CB_ADMIN_PANEL, CB_ADMIN_STATS,
+    CB_ADMIN_STATS_MORE, CB_AI_DENOISE, CB_AI_DEOLDIFY, CB_AI_GWM, CB_AI_NOBG, CB_AI_SEP, CB_AI_STT, CB_AI_TTS, CB_AI_UPSCALE,
+    CB_BROADCAST_MODE_COPY, CB_BROADCAST_MODE_FORWARD, CB_BROADCAST_SEND_ACTIVE, CB_BROADCAST_SEND_ALL, CB_BROADCAST_TOGGLE_PIN,
+    CB_DENOISE_CANCEL, CB_DEOLDIFY_CANCEL, CB_LANG_SET, CB_NOBG_CANCEL, CB_START_AI_LAB, CB_START_EMOJI, CB_START_LEADERBOARD, CB_START_TOOLS,
+    CB_START_YOUTUBE,
+    CB_TTS_CANCEL, CB_TTS_MODE_CLONE, CB_TTS_MODE_DEFAULT, CB_USER_PANEL,
 };
 use crate::bot::{
-    edit_to_ai_lab, edit_to_start_menu, edit_to_tools, send_lang_picker, send_start_menu,
+    edit_to_ai_lab, edit_to_leaderboard, edit_to_start_menu, edit_to_tools, send_lang_picker, send_start_menu,
 };
 use crate::config;
 use crate::denoise;
-use crate::emoji::{FlowState, handler as emoji_handler, panel::CB_START_PANEL};
+use crate::emoji::{BroadcastMode, FlowState, handler as emoji_handler, panel::CB_START_PANEL};
+use crate::feynobg::{enter_nobg, handle_nobg_cancel};
 use crate::gemini_watermark::{CB_GWM_CANCEL, enter_gwm, handle_gwm_cancel, handle_gwm_image};
 use crate::i18n::{LANG, reload_i18n, t};
 use crate::ip_lookup::{
@@ -61,8 +64,8 @@ pub async fn handle_update(
     if config::dev_mode() {
         let admin = config::admin_user_id();
         let sender = match &content {
-            UpdateContent::Message(m) => m.from.as_ref().map(|u| u.id as i64),
-            UpdateContent::CallbackQuery(c) => Some(c.from.id as i64),
+            UpdateContent::Message(m) => m.from.as_ref().filter(|u| !u.is_bot).map(|u| u.id as i64),
+            UpdateContent::CallbackQuery(c) => if c.from.is_bot { None } else { Some(c.from.id as i64) },
             _ => None,
         };
         if sender.is_some() && sender != admin {
@@ -79,6 +82,26 @@ pub async fn handle_update(
 
     let sender = match &content {
         UpdateContent::Message(m) => {
+            // بی‌خیال پیام‌های ارسال شده توسط ربات‌ها (از جمله خود ربات یا ربات‌های دیگر)
+            if m.from.as_ref().map_or(false, |u| u.is_bot) {
+                return Ok(());
+            }
+            // بی‌خیال پیام‌های سرویسی تلگرام (مانند پین شدن پیام، عضویت/خروج کاربر و ...)
+            if m.pinned_message.is_some()
+                || m.new_chat_members.is_some()
+                || m.left_chat_member.is_some()
+                || m.new_chat_title.is_some()
+                || m.new_chat_photo.is_some()
+                || m.delete_chat_photo.is_some()
+                || m.group_chat_created.is_some()
+                || m.supergroup_chat_created.is_some()
+                || m.channel_chat_created.is_some()
+                || m.message_auto_delete_timer_changed.is_some()
+                || m.migrate_to_chat_id.is_some()
+                || m.migrate_from_chat_id.is_some()
+            {
+                return Ok(());
+            }
             if let Some(text) = &m.text {
                 if text.len() > 4096 {
                     eprintln!(
@@ -90,7 +113,12 @@ pub async fn handle_update(
             }
             m.from.as_ref().map(|u| u.id as i64)
         }
-        UpdateContent::CallbackQuery(c) => Some(c.from.id as i64),
+        UpdateContent::CallbackQuery(c) => {
+            if c.from.is_bot {
+                return Ok(());
+            }
+            Some(c.from.id as i64)
+        }
         _ => None,
     };
 
@@ -292,6 +320,9 @@ async fn handle_message(
     state: &mut AppState,
     message: frankenstein::types::Message,
 ) -> crate::error::Result<()> {
+    if message.from.as_ref().map_or(false, |u| u.is_bot) || message.pinned_message.is_some() {
+        return Ok(());
+    }
     let AppState {
         api,
         cookie_pool,
@@ -312,7 +343,8 @@ async fn handle_message(
     // (فقط کاربری که همین الان برای اولین‌بار دیده شده باید به یک referrer نسبت داده شود).
     let mut is_new_user = false;
     if let Some(uid) = user_id {
-        is_new_user = stats::record_user_global(uid).await;
+        let username = message.from.as_ref().and_then(|u| u.username.as_deref());
+        is_new_user = stats::record_user_global(uid, username).await;
     }
 
     // Step 1: addemoji link detection
@@ -467,6 +499,86 @@ async fn handle_message(
                 }
             }
 
+            // ادمین بنر همگانی را فرستاده است (هر نوع پیام/مدیا/متن)
+            if let FlowState::AwaitingBroadcastBanner { mode, pin } = flow_manager.get(uid) {
+                let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
+                if is_admin {
+                    let banner_chat_id = message.chat.id;
+                    let banner_message_id = message.message_id;
+
+                    let (total_users, active_users) = if let Some(db) = database {
+                        match crate::stats::get_broadcast_user_counts(db.client()).await {
+                            Ok(counts) => (counts.total, counts.active),
+                            Err(_) => (1, 1),
+                        }
+                    } else {
+                        (1, 1)
+                    };
+
+                    flow_manager.set(
+                        uid,
+                        FlowState::AwaitingBroadcastTarget {
+                            mode,
+                            pin,
+                            banner_chat_id,
+                            banner_message_id,
+                            total_users,
+                            active_users,
+                        },
+                    );
+
+                    let prompt_text = crate::i18n::tf(
+                        "admin.broadcast.target_prompt",
+                        &[
+                            ("total", &total_users.to_string()),
+                            ("active", &active_users.to_string()),
+                        ],
+                    );
+                    let kb = crate::admin::broadcast::broadcast_target_keyboard(active_users, total_users);
+
+                    let _ = crate::bot::send_text_with_kb(
+                        api,
+                        message.chat.id,
+                        &prompt_text,
+                        kb,
+                    )
+                    .await;
+                }
+                return Ok(());
+            }
+
+            // ادمین عدد سقف ارسال همگانی را فرستاده است (مثلاً 500)
+            if let FlowState::AwaitingBroadcastTarget {
+                mode,
+                pin,
+                banner_chat_id,
+                banner_message_id,
+                ..
+            } = flow_manager.get(uid)
+            {
+                if let Some(text) = message.text.as_deref() {
+                    let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
+                    if is_admin {
+                        if let Ok(limit_num) = text.trim().parse::<i64>() {
+                            flow_manager.clear(uid);
+                            let db_client = database.as_ref().map(|db| db.client_arc());
+                            crate::admin::broadcast::spawn_broadcast_job(
+                                api.clone(),
+                                db_client,
+                                message.chat.id,
+                                mode,
+                                pin,
+                                banner_chat_id,
+                                banner_message_id,
+                                false,
+                                Some(limit_num),
+                            );
+                        }
+                    }
+                    return Ok(());
+                }
+            }
+
             if emoji_handler::handle_emoji_flow_message(api, &message, uid, flow_manager, database)
                 .await
             {
@@ -510,7 +622,10 @@ async fn handle_message(
             }
 
             if matches!(flow_manager.get(uid), FlowState::AwaitingDenoiseAudio) {
-                if message.voice.is_some() || message.audio.is_some() || message.document.is_some()
+                if message.voice.is_some()
+                    || message.audio.is_some()
+                    || message.video.is_some()
+                    || message.document.is_some()
                 {
                     let trace_id = next_trace_id();
                     log_trace(
@@ -585,6 +700,97 @@ async fn handle_message(
                     let msg2 = message.clone();
                     tokio::spawn(async move {
                         handle_gwm_image(&api2, &msg2, uid).await;
+                    });
+                    return Ok(());
+                }
+            }
+
+            if matches!(flow_manager.get(uid), FlowState::AwaitingDeoldifyImage) {
+                if message.photo.is_some() || message.document.is_some() {
+                    let trace_id = next_trace_id();
+                    log_trace(
+                        trace_id,
+                        "deoldify_route_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
+                    flow_manager.clear(uid);
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    let fm_clone = flow_manager.clone();
+                    let db_clone = database.clone();
+                    tokio::spawn(async move {
+                        crate::deoldify::handle_deoldify_image(
+                            &api2,
+                            &msg2,
+                            uid,
+                            &fm_clone,
+                            db_clone,
+                        )
+                        .await;
+                    });
+                    return Ok(());
+                }
+            }
+
+            if matches!(flow_manager.get(uid), FlowState::AwaitingNobgImage) {
+                if message.photo.is_some() || message.document.is_some() {
+                    let trace_id = next_trace_id();
+                    log_trace(
+                        trace_id,
+                        "nobg_route_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    let fm = flow_manager.clone();
+                    let db = database.clone();
+                    tokio::spawn(async move {
+                        crate::feynobg::handle_nobg_image(&api2, &msg2, uid, &fm, db).await;
+                    });
+                    return Ok(());
+                }
+            }
+
+
+            if matches!(flow_manager.get(uid), FlowState::AwaitingTtsVoiceSample) {
+                if let Some(voice) = &message.voice {
+                    let trace_id = next_trace_id();
+                    log_trace(
+                        trace_id,
+                        "tts_voice_sample_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
+                    crate::moss_tts::handle_tts_voice_sample(api, message.chat.id, uid, voice, flow_manager).await;
+                    return Ok(());
+                }
+            }
+
+            if let FlowState::AwaitingTtsText { prompt_path } = flow_manager.get(uid) {
+                if let Some(text) = &message.text {
+                    let trace_id = next_trace_id();
+                    log_trace(
+                        trace_id,
+                        "tts_text_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
+                    let prompt_clone = prompt_path.clone();
+                    let text_clone = text.clone();
+                    let api2 = api.clone();
+                    let chat_id = message.chat.id;
+                    let flow_manager_clone = flow_manager.clone();
+                    let database_clone = database.clone();
+                    flow_manager.clear(uid);
+                    tokio::spawn(async move {
+                        crate::moss_tts::handle_tts_text(
+                            &api2,
+                            chat_id,
+                            uid,
+                            &text_clone,
+                            prompt_clone,
+                            &flow_manager_clone,
+                            database_clone,
+                        )
+                        .await;
                     });
                     return Ok(());
                 }
@@ -665,6 +871,81 @@ async fn handle_message(
                     handle_surge_rename_text(api, &message, uid, flow_manager).await;
                 }
                 return Ok(());
+            }
+
+            if let FlowState::AwaitingCompressPassword { config } = flow_manager.get(uid) {
+                if message.text.is_some() {
+                    let trace_id = next_trace_id();
+                    log_trace(
+                        trace_id,
+                        "filecompress_password_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
+                    crate::filecompress::handle_fc_password_text(
+                        api,
+                        &message,
+                        uid,
+                        flow_manager,
+                        config,
+                    )
+                    .await;
+                    return Ok(());
+                }
+            }
+
+            if matches!(
+                flow_manager.get(uid),
+                FlowState::AwaitingCompressFiles { .. } | FlowState::AwaitingCompressOptions { .. }
+            ) {
+                if let Some(text) = &message.text {
+                    let trimmed = text.trim();
+                    if trimmed == t("fc.done_upload_button")
+                        || trimmed == "اتمام اپلود"
+                        || trimmed == "اتمام آپلود"
+                        || trimmed.contains("اتمام")
+                    {
+                        let trace_id = next_trace_id();
+                        log_trace(
+                            trace_id,
+                            "filecompress_done_dispatched",
+                            &format!("user_id={uid} chat_id={}", message.chat.id),
+                        );
+                        crate::filecompress::handle_fc_done_text(
+                            api,
+                            &message,
+                            uid,
+                            flow_manager,
+                            database,
+                        )
+                        .await;
+                        return Ok(());
+                    }
+                }
+
+                if message.document.is_some()
+                    || message.video.is_some()
+                    || message.audio.is_some()
+                    || message.photo.is_some()
+                    || message.voice.is_some()
+                    || message.video_note.is_some()
+                    || message.animation.is_some()
+                {
+                    let trace_id = next_trace_id();
+                    log_trace(
+                        trace_id,
+                        "filecompress_file_dispatched",
+                        &format!("user_id={uid} chat_id={}", message.chat.id),
+                    );
+                    crate::filecompress::handle_fc_file(
+                        api,
+                        &message,
+                        uid,
+                        flow_manager,
+                        database,
+                    )
+                    .await;
+                    return Ok(());
+                }
             }
         }
     }
@@ -836,7 +1117,7 @@ async fn handle_callback(
         }};
     }
 
-    if cb_data == crate::rank::paywall::CB_RANK_SHOW_MENU {
+    if cb_data.starts_with("rank:") || cb_data == crate::rank::paywall::CB_RANK_SHOW_MENU {
         let _ = api
             .answer_callback_query(
                 &AnswerCallbackQueryParams::builder()
@@ -844,7 +1125,7 @@ async fn handle_callback(
                     .build(),
             )
             .await;
-        crate::rank::menu::send_rank_menu(api, cb_chat_id).await;
+        crate::rank::menu::handle_rank_menu_callback(api, &callback_query).await;
         return Ok(());
     }
 
@@ -1025,6 +1306,25 @@ async fn handle_callback(
         return Ok(());
     }
 
+    if cb_data == CB_START_LEADERBOARD {
+        let trace_id = next_trace_id();
+        log_actor!("dispatch", trace_id, &callback_query.from, "clicked" => cb_data);
+        log_ev!("referral", trace_id, "leaderboard_enter", "user_id" => cb_user_id);
+        stats::record_event_global("referral", "leaderboard_view", "ok", 1).await;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            let r = edit_to_leaderboard(api, message.chat.id, message.message_id, database.as_ref()).await;
+            log_ev!("referral", trace_id, "leaderboard_done", "ok" => r.is_ok());
+        }
+        return Ok(());
+    }
+
     if cb_data == CB_TOOLS_PDF_COMPRESS {
         let trace_id = next_trace_id();
         log_trace(
@@ -1201,6 +1501,63 @@ async fn handle_callback(
                 message.message_id,
                 cb_user_id as i64,
                 flow_manager,
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == crate::filecompress::CB_TOOLS_FILECOMPRESS {
+        let trace_id = next_trace_id();
+        log_trace(
+            trace_id,
+            "cb_filecompress_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            crate::filecompress::enter_filecompress(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data.starts_with(crate::filecompress::CB_FC_PREFIX) {
+        let trace_id = next_trace_id();
+        log_trace(
+            trace_id,
+            "cb_filecompress_action",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id} action={cb_data}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            let action = &cb_data[crate::filecompress::CB_FC_PREFIX.len()..];
+            crate::filecompress::handle_fc_callback(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+                action,
+                database,
             )
             .await;
         }
@@ -1668,6 +2025,198 @@ async fn handle_callback(
         return Ok(());
     }
 
+    if cb_data == CB_AI_DEOLDIFY {
+        let trace_id = next_trace_id();
+        log_trace(
+            trace_id,
+            "cb_ai_deoldify_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            crate::deoldify::enter_deoldify(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_DEOLDIFY_CANCEL {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            crate::deoldify::handle_deoldify_cancel(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_AI_NOBG {
+        let trace_id = next_trace_id();
+        log_trace(
+            trace_id,
+            "cb_ai_nobg_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            enter_nobg(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_NOBG_CANCEL {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            handle_nobg_cancel(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+
+
+
+    if cb_data == CB_AI_TTS {
+        let trace_id = next_trace_id();
+        log_trace(
+            trace_id,
+            "cb_ai_tts_entry",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+        );
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            crate::moss_tts::enter_tts(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+                database.clone(),
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_TTS_MODE_DEFAULT {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            crate::moss_tts::handle_tts_mode_default(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+                database.clone(),
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_TTS_MODE_CLONE {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            crate::moss_tts::handle_tts_mode_clone(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+                database.clone(),
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_TTS_CANCEL {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            crate::moss_tts::handle_tts_cancel(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
     if cb_data == CB_GWM_CANCEL {
         let trace_id = next_trace_id();
         log_trace(
@@ -1710,7 +2259,6 @@ async fn handle_callback(
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             use crate::emoji::panel::btn_icon;
             use crate::i18n::t;
-            use frankenstein::methods::EditMessageTextParams;
             let kb = frankenstein::types::InlineKeyboardMarkup::builder()
                 .inline_keyboard(vec![
                     vec![btn_icon(&t("admin.stats_button"), CB_ADMIN_STATS, "stats")],
@@ -1725,22 +2273,25 @@ async fn handle_callback(
                         "panel",
                     )],
                     vec![btn_icon(
+                        &t("admin.broadcast_button"),
+                        CB_ADMIN_BROADCAST,
+                        "",
+                    )],
+                    vec![btn_icon(
                         &t("admin.back"),
                         crate::bot::CB_START_PANEL,
                         "back",
                     )],
                 ])
                 .build();
-            let _ = api
-                .edit_message_text(
-                    &EditMessageTextParams::builder()
-                        .chat_id(message.chat.id)
-                        .message_id(message.message_id)
-                        .text(t("admin.panel_title"))
-                        .reply_markup(kb)
-                        .build(),
-                )
-                .await;
+            let _ = crate::bot::edit_text(
+                api,
+                message.chat.id,
+                message.message_id,
+                &t("admin.panel_title"),
+                Some(kb),
+            )
+            .await;
         }
         return Ok(());
     }
@@ -2131,6 +2682,212 @@ async fn handle_callback(
                 .build();
             if let Err(e) = api.send_message(&params).await {
                 eprintln!("[admin event=errors_send_failed] err={e}");
+            }
+        }
+        return Ok(());
+    }
+
+    // ── Admin Broadcast Handlers ─────────────────────────────────────────────
+    if cb_data == CB_ADMIN_BROADCAST && is_admin {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        flow_manager.clear(cb_user_id as i64);
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            let kb = crate::admin::broadcast::broadcast_menu_keyboard(false);
+            let _ = crate::bot::edit_text_md(
+                api,
+                message.chat.id,
+                message.message_id,
+                &t("admin.broadcast.menu_title"),
+                Some(kb),
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_BROADCAST_TOGGLE_PIN && is_admin {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        let (current_mode, current_pin) = match flow_manager.get(cb_user_id as i64) {
+            FlowState::AwaitingBroadcastBanner { mode, pin } => (mode, pin),
+            _ => (BroadcastMode::Copy, false),
+        };
+        let new_pin_state = !current_pin;
+        flow_manager.set(
+            cb_user_id as i64,
+            FlowState::AwaitingBroadcastBanner {
+                mode: current_mode,
+                pin: new_pin_state,
+            },
+        );
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            let kb = crate::admin::broadcast::broadcast_menu_keyboard(new_pin_state);
+            let _ = crate::bot::edit_text_md(
+                api,
+                message.chat.id,
+                message.message_id,
+                &t("admin.broadcast.menu_title"),
+                Some(kb),
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_BROADCAST_MODE_COPY && is_admin {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            let current_pin = match flow_manager.get(cb_user_id as i64) {
+                FlowState::AwaitingBroadcastBanner { pin, .. } => pin,
+                _ => false,
+            };
+            flow_manager.set(
+                cb_user_id as i64,
+                FlowState::AwaitingBroadcastBanner {
+                    mode: BroadcastMode::Copy,
+                    pin: current_pin,
+                },
+            );
+            let kb = InlineKeyboardMarkup::builder()
+                .inline_keyboard(vec![vec![crate::emoji::panel::btn_icon(
+                    &t("admin.back"),
+                    CB_ADMIN_BROADCAST,
+                    "back",
+                )]])
+                .build();
+            let _ = crate::bot::edit_text_md(
+                api,
+                message.chat.id,
+                message.message_id,
+                &t("admin.broadcast.prompt_send_banner"),
+                Some(kb),
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_BROADCAST_MODE_FORWARD && is_admin {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            let current_pin = match flow_manager.get(cb_user_id as i64) {
+                FlowState::AwaitingBroadcastBanner { pin, .. } => pin,
+                _ => false,
+            };
+            flow_manager.set(
+                cb_user_id as i64,
+                FlowState::AwaitingBroadcastBanner {
+                    mode: BroadcastMode::Forward,
+                    pin: current_pin,
+                },
+            );
+            let kb = InlineKeyboardMarkup::builder()
+                .inline_keyboard(vec![vec![crate::emoji::panel::btn_icon(
+                    &t("admin.back"),
+                    CB_ADMIN_BROADCAST,
+                    "back",
+                )]])
+                .build();
+            let _ = crate::bot::edit_text_md(
+                api,
+                message.chat.id,
+                message.message_id,
+                &t("admin.broadcast.prompt_send_banner"),
+                Some(kb),
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_BROADCAST_SEND_ACTIVE && is_admin {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            if let FlowState::AwaitingBroadcastTarget {
+                mode,
+                pin,
+                banner_chat_id,
+                banner_message_id,
+                ..
+            } = flow_manager.get(cb_user_id as i64)
+            {
+                flow_manager.clear(cb_user_id as i64);
+                let db_client = database.as_ref().map(|db| db.client_arc());
+                crate::admin::broadcast::spawn_broadcast_job(
+                    api.clone(),
+                    db_client,
+                    message.chat.id,
+                    mode,
+                    pin,
+                    banner_chat_id,
+                    banner_message_id,
+                    true,
+                    None,
+                );
+            }
+        }
+        return Ok(());
+    }
+
+    if cb_data == CB_BROADCAST_SEND_ALL && is_admin {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            if let FlowState::AwaitingBroadcastTarget {
+                mode,
+                pin,
+                banner_chat_id,
+                banner_message_id,
+                ..
+            } = flow_manager.get(cb_user_id as i64)
+            {
+                flow_manager.clear(cb_user_id as i64);
+                let db_client = database.as_ref().map(|db| db.client_arc());
+                crate::admin::broadcast::spawn_broadcast_job(
+                    api.clone(),
+                    db_client,
+                    message.chat.id,
+                    mode,
+                    pin,
+                    banner_chat_id,
+                    banner_message_id,
+                    false,
+                    None,
+                );
             }
         }
         return Ok(());

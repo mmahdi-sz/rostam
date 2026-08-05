@@ -81,8 +81,18 @@ pub async fn test_paywall(Json(payload): Json<Value>) -> axum::response::Respons
 
     // Process payloads to match the requested output format
     let mut message = json!({});
+    let mut warning_message = json!({});
     let mut inline_keyboard = json!([]);
     let mut reply_keyboard = json!([]);
+
+    if payloads.len() >= 2 {
+        let first = &payloads[0];
+        warning_message = json!({
+            "parse_mode": first.get("parse_mode").unwrap_or(&Value::Null),
+            "rendered_text": first.get("text").unwrap_or(&Value::Null),
+            "inline_keyboard": first.get("reply_markup").and_then(|m| m.get("inline_keyboard")).unwrap_or(&json!([])),
+        });
+    }
 
     if let Some(payload) = payloads.last() {
         message = json!({
@@ -106,6 +116,7 @@ pub async fn test_paywall(Json(payload): Json<Value>) -> axum::response::Respons
         "ok": true,
         "trace": traces.lock().unwrap().clone(),
         "stats_events": stats.lock().unwrap().clone(),
+        "warning_message": warning_message,
         "message": message,
         "inline_keyboard": inline_keyboard,
         "reply_keyboard": reply_keyboard,

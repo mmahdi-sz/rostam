@@ -46,6 +46,10 @@ pub async fn run() -> anyhow::Result<()> {
             post(endpoints::pdfcompress::test_pdf_compress),
         )
         .route(
+            "/test/compress/submit",
+            post(endpoints::compress::test_filecompress),
+        )
+        .route(
             "/test/stt/recognize",
             post(endpoints::ai::test_stt_recognize),
         )
@@ -55,8 +59,28 @@ pub async fn run() -> anyhow::Result<()> {
         )
         .route("/test/gwm/detect", post(endpoints::ai::test_gwm_detect))
         .route(
+            "/test/denoise/process",
+            post(endpoints::ai::test_denoise_process),
+        )
+        .route(
+            "/test/tts/generate",
+            post(endpoints::ai::test_tts_generate),
+        )
+        .route(
+            "/test/deoldify/colorized",
+            post(endpoints::ai::test_deoldify_colorize),
+        )
+        .route(
+            "/test/nobg/process",
+            post(endpoints::ai::test_nobg_process),
+        )
+        .route(
             "/test/admin/panel",
             post(endpoints::admin::test_admin_panel),
+        )
+        .route(
+            "/test/admin/broadcast",
+            post(endpoints::admin::test_admin_broadcast),
         )
         .route(
             "/test/surge/validate_url",
@@ -69,6 +93,10 @@ pub async fn run() -> anyhow::Result<()> {
         .route(
             "/test/referral/spend",
             post(endpoints::referral::test_referral_spend),
+        )
+        .route(
+            "/test/referral/leaderboard",
+            post(endpoints::referral::test_referral_leaderboard),
         )
         // Catch-all for outgoing frankenstein calls
         .route(

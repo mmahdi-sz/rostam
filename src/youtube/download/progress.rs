@@ -85,6 +85,10 @@ pub fn format_progress_body(snap: &ProgressSnapshot, quality_label: &str) -> Str
     let default_elapsed = crate::i18n::t("youtube.progress_default_elapsed");
     let elapsed = clean_val(&snap.elapsed, &default_elapsed);
 
+    if percent_f == 0.0 || snap.percent == "0.0%" {
+        downloaded = "0B";
+    }
+
     if percent_f >= 99.9 {
         if (downloaded == "-" || downloaded.is_empty()) && total != "-" {
             downloaded = total;
@@ -123,3 +127,25 @@ pub fn format_upload_body(quality_label: &str, elapsed: std::time::Duration) -> 
         ],
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zero_percent_shows_zero_bytes() {
+        let snap = ProgressSnapshot {
+            percent: "0.0%".into(),
+            downloaded: "1.00KiB".into(),
+            total: "26.48MiB".into(),
+            speed: "Unknown B/s".into(),
+            eta: "Unknown".into(),
+            elapsed: "00:00:00".into(),
+            percent_int: 0,
+        };
+        assert_eq!(snap.percent_int, 0);
+        assert_eq!(clean_val(&snap.downloaded, "-"), "1.00KiB");
+        // In format_progress_body, percent_f == 0.0 forces downloaded to "0B"
+    }
+}
+

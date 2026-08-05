@@ -9,7 +9,7 @@ use super::quota;
 use super::store::get_user_rank;
 use super::types::Rank;
 use crate::database::postgresql::PostgresDatabase;
-use crate::emoji::panel::{btn_icon, btn_icon_success};
+use crate::emoji::panel::{btn_icon, btn_icon_primary, btn_icon_success};
 use crate::i18n::{apply_premium_to_html, t, tf};
 
 pub const CB_USER_PANEL: &str = "user:panel";
@@ -100,13 +100,6 @@ async fn build_main_text(
     let monthly_limit = rank.monthly_traffic_bytes();
     let monthly_left = monthly_limit.saturating_sub(monthly_used);
 
-    // هوش مصنوعی (تومار)
-    let ai_used = quota::get_usage(client, user_id, quota::QuotaKind::AiChatMonthly, 30 * 86400)
-        .await
-        .unwrap_or(0) as u64;
-    let ai_allowed = rank.ai_chat_monthly_toomar().is_some();
-    let ai_limit = rank.ai_chat_monthly_toomar().unwrap_or(0) as u64;
-
     let rank_name = rank.display_name();
     apply_premium_to_html(&tf(
         "panel.main_text",
@@ -119,16 +112,6 @@ async fn build_main_text(
             ("bar_m", &bar(monthly_used, monthly_limit, true)),
             ("used_m", &fmt_gib(monthly_used)),
             ("left_m", &fmt_gib(monthly_left)),
-            ("bar_ai", &bar(ai_used, ai_limit, ai_allowed)),
-            ("ai_u", &ai_used.to_string()),
-            (
-                "ai_lim",
-                &if ai_allowed {
-                    ai_limit.to_string()
-                } else {
-                    "—".to_string()
-                },
-            ),
         ],
     ))
 }
@@ -145,7 +128,7 @@ fn main_keyboard() -> InlineKeyboardMarkup {
                 ),
             ],
             vec![btn_icon_success(&t("referral.button"), CB_REFERRAL, "user")],
-            vec![btn_icon(
+            vec![btn_icon_primary(
                 &t("start.back"),
                 crate::bot::CB_START_PANEL,
                 "back",
@@ -158,7 +141,7 @@ fn back_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![btn_icon(&t("panel.back_button"), CB_USER_PANEL, "back")],
-            vec![btn_icon(
+            vec![btn_icon_primary(
                 &t("start.back"),
                 crate::bot::CB_START_PANEL,
                 "back",
@@ -249,6 +232,24 @@ async fn build_more_text(
     let up3_lim = rank.upscale_weekly_quota(3) as u64;
     let up4_lim = rank.upscale_weekly_quota(4) as u64;
 
+    // NoBg
+    let nobg = quota::get_usage(client, user_id, quota::QuotaKind::NobgWeekly, week)
+        .await
+        .unwrap_or(0) as u64;
+    let nobg_lim = rank.nobg_weekly_quota() as u64;
+
+    // DeOldify
+    let deoldify = quota::get_usage(client, user_id, quota::QuotaKind::DeoldifyWeekly, week)
+        .await
+        .unwrap_or(0) as u64;
+    let deoldify_lim = rank.deoldify_weekly_quota() as u64;
+
+    // TTS
+    let tts = quota::get_usage(client, user_id, quota::QuotaKind::TtsWeekly, week)
+        .await
+        .unwrap_or(0) as u64;
+    let tts_lim = rank.tts_weekly_secs();
+
     fn fmt_secs(s: u64) -> String {
         if s >= 3600 {
             tf(
@@ -296,6 +297,15 @@ async fn build_more_text(
             ("b_u4", &bar(up4, up4_lim, true)),
             ("v_u4", &up4.to_string()),
             ("l_u4", &up4_lim.to_string()),
+            ("b_nobg", &bar(nobg, nobg_lim, true)),
+            ("u_nobg", &nobg.to_string()),
+            ("l_nobg", &nobg_lim.to_string()),
+            ("b_deold", &bar(deoldify, deoldify_lim, true)),
+            ("u_deold", &deoldify.to_string()),
+            ("l_deold", &deoldify_lim.to_string()),
+            ("b_tts", &bar(tts, tts_lim, true)),
+            ("u_tts", &fmt_secs(tts)),
+            ("l_tts", &fmt_secs(tts_lim)),
         ],
     ))
 }

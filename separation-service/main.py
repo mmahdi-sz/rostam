@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import gc
 import io
 import logging
 import os
@@ -26,10 +27,12 @@ log = logging.getLogger("separation")
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
 MODEL_NAME = "Kim_Vocal_2.onnx"
 MAX_FILE_BYTES = 50 * 1024 * 1024  # 50MB
+SESSION_IDLE_TIMEOUT = 180  # seconds — unload models after 3 min idle
 
 _separator_quality = None
 _separator_fast = None
 _model_loaded = False
+_last_used: float = 0.0          # epoch time of last separation call
 _trace_counter = 0
 _sep_lock = asyncio.Lock()
 _all_cpu_cores: set = set()
@@ -44,9 +47,10 @@ def next_trace_id() -> int:
 _loading_lock = threading.Lock()
 
 def load_models():
-    global _separator_quality, _separator_fast, _model_loaded, _all_cpu_cores
+    global _separator_quality, _separator_fast, _model_loaded, _all_cpu_cores, _last_used
     with _loading_lock:
         if _model_loaded:
+            _last_used = time.monotonic()
             return True
         try:
             import multiprocessing
@@ -72,6 +76,7 @@ def load_models():
             _separator_fast.load_model(MODEL_NAME)
 
             _model_loaded = True
+            _last_used = time.monotonic()
             log.info(f"[separation event=model_load_done] model={MODEL_NAME}")
             return True
         except Exception as e:
@@ -79,10 +84,30 @@ def load_models():
             _model_loaded = False
             return False
 
+
+def unload_models():
+    """Drop the separator objects and ask the GC + OS to reclaim memory."""
+    global _separator_quality, _separator_fast, _model_loaded
+    with _loading_lock:
+        if not _model_loaded:
+            return
+        _separator_quality = None
+        _separator_fast = None
+        _model_loaded = False
+        gc.collect()  # CPython ref-count drops immediately, but gc handles cycles
+        log.info("[separation event=model_unloaded] idle timeout reached, memory released")
+
 async def auto_recovery_loop():
+    """Combined idle-unloader + crash-recovery loop (runs every 30 s)."""
     while True:
         await asyncio.sleep(30)
-        if not _model_loaded:
+        if _model_loaded:
+            idle_secs = time.monotonic() - _last_used
+            if idle_secs >= SESSION_IDLE_TIMEOUT:
+                log.info(f"[separation event=idle_unload_trigger] idle_secs={idle_secs:.0f}")
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, unload_models)
+        elif not _model_loaded:
             log.warning("[separation event=auto_recovery_trigger] Model is not loaded, attempting background reload...")
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, load_models)
@@ -93,10 +118,9 @@ async def lifespan(app: FastAPI):
     log.info("[separation event=startup] starting cpu monitor and broker")
     await start_monitor()
     await start_broker()
-    log.info("[separation event=startup] pre-loading model in background thread")
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, load_models)
-    log.info(f"[separation event=startup_done] model_loaded={_model_loaded}")
+    # Load models lazily on first request instead of at startup,
+    # so the service idles at ~50 MB instead of ~1.1 GB.
+    log.info("[separation event=startup_done] models will be loaded on first request")
     asyncio.create_task(auto_recovery_loop())
     yield
     log.info("[separation event=shutdown]")
@@ -254,7 +278,10 @@ def _run_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str,
 
 
 def _do_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str, core_count: int) -> dict:
+    global _last_used
     import subprocess
+
+    _last_used = time.monotonic()  # reset idle timer for this call
 
     with tempfile.TemporaryDirectory(prefix=f"sep_{trace_id}_") as work_dir:
         ext = os.path.splitext(filename)[1] or ".mp3"

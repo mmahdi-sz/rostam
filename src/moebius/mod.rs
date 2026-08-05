@@ -6,12 +6,13 @@
 //! it back into the full-resolution image. See `pipeline.rs` for the full
 //! step-by-step doc comment.
 
-mod cpu;
+pub mod cpu;
 mod crop;
 mod detect;
 mod imaging;
-mod model;
+pub(crate) mod model;
 mod pipeline;
 mod scheduler;
 
 pub use pipeline::{MoebiusError, remove_watermark};
+pub use model::spawn_session_reaper;

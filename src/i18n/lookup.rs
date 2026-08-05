@@ -25,6 +25,7 @@ use crate::sync_util::{read_or_recover, write_or_recover};
 /// Reload i18n.json from disk without restarting.
 /// On parse/IO error keeps existing values and logs — does NOT panic.
 pub fn reload() {
+    crate::rank::prices::reload();
     match try_load_from_file() {
         Ok(fresh) => {
             *write_or_recover(cache()) = fresh;

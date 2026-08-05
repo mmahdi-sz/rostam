@@ -1145,6 +1145,8 @@ pub async fn download_subtitles_separately(
         .arg(format!("deno:{}", crate::config::deno_path()))
         .arg("--cookies-from-browser")
         .arg(cookie_spec)
+        .arg("--extractor-args")
+        .arg("youtubetab:skip=authcheck")
         .arg("--no-warnings")
         .arg("--no-playlist")
         .arg("--write-subs")

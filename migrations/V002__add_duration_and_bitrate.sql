@@ -1,0 +1,2 @@
+ALTER TABLE stats_downloads ADD COLUMN IF NOT EXISTS duration INT;
+ALTER TABLE stats_downloads ADD COLUMN IF NOT EXISTS bitrate BIGINT;

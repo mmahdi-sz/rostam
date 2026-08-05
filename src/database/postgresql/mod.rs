@@ -36,6 +36,10 @@ impl PostgresDatabase {
         &self.client
     }
 
+    pub fn client_arc(&self) -> Arc<Client> {
+        self.client.clone()
+    }
+
     pub async fn save_snapshot(
         &self,
         snapshot: &CookiePoolSnapshot,

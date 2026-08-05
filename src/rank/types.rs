@@ -196,13 +196,39 @@ impl Rank {
         }
     }
 
-    /// اعتبار چت هوش مصنوعی در ماه — تومار (None = ممنوع)
-    pub fn ai_chat_monthly_toomar(&self) -> Option<u32> {
+    /// سقف هفتگی حذف پس‌زمینه تصویر بر اساس رنک
+    pub fn nobg_weekly_quota(&self) -> u32 {
         match self {
-            Self::Esfandyar => Some(100),
-            Self::Sohrab => Some(350),
-            Self::Rostam => Some(1000),
-            _ => None,
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 3,
+            Self::Sohrab => 30,
+            Self::Rostam => 150,
+        }
+    }
+
+    /// رتبه‌ی بعدی با سقف nobg بیشتر
+    pub fn nobg_next_rank(&self) -> Option<Self> {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => Some(Self::Sohrab),
+            Self::Sohrab => Some(Self::Rostam),
+            Self::Rostam => None,
+        }
+    }
+
+    /// سقف هفتگی رنگی‌کردن عکس قدیمی بر اساس رنک
+    pub fn deoldify_weekly_quota(&self) -> u32 {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 3,
+            Self::Sohrab => 15,
+            Self::Rostam => 100,
+        }
+    }
+
+    /// سقف هفتگی تبدیل متن به صدا (Moss TTS) بر حسب ثانیه
+    pub fn tts_weekly_secs(&self) -> u64 {
+        match self {
+            Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 30 * 60,
+            Self::Sohrab => 100 * 60,
+            Self::Rostam => 600 * 60,
         }
     }
 
@@ -281,6 +307,34 @@ impl Rank {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => None,
             Self::Sohrab => Some(5 * 3600),
             Self::Rostam => Some(50 * 3600),
+        }
+    }
+
+    /// سقف CPU-time فشرده‌سازی روزانه (ثانیه)
+    pub fn compress_cpu_daily_secs(&self) -> u64 {
+        match self {
+            Self::Dalavar | Self::Sohrab => 10 * 60,
+            Self::Sepahbod => 30 * 60,
+            Self::Esfandyar | Self::Rostam => 200 * 60,
+        }
+    }
+
+    /// سقف CPU-time فشرده‌سازی ماهانه (ثانیه)
+    pub fn compress_cpu_monthly_secs(&self) -> u64 {
+        match self {
+            Self::Dalavar | Self::Sohrab => 100 * 60,
+            Self::Sepahbod => 400 * 60,
+            Self::Esfandyar | Self::Rostam => 3000 * 60,
+        }
+    }
+
+    /// رتبه‌ی بعدی که سقف فشرده‌سازی بیشتری داره
+    #[allow(dead_code)]
+    pub fn compress_next_rank(&self) -> Option<Self> {
+        match self {
+            Self::Dalavar | Self::Sohrab => Some(Self::Sepahbod),
+            Self::Sepahbod => Some(Self::Esfandyar),
+            Self::Esfandyar | Self::Rostam => None,
         }
     }
 }

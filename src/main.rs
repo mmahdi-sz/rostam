@@ -23,6 +23,12 @@
     clippy::if_same_then_else,
     clippy::unnecessary_cast,
     clippy::needless_borrows_for_generic_args,
+)]
+
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+#[allow(
     clippy::double_ended_iterator_last,
     clippy::useless_format,
     clippy::manual_flatten,
@@ -39,6 +45,9 @@ mod config;
 mod cookie_pool;
 mod database;
 mod denoise;
+mod deoldify;
+mod feynobg;
+mod filecompress;
 mod emoji;
 mod force_join;
 mod gemini_watermark;
@@ -46,6 +55,7 @@ mod i18n;
 mod ip_lookup;
 mod modules;
 mod moebius;
+mod moss_tts;
 mod pdfcompress;
 mod rank;
 mod redeem;

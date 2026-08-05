@@ -204,13 +204,17 @@ async fn handle_sub_toggle(
         }
     }
 
-    // Quick buttons (fa/en in main menu) are add-only: clicking an already-selected lang
-    // does nothing. To deselect, user must use the full subtitle submenu.
-    let (added, total) = with_selection(&req, |slot| {
+    // Toggle subtitle selection: if already selected, remove it; if not, add it.
+    // If subtitle_mode is Hardsub and adding a new lang, keep only the newly added lang.
+    let (toggled, total) = with_selection(&req, |slot| {
         if let Some(sel) = slot.as_mut() {
-            if sel.subtitle_langs.iter().any(|l| l == &lang) {
-                (false, sel.subtitle_langs.len()) // already selected — no-op
+            if let Some(pos) = sel.subtitle_langs.iter().position(|l| l == &lang) {
+                sel.subtitle_langs.remove(pos);
+                (true, sel.subtitle_langs.len())
             } else {
+                if sel.subtitle_mode == SubtitleMode::Hardsub {
+                    sel.subtitle_langs.clear();
+                }
                 sel.subtitle_langs.push(lang.clone());
                 (true, sel.subtitle_langs.len())
             }
@@ -221,9 +225,9 @@ async fn handle_sub_toggle(
     log_trace(
         trace_id,
         "selection_sub_toggle",
-        &format!("request_id={request_id} lang={lang} added={added} total_selected={total}"),
+        &format!("request_id={request_id} lang={lang} toggled={toggled} total_selected={total}"),
     );
-    if added && let Some(msg) = extract_message(cq) {
+    if toggled && let Some(msg) = extract_message(cq) {
         refresh_keyboard(api, msg, &req, request_id).await;
     }
     answer(api, cq, "").await;
@@ -309,13 +313,22 @@ async fn handle_sub_mode_toggle(
     }
 
     let changed = with_selection(&req, |slot| {
-        if let Some(sel) = slot.as_mut()
-            && sel.subtitle_mode != new_mode
-        {
+        if let Some(sel) = slot.as_mut() {
+            let mode_changed = sel.subtitle_mode != new_mode;
             sel.subtitle_mode = new_mode;
-            return true;
+
+            // If switching to Hardsub and multiple subtitle languages are selected, keep only the latest.
+            if new_mode == SubtitleMode::Hardsub && sel.subtitle_langs.len() > 1 {
+                if let Some(last) = sel.subtitle_langs.pop() {
+                    sel.subtitle_langs = vec![last];
+                }
+                return true;
+            }
+
+            mode_changed
+        } else {
+            false
         }
-        false
     });
     log_trace(
         trace_id,

@@ -6,11 +6,11 @@ use frankenstein::types::{
 use crate::i18n::{t, tf};
 
 use super::super::store::{EmojiItem, EmojiPack};
-use super::buttons::{btn, btn_icon, btn_success};
+use super::buttons::{btn, btn_icon, btn_icon_primary, btn_success};
 use super::constants::*;
 
 pub fn main_panel_keyboard() -> InlineKeyboardMarkup {
-    let add = btn_icon(&t("emoji.panel.add"), CB_ADD, "add");
+    let add = btn_success(&t("emoji.panel.add_emojis"), CB_ADD);
     let test = btn_icon(&t("emoji.panel.test"), CB_TEST, "test");
     let list = btn_icon(&t("emoji.panel.list"), CB_LIST, "list");
     let del = btn_icon(
@@ -22,7 +22,7 @@ pub fn main_panel_keyboard() -> InlineKeyboardMarkup {
     let import = btn_icon(&t("emoji.panel.import"), CB_IMPORT, "import");
     let export = btn_icon(&t("emoji.panel.export"), CB_EXPORT, "export");
     let guide = btn_icon(&t("emoji.panel.guide"), CB_GUIDE, "guide");
-    let main_menu = btn_icon(&t("start.back"), CB_START_PANEL, "back");
+    let main_menu = btn_icon_primary(&t("start.back"), CB_START_PANEL, "back");
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![add],

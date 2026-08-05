@@ -3,8 +3,9 @@
 mod query;
 #[allow(unused_imports)]
 pub use query::{
-    FeatureStats, Periods, count_recent_errors, fmt_bytes, fmt_secs, get_action_breakdown,
-    get_active_users, get_download_stats, get_feature_stats, get_recent_errors, get_user_stats,
+    BroadcastCounts, FeatureStats, Periods, count_recent_errors, fmt_bytes, fmt_secs,
+    get_action_breakdown, get_active_users, get_broadcast_user_counts, get_broadcast_user_ids,
+    get_download_stats, get_feature_stats, get_recent_errors, get_user_stats,
 };
 
 use redis::aio::MultiplexedConnection;
@@ -172,9 +173,9 @@ pub async fn set_user_language(user_id: i64, lang: &str) {
 
 /// ثبت کاربر در stats. خروجی true یعنی این کاربر برای اولین بار دیده شده
 /// (برای گیت زدن attribution زیرمجموعه‌گیری استفاده می‌شود).
-pub async fn record_user_global(user_id: i64) -> bool {
+pub async fn record_user_global(user_id: i64, username: Option<&str>) -> bool {
     let Some(client) = db() else { return false };
-    record_user(client, user_id).await
+    record_user(client, user_id, username).await
 }
 
 #[cfg(feature = "testapi")]
@@ -280,14 +281,14 @@ pub async fn record_error_global(feature: &str, message: impl std::fmt::Display)
 }
 
 /// خروجی true یعنی ردیف تازه insert شد (کاربر قبلاً وجود نداشت).
-pub async fn record_user(client: &Client, user_id: i64) -> bool {
+pub async fn record_user(client: &Client, user_id: i64, username: Option<&str>) -> bool {
     let r = client
         .query_one(
-            "INSERT INTO stats_users (user_id, first_seen, last_seen)
-         VALUES ($1, NOW(), NOW())
-         ON CONFLICT (user_id) DO UPDATE SET last_seen = NOW()
+            "INSERT INTO stats_users (user_id, first_seen, last_seen, is_blocked, username)
+         VALUES ($1, NOW(), NOW(), FALSE, $2)
+         ON CONFLICT (user_id) DO UPDATE SET last_seen = NOW(), is_blocked = FALSE, username = COALESCE($2, stats_users.username)
          RETURNING (xmax = 0) AS inserted",
-            &[&user_id],
+            &[&user_id, &username],
         )
         .await;
     match r {
@@ -297,6 +298,16 @@ pub async fn record_user(client: &Client, user_id: i64) -> bool {
             false
         }
     }
+}
+
+pub async fn mark_user_blocked_global(user_id: i64) {
+    let Some(client) = db() else { return };
+    let _ = client
+        .execute(
+            "UPDATE stats_users SET is_blocked = TRUE, blocked_at = NOW() WHERE user_id = $1",
+            &[&user_id],
+        )
+        .await;
 }
 
 pub async fn record_download_start(user_id: i64) -> Option<i64> {

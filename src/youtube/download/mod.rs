@@ -1,6 +1,6 @@
 mod cancel;
 mod helpers;
-mod progress;
+pub mod progress;
 mod runner;
 mod selection_helpers;
 mod split;

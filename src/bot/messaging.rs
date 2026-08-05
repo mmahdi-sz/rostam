@@ -49,6 +49,52 @@ pub async fn send_text(api: &Bot, chat_id: i64, text: &str) -> crate::error::Res
     }
 }
 
+pub async fn send_text_with_kb(
+    api: &Bot,
+    chat_id: i64,
+    text: &str,
+    reply_markup: InlineKeyboardMarkup,
+) -> crate::error::Result<()> {
+    let (rendered, entities, trace_id) = expand_and_entify(text, chat_id).await;
+    let params = if entities.is_empty() {
+        SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(&rendered)
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(reply_markup))
+            .build()
+    } else {
+        SendMessageParams::builder()
+            .chat_id(chat_id)
+            .text(&rendered)
+            .entities(entities.clone())
+            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(reply_markup))
+            .build()
+    };
+    match api.send_message(&params).await {
+        Ok(_) => {
+            if let Some(tid) = trace_id {
+                eprintln!(
+                    "[send_text trace={tid} event=send_ok] entity_count={ec}",
+                    ec = entities.len(),
+                );
+            }
+            Ok(())
+        }
+        Err(e) => {
+            if let Some(tid) = trace_id {
+                eprintln!(
+                    "[send_text trace={tid} event=send_failed] chat_id={chat_id} error={e} \
+                     entity_count={ec} rendered={rendered:?}",
+                    ec = entities.len(),
+                );
+            } else {
+                eprintln!("[send_text event=send_failed] chat_id={chat_id} error={e}");
+            }
+            Err(e.into())
+        }
+    }
+}
+
 #[cfg(feature = "testapi")]
 tokio::task_local! {
     pub static CAPTURED_EMOJIS: std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>;
@@ -242,11 +288,35 @@ pub async fn send_long_text(api: &Bot, chat_id: i64, text: &str) -> crate::error
     Ok(())
 }
 
+pub async fn edit_text_md(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    text: &str,
+    reply_markup: Option<InlineKeyboardMarkup>,
+) -> crate::error::Result<()> {
+    let text_with_emojis = crate::i18n::apply_premium_to_md(text);
+    let builder = EditMessageTextParams::builder();
+    let builder = builder
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(&text_with_emojis)
+        .parse_mode(ParseMode::MarkdownV2);
+    let params = if let Some(kb) = reply_markup {
+        builder.reply_markup(kb).build()
+    } else {
+        builder.build()
+    };
+    api.edit_message_text(&params).await?;
+    Ok(())
+}
+
 pub async fn send_text_md(api: &Bot, chat_id: i64, text: &str) -> crate::error::Result<()> {
+    let text_with_emojis = crate::i18n::apply_premium_to_md(text);
     api.send_message(
         &SendMessageParams::builder()
             .chat_id(chat_id)
-            .text(text)
+            .text(&text_with_emojis)
             .parse_mode(ParseMode::MarkdownV2)
             .build(),
     )
@@ -260,11 +330,12 @@ pub async fn send_text_md_with_keyboard(
     text: &str,
     reply_markup: InlineKeyboardMarkup,
 ) -> crate::error::Result<()> {
+    let text_with_emojis = crate::i18n::apply_premium_to_md(text);
     let markup = ReplyMarkup::InlineKeyboardMarkup(reply_markup);
     api.send_message(
         &SendMessageParams::builder()
             .chat_id(chat_id)
-            .text(text)
+            .text(&text_with_emojis)
             .parse_mode(ParseMode::MarkdownV2)
             .reply_markup(markup)
             .build(),
