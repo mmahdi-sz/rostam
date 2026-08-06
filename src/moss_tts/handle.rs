@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use frankenstein::{
@@ -9,12 +8,13 @@ use frankenstein::{
         DeleteMessageParams, EditMessageTextParams, SendAudioParams, SendMessageParams,
         SendVoiceParams,
     },
-    types::{ChatId, InlineKeyboardButton, InlineKeyboardMarkup, ReplyMarkup, Voice},
+    types::{ChatId, InlineKeyboardButton, InlineKeyboardMarkup, ReplyMarkup},
 };
+
 use tokio::sync::mpsc;
 
 use super::engine::{ProgressSnapshot, run_tts_engine};
-use crate::bot::{CB_START_AI_LAB, CB_TTS_CANCEL, CB_TTS_MODE_CLONE, CB_TTS_MODE_DEFAULT};
+use crate::bot::CB_TTS_CANCEL;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, t, tf};
 use crate::log::next_trace_id;
@@ -22,25 +22,6 @@ use crate::stats;
 use crate::rank;
 use crate::rank::quota::{get_usage, add_usage, QuotaKind};
 use crate::database::postgresql::PostgresDatabase;
-
-pub fn tts_mode_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![
-            vec![InlineKeyboardButton::builder()
-                .text(&t("tts.mode_default_button"))
-                .callback_data(CB_TTS_MODE_DEFAULT)
-                .build()],
-            vec![InlineKeyboardButton::builder()
-                .text(&t("tts.mode_clone_button"))
-                .callback_data(CB_TTS_MODE_CLONE)
-                .build()],
-            vec![InlineKeyboardButton::builder()
-                .text(&t("start.back_to_ai_lab"))
-                .callback_data(CB_START_AI_LAB)
-                .build()],
-        ])
-        .build()
-}
 
 pub fn tts_cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
@@ -62,8 +43,6 @@ pub async fn enter_tts(
     let trace_id = next_trace_id();
     log_ev!("tts", trace_id, "enter_tts", "user_id" => user_id, "chat_id" => chat_id);
 
-    flow_manager.set(user_id, FlowState::AwaitingTtsModeSelect);
-
     if let Some(db) = &database {
         let user_rank = rank::effective_rank(db.client(), user_id).await;
         let limit = user_rank.tts_weekly_secs();
@@ -81,36 +60,7 @@ pub async fn enter_tts(
         }
     }
 
-    let text = apply_premium_to_md(&t("tts.prompt_mode_select"));
-    let params = EditMessageTextParams::builder()
-        .chat_id(chat_id)
-        .message_id(message_id)
-        .text(&text)
-        .parse_mode(ParseMode::MarkdownV2)
-        .reply_markup(tts_mode_keyboard())
-        .build();
-
-    let res = api.edit_message_text(&params).await;
-    if let Err(e) = res {
-        log_ev!("tts", trace_id, "edit_message_failed", "err" => format!("{e:?}"));
-    }
-}
-
-pub async fn handle_tts_mode_default(
-    api: &Bot,
-    chat_id: i64,
-    message_id: i32,
-    user_id: i64,
-    flow_manager: &FlowManager,
-    _database: Option<PostgresDatabase>,
-) {
-    let trace_id = next_trace_id();
-    log_ev!("tts", trace_id, "mode_select", "mode" => "default");
-
-    flow_manager.set(
-        user_id,
-        FlowState::AwaitingTtsText { prompt_path: None },
-    );
+    flow_manager.set(user_id, FlowState::AwaitingTtsText);
 
     let text = apply_premium_to_md(&t("tts.enter_text_default"));
     let params = EditMessageTextParams::builder()
@@ -127,111 +77,11 @@ pub async fn handle_tts_mode_default(
     }
 }
 
-pub async fn handle_tts_mode_clone(
-    api: &Bot,
-    chat_id: i64,
-    message_id: i32,
-    user_id: i64,
-    flow_manager: &FlowManager,
-    database: Option<PostgresDatabase>,
-) {
-    let trace_id = next_trace_id();
-    log_ev!("tts", trace_id, "mode_select", "mode" => "clone");
-
-    if let Some(db) = &database {
-        let user_rank = rank::effective_rank(db.client(), user_id).await;
-        if user_rank.weight() < crate::rank::types::Rank::Sohrab.weight() {
-            log_ev!("tts", trace_id, "mode_blocked", "rank" => user_rank.as_str());
-            let label = t("tts.mode_clone_button");
-            crate::rank::paywall::block_feature(api, chat_id, &label, crate::rank::types::Rank::Sohrab).await;
-            flow_manager.set(user_id, FlowState::Idle);
-            return;
-        }
-    }
-
-    let prompt_file = format!("downloads/voice_prompts/{}.wav", user_id);
-    if Path::new(&prompt_file).exists() {
-        flow_manager.set(
-            user_id,
-            FlowState::AwaitingTtsText {
-                prompt_path: Some(prompt_file),
-            },
-        );
-
-        let text = apply_premium_to_md(&t("tts.sample_saved_enter_text"));
-        let params = EditMessageTextParams::builder()
-            .chat_id(chat_id)
-            .message_id(message_id)
-            .text(&text)
-            .parse_mode(ParseMode::MarkdownV2)
-            .reply_markup(tts_cancel_keyboard())
-            .build();
-
-        let _ = api.edit_message_text(&params).await;
-    } else {
-        flow_manager.set(user_id, FlowState::AwaitingTtsVoiceSample);
-
-        let text = apply_premium_to_md(&t("tts.record_sample_prompt"));
-        let params = EditMessageTextParams::builder()
-            .chat_id(chat_id)
-            .message_id(message_id)
-            .text(&text)
-            .parse_mode(ParseMode::MarkdownV2)
-            .reply_markup(tts_cancel_keyboard())
-            .build();
-
-        let _ = api.edit_message_text(&params).await;
-    }
-}
-
-pub async fn handle_tts_voice_sample(
-    api: &Bot,
-    chat_id: i64,
-    user_id: i64,
-    voice: &Voice,
-    flow_manager: &FlowManager,
-) {
-    let trace_id = next_trace_id();
-    log_ev!("tts", trace_id, "sample_voice_received", "duration" => voice.duration);
-
-    let prompt_dir = "downloads/voice_prompts";
-    let _ = std::fs::create_dir_all(prompt_dir);
-    let prompt_file = format!("{prompt_dir}/{user_id}.wav");
-
-    // Save prompt path in user flow state and transition to text input
-    flow_manager.set(
-        user_id,
-        FlowState::AwaitingTtsText {
-            prompt_path: Some(prompt_file),
-        },
-    );
-
-    stats::record_event_user(
-        user_id,
-        "tts",
-        "sample_saved",
-        "ok",
-        voice.duration as i64,
-    )
-    .await;
-
-    let text = apply_premium_to_md(&t("tts.sample_saved_enter_text"));
-    let params = SendMessageParams::builder()
-        .chat_id(chat_id)
-        .text(&text)
-        .parse_mode(ParseMode::MarkdownV2)
-        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(tts_cancel_keyboard()))
-        .build();
-
-    let _ = api.send_message(&params).await;
-}
-
 pub async fn handle_tts_text(
     api: &Bot,
     chat_id: i64,
     user_id: i64,
     text_input: &str,
-    prompt_path: Option<String>,
     flow_manager: &FlowManager,
     database: Option<PostgresDatabase>,
 ) {
@@ -280,19 +130,18 @@ pub async fn handle_tts_text(
     let (tx, mut rx) = mpsc::channel::<ProgressSnapshot>(32);
 
     let text_clone = text_input.to_string();
-    let prompt_clone = prompt_path.clone();
 
     // Spawn TTS Engine Task
     let engine_handle = tokio::spawn(async move {
         run_tts_engine(
             &text_clone,
-            prompt_clone.as_deref(),
             user_id,
             trace_id,
             tx,
         )
         .await
     });
+
 
     let mut last_edit = Instant::now();
 
@@ -393,18 +242,11 @@ pub async fn handle_tts_text(
 
                 flow_manager.set(
                     user_id,
-                    FlowState::AwaitingTtsText {
-                        prompt_path: prompt_path.clone(),
-                    },
+                    FlowState::AwaitingTtsText,
                 );
 
-                let prompt_key = if prompt_path.is_some() {
-                    "tts.sample_saved_enter_text"
-                } else {
-                    "tts.enter_text_default"
-                };
+                let prompt_text = apply_premium_to_md(&t("tts.enter_text_default"));
 
-                let prompt_text = apply_premium_to_md(&t(prompt_key));
                 let prompt_params = SendMessageParams::builder()
                     .chat_id(chat_id)
                     .text(&prompt_text)

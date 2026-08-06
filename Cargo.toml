@@ -40,6 +40,11 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 ct2rs = { version = "0.9.21", default-features = false, features = ["tokenizers", "ruy"] }
 axum = { version = "0.8.9", features = ["json"], optional = true }
 tikv-jemallocator = "0.6"
+espeak-ng = "0.1.3"
+piper-rs = "0.2.0"
+
+
+
 
 
 [profile.dev]

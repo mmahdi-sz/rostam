@@ -1,9 +1,34 @@
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::sync::mpsc;
+use piper_rs::PiperModel;
 
+use super::homofast::HomoFastResolver;
 use crate::youtube::download::progress::{build_bar, format_elapsed};
+
+static PIPER_MODEL: OnceLock<Option<Mutex<PiperModel>>> = OnceLock::new();
+static HOMOFAST: OnceLock<HomoFastResolver> = OnceLock::new();
+
+fn get_piper_model() -> Option<&'static Mutex<PiperModel>> {
+    PIPER_MODEL
+        .get_or_init(|| {
+            let config_path = PathBuf::from("models/piper/fa_IR/fa_IR-mantatts-par.onnx.json");
+            match piper_rs::from_config_path(&config_path) {
+                Ok(model) => Some(Mutex::new(model)),
+                Err(e) => {
+                    eprintln!("[tts] Failed to load Piper model from {:?}: {:?}", config_path, e);
+                    None
+                }
+            }
+        })
+        .as_ref()
+}
+
+fn get_homofast() -> &'static HomoFastResolver {
+    HOMOFAST.get_or_init(HomoFastResolver::new)
+}
 
 #[derive(Debug, Clone)]
 pub struct ProgressSnapshot {
@@ -17,10 +42,9 @@ pub struct ProgressSnapshot {
     pub total_frames: usize,
 }
 
-/// Runs MOSS-TTS-Nano voice generation with live progress reporting.
+/// Runs Voice synthesis (Piper+HomoFast for Persian, edge-tts for English) with progress reporting.
 pub async fn run_tts_engine(
     text: &str,
-    _prompt_path: Option<&str>,
     user_id: i64,
     trace_id: u64,
     progress_tx: mpsc::Sender<ProgressSnapshot>,
@@ -74,40 +98,69 @@ pub async fn run_tts_engine(
     // Release CPU allocation back to broker
     crate::moebius::cpu::release_cpu(cores, trace_id).await;
 
-    let output_mp3 = format!("downloads/tts_{}_{}.mp3", trace_id, rand::random::<u64>());
-    let output_ogg = output_mp3.replace(".mp3", ".ogg");
-    if let Some(parent) = Path::new(&output_mp3).parent() {
+    let output_wav_or_mp3 = format!("downloads/tts_{}_{}.wav", trace_id, rand::random::<u64>());
+    let output_ogg = output_wav_or_mp3.replace(".wav", ".ogg").replace(".mp3", ".ogg");
+    if let Some(parent) = Path::new(&output_wav_or_mp3).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
 
     let has_persian = text.chars().any(|c| ('\u{0600}'..='\u{06FF}').contains(&c));
-    let voice = if has_persian {
-        "fa-IR-DilaraNeural"
+
+    let success = if has_persian {
+        // Persian branch: HomoFast eSpeak homograph disambiguation + Piper TTS
+        let resolved_text = get_homofast().disambiguate(text);
+        log_ev!("tts", trace_id, "homofast_resolved", "text" => &resolved_text);
+
+        if let Some(mutex) = get_piper_model() {
+            let mut wav_file = match std::fs::File::create(&output_wav_or_mp3) {
+                Ok(f) => f,
+                Err(e) => {
+                    log_ev!("tts", trace_id, "wav_create_failed", "err" => format!("{e:?}"));
+                    return Err("Failed to create audio buffer".to_string());
+                }
+            };
+
+            let mut model = mutex.lock().unwrap_or_else(|e| e.into_inner());
+            match model.speak(&resolved_text, &mut wav_file, None) {
+                Ok(_) => Path::new(&output_wav_or_mp3).exists(),
+                Err(e) => {
+                    log_ev!("tts", trace_id, "piper_synth_failed", "err" => format!("{e:?}"));
+                    false
+                }
+            }
+        } else {
+            log_ev!("tts", trace_id, "piper_model_not_found");
+            false
+        }
     } else {
-        "en-US-AvaNeural"
-    };
+        // English branch: edge-tts CLI with en-US-AvaNeural (completely unchanged)
+        let output_mp3 = output_wav_or_mp3.replace(".wav", ".mp3");
+        let voice = "en-US-AvaNeural";
+        let edge_tts_bin = if Path::new("/mnt/data/mahdidev/ros/dev/separation-service/venv/bin/edge-tts").exists() {
+            "/mnt/data/mahdidev/ros/dev/separation-service/venv/bin/edge-tts"
+        } else {
+            "edge-tts"
+        };
 
-    let edge_tts_bin = if Path::new("/mnt/data/mahdidev/ros/dev/separation-service/venv/bin/edge-tts").exists() {
-        "/mnt/data/mahdidev/ros/dev/separation-service/venv/bin/edge-tts"
-    } else {
-        "edge-tts"
-    };
+        let tts_status = Command::new(edge_tts_bin)
+            .args(&[
+                "--text",
+                text,
+                "--voice",
+                voice,
+                "--write-media",
+                &output_mp3,
+            ])
+            .status()
+            .await;
 
-    let tts_status = Command::new(edge_tts_bin)
-        .args(&[
-            "--text",
-            text,
-            "--voice",
-            voice,
-            "--write-media",
-            &output_mp3,
-        ])
-        .status()
-        .await;
-
-    let success = match tts_status {
-        Ok(status) if status.success() && Path::new(&output_mp3).exists() => true,
-        _ => false,
+        match tts_status {
+            Ok(status) if status.success() && Path::new(&output_mp3).exists() => {
+                let _ = std::fs::rename(&output_mp3, &output_wav_or_mp3);
+                true
+            }
+            _ => false,
+        }
     };
 
     if success {
@@ -115,7 +168,7 @@ pub async fn run_tts_engine(
             .args(&[
                 "-y",
                 "-i",
-                &output_mp3,
+                &output_wav_or_mp3,
                 "-c:a",
                 "libopus",
                 "-b:a",
@@ -125,7 +178,7 @@ pub async fn run_tts_engine(
             .status()
             .await;
 
-        let _ = std::fs::remove_file(&output_mp3);
+        let _ = std::fs::remove_file(&output_wav_or_mp3);
 
         if let Ok(status) = convert_status {
             if status.success() && Path::new(&output_ogg).exists() {
@@ -136,6 +189,6 @@ pub async fn run_tts_engine(
         let _ = std::fs::remove_file(&output_ogg);
     }
 
-    log_ev!("tts", trace_id, "edge_tts_failed", "text" => text);
+    log_ev!("tts", trace_id, "tts_failed", "text" => text);
     Err("TTS generation failed".to_string())
 }

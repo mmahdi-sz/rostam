@@ -168,10 +168,9 @@ pub async fn handle_emoji_flow_message(
         | FlowState::AwaitingBroadcastTarget { .. }
         | FlowState::AwaitingDeoldifyImage
         | FlowState::AwaitingNobgImage
-        | FlowState::AwaitingTtsModeSelect
-        | FlowState::AwaitingTtsText { .. }
-        | FlowState::AwaitingTtsVoiceSample
+        | FlowState::AwaitingTtsText
         | FlowState::AwaitingCompressFormatSelect
+
         | FlowState::AwaitingCompressOptions { .. }
         | FlowState::AwaitingCompressPassword { .. }
         | FlowState::AwaitingCompressFiles { .. } => {
@@ -202,10 +201,9 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingGeminiWmImage => "AwaitingGeminiWmImage",
         FlowState::AwaitingDeoldifyImage => "AwaitingDeoldifyImage",
         FlowState::AwaitingNobgImage => "AwaitingNobgImage",
-        FlowState::AwaitingTtsModeSelect => "AwaitingTtsModeSelect",
-        FlowState::AwaitingTtsText { .. } => "AwaitingTtsText",
-        FlowState::AwaitingTtsVoiceSample => "AwaitingTtsVoiceSample",
+        FlowState::AwaitingTtsText => "AwaitingTtsText",
         FlowState::AwaitingPdfCompressFile => "AwaitingPdfCompressFile",
+
         FlowState::AwaitingPdfCompressLevel { .. } => "AwaitingPdfCompressLevel",
         FlowState::AwaitingIpLookupInput => "AwaitingIpLookupInput",
         FlowState::AwaitingSurgeUrlInput => "AwaitingSurgeUrlInput",

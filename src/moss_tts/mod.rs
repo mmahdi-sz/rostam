@@ -1,9 +1,7 @@
-//! MOSS-TTS-Nano (100M) Text-to-Speech and Voice Cloning module.
+//! Persian TTS via Piper (fa_IR Piper model) with HomoFast eSpeak G2P frontend; English TTS via edge-tts (en-US-AvaNeural).
 
 pub mod engine;
 pub mod handle;
+pub mod homofast;
 
-pub use handle::{
-    enter_tts, handle_tts_cancel, handle_tts_mode_clone, handle_tts_mode_default, handle_tts_text,
-    handle_tts_voice_sample,
-};
+pub use handle::{enter_tts, handle_tts_cancel, handle_tts_text};

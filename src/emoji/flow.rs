@@ -73,12 +73,9 @@ pub enum FlowState {
     AwaitingGeminiWmImage,
     AwaitingDeoldifyImage,
     AwaitingNobgImage,
-    AwaitingTtsModeSelect,
-    AwaitingTtsText {
-        prompt_path: Option<String>,
-    },
-    AwaitingTtsVoiceSample,
+    AwaitingTtsText,
     AwaitingPdfCompressFile,
+
     AwaitingPdfCompressLevel {
         file_id: String,
         filename: String,

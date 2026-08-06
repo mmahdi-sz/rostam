@@ -8,9 +8,9 @@ use crate::bot::{
     CB_ADMIN_STATS_MORE, CB_AI_DENOISE, CB_AI_DEOLDIFY, CB_AI_GWM, CB_AI_NOBG, CB_AI_SEP, CB_AI_STT, CB_AI_TTS, CB_AI_UPSCALE,
     CB_BROADCAST_MODE_COPY, CB_BROADCAST_MODE_FORWARD, CB_BROADCAST_SEND_ACTIVE, CB_BROADCAST_SEND_ALL, CB_BROADCAST_TOGGLE_PIN,
     CB_DENOISE_CANCEL, CB_DEOLDIFY_CANCEL, CB_LANG_SET, CB_NOBG_CANCEL, CB_START_AI_LAB, CB_START_EMOJI, CB_START_LEADERBOARD, CB_START_TOOLS,
-    CB_START_YOUTUBE,
-    CB_TTS_CANCEL, CB_TTS_MODE_CLONE, CB_TTS_MODE_DEFAULT, CB_USER_PANEL,
+    CB_START_YOUTUBE, CB_TTS_CANCEL, CB_USER_PANEL,
 };
+
 use crate::bot::{
     edit_to_ai_lab, edit_to_leaderboard, edit_to_start_menu, edit_to_tools, send_lang_picker, send_start_menu,
 };
@@ -752,20 +752,7 @@ async fn handle_message(
             }
 
 
-            if matches!(flow_manager.get(uid), FlowState::AwaitingTtsVoiceSample) {
-                if let Some(voice) = &message.voice {
-                    let trace_id = next_trace_id();
-                    log_trace(
-                        trace_id,
-                        "tts_voice_sample_dispatched",
-                        &format!("user_id={uid} chat_id={}", message.chat.id),
-                    );
-                    crate::moss_tts::handle_tts_voice_sample(api, message.chat.id, uid, voice, flow_manager).await;
-                    return Ok(());
-                }
-            }
-
-            if let FlowState::AwaitingTtsText { prompt_path } = flow_manager.get(uid) {
+            if matches!(flow_manager.get(uid), FlowState::AwaitingTtsText) {
                 if let Some(text) = &message.text {
                     let trace_id = next_trace_id();
                     log_trace(
@@ -773,7 +760,6 @@ async fn handle_message(
                         "tts_text_dispatched",
                         &format!("user_id={uid} chat_id={}", message.chat.id),
                     );
-                    let prompt_clone = prompt_path.clone();
                     let text_clone = text.clone();
                     let api2 = api.clone();
                     let chat_id = message.chat.id;
@@ -786,7 +772,6 @@ async fn handle_message(
                             chat_id,
                             uid,
                             &text_clone,
-                            prompt_clone,
                             &flow_manager_clone,
                             database_clone,
                         )
@@ -795,6 +780,7 @@ async fn handle_message(
                     return Ok(());
                 }
             }
+
 
             if matches!(flow_manager.get(uid), FlowState::AwaitingPdfCompressFile) {
                 if message.document.is_some() {
@@ -2210,51 +2196,8 @@ async fn handle_callback(
         return Ok(());
     }
 
-    if cb_data == CB_TTS_MODE_DEFAULT {
-        let _ = api
-            .answer_callback_query(
-                &AnswerCallbackQueryParams::builder()
-                    .callback_query_id(callback_query.id.clone())
-                    .build(),
-            )
-            .await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            crate::moss_tts::handle_tts_mode_default(
-                api,
-                message.chat.id,
-                message.message_id,
-                cb_user_id as i64,
-                flow_manager,
-                database.clone(),
-            )
-            .await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == CB_TTS_MODE_CLONE {
-        let _ = api
-            .answer_callback_query(
-                &AnswerCallbackQueryParams::builder()
-                    .callback_query_id(callback_query.id.clone())
-                    .build(),
-            )
-            .await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            crate::moss_tts::handle_tts_mode_clone(
-                api,
-                message.chat.id,
-                message.message_id,
-                cb_user_id as i64,
-                flow_manager,
-                database.clone(),
-            )
-            .await;
-        }
-        return Ok(());
-    }
-
     if cb_data == CB_TTS_CANCEL {
+
         let _ = api
             .answer_callback_query(
                 &AnswerCallbackQueryParams::builder()

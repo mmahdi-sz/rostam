@@ -9,7 +9,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-## [2.0.1] — 2026-08-06
+## [2.1.0] - 2026-08-06
+
+### Changed
+- **Persian Text-to-Speech Engine**: Replaced Persian `edge-tts` branch with local ONNX Piper TTS (`kiarashQ/fa-ir-tts-piper-ar-mantatts-v1`) coupled with HomoFast eSpeak G2P frontend and homograph disambiguation.
+- **English Text-to-Speech**: English TTS continues to use `edge-tts` (`en-US-AvaNeural`).
+
+### Removed
+- **Voice Cloning**: Removed dead voice cloning mode, voice prompt recording, and associated UI strings/keyboards.
+
 
 ### Added
 - **Social Media Platform Detection (`detect_social_platform`)**: Automatic classification of social media and messaging platform URLs (`telegram`, `instagram`, `tiktok`, `twitter`, `pinterest`, `facebook`, `threads`, `soundcloud`, `spotify`, `aparat`, `rubika`, `eitaa`).

@@ -7,6 +7,7 @@ git-server/
 cookie_profiles_cache/
 
 files/models/
+models/
 files/realesrgan/
 files/runtime/
 separation-service/models/

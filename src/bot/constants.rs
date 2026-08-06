@@ -16,9 +16,8 @@ pub const CB_AI_DEOLDIFY: &str = "ai:deoldify";
 pub const CB_DEOLDIFY_CANCEL: &str = "deoldify:cancel";
 pub const CB_AI_NOBG: &str = "ai:nobg";
 pub const CB_NOBG_CANCEL: &str = "nobg:cancel";
-pub const CB_TTS_MODE_DEFAULT: &str = "tts:mode:default";
-pub const CB_TTS_MODE_CLONE: &str = "tts:mode:clone";
 pub const CB_TTS_CANCEL: &str = "tts:cancel";
+
 pub const CB_DENOISE_CANCEL: &str = "denoise:cancel";
 pub const CB_ADMIN_PANEL: &str = "admin:panel";
 pub const CB_ADMIN_STATS: &str = "admin:stats";

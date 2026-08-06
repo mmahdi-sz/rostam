@@ -30,12 +30,7 @@
       "leaderboard_empty": "هنوز هیچ زیرمجموعه‌ای ثبت نشده است\\."
     },
     "tts": {
-      "prompt_mode_select": "🎙 **بخش تبدیل متن به صدا**\n\nلطفاً حالت مورد نظر خود را برای تولید صدا انتخاب کنید:",
-      "mode_default_button": "🗣 ۱. استفاده از صدای پیش‌فرض",
-      "mode_clone_button": "🎙 ۲. کلون صدای من (صدای اختصاصی)",
-      "enter_text_default": "📝 **حالت صدای پیش‌فرض انتخاب شد\\.**\n\nلطفاً متنی که می‌خواهید به صدا تبدیل شود را ارسال کنید \\(حداکثر ۵۰۰ کاراکتر\\):",
-      "record_sample_prompt": "🎙 **ثبت الگوی صدای اختصاصی شما**\n\nبرای اینکه ربات بتواند با صدای خودتان متن‌ها را بخواند، لطفاً متن ۳۰ ثانیه‌ای زیر را در قالب یک **ویس \\(Voice\\)** شمرده و واضح بخوانید و ارسال کنید:\n\n📜 *«این یک متن نمونه ۳۰ ثانیه‌ای برای ثبت و آموزش الگوی صوتی من است تا از این به بعد تمام متن‌های درخواستی من مستقیماً با همین لحن و صدای اختصاصی تولید و خوانده شوند\\.*»",
-      "sample_saved_enter_text": "✅ **الگوی صدای اختصاصی شما با موفقیت ثبت شد\\!**\n\n📝 **حالا متنی که می‌خواهید با صدای خودتان خوانده شود را بفرستید:**",
+      "enter_text_default": "📝 **تبدیل متن به صدا**\n\nلطفاً متنی که می‌خواهید به صدا تبدیل شود را ارسال کنید \\(حداکثر ۵۰۰ کاراکتر\\):",
       "cancel_button": "❌ انصراف",
       "cancelled": "❌ عملیات تبدیل متن به صدا لغو شد\\.",
       "preparing": "✅ متن دریافت شد\\. در حال پردازش\\.\\.\\.",
@@ -45,6 +40,7 @@
       "voice_forbidden_error": "⚠️ *خطا در ارسال صدا*\n\nبه نظر می‌رسد در تنظیمات حریم خصوصی تلگرام خود، دریافت پیام‌های صوتی \\(Voice\\) را محدود کرده‌اید\\.\n\nلطفاً برای دریافت خروجی، به مسیر زیر بروید:\n⚙️ `Settings > Privacy and Security > Voice Messages`\nو ربات ما را در بخش *Exceptions \\(استثناها\\)* اضافه کنید، یا تنظیمات را روی *Everybody* قرار دهید\\.",
       "quota_weekly_limit": "سقف هفتگی تبدیل متن به صدا \\\\({limit} دقیقه در هفته\\\\) پر شده\\\\. برای سهمیه بیشتر رتبه خود را ارتقا دهید\\\\."
     },
+
     "deoldify": {
       "prompt": "🎨 **بخش رنگ‌آمیزی هوشمند عکس‌های قدیمی**\n\nاین ابزار با شبکه عصبی عمیق، تصاویر سیاه و سفید یا تک‌رنگ قدیمی شما را با حفظ بافت و روشنایی اصلی به عکس‌های رنگی طبیعی تبدیل می‌کند\\.\n\n📥 **لطفاً عکس سیاه و سفید خود را ارسال کنید:**\n*\\(پشتیبانی از فرمت‌های JPG, PNG, WEBP و فایل تصویری\\)*",
       "preparing": "🎨 **تصویر دریافت شد\\. در حال رنگ‌آمیزی با هوش مصنوعی\\.\\.\\. ⏳**\n\n⏱️ **زمان سپری‌شده:** {elapsed}",
@@ -1108,12 +1104,7 @@
       "leaderboard_empty": "No referrals recorded yet\\."
     },
     "tts": {
-      "prompt_mode_select": "🎙 **Text to Speech**\n\nPlease select your preferred mode for voice generation:",
-      "mode_default_button": "🗣 1. Use Default Voice",
-      "mode_clone_button": "🎙 2. Clone My Voice (Custom)",
-      "enter_text_default": "📝 **Default voice mode selected\\.**\n\nPlease send the text you want converted to speech \\(max 500 characters\\):",
-      "record_sample_prompt": "🎙 **Record Your Custom Voice Pattern**\n\nTo allow the bot to read texts with your own voice, please record and send the following 30\\-second text as a **Voice Message** clearly:\n\n📜 *«This is a sample 30\\-second text to record and train my custom voice pattern so all my future requested texts are generated directly in my own voice\\.»*",
-      "sample_saved_enter_text": "✅ **Your custom voice pattern has been saved successfully\\!**\n\n📝 **Now send the text you want read in your custom voice:**",
+      "enter_text_default": "📝 **Text to Speech**\n\nPlease send the text you want converted to speech \\(max 500 characters\\):",
       "cancel_button": "❌ Cancel",
       "cancelled": "❌ Text to speech operation cancelled\\.",
       "preparing": "✅ Text received\\. Processing\\.\\.\\.",
@@ -1123,6 +1114,7 @@
       "voice_forbidden_error": "⚠️ *Voice Message Error*\n\nIt seems you have restricted receiving Voice messages in your Telegram Privacy Settings\\.\n\nPlease go to:\n⚙️ `Settings > Privacy and Security > Voice Messages`\nAnd add our bot to the *Exceptions* list, or set the setting to *Everybody* to receive output\\.",
       "quota_weekly_limit": "Weekly text\\-to\\-speech quota \\\\({limit} minutes per week\\\\) exceeded\\\\. Upgrade your rank for more quota\\\\."
     },
+
     "deoldify": {
       "prompt": "🎨 **Smart Image Colorizer**\n\nThis tool uses deep neural networks to convert your old black and white or monochrome photos into natural colored photos while preserving original luminosity\\.\n\n📥 **Please send your black and white photo:**\n*\\(Supports JPG, PNG, WEBP and image documents\\)*",
       "preparing": "🎨 **Image received\\. Colorizing with AI\\.\\.\\. ⏳**\n\n⏱️ **Elapsed time:** {elapsed}",
@@ -2212,12 +2204,7 @@
       "leaderboard_empty": "Nessun invito registrato\\."
     },
     "tts": {
-      "prompt_mode_select": "🎙 **Sintesi Vocale**\n\nSeleziona la modalità preferita per la generazione vocale:",
-      "mode_default_button": "🗣 1. Usa Voce Predefinita",
-      "mode_clone_button": "🎙 2. Clona la Mia Voce (Personalizzata)",
-      "enter_text_default": "📝 **Modalità voce predefinita selezionata\\.**\n\nInvia il testo che vuoi convertire in voce \\(max 500 caratteri\\):",
-      "record_sample_prompt": "🎙 **Registra il Tuo Modello Vocale**\n\nPer consentire al bot di leggere i testi con la tua voce, registra e invia il seguente testo di 30 secondi come **Messaggio Vocale** chiaramente:\n\n📜 *«Questo è un testo di prova di 30 secondi per registrare il mio modello vocale personalizzato in modo che tutti i miei testi futuri vengano generati direttamente con la mia voce\\.»*",
-      "sample_saved_enter_text": "✅ **Il tuo modello vocale personalizzato è stato salvato con successo\\!**\n\n📝 **Ora invia il testo che vuoi leggere con la tua voce:**",
+      "enter_text_default": "📝 **Sintesi Vocale**\n\nInvia il testo che vuoi convertire in voce \\(max 500 caratteri\\):",
       "cancel_button": "❌ Annulla",
       "cancelled": "❌ Operazione sintesi vocale annullata\\.",
       "preparing": "✅ Testo ricevuto\\. Elaborazione in corso\\.\\.\\.",
@@ -2227,6 +2214,7 @@
       "voice_forbidden_error": "⚠️ *Errore Messaggio Vocale*\n\nSembra che tu abbia limitato la ricezione di messaggi vocali nelle impostazioni della privacy di Telegram\\.\n\nVai su:\n⚙️ `Impostazioni > Privacy e sicurezza > Messaggi vocali`\nE aggiungi il nostro bot alla lista delle *Eccezioni*, oppure imposta su *Tutti* per ricevere l'output di\\.",
       "quota_weekly_limit": "Quota settimanale sintesi vocale \\\\({limit} minuti a settimana\\\\) esaurita\\\\. Aumenta il tuo rango per più quota\\\\."
     },
+
     "deoldify": {
       "prompt": "🎨 **Colorizzazione Foto**\n\nQuesto strumento utilizza reti neurali profonde per convertire le tue vecchie foto in bianco e nero in foto a colori naturali preservando la luminosità originale\\.\n\n📥 **Invia la tua foto in bianco e nero:**\n*\\(Supporta JPG, PNG, WEBP e documenti immagine\\)*",
       "preparing": "🎨 **Immagine ricevuta\\. Colorizzazione in corso\\.\\.\\. ⏳**\n\n⏱️ **Tempo trascorso:** {elapsed}",
@@ -3290,12 +3278,7 @@
       "leaderboard_empty": "Пока нет рефералов\\."
     },
     "tts": {
-      "prompt_mode_select": "🎙 **Преобразование текста в речь**\n\nПожалуйста, выберите режим генерации голоса:",
-      "mode_default_button": "🗣 1. Стандартный голос",
-      "mode_clone_button": "🎙 2. Клонирование моего голоса",
-      "enter_text_default": "📝 **Выбран стандартный голос\\.**\n\nОтправьте текст для озвучки \\(максимум 500 символов\\):",
-      "record_sample_prompt": "🎙 **Запись образца вашего голоса**\n\nЧтобы бот мог озвучивать тексты вашим голосом, начитайте следующую 30\\-секундную фразу четким и разборчивым **голосовым сообщением \\(Voice\\)**:\n\n📜 *«Это образцовый 30-секундный текст для записи и обучения моего голосового шаблона, чтобы все мои последующие запросы озвучивались этим персональным голосом.»*",
-      "sample_saved_enter_text": "✅ **Ваш голосовой шаблон успешно сохранен\\!**\n\n📝 **Теперь отправьте текст, который нужно озвучить вашим голосом:**",
+      "enter_text_default": "📝 **Преобразование текста в речь**\n\nОтправьте текст для озвучки \\(максимум 500 символов\\):",
       "cancel_button": "❌ Отмена",
       "cancelled": "❌ Операция озвучки отменена\\.",
       "preparing": "✅ Текст получен\\. Обработка\\.\\.\\.",
@@ -3305,6 +3288,7 @@
       "voice_forbidden_error": "⚠️ *Ошибка отправки аудио*\n\nПохоже, в настройках конфиденциальности Telegram ограничено получение голосовых сообщений\\.\n\nПерейдите в:\n⚙️ `Настройки > Конфиденциальность > Голосовые сообщения`\nи добавьте бота в исключения.",
       "quota_weekly_limit": "Недельный лимит синтеза речи \\\\({limit} минут в неделю\\\\) исчерпан\\\\. Повысьте ранг для увеличения лимита\\\\."
     },
+
     "deoldify": {
       "prompt": "🎨 **Раскрашивание черно-белых фото**\n\nПревращает черно-белые снимки в цветные с помощью глубокой нейросети\\.\n\n📥 **Отправьте черно-белое фото:**\n*\\(Поддерживаются JPG, PNG, WEBP\\)*",
       "preparing": "🎨 **Изображение получено\\. Раскрашивание с помощью ИИ\\.\\.\\. ⏳**\n\n⏱️ **Прошло времени:** {elapsed}",
