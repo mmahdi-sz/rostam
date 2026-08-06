@@ -691,7 +691,7 @@
       "quota_file_too_long": "فایل از سقف باقی‌مانده جداسازی ({remaining}) بلندتر است"
     },
     "admin": {
-      "panel_title": "🛠 مرکز مدیریت و پایش ربات رستم\n\nبه پنل مدیریت خوش آمدید. از گزینه‌های زیر برای پایش و کنترل سیستم استفاده کنید:\n\n📊 آمار: مشاهده تعداد کاربران، ترافیک یوتیوب و میزان استفاده از ابزارهای هوش مصنوعی (STT، نویزگیری، و...)\n🔒 قفل اجباری: مدیریت کانال‌های عضویت اجباری\n🎁 ساخت کد هدیه: تولید کدهای ارتقای رتبه و اشتراک برای کاربران\n📣 پیام همگانی: ارسال پیام یا فوروارد بنر به صورت همگانی برای کاربران\n\n💡 دستورات میانبر ادمین:\n• /ip <ip> — استعلام جامع آی‌پی\n• /re [روز] [رتبه] [تعداد] — ساخت سریع کد\n• /i18n_reload — بازخوانی زنده ترجمه‌ها",
+      "panel_title": "🛠 مرکز مدیریت و پایش ربات رستم\n\nبه پنل مدیریت خوش آمدید. از گزینه‌های زیر برای پایش و کنترل سیستم استفاده کنید:\n\n📊 آمار: مشاهده تعداد کاربران، ترافیک یوتیوب و میزان استفاده از ابزارهای هوش مصنوعی (STT، نویزگیری، و...)\n🔒 قفل اجباری: مدیریت کانال‌های عضویت اجباری\n🎁 ساخت کد هدیه: تولید کدهای ارتقای رتبه و اشتراک برای کاربران\n📣 پیام همگانی: ارسال پیام یا فوروارد بنر به صورت همگانی برای کاربران\n\n💡 دستورات میانبر ادمین:\n• /ip &lt;ip&gt; — استعلام جامع آی‌پی\n• /re [روز] [رتبه] [تعداد] — ساخت سریع کد\n• /i18n_reload — بازخوانی زنده ترجمه‌ها",
       "stats_button": "آمار",
       "force_join_button": "قفل اجباری 🔒",
       "stats_more_button": "آمار بیشتر",
@@ -833,7 +833,7 @@
     },
     "referral": {
       "button": "دعوت دوستان و کسب امتیاز",
-      "banner": "🤖 بات رستم | هوشمندترین دستیار یوتیوب و AI رایگان ⚡\n\n📥 دانلود یوتیوب — سریع و کامل\n🎚️ انتخاب کیفیت و رزولوشن دلخواه\n🎞️ انتخاب کدک (AV1 · VP9 · H.264)\n📝 زیرنویس — فایل جدا یا داخل ویدیو\n🎵 دریافت فقط فایل صوتی (بدون ویدیو)\n\n🧪 آزمایشگاه هوش مصنوعی\n🎙️ حذف نویز صدا\n✨ افزایش کیفیت عکس\n📝 تبدیل صدا به متن\n🎵 جداسازی خواننده و موزیک\n🖼️ حذف واترمارک Gemini\n\n🔗 همین الان رایگان امتحان کن 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
+      "banner": "🤖 بات رستم | هوشمندترین دستیار یوتیوب و AI رایگان ⚡\n\n📥 دانلود یوتیوب — سریع و کامل\n🎚️ انتخاب کیفیت و رزولوشن دلخواه\n🎞️ انتخاب کدک (AV1 · VP9 · H.264)\n📝 زیرنویس — فایل جدا یا داخل ویدیو\n🎵 دریافت فقط فایل صوتی (بدون ویدیو)\n\n🧪 آزمایشگاه هوش مصنوعی\n🎙️ حذف نویز صدا\n✨ افزایش کیفیت عکس\n📝 تبدیل صدا به متن\n🎵 جداسازی خواننده و موزیک\n🖼️ حذف واترمارک Gemini\n🗣️ تبدیل متن به صدا\n🎨 رنگ‌آمیزی عکس‌های سیاه و سفید\n✂️ حذف خودکار پس‌زمینه عکس\n\n🧰 جعبه‌ابزار کاربردی\n📄 فشرده‌سازی حرفه‌ای PDF\n⚡ دانلود مستقیم لینک‌های حجیم\n🌐 استعلام و تحلیل آدرس IP\n\n🔗 همین الان رایگان امتحان کن 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
       "status": "🔗 <b>لینک اختصاصی شما آماده است!</b>\n\nاین بنر را برای دوستان یا در گروه‌ها بفرستید.\nبه ازای هر نفری که با لینک شما وارد بات شود و حداقل ۲ روز عضو کانال بماند، یک دعوت برای شما ثبت می‌شود. 💰\n\n📈 <b>وضعیت فعلی</b>\n👤 تعداد دعوت‌ها: {count} نفر\n⏳ در انتظار تأیید: {pending} نفر\n💎 امتیاز قابل‌استفاده: {available} امتیاز\n\n🎯 برای فعال‌سازی و دریافت رتبه، روی دکمه‌ی زیر بزنید:\n(اشتراک‌ها ۱ ماهه هستند)",
       "tier_button": "{rank} ({count} امتیاز)",
       "activate_success": "🎉 رتبه {rank} تا تاریخ {date} برایتان فعال شد!",
@@ -1059,12 +1059,27 @@
         "send_failed": "فایل دانلود شد ولی ارسالش به مشکل خورد، دوباره امتحان کن.",
         "invalid_name": "این اسم فایل معتبر نیست، یک اسم دیگه بفرست.",
         "too_large": "حجم این فایل بیشتر از حد مجاز دیسک سرور است (حداکثر {max})."
-      }
+      },
+      "unsupported_platform": "⚠️ دانلودر {platform} در دست توسعه است. لطفاً اخبار را در کانال دنبال کنید."
+    },
+    "platforms": {
+      "telegram": "تلگرام",
+      "instagram": "اینستاگرام",
+      "tiktok": "تیک‌تاک",
+      "twitter": "توییتر (X)",
+      "pinterest": "پینترست",
+      "facebook": "فیس‌بوک",
+      "threads": "تردز",
+      "soundcloud": "ساندکلاد",
+      "spotify": "اسپاتیفای",
+      "aparat": "آپارات",
+      "rubika": "روبیکا",
+      "eitaa": "ایتا"
     }
   },
   "en": {
     "start": {
-      "welcome": "👋 *Welcome to Rostam Bot\\!*\nComprehensive center for smart media tools and AI processing\\.\n\n✨ *Bot Features & Tools:*\n\n🎬 *YouTube Downloader*\n╣ 🎥 Download videos in all qualities \\(up to 4K\\)\n╣ 🎧 Extract & download high\\-quality audio\n╣ ⚙️ Advanced codec selection \\(AV1 / VP9 / H264\\)\n╣ 📜 Smart subtitle download & translation\n╝ 📋 Full support for playlist downloading\n\n🧪 *AI Laboratory \\(AI Lab\\)*\n╣ 🎙️ Speech to Text \\(Persian & English\\)\n╣ 🔇 Neural Noise Removal\n╣ 🎵 Vocal & Music Separation\n╣ 🖼️ Image Upscaling \\(up to 4x\\)\n╣ ✨ Gemini Watermark Removal\n╣ 🗣️ Text to Speech\n╣ 🎨 B&W Photo Colorization\n╝ ✂️ Automatic Background Removal\n\n🧰 *Useful Tools*\n╣ 📄 Professional PDF Compression\n╣ ⚡ Direct High\\-Volume Link Downloader\n╝ 🌐 IP Address Lookup & Analysis\n\n👤 *User Panel & Subscription*\n╝ Rank management, traffic quota check and promo codes\n\n👇 *To get started, choose an option from the menu below:*",
+      "welcome": "👋 *Welcome to Rostam Bot\\!*\nComprehensive center for smart media tools and AI processing\\.\n\n✨ *Bot Features and Tools:*\n\n🎬 *YouTube Downloader*\n╣ 🎥 Download videos in all qualities \\(up to 4K\\)\n╣ 🎧 Extract and download high\\-quality audio\n╣ ⚙️ Advanced codec selection \\(AV1 / VP9 / H264\\)\n╣ 📜 Smart subtitle download and translation\n╝ 📋 Full support for playlist downloading\n\n🧪 *AI Laboratory \\(AI Lab\\)*\n╣ 🎙️ Speech to Text \\(Persian and English\\)\n╣ 🔇 Neural Noise Removal\n╣ 🎵 Vocal and Music Separation\n╣ 🖼️ Image Upscaling \\(up to 4x\\)\n╣ ✨ Gemini Watermark Removal\n╣ 🗣️ Text to Speech\n╣ 🎨 B/W Photo Colorization\n╝ ✂️ Automatic Background Removal\n\n🧰 *Useful Tools*\n╣ 📄 Professional PDF Compression\n╣ ⚡ Direct High\\-Volume Link Downloader\n╝ 🌐 IP Address Lookup and Analysis\n\n👤 *User Panel and Subscription*\n╝ Rank management, traffic quota check and promo codes\n\n👇 *To get started, choose an option from the menu below:*",
       "emoji_button": "Emoji Panel",
       "youtube_button": "YouTube Download",
       "back": "Main Menu",
@@ -1087,7 +1102,7 @@
       "panel_button": "My Account",
       "tools_button": "Tools",
       "tools_fc_button": "File Compression",
-      "tools_title": "🧰 *Practical & Advanced Tools*\n\nChoose from our suite of professional tools below:\n\n• 📂 *File Compression:* Create ZIP, 7Z & RAR archives with advanced algorithms\n• 📄 *PDF Compression:* Smart optimization and shrinking of PDF documents\n• 🌐 *IP Analysis:* Comprehensive check of IP info, ISP, location & security\n• 📥 *Direct Link Downloader:* Fetch and split large direct\\-link files\n\n*Select a tool below👇:*",
+      "tools_title": "🧰 *Practical and Advanced Tools*\n\nChoose from our suite of professional tools below:\n\n• 📂 *File Compression:* Create ZIP, 7Z and RAR archives with advanced algorithms\n• 📄 *PDF Compression:* Smart optimization and shrinking of PDF documents\n• 🌐 *IP Analysis:* Comprehensive check of IP info, ISP, location and security\n• 📥 *Direct Link Downloader:* Fetch and split large direct\\-link files\n\n*Select a tool below👇:*",
       "leaderboard_button": "Top Users",
       "leaderboard_title": "Most Referrals:",
       "leaderboard_empty": "No referrals recorded yet\\."
@@ -1109,7 +1124,7 @@
       "quota_weekly_limit": "Weekly text\\-to\\-speech quota \\\\({limit} minutes per week\\\\) exceeded\\\\. Upgrade your rank for more quota\\\\."
     },
     "deoldify": {
-      "prompt": "🎨 **Smart Image Colorizer**\n\nThis tool uses deep neural networks to convert your old black & white or monochrome photos into natural colored photos while preserving original luminosity\\.\n\n📥 **Please send your black & white photo:**\n*\\(Supports JPG, PNG, WEBP and image documents\\)*",
+      "prompt": "🎨 **Smart Image Colorizer**\n\nThis tool uses deep neural networks to convert your old black and white or monochrome photos into natural colored photos while preserving original luminosity\\.\n\n📥 **Please send your black and white photo:**\n*\\(Supports JPG, PNG, WEBP and image documents\\)*",
       "preparing": "🎨 **Image received\\. Colorizing with AI\\.\\.\\. ⏳**\n\n⏱️ **Elapsed time:** {elapsed}",
       "cancel_button": "❌ Cancel",
       "cancelled": "❌ Image colorization operation cancelled\\.",
@@ -1187,7 +1202,7 @@
       "cancel_button": "Cancel",
       "model": {
         "general": "General x4",
-        "anime_group": "Anime & Cartoon",
+        "anime_group": "Anime and Cartoon",
         "anime_pro": "Pro x4",
         "anime_x4": "Anime x4",
         "anime_x3": "Anime x3",
@@ -1595,7 +1610,7 @@
         "subtitle_mode_embedded": "Embedded subtitles",
         "subtitle_mode_hardsub": "Hardsub (burned-in)",
         "video_info": "Video info:\nResolution: {quality}\nCodec: {codec}\nEstimated file size: {size} MiB\nBitrate: {bitrate} kbps",
-        "confirm": "Confirm & Download",
+        "confirm": "Confirm and Download",
         "back_to_quality": "Back to resolution menu"
       },
       "fetch_failed": "Failed to fetch video info: {error}",
@@ -1754,7 +1769,7 @@
       "quota_file_too_long": "File exceeds your remaining separation quota ({remaining})"
     },
     "admin": {
-      "panel_title": "🛠 Rostam Bot Management Center\n\nWelcome to the admin panel. Use the options below to monitor and control system features:\n\n📊 Stats: View user counts, YouTube traffic, and AI tool usage (STT, Denoise, etc.)\n🔒 Force Join: Manage mandatory channel subscription locks\n🎁 Gift Codes: Generate redeem codes to upgrade user ranks\n📣 Broadcast: Send or forward banners to all or active users\n\n💡 Quick Admin Commands:\n• /ip <ip> — Full IP lookup\n• /re [days] [rank] [uses] — Quick gift code generator\n• /i18n_reload — Hot-reload translations",
+      "panel_title": "🛠 Rostam Bot Management Center\n\nWelcome to the admin panel. Use the options below to monitor and control system features:\n\n📊 Stats: View user counts, YouTube traffic, and AI tool usage (STT, Denoise, etc.)\n🔒 Force Join: Manage mandatory channel subscription locks\n🎁 Gift Codes: Generate redeem codes to upgrade user ranks\n📣 Broadcast: Send or forward banners to all or active users\n\n💡 Quick Admin Commands:\n• /ip &lt;ip&gt; — Full IP lookup\n• /re [days] [rank] [uses] — Quick gift code generator\n• /i18n_reload — Hot-reload translations",
       "stats_button": "Stats",
       "stats_more_button": "More Stats",
       "errors_button": "Errors (last 1 day)",
@@ -1795,7 +1810,7 @@
           "youtube": "YouTube (quality/cancel)",
           "emoji": "Emoji Panel",
           "cookie": "Cookie Pool",
-          "paywall": "Paywall & Plans",
+          "paywall": "Paywall and Plans",
           "cpu": "Processing Queue (CPU)"
         }
       },
@@ -1900,7 +1915,7 @@
       "features": {
         "dalavar": "✅ Suitable for everyday use\n⬇️ Traffic: 5 GB daily | 15 GB monthly\n📱 YouTube download quality: up to 480p\n🔇 Noise removal: 30 min daily | 2 hours weekly\n🎙 Fast transcription: 30 min daily | 2 hours weekly\n🎵 Vocal separation: 6 min daily | 20 min weekly\n✂️ Remove BG (weekly): <b>3</b> | 🎨 Colorize: <b>3</b>\n🗣️ Text to Speech: <b>30 mins weekly</b>",
         "sepahbod": "✅ Suitable for semi-professional users\n⬇️ Traffic: 5 GB daily | 60 GB monthly\n🔥 YouTube download quality: up to 1080p\n📚 Playlist limit: first 10 videos\n🧾 Separate subtitle file: ✅\n📎 Attach subtitle to video: ✅\n✂️ Remove BG (weekly): <b>3</b> | 🎨 Colorize: <b>3</b>\n🗣️ Text to Speech: <b>30 mins weekly</b>",
-        "esfandyar": "✅ Suitable for heavy & professional downloads\n⬇️ Traffic: 40 GB daily | 400 GB monthly\n🚀 YouTube download quality: up to 4K (Unlimited)\n📚 Playlist/Channel: Unlimited\n🧾 Separate subtitle: ✅\n📎 Mux subtitle: ✅\n🔥 Hardcode subtitle: ✅\n✂️ Remove BG (weekly): <b>3</b> | 🎨 Colorize: <b>3</b>\n🗣️ Text to Speech: <b>30 mins weekly</b>",
+        "esfandyar": "✅ Suitable for heavy and professional downloads\n⬇️ Traffic: 40 GB daily | 400 GB monthly\n🚀 YouTube download quality: up to 4K (Unlimited)\n📚 Playlist/Channel: Unlimited\n🧾 Separate subtitle: ✅\n📎 Mux subtitle: ✅\n🔥 Hardcode subtitle: ✅\n✂️ Remove BG (weekly): <b>3</b> | 🎨 Colorize: <b>3</b>\n🗣️ Text to Speech: <b>30 mins weekly</b>",
         "sohrab": "✅ Suitable for regular AI tools usage\n🔇 Noise removal: 2 hrs daily | 10 hrs weekly\n🎙 Fast transcription: 3 hrs daily | 15 hrs weekly\n🎙 Accurate transcription: 1 hr daily | 5 hrs weekly\n🎵 Vocal separation: 20 min daily | 90 min weekly\n✂️ Remove BG (weekly): <b>30</b> | 🎨 Colorize: <b>15</b>\n🗣️ Text to Speech: <b>100 mins weekly</b>",
         "rostam": "🏆 All Esfandyar features included\n🔇 Noise removal: 10 hrs daily | 99 hrs weekly\n🎙 Fast transcription: 30 hrs daily | 150 hrs weekly\n🎙 Accurate transcription: 10 hrs daily | 50 hrs weekly\n🎵 Vocal separation: 200 min daily | 999 min weekly\n✂️ Remove BG (weekly): <b>150</b> | 🎨 Colorize: <b>100</b>\n🗣️ Text to Speech: <b>600 mins weekly</b>"
       }
@@ -1908,8 +1923,8 @@
     "commands": {
       "start": "Main menu",
       "language": "Change language",
-      "rank": "View plans & upgrade subscription",
-      "ref": "Referral program & invite link",
+      "rank": "View plans and upgrade subscription",
+      "ref": "Referral program and invite link",
       "re": "Generate redeem code (Admin)",
       "panel": "My account — rank, traffic and quotas"
     },
@@ -1921,8 +1936,8 @@
       "unavailable": "User panel is currently unavailable."
     },
     "referral": {
-      "button": "Invite friends & earn points",
-      "banner": "🤖 Rostam Bot | The smartest free YouTube & AI assistant ⚡\n\n📥 YouTube Download — fast & complete\n🎚️ Choose your quality and resolution\n🎞️ Choose codec (AV1 · VP9 · H.264)\n📝 Subtitles — separate file or embedded\n🎵 Audio-only download (no video)\n\n🧪 AI Lab\n🎙️ Noise removal\n✨ Image upscaling\n📝 Speech to text\n🎵 Vocal separation\n🖼️ Gemini watermark removal\n\n🔗 Try it now for free 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
+      "button": "Invite friends and earn points",
+      "banner": "🤖 Rostam Bot | The smartest free YouTube and AI assistant ⚡\n\n📥 YouTube Download — fast and complete\n🎚️ Choose your quality and resolution\n🎞️ Choose codec (AV1 · VP9 · H.264)\n📝 Subtitles — separate file or embedded\n🎵 Audio-only download (no video)\n\n🧪 AI Lab\n🎙️ Noise removal\n✨ Image upscaling\n📝 Speech to text\n🎵 Vocal separation\n🖼️ Gemini watermark removal\n🗣️ Text to speech\n🎨 Colorize B/W photos\n✂️ Automatic background removal\n\n🧰 Practical Toolbox\n📄 Professional PDF compression\n⚡ Direct link high-speed download\n🌐 IP address lookup and analysis\n\n🔗 Try it now for free 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
       "status": "🔗 <b>Your personal link is ready!</b>\n\nShare this banner with friends or in groups.\nFor every person who joins via your link and stays a channel member for at least 2 days, you get 1 referral. 💰\n\n📈 <b>Current status</b>\n👤 Referrals: {count}\n⏳ Pending confirmation: {pending}\n💎 Usable points: {available}\n\n🎯 Tap a button below to activate a rank:\n(subscriptions last 1 month)",
       "tier_button": "{rank} ({count} points)",
       "activate_success": "🎉 {rank} rank has been activated until {date}!",
@@ -2002,7 +2017,7 @@
       "solid_mode_solid": "Single files: Solid",
       "solid_mode_normal": "Entire folder: Faster",
       "part_size_label": "Part size : {mb} MB",
-      "confirm_button": "✅ Confirm & Start Upload",
+      "confirm_button": "✅ Confirm and Start Upload",
       "cancel_button": "❌ Cancel",
       "ask_password": "Now enter the password for the file \\(save it because your message will be deleted\\)",
       "password_received": "Password received",
@@ -2148,7 +2163,22 @@
         "send_failed": "The file was downloaded but sending it failed, try again.",
         "invalid_name": "That file name is not valid, send another one.",
         "too_large": "The file size exceeds the server's available disk space limit (max {max})."
-      }
+      },
+      "unsupported_platform": "⚠️ The downloader for {platform} is under development. Please follow our news channel for updates."
+    },
+    "platforms": {
+      "telegram": "Telegram",
+      "instagram": "Instagram",
+      "tiktok": "TikTok",
+      "twitter": "Twitter (X)",
+      "pinterest": "Pinterest",
+      "facebook": "Facebook",
+      "threads": "Threads",
+      "soundcloud": "SoundCloud",
+      "spotify": "Spotify",
+      "aparat": "Aparat",
+      "rubika": "Rubika",
+      "eitaa": "Eitaa"
     }
   },
   "it": {
@@ -2843,7 +2873,7 @@
       "quota_file_too_long": "Il file supera la quota rimanente separazione ({remaining})"
     },
     "admin": {
-      "panel_title": "🛠 Centro di Gestione Rostam Bot\n\nBenvenuto nel pannello di amministrazione. Usa le opzioni sottostanti per monitorare e gestire il sistema:\n\n📊 Statistiche: Visualizza utenti, traffico YouTube e uso degli strumenti AI (STT, Denoise, ecc.)\n🔒 Iscrizione Obbligatoria: Gestisci i canali con vincolo di iscrizione\n🎁 Codici Regalo: Genera codici per aggiornare i ranghi utente\n📣 Messaggio di gruppo: Invia o inoltra banner a tutti o agli utenti attivi\n\n💡 Comandi Rapidi Admin:\n• /ip <ip> — Ricerca IP completa\n• /re [giorni] [rango] [usi] — Generazione rapida codici\n• /i18n_reload — Ricarica traduzioni",
+      "panel_title": "🛠 Centro di Gestione Rostam Bot\n\nBenvenuto nel pannello di amministrazione. Usa le opzioni sottostanti per monitorare e gestire il sistema:\n\n📊 Statistiche: Visualizza utenti, traffico YouTube e uso degli strumenti AI (STT, Denoise, ecc.)\n🔒 Iscrizione Obbligatoria: Gestisci i canali con vincolo di iscrizione\n🎁 Codici Regalo: Genera codici per aggiornare i ranghi utente\n📣 Messaggio di gruppo: Invia o inoltra banner a tutti o agli utenti attivi\n\n💡 Comandi Rapidi Admin:\n• /ip &lt;ip&gt; — Ricerca IP completa\n• /re [giorni] [rango] [usi] — Generazione rapida codici\n• /i18n_reload — Ricarica traduzioni",
       "stats_button": "Statistiche",
       "stats_more_button": "Altre Statistiche",
       "errors_button": "Errori (ultimo giorno)",
@@ -2985,7 +3015,7 @@
     },
     "referral": {
       "button": "Invita amici e guadagna punti",
-      "banner": "🤖 Bot Rostam | Il più intelligente assistente gratuito per YouTube e AI ⚡\n\n📥 Download YouTube — veloce e completo\n🎚️ Scegli qualità e risoluzione\n🎞️ Scegli il codec (AV1 · VP9 · H.264)\n📝 Sottotitoli — file separato o incorporato\n🎵 Solo audio (senza video)\n\n🧪 Laboratorio AI\n🎙️ Riduzione rumore\n✨ Miglioramento immagini\n📝 Testo da voce\n🎵 Separazione vocale\n🖼️ Rimozione filigrana Gemini\n\n🔗 Provalo ora gratis 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
+      "banner": "🤖 Bot Rostam | Il più intelligente assistente gratuito per YouTube e AI ⚡\n\n📥 Download YouTube — veloce e completo\n🎚️ Scegli qualità e risoluzione\n🎞️ Scegli il codec (AV1 · VP9 · H.264)\n📝 Sottotitoli — file separato o incorporato\n🎵 Solo audio (senza video)\n\n🧪 Laboratorio AI\n🎙️ Riduzione rumore\n✨ Miglioramento immagini\n📝 Testo da voce\n🎵 Separazione vocale\n🖼️ Rimozione filigrana Gemini\n🗣️ Sintesi vocale (da testo a voce)\n🎨 Colorazione foto in B/N\n✂️ Rimozione automatica sfondo\n\n🧰 Cassetta degli attrezzi\n📄 Compressione PDF professionale\n⚡ Download diretto di link grandi\n🌐 Analisi e verifica indirizzo IP\n\n🔗 Provalo ora gratis 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
       "status": "🔗 <b>Il tuo link personale è pronto!</b>\n\nCondividi questo banner con amici o nei gruppi.\nPer ogni persona che si unisce tramite il tuo link e resta membro del canale per almeno 2 giorni, ricevi 1 invito. 💰\n\n📈 <b>Stato attuale</b>\n👤 Inviti: {count}\n⏳ In attesa di conferma: {pending}\n💎 Punti utilizzabili: {available}\n\n🎯 Tocca un pulsante per attivare un rango:\n(gli abbonamenti durano 1 mese)",
       "tier_button": "{rank} ({count} punti)",
       "activate_success": "🎉 Il rango {rank} è stato attivato fino al {date}!",
@@ -3211,7 +3241,22 @@
         "send_failed": "Il file è stato scaricato ma l'invio è fallito, riprova.",
         "invalid_name": "Questo nome file non è valido, inviane un altro.",
         "too_large": "La dimensione del file supera il limite di spazio su disco disponibile (max {max})."
-      }
+      },
+      "unsupported_platform": "⚠️ Il downloader per {platform} è in fase di sviluppo. Segui il nostro canale per aggiornamenti."
+    },
+    "platforms": {
+      "telegram": "Telegram",
+      "instagram": "Instagram",
+      "tiktok": "TikTok",
+      "twitter": "Twitter (X)",
+      "pinterest": "Pinterest",
+      "facebook": "Facebook",
+      "threads": "Threads",
+      "soundcloud": "SoundCloud",
+      "spotify": "Spotify",
+      "aparat": "Aparat",
+      "rubika": "Rubika",
+      "eitaa": "Eitaa"
     }
   },
   "ru": {
@@ -3339,7 +3384,7 @@
       "cancel_button": "❌ Отмена",
       "model": {
         "general": "General x4",
-        "anime_group": "Anime & Cartoon",
+        "anime_group": "Anime and Cartoon",
         "anime_pro": "Pro x4",
         "anime_x4": "Anime x4",
         "anime_x3": "Anime x3",
@@ -3747,7 +3792,7 @@
         "subtitle_mode_embedded": "Embedded subtitles",
         "subtitle_mode_hardsub": "Hardsub (burned-in)",
         "video_info": "Video info:\nResolution: {quality}\nCodec: {codec}\nEstimated file size: {size} MiB\nBitrate: {bitrate} kbps",
-        "confirm": "Confirm & Download",
+        "confirm": "Confirm and Download",
         "back_to_quality": "Back to resolution menu"
       },
       "fetch_failed": "Failed to fetch video info: {error}",
@@ -3906,7 +3951,7 @@
       "quota_file_too_long": "File exceeds your remaining separation quota ({remaining})"
     },
     "admin": {
-      "panel_title": "🛠 Центр управления ботом Rostam\n\nДобро пожаловать в панель администратора. Используйте меню ниже для контроля системы:\n\n📊 Статистика: Просмотр пользователей, трафика YouTube и ИИ-инструментов (STT, Denoise и др.)\n🔒 Обязательная подписка: Управление каналами обязательной подписки\n🎁 Подарочные коды: Генерация кодов для повышения ранга пользователей\n📣 Рассылка: Отправка или пересылка баннеров всем или активным пользователям\n\n💡 Быстрые команды:\n• /ip <ip> — Проверка IP\n• /re [дней] [ранг] [кол-во] — Быстрое создание кода\n• /i18n_reload — Перезагрузка переводов",
+      "panel_title": "🛠 Центр управления ботом Rostam\n\nДобро пожаловать в панель администратора. Используйте меню ниже для контроля системы:\n\n📊 Статистика: Просмотр пользователей, трафика YouTube и ИИ-инструментов (STT, Denoise и др.)\n🔒 Обязательная подписка: Управление каналами обязательной подписки\n🎁 Подарочные коды: Генерация кодов для повышения ранга пользователей\n📣 Рассылка: Отправка или пересылка баннеров всем или активным пользователям\n\n💡 Быстрые команды:\n• /ip &lt;ip&gt; — Проверка IP\n• /re [дней] [ранг] [кол-во] — Быстрое создание кода\n• /i18n_reload — Перезагрузка переводов",
       "stats_button": "Stats",
       "force_join_button": "Mandatory Join 🔒",
       "stats_more_button": "More Stats",
@@ -3948,7 +3993,7 @@
           "youtube": "YouTube (quality/cancel)",
           "emoji": "Emoji Panel",
           "cookie": "Cookie Pool",
-          "paywall": "Paywall & Plans",
+          "paywall": "Paywall and Plans",
           "cpu": "Processing Queue (CPU)"
         }
       },
@@ -4047,14 +4092,14 @@
       "more_text": "📊 <b>Другие квоты</b>\n\n<b>🎙️ Быстрая транскрипция</b>\nДень: {b_sf_d}  {u_sf_d} / {l_sf_d}\nНеделя: {b_sf_w}  {u_sf_w} / {l_sf_w}\n\n<b>✨ Точная транскрипция</b>\nДень: {b_sa_d}  {u_sa_d} / {l_sa_d}\nНеделя: {b_sa_w}  {u_sa_w} / {l_sa_w}\n\n<b>🎚️ Удаление шума</b>\nДень: {b_dn_d}  {u_dn_d} / {l_dn_d}\nНеделя: {b_dn_w}  {u_dn_w} / {l_dn_w}\n\n<b>🎵 Разделение</b>\nДень: {b_sep_d}  {u_sep_d} / {l_sep_d}\nНеделя: {b_sep_w}  {u_sep_w} / {l_sep_w}\n\n<b>🖼️ Масштабирование (неделя)</b>\n×2: {b_u2}  {v_u2}/{l_u2}  |  ×3: {b_u3}  {v_u3}/{l_u3}  |  ×4: {b_u4}  {v_u4}/{l_u4}\n\n<b>✂️ Удалить фон (неделя)</b>\n{b_nobg}  {u_nobg}/{l_nobg}\n\n<b>🎨 Раскрасить фото (неделя)</b>\n{b_deold}  {u_deold}/{l_deold}\n\n<b>🗣️ Текст в речь (неделя)</b>\n{b_tts}  {u_tts} / {l_tts}"
     },
     "referral": {
-      "button": "Invite friends & earn points",
-      "banner": "🤖 Бот Рустам | Умнейший бесплатный помощник для YouTube и ИИ ⚡\n\n📥 Загрузка с YouTube — быстро и полностью\n🎚️ Выбор нужного качества и разрешения\n🎞️ Выбор кодека (AV1 · VP9 · H.264)\n📝 Субтитры — отдельным файлом или в видео\n🎵 Скачивание только аудио (без видео)\n\n🧪 Лаборатория ИИ\n🎙️ Подавление шума\n✨ Улучшение качества фото\n📝 Речь в текст\n🎵 Разделение вокала и музыки\n🖼️ Удаление водяных знаков Gemini\n\n🔗 Попробуйте прямо сейчас бесплатно 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
-      "status": "🔗 <b>Your personal link is ready!</b>\n\nShare this banner with friends or in groups.\nFor every person who joins via your link and stays a channel member for at least 2 days, you get 1 referral. 💰\n\n📈 <b>Current status</b>\n👤 Referrals: {count}\n⏳ Pending confirmation: {pending}\n💎 Usable points: {available}\n\n🎯 Tap a button below to activate a rank:\n(subscriptions last 1 month)",
-      "tier_button": "{rank} ({count} points)",
-      "activate_success": "🎉 {rank} rank has been activated until {date}!",
-      "activate_insufficient": "Not enough points. You have {available} of the {needed} points needed.",
-      "activate_downgrade": "Your current rank is already higher than this option; no need to activate.",
-      "activate_unlimited": "Your current rank is unlimited; no need to activate."
+      "button": "Приглашай друзей и получай баллы",
+      "banner": "🤖 Бот Рустам | Умнейший бесплатный помощник для YouTube и ИИ ⚡\n\n📥 Загрузка с YouTube — быстро и полностью\n🎚️ Выбор нужного качества и разрешения\n🎞️ Выбор кодека (AV1 · VP9 · H.264)\n📝 Субтитры — отдельным файлом или в видео\n🎵 Скачивание только аудио (без видео)\n\n🧪 Лаборатория ИИ\n🎙️ Подавление шума\n✨ Улучшение качества фото\n📝 Речь в текст\n🎵 Разделение вокала и музыки\n🖼️ Удаление водяных знаков Gemini\n🗣️ Преобразование текста в речь\n🎨 Раскрашивание ч/б фото\n✂️ Автоматическое удаление фона\n\n🧰 Набор инструментов\n📄 Профессиональное сжатие PDF\n⚡ Прямое скачивание больших ссылок\n🌐 Проверка и анализ IP-адресов\n\n🔗 Попробуйте прямо сейчас бесплатно 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
+      "status": "🔗 <b>Ваша персональная ссылка готова!</b>\n\nОтправьте этот баннер друзьям или в группы.\nЗа каждого человека, перешедшего по вашей ссылке и остающегося участником канала минимум 2 дня, вам начисляется 1 приглашение. 💰\n\n📈 <b>Текущий статус</b>\n👤 Приглашений: {count}\n⏳ В ожидании подтверждения: {pending}\n💎 Доступно баллов: {available}\n\n🎯 Нажмите кнопку ниже для активации ранга:\n(подписки действуют 1 месяц)",
+      "tier_button": "{rank} ({count} баллов)",
+      "activate_success": "🎉 Ранг {rank} активирован до {date}!",
+      "activate_insufficient": "Недостаточно баллов. У вас {available} из {needed} необходимых баллов.",
+      "activate_downgrade": "Ваш текущий ранг выше этого варианта; активация не требуется.",
+      "activate_unlimited": "Ваш текущий ранг неограничен; активация не требуется."
     },
     "force_join": {
       "locked_message": "🔒 To use the bot, you must first join the following lock(s):\n\nAfter joining, tap the \"Joined, activate bot\" button.",
@@ -4274,7 +4319,22 @@
         "send_failed": "The file was downloaded but sending it failed, try again.",
         "invalid_name": "That file name is not valid, send another one.",
         "too_large": "The file size exceeds the server's available disk space limit (max {max})."
-      }
+      },
+      "unsupported_platform": "⚠️ Загрузчик для {platform} находится в разработке. Пожалуйста, следите за новостями на нашем канале."
+    },
+    "platforms": {
+      "telegram": "Telegram",
+      "instagram": "Instagram",
+      "tiktok": "TikTok",
+      "twitter": "Twitter (X)",
+      "pinterest": "Pinterest",
+      "facebook": "Facebook",
+      "threads": "Threads",
+      "soundcloud": "SoundCloud",
+      "spotify": "Spotify",
+      "aparat": "Aparat",
+      "rubika": "Rubika",
+      "eitaa": "Eitaa"
     }
   }
 }

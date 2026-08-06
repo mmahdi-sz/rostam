@@ -120,6 +120,90 @@ pub fn available_disk_space(path: &str) -> std::io::Result<u64> {
     }
 }
 
+pub fn detect_social_platform(text: &str) -> Option<&'static str> {
+    let text = text.trim();
+    if !crate::validation::is_safe_url(text) {
+        return None;
+    }
+    let Ok(parsed) = reqwest::Url::parse(text) else {
+        return None;
+    };
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return None;
+    }
+    let host = parsed.host_str()?.to_lowercase();
+    if host == "youtube.com"
+        || host.ends_with(".youtube.com")
+        || host == "youtu.be"
+        || host.ends_with(".youtu.be")
+    {
+        return Some("youtube");
+    }
+    if host == "t.me"
+        || host.ends_with(".t.me")
+        || host == "telegram.org"
+        || host.ends_with(".telegram.org")
+        || host == "telegram.me"
+        || host.ends_with(".telegram.me")
+    {
+        return Some("telegram");
+    }
+    if host == "instagram.com"
+        || host.ends_with(".instagram.com")
+        || host == "instagr.am"
+        || host.ends_with(".instagr.am")
+    {
+        return Some("instagram");
+    }
+    if host == "tiktok.com" || host.ends_with(".tiktok.com") || host == "vt.tiktok.com" {
+        return Some("tiktok");
+    }
+    if host == "twitter.com"
+        || host.ends_with(".twitter.com")
+        || host == "x.com"
+        || host.ends_with(".x.com")
+    {
+        return Some("twitter");
+    }
+    if host == "pinterest.com"
+        || host.ends_with(".pinterest.com")
+        || host == "pin.it"
+        || host.ends_with(".pin.it")
+    {
+        return Some("pinterest");
+    }
+    if host == "facebook.com"
+        || host.ends_with(".facebook.com")
+        || host == "fb.watch"
+        || host == "fb.com"
+    {
+        return Some("facebook");
+    }
+    if host == "threads.net" || host.ends_with(".threads.net") {
+        return Some("threads");
+    }
+    if host == "soundcloud.com" || host.ends_with(".soundcloud.com") {
+        return Some("soundcloud");
+    }
+    if host == "spotify.com" || host.ends_with(".spotify.com") {
+        return Some("spotify");
+    }
+    if host == "aparat.com" || host.ends_with(".aparat.com") {
+        return Some("aparat");
+    }
+    if host == "rubika.ir"
+        || host.ends_with(".rubika.ir")
+        || host == "rubika.com"
+        || host.ends_with(".rubika.com")
+    {
+        return Some("rubika");
+    }
+    if host == "eitaa.com" || host.ends_with(".eitaa.com") {
+        return Some("eitaa");
+    }
+    None
+}
+
 pub fn is_direct_link(text: &str) -> bool {
     let text = text.trim();
     if !crate::validation::is_safe_url(text) {
@@ -166,6 +250,18 @@ pub async fn handle_surge_text(
     let Some(url) = message.text.as_deref().map(str::trim) else {
         return;
     };
+
+    if let Some(platform) = detect_social_platform(url) {
+        if platform != "youtube" {
+            log_ev!("surge_dl", trace_id, "unsupported_social_platform", "platform" => platform, "input" => url);
+            let platform_name = t(&format!("platforms.{platform}"));
+            let text = tf("surge.unsupported_platform", &[("platform", &platform_name)]);
+            let _ = crate::bot::send_text(api, chat_id, &text).await;
+            let _ = crate::bot::send_tools_menu(api, chat_id).await;
+            return;
+        }
+    }
+
     if !is_direct_link(url) {
         log_ev!("surge_dl", trace_id, "invalid_url", "input" => url, "=>" => "reject");
         let _ = crate::bot::send_text_with_back(api, chat_id, &t("surge.invalid_url")).await;

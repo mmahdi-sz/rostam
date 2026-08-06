@@ -9,6 +9,42 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [2.0.1] — 2026-08-06
+
+### Added
+- **Social Media Platform Detection (`detect_social_platform`)**: Automatic classification of social media and messaging platform URLs (`telegram`, `instagram`, `tiktok`, `twitter`, `pinterest`, `facebook`, `threads`, `soundcloud`, `spotify`, `aparat`, `rubika`, `eitaa`).
+- **YouTube Auto-Redirect**: Seamless routing of YouTube URLs received in direct chat or Surge downloader flow directly to `handle_youtube_url`.
+- **Unsupported Platform Redirection & Tools Menu**: Automatic notice message (`surge.unsupported_platform`) and standalone Tools menu fallback (`send_tools_menu`) for unsupported social platform URLs.
+- **Unified 3-Step Dispatcher Pipeline**: Restructured text message routing into a 3-step pipeline: IP lookup -> Social platform check -> Direct link download check.
+- **Multi-Language i18n Support**: Added `surge.unsupported_platform` and `platforms.*` translations across all 4 supported languages (`fa`, `en`, `it`, `ru`).
+
+## [2.0.0] — 2026-08-06
+
+### Added
+- **Text-to-Speech (MOSS-TTS-Nano)**: Local TTS engine (MOSS-TTS-Nano 100M) for natural speech synthesis.
+- **Voice Cloning**: Support for custom voice cloning by sending a sample voice recording.
+- **Live TTS Progress**: Real-time progress bar (percentage, elapsed time, ETA) during TTS processing.
+- **Voice / Audio Fallback**: Auto-fallback to audio documents if Telegram privacy restricts voice messages.
+- **Weekly TTS Quotas**: Tier-based weekly quotas (Dalavar/Sepahbod/Esfandyar: 30m, Sohrab: 100m, Rostam: 600m).
+- **B&W Photo Colorization (DeOldify)**: Neural network image colorization for old black & white photos.
+- **DeOldify Quotas**: Tier-based weekly quotas (Dalavar/Sepahbod/Esfandyar: 3, Sohrab: 15, Rostam: 100).
+- **Background Removal (FeyNobg)**: Automatic image background removal with transparent PNG output.
+- **FeyNobg Quotas**: Tier-based weekly quotas (Dalavar/Sepahbod/Esfandyar: 3, Sohrab: 30, Rostam: 150).
+- **File Compression (ZIP / 7Z / RAR)**: Multi-format archive builder with 3 algorithms (LZMA2, PPMd, BZip2).
+- **Compression Customization**: Compression levels 0–9 and archive splitting from 5 MB to 2 GB.
+- **Multi-Media Compression Intake**: Support for document, video, audio, photo, voice, video_note, and animation.
+- **Admin Broadcast System**: Full admin broadcast panel supporting `copy_message`, `forward_message`, and message pinning.
+- **Rate-Limited Broadcast**: Throttled broadcast speed to 15 msg/sec (67ms delay) with automatic blocked-user detection (`is_blocked = true`).
+- **Subscription Shop & Rank Guide**: Detailed rank pricing page (`rank:shop`, `rank:guide`) with direct prefilled admin contact links and `config.yml` pricing config.
+- **Referral Leaderboard**: Top referrers leaderboard with medals (🥇, 🥈, 🥉) and database join queries.
+- **YouTube MP3 Audio Download**: `audio_only` MP3 extraction (`--extract-audio --audio-format mp3 -q 0`) with smart filename and metadata caption.
+- **Live Denoise Progress & Video Denoise**: Real-time progress bar (ETA) and MP4/MKV/WebM video audio denoise via FFmpeg CPU broker integration.
+- **Database Migrations**:
+  - `V002`: Added `duration` and `bitrate` columns to `stats_downloads`.
+  - `V003`: Added `is_blocked` column to `stats_users`.
+  - `V004`: Added `username` column to `stats_users`.
+- **i18n Expansion**: Complete multi-language support across 4 languages (`fa`, `en`, `it`, `ru`) with 1,600+ new i18n key lines.
+
 ## [1.24.4] — 2026-07-29
 
 ### Fixed

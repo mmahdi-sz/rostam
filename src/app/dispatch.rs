@@ -19,7 +19,7 @@ use crate::denoise;
 use crate::emoji::{BroadcastMode, FlowState, handler as emoji_handler, panel::CB_START_PANEL};
 use crate::feynobg::{enter_nobg, handle_nobg_cancel};
 use crate::gemini_watermark::{CB_GWM_CANCEL, enter_gwm, handle_gwm_cancel, handle_gwm_image};
-use crate::i18n::{LANG, reload_i18n, t};
+use crate::i18n::{LANG, reload_i18n, t, tf};
 use crate::ip_lookup::{
     CB_IP_LOOKUP_CANCEL, CB_TOOLS_IP_LOOKUP, detect_ip, enter_ip_lookup, handle_ip_command,
     handle_ip_lookup_auto, handle_ip_lookup_cancel, handle_ip_lookup_text,
@@ -843,9 +843,44 @@ async fn handle_message(
                         "surge_dl_route_dispatched",
                         &format!("user_id={uid} chat_id={}", message.chat.id),
                     );
-                    if crate::surge_dl::is_direct_link(txt) {
-                        flow_manager.clear(uid);
+                    flow_manager.clear(uid);
+                    let platform = crate::surge_dl::detect_social_platform(txt);
+                    if platform == Some("youtube") {
+                        let urls = extract_youtube_urls(txt);
+                        let target_url = if !urls.is_empty() {
+                            urls[0].to_string()
+                        } else {
+                            txt.to_string()
+                        };
+                        let api2 = api.clone();
+                        let chat_id2 = message.chat.id;
+                        let msg_id2 = message.message_id;
+                        let pool2 = cookie_pool.clone();
+                        let db2 = database.clone();
+                        let rl_tx2 = rate_limit_tx.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = handle_youtube_url(
+                                &api2, chat_id2, msg_id2, user_id, trace_id, &target_url, pool2,
+                                &db2, &rl_tx2,
+                            )
+                            .await
+                            {
+                                crate::stats::record_error_global("youtube", e).await;
+                            }
+                        });
+                        return Ok(());
+                    } else if let Some(p) = platform {
+                        let platform_name = t(&format!("platforms.{p}"));
+                        let text = tf("surge.unsupported_platform", &[("platform", &platform_name)]);
+                        let api2 = api.clone();
+                        let chat_id2 = message.chat.id;
+                        tokio::spawn(async move {
+                            let _ = crate::bot::send_text(&api2, chat_id2, &text).await;
+                            let _ = crate::bot::send_tools_menu(&api2, chat_id2).await;
+                        });
+                        return Ok(());
                     }
+
                     let api2 = api.clone();
                     let msg2 = message.clone();
                     let fm2 = flow_manager.clone();
@@ -1022,35 +1057,58 @@ async fn handle_message(
                     handle_ip_lookup_auto(api, message.chat.id, uid, ip, note).await;
                     return Ok(());
                 }
-                let urls = extract_youtube_urls(text);
-                if !urls.is_empty() {
-                    for url in urls {
-                        let trace_id = next_trace_id();
-                        log_trace(
-                            trace_id,
-                            "route_youtube_url",
-                            &format!("user_id={user_id:?} chat_id={} url={url}", message.chat.id),
-                        );
-                        // Spawn so a slow yt-dlp fetch doesn't freeze the whole event loop.
-                        let api2 = api.clone();
-                        let chat_id2 = message.chat.id;
-                        let msg_id2 = message.message_id;
-                        let pool2 = cookie_pool.clone();
-                        let db2 = database.clone();
-                        let rl_tx2 = rate_limit_tx.clone();
-                        let url_owned = url.to_string();
-                        tokio::spawn(async move {
-                            if let Err(e) = handle_youtube_url(
-                                &api2, chat_id2, msg_id2, user_id, trace_id, &url_owned, pool2,
-                                &db2, &rl_tx2,
-                            )
-                            .await
-                            {
-                                crate::stats::record_error_global("youtube", e).await;
-                            }
-                        });
+
+                if let Some(uid) = user_id {
+                    if let Some(platform) = crate::surge_dl::detect_social_platform(text) {
+                        if platform == "youtube" {
+                            let urls = extract_youtube_urls(text);
+                            let target_url = if !urls.is_empty() {
+                                urls[0].to_string()
+                            } else {
+                                text.trim().to_string()
+                            };
+                            let trace_id = next_trace_id();
+                            log_trace(
+                                trace_id,
+                                "route_youtube_url",
+                                &format!("user_id={uid} chat_id={} url={target_url}", message.chat.id),
+                            );
+                            let api2 = api.clone();
+                            let chat_id2 = message.chat.id;
+                            let msg_id2 = message.message_id;
+                            let pool2 = cookie_pool.clone();
+                            let db2 = database.clone();
+                            let rl_tx2 = rate_limit_tx.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = handle_youtube_url(
+                                    &api2, chat_id2, msg_id2, Some(uid), trace_id, &target_url, pool2,
+                                    &db2, &rl_tx2,
+                                )
+                                .await
+                                {
+                                    crate::stats::record_error_global("youtube", e).await;
+                                }
+                            });
+                            return Ok(());
+                        } else {
+                            let trace_id = next_trace_id();
+                            log_trace(
+                                trace_id,
+                                "route_unsupported_social_platform",
+                                &format!("user_id={uid} chat_id={} platform={platform} url={text}", message.chat.id),
+                            );
+                            let platform_name = t(&format!("platforms.{platform}"));
+                            let msg_text = tf("surge.unsupported_platform", &[("platform", &platform_name)]);
+                            let api2 = api.clone();
+                            let chat_id2 = message.chat.id;
+                            tokio::spawn(async move {
+                                let _ = crate::bot::send_text(&api2, chat_id2, &msg_text).await;
+                                let _ = crate::bot::send_tools_menu(&api2, chat_id2).await;
+                            });
+                            return Ok(());
+                        }
                     }
-                } else if let Some(uid) = user_id {
+
                     if crate::surge_dl::is_direct_link(text) {
                         let trace_id = next_trace_id();
                         log_trace(

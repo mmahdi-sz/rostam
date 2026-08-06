@@ -261,6 +261,18 @@ pub async fn edit_to_tools(api: &Bot, chat_id: i64, message_id: i32) -> crate::e
     Ok(())
 }
 
+pub async fn send_tools_menu(api: &Bot, chat_id: i64) -> crate::error::Result<()> {
+    let text = apply_premium_to_md(&t("start.tools_title"));
+    let params = SendMessageParams::builder()
+        .chat_id(chat_id)
+        .text(&text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(tools_keyboard()))
+        .build();
+    api.send_message(&params).await?;
+    Ok(())
+}
+
 pub async fn edit_to_leaderboard(
     api: &Bot,
     chat_id: i64,
