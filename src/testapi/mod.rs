@@ -9,10 +9,7 @@ use std::net::SocketAddr;
 pub async fn run() -> anyhow::Result<()> {
     let api_base = config::config_value("BOT_API_BASE_URL").unwrap_or_default();
     if !api_base.contains("127.0.0.1") && !api_base.contains("localhost") {
-        panic!(
-            "CRITICAL: BOT_API_BASE_URL must be a local address in test mode (got: {})",
-            api_base
-        );
+        panic!("CRITICAL: BOT_API_BASE_URL must be a local address in test mode (got: {api_base})");
     }
 
     let port_str = std::env::var("TESTAPI_PORT").unwrap_or_else(|_| "14379".to_string());
@@ -57,23 +54,18 @@ pub async fn run() -> anyhow::Result<()> {
             "/test/separation/submit",
             post(endpoints::ai::test_separation_submit),
         )
+        .route("/test/quota", post(endpoints::quota::test_quota))
         .route("/test/gwm/detect", post(endpoints::ai::test_gwm_detect))
         .route(
             "/test/denoise/process",
             post(endpoints::ai::test_denoise_process),
         )
-        .route(
-            "/test/tts/generate",
-            post(endpoints::ai::test_tts_generate),
-        )
+        .route("/test/tts/generate", post(endpoints::ai::test_tts_generate))
         .route(
             "/test/deoldify/colorized",
             post(endpoints::ai::test_deoldify_colorize),
         )
-        .route(
-            "/test/nobg/process",
-            post(endpoints::ai::test_nobg_process),
-        )
+        .route("/test/nobg/process", post(endpoints::ai::test_nobg_process))
         .route(
             "/test/admin/panel",
             post(endpoints::admin::test_admin_panel),
@@ -91,6 +83,10 @@ pub async fn run() -> anyhow::Result<()> {
             post(endpoints::health::test_deep_health),
         )
         .route(
+            "/test/redeem/apply",
+            post(endpoints::redeem::test_redeem_apply),
+        )
+        .route(
             "/test/referral/spend",
             post(endpoints::referral::test_referral_spend),
         )
@@ -105,7 +101,7 @@ pub async fn run() -> anyhow::Result<()> {
         );
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    println!("[testapi] listening on 127.0.0.1:{}", port);
+    println!("[testapi] listening on 127.0.0.1:{port}");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

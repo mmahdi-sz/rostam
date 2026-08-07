@@ -66,4 +66,3 @@ pub async fn test_admin_broadcast(Json(req): Json<AdminBroadcastReq>) -> Json<Ad
         rendered_text,
     })
 }
-

@@ -3,11 +3,20 @@ Description=ABC Telegram Bot
 After=network-online.target
 Wants=network-online.target
 
+# NOTE: the installed unit at /etc/systemd/system/rostam_dev.service (aliased
+# abc.service) is authoritative and differs from this template (it carries
+# `After=... postgresql.service` / `Wants=... postgresql.service` and the
+# correct `rostam-dev` binary name). Do not copy this file over it. Applying
+# User=/Group= requires downloads/ and cookie_profiles_cache/ to be owned by
+# that user first, otherwise the bot dies on its first download.
 [Service]
 Type=simple
+User=mahdi
+Group=mahdi
+NoNewPrivileges=yes
 WorkingDirectory=/mnt/data/mahdidev/ros/dev
 EnvironmentFile=-/mnt/data/mahdidev/ros/dev/.env
-ExecStart=/mnt/data/mahdidev/ros/dev/target/debug/ros-telegram-bot
+ExecStart=/mnt/data/mahdidev/ros/dev/target/debug/rostam-dev
 Restart=always
 RestartSec=3
 

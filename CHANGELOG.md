@@ -9,6 +9,33 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-08-07
+
+### Security
+- **Bot Token Redaction**: The bot token no longer reaches journald or the admin error panel. `frankenstein` errors embed the full request URL, so the token was written verbatim to logs and to `stats_errors`; both paths now run through a redactor. Tests use a synthetic token only.
+- **Separation Service Loopback**: `separation-service` now binds `127.0.0.1` by default (`SEP_BIND_HOST`) instead of `0.0.0.0`, and runs as `User=mahdi` with `NoNewPrivileges=yes`. Note: its endpoints still have no authentication — exposure is closed, authentication is not.
+
+### Fixed
+- **Quota Race Across 8 Handlers**: Quotas were read, then the work ran for minutes, then usage was debited — two concurrent requests both passed the check. `reserve_usage` now performs the limit check and the increment in a single SQL statement against a row locked by the `(user_id, quota_type)` primary key, and every failure path between reservation and delivery refunds. Two-window handlers reserve the shorter window first and refund it inline if the longer window rejects.
+- **Free Work on a Zero Magnitude**: A failed WAV-header or `ffprobe` probe yielded a magnitude of zero, which always fits a quota, so an exhausted user got free work. Denoise, separation and STT now reserve at least one second.
+- **STT Unlimited-Window Overflow**: An unlimited weekly limit (`u64::MAX`) became negative when cast to `i64`, rejecting every request. Now clamped to the `i64` ceiling.
+- **Redeem and Referral Ledger Atomicity**: Both subsystems decided then recorded across an `await`, allowing double grants. Atomicity now lives in single statements, since `tokio_postgres::Client::transaction()` requires `&mut self` and the shared client is an `Arc<Client>`.
+- **Language Loss and Shutdown Drain Across `tokio::spawn`**: `tokio::task_local!` does not cross `tokio::spawn`, so spawned handlers lost the user's language and fell back to Persian, and were not counted in the shutdown drain. Replaced with `spawn_user_task`, which carries the context.
+- **Service Restart Time**: Restarting the bot service took 91 seconds; now 0.07 seconds.
+- **Dev/Prod Health Port Collision**: Dev now uses `HEALTH_PORT=14381`.
+- **Stale Binary Name**: `install.sh`, `Dockerfile`, `systemd/abc.service` and `README.md` referenced the crate name `ros-telegram-bot` where the binary is `rostam-dev`, breaking install and container builds.
+- **YouTube Downloads**: Automatically retry with next cookie in pool when yt-dlp returns zero formats due to `database is locked`, `The page needs to be reloaded`, or bot detection challenges, resolving transient "no downloadable quality found" errors.
+- **User Panel Rank Display**: Panel now displays live `effective_rank` (`Dalavar`) with status `(منقضی شده)` when a paid rank has expired, replacing misleading active rank labels.
+- **Rank Expiry Formatting**: Displays remaining hours/minutes when less than 24 hours remain on active rank subscriptions instead of `(0 روز)`.
+- **Multi-Language i18n**: Added `rank.expiry_with_hours` and `rank.expiry_expired` across all 4 supported languages (`fa`, `en`, `it`, `ru`).
+
+### Added
+- **Database-Failure Notice**: A quota database error now tells the user to contact `@mmahdi_sz` instead of failing silently — `rank.quota_db_error` in all 4 languages, sent without a parse mode so one string is safe from handlers with differing parse modes. This is deliberately fail-closed.
+- **`/test/quota` TestAPI Endpoint**: Calls the real `rank::quota` reserve/refund/get functions against the dev database. Twelve checks in `scripts/run_testapi_suite.sh` cover a counter quota (upscale) and a magnitude quota (denoise): successful reservation, rejection at the limit with usage unchanged, refund and re-reservation, exact fit, and a refund larger than usage not going negative.
+
+### Removed
+- **Obsolete ASR Microservice**: `asr.service` (uvicorn on `127.0.0.1:8765`) was stopped and disabled. Nothing in `src/` referenced it — denoising runs in-process through `crate::stt::deepfilter`. The stale `src/denoise/mod.rs` doc comment claiming a port-8765 sidecar was corrected.
+
 ## [2.1.0] - 2026-08-06
 
 ### Changed

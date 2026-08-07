@@ -65,7 +65,11 @@ pub(super) async fn handle_import_file(
             }
         },
         Err(e) => {
-            eprintln!("[emoji_msg trace={trace_id} event=import_get_file_failed] err={e}");
+            // خطای getFile آدرس درخواست (شامل توکن) را در Display خود دارد.
+            eprintln!(
+                "[emoji_msg trace={trace_id} event=import_get_file_failed] err={}",
+                crate::log::redact(&e.to_string())
+            );
             let _ = crate::bot::send_text(api, chat_id, &t("emoji.import_failed")).await;
             return true;
         }
@@ -85,13 +89,19 @@ pub(super) async fn handle_import_file(
                 t
             }
             Err(e) => {
-                eprintln!("[emoji_msg trace={trace_id} event=import_read_failed] err={e}");
+                eprintln!(
+                    "[emoji_msg trace={trace_id} event=import_read_failed] err={}",
+                    crate::log::redact(&e.to_string())
+                );
                 let _ = crate::bot::send_text(api, chat_id, &t("emoji.import_failed")).await;
                 return true;
             }
         },
         Err(e) => {
-            eprintln!("[emoji_msg trace={trace_id} event=import_download_failed] err={e}");
+            eprintln!(
+                "[emoji_msg trace={trace_id} event=import_download_failed] err={}",
+                crate::log::redact(&e.to_string())
+            );
             let _ = crate::bot::send_text(api, chat_id, &t("emoji.import_failed")).await;
             return true;
         }

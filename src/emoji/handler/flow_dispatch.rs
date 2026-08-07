@@ -170,7 +170,6 @@ pub async fn handle_emoji_flow_message(
         | FlowState::AwaitingNobgImage
         | FlowState::AwaitingTtsText
         | FlowState::AwaitingCompressFormatSelect
-
         | FlowState::AwaitingCompressOptions { .. }
         | FlowState::AwaitingCompressPassword { .. }
         | FlowState::AwaitingCompressFiles { .. } => {

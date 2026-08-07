@@ -148,4 +148,3 @@ mod tests {
         // In format_progress_body, percent_f == 0.0 forces downloaded to "0B"
     }
 }
-

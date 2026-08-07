@@ -1,11 +1,7 @@
 use super::menu::send_rank_detail;
 use super::types::Rank;
-use crate::i18n::{apply_premium_to_html, tf};
-use frankenstein::{
-    AsyncTelegramApi, ParseMode,
-    client_reqwest::Bot,
-    methods::SendMessageParams,
-};
+use crate::i18n::{apply_premium_to_html, t, tf};
+use frankenstein::{AsyncTelegramApi, ParseMode, client_reqwest::Bot, methods::SendMessageParams};
 
 pub const CB_RANK_SHOW_MENU: &str = "rank:menu";
 
@@ -30,6 +26,27 @@ pub async fn block_feature(api: &Bot, chat_id: i64, feature: &str, min_rank: Ran
     }
 
     send_rank_detail(api, chat_id, None, min_rank).await;
+}
+
+/// محدودیت نوع ۳ — رزرو سهمیه به‌خاطر خطای دیتابیس ممکن نشد ⇒ **fail closed**.
+///
+/// کار انجام نمی‌شود و به کاربر گفته می‌شود به ادمین اطلاع دهد. توجه: نقشه‌ی
+/// ۰۱۵ «fail open» را پیشنهاد کرده بود (مثل رفتار قبلیِ `.unwrap_or(0)`)، ولی
+/// تصمیم کاربر در ۲۰۲۶-۰۸-۰۷ این بود که در خطای دیتابیس کاربر مطلع شود؛ عمداً
+/// خلاف پیشنهاد نقشه عمل شده.
+///
+/// ponytail: بدون `parse_mode` فرستاده می‌شود — همین یک متن از ۸ هندلر با
+/// پارس‌مودهای متفاوت (HTML و MarkdownV2) صدا می‌شود و متن خام هیچ‌جا escape
+/// نمی‌خواهد؛ تلگرام خودش `@username` را لینک می‌کند.
+pub async fn quota_db_error(api: &Bot, chat_id: i64, feature: &str, err: &str) {
+    crate::stats::record_error_global(feature, &format!("quota_reserve_failed: {err}")).await;
+    let params = SendMessageParams::builder()
+        .chat_id(chat_id)
+        .text(t("rank.quota_db_error"))
+        .build();
+    if let Err(e) = api.send_message(&params).await {
+        eprintln!("[rank event=quota_db_error_send_failed] chat_id={chat_id} err={e}");
+    }
 }
 
 /// محدودیت نوع ۲ — قابلیت هست ولی با محدودیت عددی (مدت، حجم، تعداد)

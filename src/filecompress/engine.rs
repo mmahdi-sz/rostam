@@ -243,7 +243,8 @@ fn collect_outputs(work_dir: &Path, archive_base: &str, config: &CompressConfig)
         let is_match = match config.fmt {
             CompressFmt::SevenZ => {
                 fname == format!("{archive_base}.7z")
-                    || (fname.starts_with(&format!("{archive_base}.7z.")) && fname != format!("{archive_base}.7z"))
+                    || (fname.starts_with(&format!("{archive_base}.7z."))
+                        && fname != format!("{archive_base}.7z"))
             }
             CompressFmt::Zip => {
                 fname == format!("{archive_base}.zip")

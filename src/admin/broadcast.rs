@@ -17,9 +17,17 @@ use crate::stats::{get_broadcast_user_ids, mark_user_blocked_global, record_even
 
 pub fn broadcast_menu_keyboard(pin_enabled: bool) -> InlineKeyboardMarkup {
     let pin_btn = if pin_enabled {
-        btn_icon_success(&t("admin.broadcast.btn_pin_on"), CB_BROADCAST_TOGGLE_PIN, "check")
+        btn_icon_success(
+            &t("admin.broadcast.btn_pin_on"),
+            CB_BROADCAST_TOGGLE_PIN,
+            "check",
+        )
     } else {
-        btn_icon_danger(&t("admin.broadcast.btn_pin_off"), CB_BROADCAST_TOGGLE_PIN, "cross")
+        btn_icon_danger(
+            &t("admin.broadcast.btn_pin_off"),
+            CB_BROADCAST_TOGGLE_PIN,
+            "cross",
+        )
     };
 
     InlineKeyboardMarkup::builder()
@@ -75,9 +83,17 @@ pub fn format_broadcast_status(
         BroadcastMode::Forward => t("admin.broadcast.mode_forward"),
     };
 
-    let percent = if total > 0 { (processed * 100) / total } else { 100 };
+    let percent = if total > 0 {
+        (processed * 100) / total
+    } else {
+        100
+    };
     let percent = percent.min(100);
-    let filled_blocks = if total > 0 { (processed * 16) / total } else { 16 };
+    let filled_blocks = if total > 0 {
+        (processed * 16) / total
+    } else {
+        16
+    };
     let filled_blocks = filled_blocks.min(16);
     let empty_blocks = 16 - filled_blocks;
     let bar = format!("{}{}", "█".repeat(filled_blocks), "░".repeat(empty_blocks));
@@ -126,7 +142,7 @@ pub fn spawn_broadcast_job(
     only_active: bool,
     limit: Option<i64>,
 ) {
-    tokio::spawn(async move {
+    crate::app::spawn_user_task(async move {
         let trace = crate::log::next_trace_id();
         crate::log_actor_id!("broadcast", trace, admin_chat_id, "job" => "start");
 
@@ -171,7 +187,9 @@ pub fn spawn_broadcast_job(
                         .from_chat_id(banner_chat_id)
                         .message_id(banner_message_id)
                         .build();
-                    api.copy_message(&copy_params).await.map(|r| r.result.message_id)
+                    api.copy_message(&copy_params)
+                        .await
+                        .map(|r| r.result.message_id)
                 }
                 BroadcastMode::Forward => {
                     let fwd_params = ForwardMessageParams::builder()
@@ -179,7 +197,9 @@ pub fn spawn_broadcast_job(
                         .from_chat_id(banner_chat_id)
                         .message_id(banner_message_id)
                         .build();
-                    api.forward_message(&fwd_params).await.map(|r| r.result.message_id)
+                    api.forward_message(&fwd_params)
+                        .await
+                        .map(|r| r.result.message_id)
                 }
             };
 
@@ -218,21 +238,12 @@ pub fn spawn_broadcast_job(
             if should_update {
                 if let Some(msg_id) = status_msg_id {
                     let elapsed_secs = start_time.elapsed().as_secs();
-                    let progress_text = format_broadcast_status(
-                        mode,
-                        processed,
-                        total,
-                        elapsed_secs,
-                    );
+                    let progress_text =
+                        format_broadcast_status(mode, processed, total, elapsed_secs);
 
-                    if let Err(e) = crate::bot::edit_text_md(
-                        &api,
-                        admin_chat_id,
-                        msg_id,
-                        &progress_text,
-                        None,
-                    )
-                    .await
+                    if let Err(e) =
+                        crate::bot::edit_text_md(&api, admin_chat_id, msg_id, &progress_text, None)
+                            .await
                     {
                         eprintln!("[broadcast] failed to edit status message: {e:?}");
                     }
@@ -247,7 +258,8 @@ pub fn spawn_broadcast_job(
         record_event_global("broadcast", "completed", "ok", success_count).await;
 
         // ارسال پیام گزارش نهایی جداگانه به همراه دکمه برگشت به پنل ادمین
-        let final_report = format_broadcast_completed_report(success_count, _blocked_count, total as i64);
+        let final_report =
+            format_broadcast_completed_report(success_count, _blocked_count, total as i64);
         let kb = frankenstein::types::InlineKeyboardMarkup::builder()
             .inline_keyboard(vec![vec![btn_icon(
                 &t("admin.back"),
@@ -255,7 +267,8 @@ pub fn spawn_broadcast_job(
                 "back",
             )]])
             .build();
-        let _ = crate::bot::send_text_md_with_keyboard(&api, admin_chat_id, &final_report, kb).await;
+        let _ =
+            crate::bot::send_text_md_with_keyboard(&api, admin_chat_id, &final_report, kb).await;
     });
 }
 
@@ -288,4 +301,3 @@ mod tests {
         assert!(report.contains("100"));
     }
 }
-

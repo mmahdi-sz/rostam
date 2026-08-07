@@ -102,7 +102,9 @@ pub async fn separate_audio(
             .text("user_id", user_id.to_string())
             .text("is_vip", is_vip.to_string());
 
-        eprintln!("[separation trace={trace_id} event=service_post attempt={attempt}] url={SERVICE_URL} timeout=600s");
+        eprintln!(
+            "[separation trace={trace_id} event=service_post attempt={attempt}] url={SERVICE_URL} timeout=600s"
+        );
 
         let t_start = std::time::Instant::now();
         match client.post(SERVICE_URL).multipart(form).send().await {

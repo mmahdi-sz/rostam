@@ -9,7 +9,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates libssl3 ffmpeg ghostscript yt-dlp curl \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/ros-telegram-bot /usr/local/bin/
+COPY --from=builder /app/target/release/rostam-dev /usr/local/bin/
 COPY config/i18n.json /app/config/i18n.json
 COPY files/ /app/files/
 WORKDIR /app
@@ -18,4 +18,4 @@ ENV HEALTH_PORT=14380
 EXPOSE 14380
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -f http://127.0.0.1:${HEALTH_PORT}/health || exit 1
-ENTRYPOINT ["ros-telegram-bot"]
+ENTRYPOINT ["rostam-dev"]

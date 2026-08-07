@@ -46,7 +46,7 @@ pub fn spawn_download(
     status_message_id: i32,
 ) {
     let cancel = register_cancel(request_id);
-    tokio::spawn(async move {
+    crate::app::spawn_user_task(async move {
         // check اگر playlist است یا single video
         if let Some(req_peek) = super::store::get_request(request_id) {
             if req_peek.is_playlist && !req_peek.playlist_items.is_empty() {
@@ -124,7 +124,13 @@ async fn run_playlist_download(
                 ),
             );
             if limit == 0 {
-                crate::rank::paywall::block_feature(&api, status_chat_id, "دانلود پلی‌لیست", crate::rank::types::Rank::Sepahbod).await;
+                crate::rank::paywall::block_feature(
+                    &api,
+                    status_chat_id,
+                    "دانلود پلی‌لیست",
+                    crate::rank::types::Rank::Sepahbod,
+                )
+                .await;
                 return;
             } else {
                 let note = format!(
@@ -600,7 +606,9 @@ async fn run_download(
         let format_spec = match codec {
             super::super::types::VideoCodec::H264 => format!("{format_id}+bestaudio/best"),
             _ => {
-                format!("{format_id}+bestaudio/{format_id}/bestvideo[height<={height}]+bestaudio/best")
+                format!(
+                    "{format_id}+bestaudio/{format_id}/bestvideo[height<={height}]+bestaudio/best"
+                )
             }
         };
         (format_spec, merge_format, is_h264)
@@ -930,7 +938,10 @@ async fn run_download(
         req.duration
             .and_then(|d| {
                 if d > 0 {
-                    Some(format!("{:.0}", (file_size_bytes as f64 * 8.0) / (d as f64 * 1000.0)))
+                    Some(format!(
+                        "{:.0}",
+                        (file_size_bytes as f64 * 8.0) / (d as f64 * 1000.0)
+                    ))
                 } else {
                     None
                 }
@@ -941,7 +952,7 @@ async fn run_download(
     } else {
         find_format(&req, height, codec)
             .and_then(|f| f.bitrate)
-            .map(|b| format!("{:.0}", b))
+            .map(|b| format!("{b:.0}"))
             .unwrap_or_else(|| "?".to_string())
     };
     let sub_tag = match (selection.subtitle_mode, selection.subtitle_langs.is_empty()) {

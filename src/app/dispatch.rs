@@ -4,15 +4,18 @@ use frankenstein::{
 };
 
 use crate::bot::{
-    CB_ADMIN_BROADCAST, CB_ADMIN_ERRORS, CB_ADMIN_FORCE_JOIN, CB_ADMIN_GEN_CODE, CB_ADMIN_PANEL, CB_ADMIN_STATS,
-    CB_ADMIN_STATS_MORE, CB_AI_DENOISE, CB_AI_DEOLDIFY, CB_AI_GWM, CB_AI_NOBG, CB_AI_SEP, CB_AI_STT, CB_AI_TTS, CB_AI_UPSCALE,
-    CB_BROADCAST_MODE_COPY, CB_BROADCAST_MODE_FORWARD, CB_BROADCAST_SEND_ACTIVE, CB_BROADCAST_SEND_ALL, CB_BROADCAST_TOGGLE_PIN,
-    CB_DENOISE_CANCEL, CB_DEOLDIFY_CANCEL, CB_LANG_SET, CB_NOBG_CANCEL, CB_START_AI_LAB, CB_START_EMOJI, CB_START_LEADERBOARD, CB_START_TOOLS,
-    CB_START_YOUTUBE, CB_TTS_CANCEL, CB_USER_PANEL,
+    CB_ADMIN_BROADCAST, CB_ADMIN_ERRORS, CB_ADMIN_FORCE_JOIN, CB_ADMIN_GEN_CODE, CB_ADMIN_PANEL,
+    CB_ADMIN_STATS, CB_ADMIN_STATS_MORE, CB_AI_DENOISE, CB_AI_DEOLDIFY, CB_AI_GWM, CB_AI_NOBG,
+    CB_AI_SEP, CB_AI_STT, CB_AI_TTS, CB_AI_UPSCALE, CB_BROADCAST_MODE_COPY,
+    CB_BROADCAST_MODE_FORWARD, CB_BROADCAST_SEND_ACTIVE, CB_BROADCAST_SEND_ALL,
+    CB_BROADCAST_TOGGLE_PIN, CB_DENOISE_CANCEL, CB_DEOLDIFY_CANCEL, CB_LANG_SET, CB_NOBG_CANCEL,
+    CB_START_AI_LAB, CB_START_EMOJI, CB_START_LEADERBOARD, CB_START_TOOLS, CB_START_YOUTUBE,
+    CB_TTS_CANCEL, CB_USER_PANEL,
 };
 
 use crate::bot::{
-    edit_to_ai_lab, edit_to_leaderboard, edit_to_start_menu, edit_to_tools, send_lang_picker, send_start_menu,
+    edit_to_ai_lab, edit_to_leaderboard, edit_to_start_menu, edit_to_tools, send_lang_picker,
+    send_start_menu,
 };
 use crate::config;
 use crate::denoise;
@@ -65,11 +68,17 @@ pub async fn handle_update(
         let admin = config::admin_user_id();
         let sender = match &content {
             UpdateContent::Message(m) => m.from.as_ref().filter(|u| !u.is_bot).map(|u| u.id as i64),
-            UpdateContent::CallbackQuery(c) => if c.from.is_bot { None } else { Some(c.from.id as i64) },
+            UpdateContent::CallbackQuery(c) => {
+                if c.from.is_bot {
+                    None
+                } else {
+                    Some(c.from.id as i64)
+                }
+            }
             _ => None,
         };
         if sender.is_some() && sender != admin {
-            eprintln!("[dev_mode] blocked user_id={:?}", sender);
+            eprintln!("[dev_mode] blocked user_id={sender:?}");
             return Ok(());
         }
     }
@@ -534,15 +543,13 @@ async fn handle_message(
                             ("active", &active_users.to_string()),
                         ],
                     );
-                    let kb = crate::admin::broadcast::broadcast_target_keyboard(active_users, total_users);
+                    let kb = crate::admin::broadcast::broadcast_target_keyboard(
+                        active_users,
+                        total_users,
+                    );
 
-                    let _ = crate::bot::send_text_with_kb(
-                        api,
-                        message.chat.id,
-                        &prompt_text,
-                        kb,
-                    )
-                    .await;
+                    let _ =
+                        crate::bot::send_text_with_kb(api, message.chat.id, &prompt_text, kb).await;
                 }
                 return Ok(());
             }
@@ -606,7 +613,7 @@ async fn handle_message(
                         let db2 = database.clone();
                         let tx2 = flow_clear_tx.clone();
                         // Spawn so the event loop stays free during STT (minutes-long operation)
-                        tokio::spawn(async move {
+                        super::spawn_user_task(async move {
                             struct SttFlowGuard(tokio::sync::mpsc::UnboundedSender<i64>, i64);
                             impl Drop for SttFlowGuard {
                                 fn drop(&mut self) {
@@ -638,7 +645,7 @@ async fn handle_message(
                     let api2 = api.clone();
                     let msg2 = message.clone();
                     let db2 = database.clone();
-                    tokio::spawn(async move {
+                    super::spawn_user_task(async move {
                         denoise::handle_denoise_audio(&api2, &msg2, uid, &db2).await;
                     });
                     return Ok(());
@@ -662,7 +669,7 @@ async fn handle_message(
                     let api2 = api.clone();
                     let msg2 = message.clone();
                     let db2 = database.clone();
-                    tokio::spawn(async move {
+                    super::spawn_user_task(async move {
                         handle_upscale_image(api2, msg2, uid, scale_factor, model_name, db2).await;
                     });
                     return Ok(());
@@ -698,7 +705,7 @@ async fn handle_message(
                     flow_manager.clear(uid);
                     let api2 = api.clone();
                     let msg2 = message.clone();
-                    tokio::spawn(async move {
+                    super::spawn_user_task(async move {
                         handle_gwm_image(&api2, &msg2, uid).await;
                     });
                     return Ok(());
@@ -718,13 +725,9 @@ async fn handle_message(
                     let msg2 = message.clone();
                     let fm_clone = flow_manager.clone();
                     let db_clone = database.clone();
-                    tokio::spawn(async move {
+                    super::spawn_user_task(async move {
                         crate::deoldify::handle_deoldify_image(
-                            &api2,
-                            &msg2,
-                            uid,
-                            &fm_clone,
-                            db_clone,
+                            &api2, &msg2, uid, &fm_clone, db_clone,
                         )
                         .await;
                     });
@@ -744,13 +747,12 @@ async fn handle_message(
                     let msg2 = message.clone();
                     let fm = flow_manager.clone();
                     let db = database.clone();
-                    tokio::spawn(async move {
+                    super::spawn_user_task(async move {
                         crate::feynobg::handle_nobg_image(&api2, &msg2, uid, &fm, db).await;
                     });
                     return Ok(());
                 }
             }
-
 
             if matches!(flow_manager.get(uid), FlowState::AwaitingTtsText) {
                 if let Some(text) = &message.text {
@@ -766,7 +768,7 @@ async fn handle_message(
                     let flow_manager_clone = flow_manager.clone();
                     let database_clone = database.clone();
                     flow_manager.clear(uid);
-                    tokio::spawn(async move {
+                    super::spawn_user_task(async move {
                         crate::moss_tts::handle_tts_text(
                             &api2,
                             chat_id,
@@ -780,7 +782,6 @@ async fn handle_message(
                     return Ok(());
                 }
             }
-
 
             if matches!(flow_manager.get(uid), FlowState::AwaitingPdfCompressFile) {
                 if message.document.is_some() {
@@ -844,10 +845,17 @@ async fn handle_message(
                         let pool2 = cookie_pool.clone();
                         let db2 = database.clone();
                         let rl_tx2 = rate_limit_tx.clone();
-                        tokio::spawn(async move {
+                        super::spawn_user_task(async move {
                             if let Err(e) = handle_youtube_url(
-                                &api2, chat_id2, msg_id2, user_id, trace_id, &target_url, pool2,
-                                &db2, &rl_tx2,
+                                &api2,
+                                chat_id2,
+                                msg_id2,
+                                user_id,
+                                trace_id,
+                                &target_url,
+                                pool2,
+                                &db2,
+                                &rl_tx2,
                             )
                             .await
                             {
@@ -857,10 +865,13 @@ async fn handle_message(
                         return Ok(());
                     } else if let Some(p) = platform {
                         let platform_name = t(&format!("platforms.{p}"));
-                        let text = tf("surge.unsupported_platform", &[("platform", &platform_name)]);
+                        let text = tf(
+                            "surge.unsupported_platform",
+                            &[("platform", &platform_name)],
+                        );
                         let api2 = api.clone();
                         let chat_id2 = message.chat.id;
-                        tokio::spawn(async move {
+                        super::spawn_user_task(async move {
                             let _ = crate::bot::send_text(&api2, chat_id2, &text).await;
                             let _ = crate::bot::send_tools_menu(&api2, chat_id2).await;
                         });
@@ -871,7 +882,7 @@ async fn handle_message(
                     let msg2 = message.clone();
                     let fm2 = flow_manager.clone();
                     let db2 = database.clone();
-                    tokio::spawn(async move {
+                    super::spawn_user_task(async move {
                         handle_surge_text(&api2, &msg2, uid, &fm2, &db2).await;
                     });
                 }
@@ -957,14 +968,8 @@ async fn handle_message(
                         "filecompress_file_dispatched",
                         &format!("user_id={uid} chat_id={}", message.chat.id),
                     );
-                    crate::filecompress::handle_fc_file(
-                        api,
-                        &message,
-                        uid,
-                        flow_manager,
-                        database,
-                    )
-                    .await;
+                    crate::filecompress::handle_fc_file(api, &message, uid, flow_manager, database)
+                        .await;
                     return Ok(());
                 }
             }
@@ -1057,7 +1062,10 @@ async fn handle_message(
                             log_trace(
                                 trace_id,
                                 "route_youtube_url",
-                                &format!("user_id={uid} chat_id={} url={target_url}", message.chat.id),
+                                &format!(
+                                    "user_id={uid} chat_id={} url={target_url}",
+                                    message.chat.id
+                                ),
                             );
                             let api2 = api.clone();
                             let chat_id2 = message.chat.id;
@@ -1065,10 +1073,17 @@ async fn handle_message(
                             let pool2 = cookie_pool.clone();
                             let db2 = database.clone();
                             let rl_tx2 = rate_limit_tx.clone();
-                            tokio::spawn(async move {
+                            super::spawn_user_task(async move {
                                 if let Err(e) = handle_youtube_url(
-                                    &api2, chat_id2, msg_id2, Some(uid), trace_id, &target_url, pool2,
-                                    &db2, &rl_tx2,
+                                    &api2,
+                                    chat_id2,
+                                    msg_id2,
+                                    Some(uid),
+                                    trace_id,
+                                    &target_url,
+                                    pool2,
+                                    &db2,
+                                    &rl_tx2,
                                 )
                                 .await
                                 {
@@ -1081,13 +1096,19 @@ async fn handle_message(
                             log_trace(
                                 trace_id,
                                 "route_unsupported_social_platform",
-                                &format!("user_id={uid} chat_id={} platform={platform} url={text}", message.chat.id),
+                                &format!(
+                                    "user_id={uid} chat_id={} platform={platform} url={text}",
+                                    message.chat.id
+                                ),
                             );
                             let platform_name = t(&format!("platforms.{platform}"));
-                            let msg_text = tf("surge.unsupported_platform", &[("platform", &platform_name)]);
+                            let msg_text = tf(
+                                "surge.unsupported_platform",
+                                &[("platform", &platform_name)],
+                            );
                             let api2 = api.clone();
                             let chat_id2 = message.chat.id;
-                            tokio::spawn(async move {
+                            super::spawn_user_task(async move {
                                 let _ = crate::bot::send_text(&api2, chat_id2, &msg_text).await;
                                 let _ = crate::bot::send_tools_menu(&api2, chat_id2).await;
                             });
@@ -1106,7 +1127,7 @@ async fn handle_message(
                         let msg2 = message.clone();
                         let fm2 = flow_manager.clone();
                         let db2 = database.clone();
-                        tokio::spawn(async move {
+                        super::spawn_user_task(async move {
                             handle_surge_text(&api2, &msg2, uid, &fm2, &db2).await;
                         });
                     }
@@ -1363,7 +1384,9 @@ async fn handle_callback(
             )
             .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            let r = edit_to_leaderboard(api, message.chat.id, message.message_id, database.as_ref()).await;
+            let r =
+                edit_to_leaderboard(api, message.chat.id, message.message_id, database.as_ref())
+                    .await;
             log_ev!("referral", trace_id, "leaderboard_done", "ok" => r.is_ok());
         }
         return Ok(());
@@ -1578,7 +1601,7 @@ async fn handle_callback(
         return Ok(());
     }
 
-    if cb_data.starts_with(crate::filecompress::CB_FC_PREFIX) {
+    if let Some(action) = cb_data.strip_prefix(crate::filecompress::CB_FC_PREFIX) {
         let trace_id = next_trace_id();
         log_trace(
             trace_id,
@@ -1593,7 +1616,6 @@ async fn handle_callback(
             )
             .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            let action = &cb_data[crate::filecompress::CB_FC_PREFIX.len()..];
             crate::filecompress::handle_fc_callback(
                 api,
                 message.chat.id,
@@ -2165,9 +2187,6 @@ async fn handle_callback(
         return Ok(());
     }
 
-
-
-
     if cb_data == CB_AI_TTS {
         let trace_id = next_trace_id();
         log_trace(
@@ -2197,7 +2216,6 @@ async fn handle_callback(
     }
 
     if cb_data == CB_TTS_CANCEL {
-
         let _ = api
             .answer_callback_query(
                 &AnswerCallbackQueryParams::builder()

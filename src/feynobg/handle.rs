@@ -15,16 +15,18 @@ use crate::i18n::{apply_premium_to_md, md_escape, t, tf, to_fa_digits};
 use crate::log::next_trace_id;
 use crate::rank::{
     self,
-    quota::{QuotaKind, add_usage, get_usage},
+    quota::{QuotaKind, refund_usage, reserve_usage},
 };
 use crate::stats;
 
 pub fn nobg_cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![InlineKeyboardButton::builder()
-            .text(&t("nobg.cancel_button"))
-            .callback_data(CB_NOBG_CANCEL)
-            .build()]])
+        .inline_keyboard(vec![vec![
+            InlineKeyboardButton::builder()
+                .text(&t("nobg.cancel_button"))
+                .callback_data(CB_NOBG_CANCEL)
+                .build(),
+        ]])
         .build()
 }
 
@@ -105,37 +107,72 @@ pub async fn handle_nobg_image(
         return;
     };
 
-    // ── Check weekly rank quota ──
+    // ── Reserve weekly rank quota (atomic: check + debit in one statement) ──
+    let mut reserved = false;
     if let Some(db) = database.as_ref() {
         let user_rank = rank::effective_rank(db.client(), user_id).await;
         let limit = user_rank.nobg_weekly_quota();
-        let used = get_usage(db.client(), user_id, QuotaKind::NobgWeekly, 7 * 86400)
-            .await
-            .unwrap_or(0) as u32;
-
-        if used >= limit {
-            log_ev!("feynobg", trace_id, "quota_check", "used" => used, "limit" => limit, "=>" => "blocked");
-            let label = tf(
-                "nobg.quota_weekly_limit",
-                &[("limit", &limit.to_string())],
-            );
-            if let Some(min_rank) = user_rank.nobg_next_rank() {
-                crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
-            } else {
-                let text = apply_premium_to_md(&label);
-                let _ = api
-                    .send_message(
-                        &SendMessageParams::builder()
-                            .chat_id(chat_id)
-                            .text(&text)
-                            .parse_mode(ParseMode::MarkdownV2)
-                            .build(),
-                    )
-                    .await;
+        match reserve_usage(
+            db.client(),
+            user_id,
+            QuotaKind::NobgWeekly,
+            1,
+            7 * 86400,
+            limit as i64,
+        )
+        .await
+        {
+            Ok(Some(used_after)) => {
+                reserved = true;
+                log_ev!("feynobg", trace_id, "quota_reserved", "used" => used_after, "limit" => limit);
             }
-            flow_manager.set(user_id, FlowState::Idle);
-            return;
+            Ok(None) => {
+                log_ev!("feynobg", trace_id, "quota_check", "limit" => limit, "=>" => "blocked");
+                let label = tf("nobg.quota_weekly_limit", &[("limit", &limit.to_string())]);
+                if let Some(min_rank) = user_rank.nobg_next_rank() {
+                    crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
+                } else {
+                    let text = apply_premium_to_md(&label);
+                    let _ = api
+                        .send_message(
+                            &SendMessageParams::builder()
+                                .chat_id(chat_id)
+                                .text(&text)
+                                .parse_mode(ParseMode::MarkdownV2)
+                                .build(),
+                        )
+                        .await;
+                }
+                flow_manager.set(user_id, FlowState::Idle);
+                return;
+            }
+            Err(e) => {
+                // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
+                log_ev!("feynobg", trace_id, "quota_reserve", "err" => format!("{e}"), "=>" => "fail");
+                crate::rank::paywall::quota_db_error(api, chat_id, "feynobg", &format!("{e}"))
+                    .await;
+                flow_manager.set(user_id, FlowState::Idle);
+                return;
+            }
         }
+    }
+
+    // برگرداندن سهمیه‌ی رزروشده وقتی کار به نتیجه نرسید.
+    macro_rules! refund {
+        ($why:expr) => {
+            if reserved {
+                if let Some(db) = database.as_ref() {
+                    log_ev!("feynobg", trace_id, "quota_refund", "why" => $why);
+                    if let Err(e) =
+                        refund_usage(db.client(), user_id, QuotaKind::NobgWeekly, 1, 7 * 86400)
+                            .await
+                    {
+                        log_ev!("feynobg", trace_id, "quota_refund", "err" => format!("{e}"), "=>" => "fail");
+                        stats::record_error_global("feynobg", "quota_refund_failed").await;
+                    }
+                }
+            }
+        };
     }
 
     // Reset user flow state to Idle as image processing starts
@@ -185,6 +222,7 @@ pub async fn handle_nobg_image(
                     .build(),
             )
             .await;
+        refund!("create_dir_failed");
         return;
     }
 
@@ -218,6 +256,7 @@ pub async fn handle_nobg_image(
             )
             .await;
         let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+        refund!("download_failed");
         return;
     }
 
@@ -247,14 +286,12 @@ pub async fn handle_nobg_image(
                 log_ev!("feynobg", trace_id, "send_document_failed", "err" => format!("{e:?}"));
                 stats::record_error_global("feynobg", &format!("send_document_failed: {e}")).await;
                 stats::record_event_user(user_id, "nobg", "process", "fail", 1).await;
+                refund!("send_document_failed");
             } else {
                 log_ev!("feynobg", trace_id, "success", "duration" => sec_str);
                 stats::record_event_user(user_id, "nobg", "process", "ok", 1).await;
 
-                // Add quota usage on success
-                if let Some(db) = database.as_ref() {
-                    let _ = add_usage(db.client(), user_id, QuotaKind::NobgWeekly, 1, 7 * 86400).await;
-                }
+                // سهمیه هنگام رزرو کسر شد؛ بدهکاری دومی اینجا نیست.
 
                 // UX Improvement: Show prompt menu again so user can immediately send another photo
                 let prompt_text = apply_premium_to_md(&t("nobg.prompt"));
@@ -275,6 +312,7 @@ pub async fn handle_nobg_image(
             log_ev!("feynobg", trace_id, "nobg_failed", "err" => &e);
             stats::record_error_global("feynobg", &e).await;
             stats::record_event_user(user_id, "nobg", "process", "fail", 1).await;
+            refund!("nobg_failed");
 
             let text = apply_premium_to_md(&t("nobg.process_failed"));
             let _ = api

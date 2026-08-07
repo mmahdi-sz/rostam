@@ -250,7 +250,7 @@ fi
 
 say "building the bot (cargo build --release — this takes a while)…"
 cargo build --release
-[ -x target/release/ros-telegram-bot ] || die "bot binary missing after build"
+[ -x target/release/rostam-dev ] || die "bot binary missing after build"
 ok "bot built"
 
 # Sidecars are best-effort: a failure here (e.g. a pinned dep with no wheel for
@@ -342,7 +342,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=$INSTALL_DIR
 EnvironmentFile=-$INSTALL_DIR/.env
-ExecStart=$INSTALL_DIR/target/release/ros-telegram-bot
+ExecStart=$INSTALL_DIR/target/release/rostam-dev
 Restart=always
 RestartSec=3
 

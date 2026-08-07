@@ -187,14 +187,18 @@ fn options_keyboard(config: &CompressConfig) -> InlineKeyboardMarkup {
         btn_icon_plain(&t("start.back"), CB_FC_CANCEL, "back"),
     ]);
 
-    InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(rows)
+        .build()
 }
 
 fn done_reply_keyboard() -> ReplyKeyboardMarkup {
     ReplyKeyboardMarkup::builder()
-        .keyboard(vec![vec![KeyboardButton::builder()
-            .text(t("fc.done_upload_button"))
-            .build()]])
+        .keyboard(vec![vec![
+            KeyboardButton::builder()
+                .text(t("fc.done_upload_button"))
+                .build(),
+        ]])
         .resize_keyboard(true)
         .one_time_keyboard(true)
         .build()
@@ -422,7 +426,8 @@ pub async fn handle_fc_callback(
                     .await;
 
                 // Send ONE new message with instructions and reply keyboard
-                let upload_text = apply_premium_to_md(&t("fc.upload_prompt").replace("{count}", "0"));
+                let upload_text =
+                    apply_premium_to_md(&t("fc.upload_prompt").replace("{count}", "0"));
                 let send_res = api
                     .send_message(
                         &SendMessageParams::builder()
@@ -506,7 +511,9 @@ pub async fn handle_fc_password_text(
         )
         .await;
 
-    let prompt_msg_id = send_res.map(|m| m.result.message_id).unwrap_or(message.message_id);
+    let prompt_msg_id = send_res
+        .map(|m| m.result.message_id)
+        .unwrap_or(message.message_id);
 
     flow_manager.set(
         user_id,
@@ -559,7 +566,11 @@ fn extract_media_file_info(message: &Message, index: usize) -> Option<(String, S
             .file_name
             .clone()
             .unwrap_or_else(|| format!("animation_{}.mp4", index + 1));
-        return Some((anim.file_id.clone(), name, anim.file_size.unwrap_or(0) as u64));
+        return Some((
+            anim.file_id.clone(),
+            name,
+            anim.file_size.unwrap_or(0) as u64,
+        ));
     }
     None
 }
@@ -594,7 +605,9 @@ pub async fn handle_fc_file(
                         .build(),
                 )
                 .await;
-            let prompt_id = send_res.map(|m| m.result.message_id).unwrap_or(message.message_id);
+            let prompt_id = send_res
+                .map(|m| m.result.message_id)
+                .unwrap_or(message.message_id);
             (config, Vec::new(), prompt_id)
         }
         _ => return,
@@ -630,14 +643,28 @@ pub async fn handle_fc_file(
         .chat_id(chat_id)
         .text(&reply_text)
         .parse_mode(ParseMode::MarkdownV2)
-        .reply_parameters(ReplyParameters::builder().message_id(message.message_id).build())
+        .reply_parameters(
+            ReplyParameters::builder()
+                .message_id(message.message_id)
+                .build(),
+        )
         .build();
     let _ = api.send_message(&reply_params).await;
 
     if files.len() >= 20 {
         // Auto-start on reaching max 20 files
         flow_manager.clear(user_id);
-        start_compression_task(api, chat_id, prompt_msg_id, user_id, config, files, trace_id, database).await;
+        start_compression_task(
+            api,
+            chat_id,
+            prompt_msg_id,
+            user_id,
+            config,
+            files,
+            trace_id,
+            database,
+        )
+        .await;
     } else {
         flow_manager.set(
             user_id,
@@ -687,7 +714,17 @@ pub async fn handle_fc_done_text(
         return;
     }
 
-    start_compression_task(api, chat_id, prompt_msg_id, user_id, config, files, trace_id, database).await;
+    start_compression_task(
+        api,
+        chat_id,
+        prompt_msg_id,
+        user_id,
+        config,
+        files,
+        trace_id,
+        database,
+    )
+    .await;
 }
 
 // ── Compression Pipeline ───────────────────────────────────────────────────────
@@ -728,56 +765,79 @@ async fn start_compression_task(
     let daily_limit = rank.compress_cpu_daily_secs();
     let monthly_limit = rank.compress_cpu_monthly_secs();
 
-    let used_daily = rank::quota::get_usage(
-        db_client,
-        user_id,
-        QuotaKind::CompressCpuDaily,
-        86400,
-    )
-    .await
-    .unwrap_or(0) as u64;
-
-    let used_monthly = rank::quota::get_usage(
-        db_client,
-        user_id,
-        QuotaKind::CompressCpuMonthly,
-        2592000,
-    )
-    .await
-    .unwrap_or(0) as u64;
-
-    if used_daily >= daily_limit {
-        crate::log_ev!("filecompress", trace_id, "paywall_daily_blocked", "used" => used_daily, "limit" => daily_limit);
-        let label = t("fc.error.quota_daily");
-        let next_rank = match rank {
-            crate::rank::types::Rank::Dalavar => Some(crate::rank::types::Rank::Sepahbod),
-            crate::rank::types::Rank::Sepahbod | crate::rank::types::Rank::Esfandyar => Some(crate::rank::types::Rank::Sohrab),
-            crate::rank::types::Rank::Sohrab => Some(crate::rank::types::Rank::Rostam),
-            crate::rank::types::Rank::Rostam => None,
-        };
-        if let Some(nr) = next_rank {
-            crate::rank::paywall::block_limit(api, chat_id, &label, nr).await;
-        } else {
-            let _ = send_text_with_back(api, chat_id, &label).await;
+    let next_rank = match rank {
+        crate::rank::types::Rank::Dalavar => Some(crate::rank::types::Rank::Sepahbod),
+        crate::rank::types::Rank::Sepahbod | crate::rank::types::Rank::Esfandyar => {
+            Some(crate::rank::types::Rank::Sohrab)
         }
-        return;
-    }
+        crate::rank::types::Rank::Sohrab => Some(crate::rank::types::Rank::Rostam),
+        crate::rank::types::Rank::Rostam => None,
+    };
 
-    if used_monthly >= monthly_limit {
-        crate::log_ev!("filecompress", trace_id, "paywall_monthly_blocked", "used" => used_monthly, "limit" => monthly_limit);
-        let label = t("fc.error.quota_monthly");
-        let next_rank = match rank {
-            crate::rank::types::Rank::Dalavar => Some(crate::rank::types::Rank::Sepahbod),
-            crate::rank::types::Rank::Sepahbod | crate::rank::types::Rank::Esfandyar => Some(crate::rank::types::Rank::Sohrab),
-            crate::rank::types::Rank::Sohrab => Some(crate::rank::types::Rank::Rostam),
-            crate::rank::types::Rank::Rostam => None,
-        };
-        if let Some(nr) = next_rank {
-            crate::rank::paywall::block_limit(api, chat_id, &label, nr).await;
-        } else {
-            let _ = send_text_with_back(api, chat_id, &label).await;
+    // اینجا واحد سهمیه ثانیه‌ی CPU است و مقدارش تا پایان کار معلوم نیست، پس
+    // مثل بقیه نمی‌شود مقدار واقعی را رزرو کرد. یک ثانیه رزرو می‌شود تا
+    // «چک + کسر» یک statement بماند (دقیقاً معادل `used >= limit` قبلی)، و
+    // بعد از کار با `add_usage` مابقی تسویه می‌شود.
+    let mut reserved = false;
+    for (kind, window, limit, label_key, event) in [
+        (
+            QuotaKind::CompressCpuDaily,
+            86400i64,
+            daily_limit,
+            "fc.error.quota_daily",
+            "paywall_daily_blocked",
+        ),
+        (
+            QuotaKind::CompressCpuMonthly,
+            2592000i64,
+            monthly_limit,
+            "fc.error.quota_monthly",
+            "paywall_monthly_blocked",
+        ),
+    ] {
+        match rank::quota::reserve_usage(db_client, user_id, kind, 1, window, limit as i64).await {
+            Ok(Some(used)) => {
+                crate::log_ev!("filecompress", trace_id, "quota_reserved", "kind" => kind.as_str(), "used" => used, "limit" => limit);
+            }
+            Ok(None) => {
+                crate::log_ev!("filecompress", trace_id, event, "limit" => limit, "=>" => "blocked");
+                if reserved {
+                    let _ = rank::quota::refund_usage(
+                        db_client,
+                        user_id,
+                        QuotaKind::CompressCpuDaily,
+                        1,
+                        86400,
+                    )
+                    .await;
+                }
+                let label = t(label_key);
+                if let Some(nr) = next_rank {
+                    crate::rank::paywall::block_limit(api, chat_id, &label, nr).await;
+                } else {
+                    let _ = send_text_with_back(api, chat_id, &label).await;
+                }
+                return;
+            }
+            Err(e) => {
+                // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
+                crate::log_ev!("filecompress", trace_id, "quota_reserve", "err" => format!("{e}"), "=>" => "fail");
+                if reserved {
+                    let _ = rank::quota::refund_usage(
+                        db_client,
+                        user_id,
+                        QuotaKind::CompressCpuDaily,
+                        1,
+                        86400,
+                    )
+                    .await;
+                }
+                crate::rank::paywall::quota_db_error(api, chat_id, "filecompress", &format!("{e}"))
+                    .await;
+                return;
+            }
         }
-        return;
+        reserved = true;
     }
 
     let progress_msg = match api
@@ -801,7 +861,7 @@ async fn start_compression_task(
 
     let api_clone = api.clone();
     let db_clone = database.clone();
-    tokio::spawn(async move {
+    crate::app::spawn_user_task(async move {
         run_filecompress_worker(
             api_clone,
             chat_id,
@@ -826,9 +886,32 @@ async fn run_filecompress_worker(
     trace_id: u64,
     database: Option<PostgresDatabase>,
 ) {
+    // ورود به این تابع فقط وقتی رخ می‌دهد که `database` موجود بوده و هر دو
+    // پنجره رزرو شده‌اند، پس `database.is_some()` همان پرچم reserved است.
+    macro_rules! refund {
+        ($why:expr) => {
+            if let Some(db) = database.as_ref() {
+                crate::log_ev!("filecompress", trace_id, "quota_refund", "why" => $why);
+                for (kind, window) in [
+                    (QuotaKind::CompressCpuDaily, 86400i64),
+                    (QuotaKind::CompressCpuMonthly, 2592000i64),
+                ] {
+                    if let Err(e) =
+                        rank::quota::refund_usage(db.client(), user_id, kind, 1, window).await
+                    {
+                        crate::log_ev!("filecompress", trace_id, "quota_refund", "err" => format!("{e}"), "=>" => "fail");
+                        crate::stats::record_error_global("filecompress", "quota_refund_failed")
+                            .await;
+                    }
+                }
+            }
+        };
+    }
+
     let work_dir = std::env::temp_dir().join(format!("filecompress_{trace_id}"));
     if let Err(e) = std::fs::create_dir_all(&work_dir) {
         crate::log_ev!("filecompress", trace_id, "mkdir_failed", "err" => format!("{e}"));
+        refund!("mkdir_failed");
         let _ = send_text_with_back(&api, chat_id, &t("fc.error.compress_failed")).await;
         return;
     }
@@ -840,6 +923,7 @@ async fn run_filecompress_worker(
         crate::log_ev!("filecompress", trace_id, "downloading_file", "idx" => idx, "name" => &entry.filename);
         if let Err(e) = download_telegram_file(&api, &entry.file_id, &local_path).await {
             crate::log_ev!("filecompress", trace_id, "download_failed", "err" => format!("{e}"));
+            refund!("download_failed");
             std::fs::remove_dir_all(&work_dir).ok();
             let _ = send_text_with_back(&api, chat_id, &t("fc.error.download_failed")).await;
             return;
@@ -867,39 +951,41 @@ async fn run_filecompress_worker(
         Ok(r) => r,
         Err(CompressError::Timeout) => {
             crate::log_ev!("filecompress", trace_id, "timeout");
+            refund!("timeout");
             std::fs::remove_dir_all(&work_dir).ok();
             let _ = send_text_with_back(&api, chat_id, &t("fc.error.timeout")).await;
             return;
         }
         Err(e) => {
             crate::log_ev!("filecompress", trace_id, "compress_failed", "err" => format!("{e}"));
+            refund!("compress_failed");
             std::fs::remove_dir_all(&work_dir).ok();
             let _ = send_text_with_back(&api, chat_id, &t("fc.error.compress_failed")).await;
             return;
         }
     };
 
-    // Record CPU usage in Quota
+    // تسویه: هنگام رزرو ۱ ثانیه کسر شد، پس اینجا فقط مابقی افزوده می‌شود.
+    // این تنها هندلری است که `add_usage` در آن می‌ماند، چون واحد سهمیه
+    // (ثانیه‌ی CPU) پیش از پایان کار قابل اندازه‌گیری نیست.
     let cpu_secs_used = result.cpu_secs.ceil() as i64;
+    let cpu_secs_delta = (cpu_secs_used - 1).max(0);
     if let Some(db) = database.as_ref() {
         let client = db.client();
-        let _ = rank::quota::add_usage(
-            client,
-            user_id,
-            QuotaKind::CompressCpuDaily,
-            cpu_secs_used,
-            86400,
-        )
-        .await;
-
-        let _ = rank::quota::add_usage(
-            client,
-            user_id,
-            QuotaKind::CompressCpuMonthly,
-            cpu_secs_used,
-            2592000,
-        )
-        .await;
+        if cpu_secs_delta > 0 {
+            for (kind, window) in [
+                (QuotaKind::CompressCpuDaily, 86400i64),
+                (QuotaKind::CompressCpuMonthly, 2592000i64),
+            ] {
+                if let Err(e) =
+                    rank::quota::add_usage(client, user_id, kind, cpu_secs_delta, window).await
+                {
+                    crate::log_ev!("filecompress", trace_id, "quota_settle", "kind" => kind.as_str(), "err" => format!("{e}"), "=>" => "fail");
+                    crate::stats::record_error_global("filecompress", "quota_settle_failed").await;
+                }
+            }
+        }
+        crate::log_ev!("filecompress", trace_id, "quota_settled", "cpu_secs" => cpu_secs_used);
 
         crate::stats::record_event_user(
             user_id,
@@ -927,7 +1013,10 @@ async fn run_filecompress_worker(
             .replace("{before}", &escape_md(&input_fmt))
             .replace("{after}", &escape_md(&output_fmt))
             .replace("{percent}", &escape_md(&format!("{reduction_pct:.1}")))
-            .replace("{cpu_time}", &escape_md(&format!("{:.1}s", result.cpu_secs)))
+            .replace(
+                "{cpu_time}",
+                &escape_md(&format!("{:.1}s", result.cpu_secs))
+            )
     ));
 
     let part_count = result.output_paths.len();
@@ -978,7 +1067,10 @@ async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
     let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
     let res = client
         .post(format!("{SEP_BASE}/cpu/acquire"))
-        .form(&[("user_id", user_id.to_string()), ("is_vip", "false".to_string())])
+        .form(&[
+            ("user_id", user_id.to_string()),
+            ("is_vip", "false".to_string()),
+        ])
         .timeout(Duration::from_secs(120))
         .send()
         .await;
@@ -1020,7 +1112,7 @@ fn fmt_bytes(bytes: u64) -> String {
     if mb >= 1024.0 {
         format!("{:.2} GB", mb / 1024.0)
     } else {
-        format!("{:.1} MB", mb)
+        format!("{mb:.1} MB")
     }
 }
 

@@ -166,5 +166,3 @@ pub async fn test_nobg_process(Json(req): Json<NobgReq>) -> Json<NobgResp> {
         result_caption,
     })
 }
-
-

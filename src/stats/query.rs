@@ -353,7 +353,10 @@ pub async fn get_broadcast_user_ids(
             .await?
     } else {
         client
-            .query("SELECT user_id FROM stats_users ORDER BY last_seen DESC", &[])
+            .query(
+                "SELECT user_id FROM stats_users ORDER BY last_seen DESC",
+                &[],
+            )
             .await?
     };
 
@@ -368,11 +371,11 @@ pub fn fmt_secs(total: i64) -> String {
     let h = total / 3600;
     let m = (total % 3600) / 60;
     if h > 0 {
-        format!("{}h {}m", h, m)
+        format!("{h}h {m}m")
     } else if m > 0 {
-        format!("{}m", m)
+        format!("{m}m")
     } else {
-        format!("{}s", total)
+        format!("{total}s")
     }
 }
 

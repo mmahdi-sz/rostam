@@ -1,6 +1,6 @@
+use crate::rank::types::Rank;
 use axum::Json;
 use serde::{Deserialize, Serialize};
-use crate::rank::types::Rank;
 
 #[allow(dead_code)]
 #[derive(Deserialize)]

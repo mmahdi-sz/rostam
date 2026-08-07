@@ -21,7 +21,7 @@ use crate::i18n::{entities_for_text, t, tf};
 use crate::log::next_trace_id;
 use crate::rank::{
     self,
-    quota::{QuotaKind, add_usage, get_usage},
+    quota::{QuotaKind, get_usage, refund_usage, reserve_usage},
 };
 
 use super::client::{fetch_cpu_status, separate_audio};
@@ -295,7 +295,8 @@ pub async fn handle_separation_callback(
         other => {
             log_trace(trace_id, "wrong_state", &format!("state={other:?}"));
             let _ =
-                send_text_with_ai_back(api, chat_id, &t("separation.error.service_unavailable")).await;
+                send_text_with_ai_back(api, chat_id, &t("separation.error.service_unavailable"))
+                    .await;
             return;
         }
     };
@@ -332,7 +333,8 @@ pub async fn handle_separation_callback(
             crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
             crate::stats::record_error_global("separation", &format!("download failed: {e}")).await;
             let _ =
-                send_text_with_ai_back(api, chat_id, &t("separation.error.service_unavailable")).await;
+                send_text_with_ai_back(api, chat_id, &t("separation.error.service_unavailable"))
+                    .await;
             let _ = delete_message(api, chat_id, message_id).await;
             return;
         }
@@ -380,7 +382,10 @@ pub async fn handle_separation_callback(
         &format!("bytes={}", audio_bytes.len()),
     );
 
-    // Quota check — duration از ffprobe روی audio bytes
+    // Quota reservation — duration از ffprobe روی audio bytes
+    // رزرو پیش از کار: چک-سپس-کسر قبلاً دو درخواست هم‌زمان را هر دو می‌پذیرفت.
+    let mut reserved = false;
+    let mut reserve_secs: i64 = 0;
     {
         let tmp_probe = tmp_dir.join("probe_audio");
         std::fs::write(&tmp_probe, &audio_bytes).unwrap_or(());
@@ -417,52 +422,134 @@ pub async fn handle_separation_callback(
             let user_rank = rank::effective_rank(db.client(), user_id).await;
             let daily_limit = user_rank.separation_daily_secs();
             let weekly_limit = user_rank.separation_weekly_secs();
-            let daily_used = get_usage(db.client(), user_id, QuotaKind::SeparationDaily, 86400)
-                .await
-                .unwrap_or(0) as u64;
-            let weekly_used =
-                get_usage(db.client(), user_id, QuotaKind::SeparationWeekly, 7 * 86400)
-                    .await
-                    .unwrap_or(0) as u64;
-            let daily_remaining = daily_limit.saturating_sub(daily_used);
-            let weekly_remaining = weekly_limit.saturating_sub(weekly_used);
 
-            let block = if daily_remaining == 0 {
-                let label = tf(
-                    "separation.quota_daily_limit",
-                    &[("limit", &format_duration_fa(daily_limit))],
-                );
-                Some((label, user_rank.separation_next_rank()))
-            } else if weekly_remaining == 0 {
-                let label = tf(
-                    "separation.quota_weekly_limit",
-                    &[("limit", &format_duration_fa(weekly_limit))],
-                );
-                Some((label, user_rank.separation_next_rank()))
-            } else if audio_duration_secs > 0
-                && (audio_duration_secs > daily_remaining || audio_duration_secs > weekly_remaining)
+            // ponytail: حداقل یک ثانیه — ffprobe که شکست بخورد duration صفر
+            // می‌شود و رزرو صفر همیشه جا می‌شود، یعنی کار مجانی روی سهمیه‌ی
+            // تمام‌شده.
+            reserve_secs = audio_duration_secs.max(1) as i64;
+
+            // پیام رد سه حالت دارد؛ مصرف فقط روی مسیر رد خوانده می‌شود.
+            macro_rules! deny {
+                () => {{
+                    let d_used = get_usage(db.client(), user_id, QuotaKind::SeparationDaily, 86400)
+                        .await
+                        .unwrap_or(0) as u64;
+                    let w_used =
+                        get_usage(db.client(), user_id, QuotaKind::SeparationWeekly, 7 * 86400)
+                            .await
+                            .unwrap_or(0) as u64;
+                    let d_rem = daily_limit.saturating_sub(d_used);
+                    let w_rem = weekly_limit.saturating_sub(w_used);
+                    let label = if d_rem == 0 {
+                        tf(
+                            "separation.quota_daily_limit",
+                            &[("limit", &format_duration_fa(daily_limit))],
+                        )
+                    } else if w_rem == 0 {
+                        tf(
+                            "separation.quota_weekly_limit",
+                            &[("limit", &format_duration_fa(weekly_limit))],
+                        )
+                    } else {
+                        tf(
+                            "separation.quota_file_too_long",
+                            &[("remaining", &format_duration_fa(d_rem.min(w_rem)))],
+                        )
+                    };
+                    log_trace(
+                        trace_id,
+                        "quota_blocked",
+                        &format!("user_id={user_id} daily_used={d_used} weekly_used={w_used}"),
+                    );
+                    let _ = delete_message(api, chat_id, message_id).await;
+                    std::fs::remove_dir_all(&tmp_dir).ok();
+                    flow_manager.clear(user_id);
+                    if let Some(min_rank) = user_rank.separation_next_rank() {
+                        crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
+                    } else {
+                        let _ = crate::bot::send_text_with_ai_back(api, chat_id, &label).await;
+                    }
+                    return;
+                }};
+            }
+
+            // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
+            macro_rules! db_fail {
+                ($e:expr) => {{
+                    log_trace(trace_id, "quota_reserve", &format!("err={} => fail", $e));
+                    let _ = delete_message(api, chat_id, message_id).await;
+                    std::fs::remove_dir_all(&tmp_dir).ok();
+                    flow_manager.clear(user_id);
+                    crate::rank::paywall::quota_db_error(
+                        api,
+                        chat_id,
+                        "separation",
+                        &format!("{}", $e),
+                    )
+                    .await;
+                    return;
+                }};
+            }
+
+            match reserve_usage(
+                db.client(),
+                user_id,
+                QuotaKind::SeparationDaily,
+                reserve_secs,
+                86400,
+                daily_limit as i64,
+            )
+            .await
             {
-                let remaining = daily_remaining.min(weekly_remaining);
-                let label = tf(
-                    "separation.quota_file_too_long",
-                    &[("remaining", &format_duration_fa(remaining))],
-                );
-                Some((label, user_rank.separation_next_rank()))
-            } else {
-                None
-            };
+                Ok(Some(used)) => log_trace(
+                    trace_id,
+                    "quota_reserved_daily",
+                    &format!("used={used} limit={daily_limit}"),
+                ),
+                Ok(None) => deny!(),
+                Err(e) => db_fail!(e),
+            }
 
-            if let Some((label, next_rank)) = block {
-                log_trace(trace_id, "quota_blocked", &format!("user_id={user_id}"));
-                let _ = delete_message(api, chat_id, message_id).await;
-                std::fs::remove_dir_all(&tmp_dir).ok();
-                flow_manager.clear(user_id);
-                if let Some(min_rank) = next_rank {
-                    crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
-                } else {
-                    let _ = crate::bot::send_text_with_ai_back(api, chat_id, &label).await;
+            match reserve_usage(
+                db.client(),
+                user_id,
+                QuotaKind::SeparationWeekly,
+                reserve_secs,
+                7 * 86400,
+                weekly_limit as i64,
+            )
+            .await
+            {
+                Ok(Some(used)) => {
+                    reserved = true;
+                    log_trace(
+                        trace_id,
+                        "quota_reserved_weekly",
+                        &format!("used={used} limit={weekly_limit}"),
+                    );
                 }
-                return;
+                Ok(None) => {
+                    let _ = refund_usage(
+                        db.client(),
+                        user_id,
+                        QuotaKind::SeparationDaily,
+                        reserve_secs,
+                        86400,
+                    )
+                    .await;
+                    deny!();
+                }
+                Err(e) => {
+                    let _ = refund_usage(
+                        db.client(),
+                        user_id,
+                        QuotaKind::SeparationDaily,
+                        reserve_secs,
+                        86400,
+                    )
+                    .await;
+                    db_fail!(e);
+                }
             }
         }
     }
@@ -539,12 +626,38 @@ pub async fn handle_separation_callback(
     let api_task = api.clone();
     let cancel_task = cancel_flag.clone();
     let db_task = database.clone();
-    tokio::spawn(async move {
+    crate::app::spawn_user_task(async move {
+        // برگرداندن هر دو پنجره وقتی کار به نتیجه نرسید.
+        macro_rules! refund {
+            ($why:expr) => {
+                if reserved {
+                    if let Some(db) = db_task.as_ref() {
+                        log_trace(trace_id, "quota_refund", &format!("why={}", $why));
+                        for (kind, window) in [
+                            (QuotaKind::SeparationDaily, 86400),
+                            (QuotaKind::SeparationWeekly, 7 * 86400),
+                        ] {
+                            if let Err(e) =
+                                refund_usage(db.client(), user_id, kind, reserve_secs, window).await
+                            {
+                                log_trace(trace_id, "quota_refund", &format!("err={e} => fail"));
+                                crate::stats::record_error_global(
+                                    "separation",
+                                    "quota_refund_failed",
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
         // If server looked free but job hasn't finished in 8s → we're actually queued.
         // Show the "در صف" message then.
         let api_queue = api_task.clone();
         let cancel_queue = cancel_task.clone();
-        let queue_msg_task = tokio::spawn(async move {
+        let queue_msg_task = crate::app::spawn_user_task(async move {
             tokio::time::sleep(Duration::from_secs(8)).await;
             if cancel_queue.load(Ordering::Relaxed) {
                 return;
@@ -571,7 +684,7 @@ pub async fn handle_separation_callback(
         // Status-update task: after 5 min (if not done) edit to "still busy".
         let api_status = api_task.clone();
         let cancel_status = cancel_task.clone();
-        let status_task = tokio::spawn(async move {
+        let status_task = crate::app::spawn_user_task(async move {
             tokio::time::sleep(Duration::from_secs(300)).await;
             if cancel_status.load(Ordering::Relaxed) {
                 return;
@@ -623,6 +736,7 @@ pub async fn handle_separation_callback(
         if cancelled.load(Ordering::Relaxed) {
             log_trace(trace_id, "cancelled_in_queue", "");
             std::fs::remove_dir_all(&tmp_dir).ok();
+            refund!("cancelled_in_queue");
             return;
         }
 
@@ -633,9 +747,15 @@ pub async fn handle_separation_callback(
                 crate::stats::record_event_user(user_id, "separation", mode_label, "timeout", 0)
                     .await;
                 crate::stats::record_error_global("separation", "queue timeout (35min)").await;
-                let _ = crate::bot::send_text_with_ai_back(&api_task, chat_id, &t("separation.error.queue_timeout")).await;
+                let _ = crate::bot::send_text_with_ai_back(
+                    &api_task,
+                    chat_id,
+                    &t("separation.error.queue_timeout"),
+                )
+                .await;
                 let _ = delete_message(&api_task, chat_id, message_id).await;
                 std::fs::remove_dir_all(&tmp_dir).ok();
+                refund!("queue_timeout");
                 return;
             }
             Some(r) => r,
@@ -723,25 +843,9 @@ pub async fn handle_separation_callback(
                     Err(e) => log_trace(trace_id, "instrumental_wav_failed", &format!("err={e}")),
                 }
 
-                // ثبت مصرف quota
-                if let Some(db) = db_task.as_ref() {
-                    let dur = result.duration_seconds.ceil() as i64;
-                    let _ = add_usage(db.client(), user_id, QuotaKind::SeparationDaily, dur, 86400)
-                        .await;
-                    let _ = add_usage(
-                        db.client(),
-                        user_id,
-                        QuotaKind::SeparationWeekly,
-                        dur,
-                        7 * 86400,
-                    )
-                    .await;
-                    log_trace(
-                        trace_id,
-                        "quota_added",
-                        &format!("user_id={user_id} secs={dur}"),
-                    );
-                }
+                // سهمیه هنگام رزرو (بر پایه‌ی duration از ffprobe) کسر شد؛
+                // بدهکاری دومی اینجا نیست. اختلاف با duration سرویس در حد
+                // گرد‌کردن ثانیه است.
 
                 crate::stats::record_event_user(
                     user_id,
@@ -783,6 +887,7 @@ pub async fn handle_separation_callback(
                 };
                 let _ = crate::bot::send_text_with_ai_back(&api_task, chat_id, &t(key)).await;
                 std::fs::remove_dir_all(&tmp_dir).ok();
+                refund!("separate_error");
             }
         }
     });

@@ -223,7 +223,7 @@ async fn handle_resolution_callback(
                 ),
             );
             answer_callback(api, callback_query, "").await;
-            let limit = format!("{}p", max);
+            let limit = format!("{max}p");
             let min_rank = rank::types::Rank::min_for_quality(height);
             crate::rank::paywall::block_limit(api, message.chat.id, &limit, min_rank).await;
             return true;

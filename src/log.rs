@@ -21,6 +21,58 @@ pub fn trunc_id(id: i64) -> String {
     trunc(&id.to_string())
 }
 
+/// حذف توکن بات از هر رشته‌ای که از پروسه خارج می‌شود (لاگ، DB، پنل ادمین).
+///
+/// `reqwest` آدرس درخواست را به `Display`/`Debug` خطاهایش می‌چسباند
+/// (`... for url (https://api.telegram.org/bot<token>/getMe)`) و
+/// `frankenstein` همان را عیناً forward می‌کند، پس هر `format!("{e}")` روی یک
+/// خطای شبکه توکن کامل را چاپ می‌کند. این فیلتر جلوی آن را در خروجی می‌گیرد،
+/// نه در تک‌تک call site ها.
+///
+/// الگو: `/bot` + یک رقم، تا اولین `/` بعدی یا انتهای رشته. هر چهار جای
+/// ساخت URL در این کرِیت شکل `.../bot{token}/...` دارند. شرط «رقم» لازم است تا
+/// مسیرهای بی‌ربط مثل `example.com/bot/docs` خراب نشوند (توکن تلگرام با
+/// شناسه‌ی عددی بات شروع می‌شود).
+///
+/// ponytail: فقط توکن‌های داخل URL را می‌گیرد — همان تنها راهی که امروز در این
+/// کرِیت توکن به یک رشته‌ی فرمت‌شده راه پیدا می‌کند. اگر روزی جایی توکن لخت و
+/// بدون پیشوند `/bot` لاگ شود، این تابع آن را نمی‌بیند.
+pub fn redact(s: &str) -> std::borrow::Cow<'_, str> {
+    const NEEDLE: &str = "/bot";
+    const MASK: &str = "/bot<redacted>";
+
+    let is_token_start = |rest: &str| rest.as_bytes().first().is_some_and(u8::is_ascii_digit);
+
+    // مسیر داغ: هیچ تخصیص حافظه‌ای نباید انجام شود — هر خط لاگ از اینجا می‌گذرد.
+    let Some(first) = s
+        .match_indices(NEEDLE)
+        .find(|(i, _)| is_token_start(&s[i + NEEDLE.len()..]))
+        .map(|(i, _)| i)
+    else {
+        return std::borrow::Cow::Borrowed(s);
+    };
+
+    let mut out = String::with_capacity(s.len());
+    let mut cursor = 0usize;
+    let mut at = Some(first);
+    while let Some(i) = at {
+        out.push_str(&s[cursor..i]);
+        out.push_str(MASK);
+        let after = i + NEEDLE.len();
+        // توکن تا اولین `/` بعدی (یا انتهای رشته) ادامه دارد.
+        cursor = s[after..]
+            .find('/')
+            .map(|off| after + off)
+            .unwrap_or(s.len());
+        at = s[cursor..]
+            .match_indices(NEEDLE)
+            .find(|(off, _)| is_token_start(&s[cursor + off + NEEDLE.len()..]))
+            .map(|(off, _)| cursor + off);
+    }
+    out.push_str(&s[cursor..]);
+    std::borrow::Cow::Owned(out)
+}
+
 pub fn init_subscriber() {
     use tracing_subscriber::{EnvFilter, fmt};
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
@@ -40,6 +92,9 @@ tokio::task_local! {
 /// Lets existing log_trace(trace_id, event, details) callers migrate with
 /// a one-line shim: `fn log_trace(t,e,d){crate::log::emit("domain",t,e,d)}`
 pub fn emit(domain: &str, trace_id: u64, event: &str, details: &str) {
+    // توکن را همین‌جا، یک‌بار، حذف می‌کنیم: هم `line` از همین می‌سازد و هم
+    // capture مربوط به testapi از همین می‌خواند.
+    let details = redact(details);
     let line = if details.is_empty() {
         format!("[{domain} trace={trace_id} event={event}]")
     } else {
@@ -54,7 +109,7 @@ pub fn emit(domain: &str, trace_id: u64, event: &str, details: &str) {
                 "domain": domain,
                 "trace_id": trace_id,
                 "event": event,
-                "details": details,
+                "details": &*details,
                 "line": line,
             }));
         }
@@ -75,7 +130,10 @@ macro_rules! log_actor_id {
             let v = format!("{}", $val);
             if k == "=>" { format!("=> {}", v) } else { format!("{}={}", k, v) }
         }); )*
-        let line = format!("[{} trace={} actor] {}", $domain, $trace, parts.join(" "));
+        let joined = parts.join(" ");
+        // یک‌بار redact، هم برای خط لاگ و هم برای capture تست — و بدون کلون اضافه.
+        let details = $crate::log::redact(&joined);
+        let line = format!("[{} trace={} actor] {}", $domain, $trace, details);
         tracing::info!(domain = $domain, trace = $trace, event = "actor", "{}", line);
 
         #[cfg(feature = "testapi")]
@@ -85,7 +143,7 @@ macro_rules! log_actor_id {
                     "domain": $domain,
                     "trace_id": $trace,
                     "event": "actor",
-                    "details": parts.join(" "),
+                    "details": &*details,
                     "line": line,
                 }));
             }
@@ -112,7 +170,9 @@ macro_rules! log_actor {
             let v = format!("{}", $val);
             if k == "=>" { format!("=> {}", v) } else { format!("{}={}", k, v) }
         }); )*
-        let line = format!("[{} trace={} actor] {}", $domain, $trace, parts.join(" "));
+        let joined = parts.join(" ");
+        let details = $crate::log::redact(&joined);
+        let line = format!("[{} trace={} actor] {}", $domain, $trace, details);
         tracing::info!(domain = $domain, trace = $trace, event = "actor", "{}", line);
 
         #[cfg(feature = "testapi")]
@@ -122,7 +182,7 @@ macro_rules! log_actor {
                     "domain": $domain,
                     "trace_id": $trace,
                     "event": "actor",
-                    "details": parts.join(" "),
+                    "details": &*details,
                     "line": line,
                 }));
             }
@@ -142,10 +202,12 @@ macro_rules! log_ev {
             let v = format!("{}", $val);
             if k == "=>" { format!("=> {}", v) } else { format!("{}={}", k, v) }
         }),*];
-        let line = if parts.is_empty() {
+        let joined = parts.join(" ");
+        let details = $crate::log::redact(&joined);
+        let line = if details.is_empty() {
             format!("[{} trace={} event={}]", $domain, $trace, $event)
         } else {
-            format!("[{} trace={} event={}] {}", $domain, $trace, $event, parts.join(" "))
+            format!("[{} trace={} event={}] {}", $domain, $trace, $event, details)
         };
         tracing::info!(domain = $domain, trace = $trace, event = $event, "{}", line);
 
@@ -156,7 +218,7 @@ macro_rules! log_ev {
                     "domain": $domain,
                     "trace_id": $trace,
                     "event": $event,
-                    "details": parts.join(" "),
+                    "details": &*details,
                     "line": line,
                 }));
             }
@@ -214,5 +276,125 @@ mod tests {
         };
         let trace = 99u64;
         log_actor!("test", trace, &user, "rank" => "Dalavar", "clicked" => "upscale:model:x");
+    }
+
+    // توکن ساختگی — هرگز توکن واقعی در تست نمی‌آید.
+    const FAKE_TOKEN: &str = "123456789:AAHfake_token_value_for_tests_only";
+
+    #[test]
+    fn redact_reqwest_display_shape() {
+        let s = format!(
+            "HTTP error: error sending request for url \
+             (https://api.telegram.org/file/bot{FAKE_TOKEN}/voice/file_1.oga)"
+        );
+        let out = redact(&s);
+        assert!(!out.contains(FAKE_TOKEN), "token survived: {out}");
+        assert!(out.contains("/bot<redacted>"));
+        // مسیر بعد از توکن باید سالم بماند تا لاگ همچنان قابل دیباگ باشد.
+        assert!(out.ends_with("/voice/file_1.oga)"));
+    }
+
+    #[test]
+    fn redact_debug_shape() {
+        // شکل `{e:?}` که deoldify/feynobg لاگ می‌کنند.
+        let s = format!(
+            "reqwest::Error {{ kind: Request, url: \"https://api.telegram.org/bot{FAKE_TOKEN}/getFile\" }}"
+        );
+        let out = redact(&s);
+        assert!(!out.contains(FAKE_TOKEN), "token survived: {out}");
+        assert!(out.contains("/bot<redacted>/getFile"));
+    }
+
+    #[test]
+    fn redact_multiple_occurrences() {
+        let s = format!(
+            "first https://api.telegram.org/bot{FAKE_TOKEN}/getFile \
+             then https://api.telegram.org/file/bot{FAKE_TOKEN}/a/b.oga end"
+        );
+        let out = redact(&s);
+        assert!(!out.contains(FAKE_TOKEN), "token survived: {out}");
+        assert_eq!(out.matches("/bot<redacted>").count(), 2);
+        assert!(out.ends_with("/a/b.oga end"));
+    }
+
+    #[test]
+    fn redact_without_token_does_not_allocate() {
+        // قرارداد کارایی: مسیر داغ (اکثر قریب به اتفاق خطوط لاگ) نباید تخصیص بدهد.
+        let s = "[yt trace=7 event=quota_check] used=2 limit=3 => pass";
+        assert!(matches!(redact(s), std::borrow::Cow::Borrowed(_)));
+        assert_eq!(redact(s), s);
+    }
+
+    #[test]
+    fn redact_leaves_non_token_bot_path_alone() {
+        let s = "GET https://example.com/bot/docs failed";
+        assert!(matches!(redact(s), std::borrow::Cow::Borrowed(_)));
+        assert_eq!(redact(s), s);
+    }
+
+    #[test]
+    fn redact_leaves_local_bot_api_path_alone() {
+        // شاخه‌ی local Bot API در src/bot/files.rs — روی هر دانلود لاگ می‌شود.
+        let s = "[bot trace=3 event=local_copy] path=/var/lib/telegram-bot-api/voice/file_1.oga";
+        assert!(matches!(redact(s), std::borrow::Cow::Borrowed(_)));
+        assert_eq!(redact(s), s);
+    }
+
+    /// e2e: خطای واقعی `reqwest` (نه رشته‌ی دست‌ساز) از همان مسیری که در
+    /// production می‌گذرد رد می‌شود و در ردیف `stats_errors` دیتابیس dev
+    /// بدون توکن ذخیره می‌شود.
+    ///
+    /// به یک Postgres در حال اجرا نیاز دارد، پس `#[ignore]`:
+    /// `cargo test redact_e2e -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn redact_e2e_reqwest_error_reaches_db_redacted() {
+        // توکن ساختگی است؛ توکن واقعی هیچ‌جای این تست خوانده نمی‌شود.
+        const E2E_TOKEN: &str = "987654321:AAHe2e_synthetic_token_do_not_use";
+        const FEATURE: &str = "e2e_redact_probe";
+
+        // پورت ۱ بسته است ⇒ خطای اتصال واقعی، بدون وابستگی به شبکه‌ی بیرون.
+        let url = format!("http://127.0.0.1:1/file/bot{E2E_TOKEN}/probe.oga");
+        let err = reqwest::Client::new()
+            .get(&url)
+            .send()
+            .await
+            .expect_err("port 1 must refuse the connection");
+        let raw = format!("{err}");
+        // اگر این assert روزی بشکند یعنی reqwest دیگر URL را به Display نمی‌چسباند
+        // و کل فرض این فیلتر باید بازبینی شود.
+        assert!(raw.contains(E2E_TOKEN), "reqwest no longer leaks the url");
+        assert!(!redact(&raw).contains(E2E_TOKEN));
+
+        let Some(db_url) = crate::config::database_url() else {
+            panic!("DATABASE_URL not resolvable from .env — run from the crate root");
+        };
+        let (client, conn) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls)
+            .await
+            .expect("dev DB must be reachable");
+        tokio::spawn(async move {
+            let _ = conn.await;
+        });
+        let client: &'static tokio_postgres::Client = Box::leak(Box::new(client));
+        crate::stats::init(client);
+
+        // مسیر واقعی: همان تابعی که هر هندلر روی خطای غیرمنتظره صدا می‌زند.
+        crate::stats::record_error_global(FEATURE, &format!("download failed: {raw}")).await;
+
+        let row = client
+            .query_one(
+                "SELECT message FROM stats_errors WHERE feature = $1 ORDER BY id DESC LIMIT 1",
+                &[&FEATURE],
+            )
+            .await
+            .expect("the probe row must exist");
+        let stored: String = row.get(0);
+        client
+            .execute("DELETE FROM stats_errors WHERE feature = $1", &[&FEATURE])
+            .await
+            .expect("probe cleanup");
+
+        assert!(!stored.contains(E2E_TOKEN), "token stored in DB");
+        assert!(stored.contains("/bot<redacted>"), "stored: {stored}");
     }
 }

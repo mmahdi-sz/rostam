@@ -23,10 +23,7 @@ pub fn transcribe(config: &SttConfig, wav_path: &str) -> crate::error::Result<(S
 
     if sample_rate != 16000 || channels != 1 || bits_per_sample != 16 {
         anyhow::bail!(
-            "Audio must be 16000Hz mono 16-bit PCM (got {}Hz {}ch {}bits)",
-            sample_rate,
-            channels,
-            bits_per_sample
+            "Audio must be 16000Hz mono 16-bit PCM (got {sample_rate}Hz {channels}ch {bits_per_sample}bits)"
         );
     }
 

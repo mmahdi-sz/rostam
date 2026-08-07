@@ -152,25 +152,54 @@ pub async fn total_spent_points(client: &Client, user_id: i64) -> i64 {
         .unwrap_or(0)
 }
 
+/// ثبت یک فعال‌سازی و کسر امتیاز، در **یک** statement.
+///
+/// `Ok(true)` یعنی امتیاز کسر شد. `Ok(false)` یعنی کسر نشد — یا موجودی در همین
+/// فاصله توسط درخواست دیگری خرج شده بود (`WHERE` موجودی را در لحظه‌ی اجرا
+/// می‌سنجد، نه در لحظه‌ی خواندن پنل)، یا این دقیقاً همان ردیفی است که درخواست
+/// همزمانِ دیگر ساخته (ایندکس یکتای V005). هیچ‌کدام خطا نیست: کاربر گرانت خودش
+/// را یک‌بار گرفته و نباید دوبار حساب شود.
 pub async fn record_activation(
     client: &Client,
     user_id: i64,
     rank: Rank,
     points_spent: i64,
     expires_at: i64,
-) {
+) -> Result<bool, tokio_postgres::Error> {
     let now = now_epoch();
-    let r = client.execute(
-        "INSERT INTO referral_activations (user_id, rank, points_spent, activated_at, expires_at)
-         VALUES ($1, $2, $3, $4, $5)",
-        &[&user_id, &rank.as_str(), &(points_spent as i32), &now, &expires_at],
-    ).await;
-    if let Err(e) = r {
-        eprintln!(
-            "[referral event=record_activation_failed] user_id={user_id} rank={} err={e}",
-            rank.as_str()
-        );
-        crate::stats::record_error_global("referral", &e.to_string()).await;
+    // هر دو جای `$3` صریحاً `::bigint` است: اگر یکی خام بماند، Postgres یک‌بار
+    // از ستون `points_spent` (integer) و یک‌بار از مقایسه با `count(*)` (bigint)
+    // نوع را استنباط می‌کند و statement با
+    // «inconsistent types deduced for parameter $3» رد می‌شود. تبدیل bigint به
+    // integer در انتساب ستون خودکار است.
+    let rows = client
+        .query(
+            "INSERT INTO referral_activations (user_id, rank, points_spent, activated_at, expires_at)
+             SELECT $1, $2, $3::bigint, $4, $5
+              WHERE (SELECT count(*) FROM referrals WHERE referrer_id = $1)
+                    - (SELECT COALESCE(SUM(points_spent), 0) FROM referral_activations WHERE user_id = $1)
+                    >= $3::bigint
+             ON CONFLICT (user_id, rank, expires_at) DO NOTHING
+             RETURNING 1",
+            &[
+                &user_id,
+                &rank.as_str(),
+                &points_spent,
+                &now,
+                &expires_at,
+            ],
+        )
+        .await;
+    match rows {
+        Ok(rows) => Ok(!rows.is_empty()),
+        Err(e) => {
+            eprintln!(
+                "[referral event=record_activation_failed] user_id={user_id} rank={} err={e}",
+                rank.as_str()
+            );
+            crate::stats::record_error_global("referral", &e.to_string()).await;
+            Err(e)
+        }
     }
 }
 
@@ -344,6 +373,112 @@ pub mod tests {
         let rendered = render_leaderboard_text(&[]);
         assert!(!rendered.is_empty());
     }
+
+    /// e2e روی دیتابیس dev: موجودی ۱۰ امتیاز و ۶ درخواست همزمان با هزینه‌ی ۱۰
+    /// باید دقیقاً یک‌بار کسر شود و موجودی هرگز منفی نشود.
+    ///
+    /// دو گارد جدا آزمایش می‌شوند: فاز ۱ با `expires_at` متفاوت (ایندکس یکتا
+    /// شلیک نمی‌کند، فقط شرط `WHERE` می‌ماند) و فاز ۲ با `expires_at` یکسان
+    /// (همان چیزی که دو کلیک واقعی می‌سازند و ایندکس یکتا می‌گیردش).
+    ///
+    /// `cargo test record_activation_e2e -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore]
+    async fn record_activation_e2e_never_overdraws() {
+        use std::sync::Arc;
+
+        const UID: i64 = -999_001;
+
+        let Some(db_url) = crate::config::database_url() else {
+            panic!("DATABASE_URL not resolvable from .env — run from the crate root");
+        };
+        let (client, conn) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls)
+            .await
+            .expect("dev DB must be reachable");
+        tokio::spawn(async move {
+            let _ = conn.await;
+        });
+        let client = Arc::new(client);
+
+        let reset = || {
+            let client = client.clone();
+            async move {
+                client
+                    .execute(
+                        "DELETE FROM referral_activations WHERE user_id = $1",
+                        &[&UID],
+                    )
+                    .await
+                    .expect("cleanup activations");
+                client
+                    .execute("DELETE FROM referrals WHERE referrer_id = $1", &[&UID])
+                    .await
+                    .expect("cleanup referrals");
+                client
+                    .execute(
+                        "INSERT INTO referrals (referred_id, referrer_id, created_at)
+                         SELECT $1::bigint - g, $1::bigint, $2::bigint
+                           FROM generate_series(1, 10) g",
+                        &[&UID, &now_epoch()],
+                    )
+                    .await
+                    .expect("seed 10 referrals");
+            }
+        };
+        let balance = || {
+            let client = client.clone();
+            async move {
+                let row = client
+                    .query_one(
+                        "SELECT (SELECT count(*) FROM referrals WHERE referrer_id = $1)
+                              - (SELECT COALESCE(SUM(points_spent), 0)
+                                   FROM referral_activations WHERE user_id = $1)",
+                        &[&UID],
+                    )
+                    .await
+                    .expect("read balance");
+                row.get::<_, i64>(0)
+            }
+        };
+
+        for (phase, same_expiry) in [("distinct_expiry", false), ("same_expiry", true)] {
+            reset().await;
+            assert_eq!(balance().await, 10, "{phase}: seed balance");
+
+            let mut set = tokio::task::JoinSet::new();
+            for i in 0..6i64 {
+                let client = client.clone();
+                let expires_at = if same_expiry {
+                    2_000_000_000
+                } else {
+                    2_000_000_000 + i
+                };
+                set.spawn(async move {
+                    record_activation(&client, UID, Rank::Sohrab, 10, expires_at).await
+                });
+            }
+            let mut debited = 0;
+            while let Some(res) = set.join_next().await {
+                if res.expect("task panicked").expect("query failed") {
+                    debited += 1;
+                }
+            }
+            assert_eq!(debited, 1, "{phase}: points were debited more than once");
+            assert_eq!(balance().await, 0, "{phase}: balance drifted");
+        }
+
+        client
+            .execute(
+                "DELETE FROM referral_activations WHERE user_id = $1",
+                &[&UID],
+            )
+            .await
+            .expect("final cleanup activations");
+        client
+            .execute("DELETE FROM referrals WHERE referrer_id = $1", &[&UID])
+            .await
+            .expect("final cleanup referrals");
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -415,4 +550,3 @@ pub fn render_leaderboard_text(top_users: &[TopReferrer]) -> String {
     let list_str = list_lines.join("\n");
     format!("{header}\n\n{list_str}")
 }
-

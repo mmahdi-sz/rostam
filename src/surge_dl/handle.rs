@@ -255,7 +255,10 @@ pub async fn handle_surge_text(
         if platform != "youtube" {
             log_ev!("surge_dl", trace_id, "unsupported_social_platform", "platform" => platform, "input" => url);
             let platform_name = t(&format!("platforms.{platform}"));
-            let text = tf("surge.unsupported_platform", &[("platform", &platform_name)]);
+            let text = tf(
+                "surge.unsupported_platform",
+                &[("platform", &platform_name)],
+            );
             let _ = crate::bot::send_text(api, chat_id, &text).await;
             let _ = crate::bot::send_tools_menu(api, chat_id).await;
             return;
@@ -392,7 +395,7 @@ async fn start_surge_job(
         log_ev!("surge_dl", trace_id, "queue_edit_failed", "=>" => format!("fail err={e}"));
     }
     let api2 = api.clone();
-    tokio::spawn(async move {
+    crate::app::spawn_user_task(async move {
         run_surge_download(api2, chat_id, message_id, user_id, url, rename_to, trace_id).await;
     });
 }
@@ -542,7 +545,10 @@ async fn run_surge_download(
     let _active_dl_guard = crate::metrics::ActiveDownloadGuard::new();
     let _duration_guard = crate::metrics::RequestDurationGuard::new("surge_dl");
     let job_nonce = rand::random::<u32>();
-    let dir = format!("{}/{user_id}/job_{trace_id}_{job_nonce}", crate::config::surge_downloads_root());
+    let dir = format!(
+        "{}/{user_id}/job_{trace_id}_{job_nonce}",
+        crate::config::surge_downloads_root()
+    );
     let dir_path = PathBuf::from(&dir);
     let _cleanup_guard = DirCleanupGuard(dir_path);
 
@@ -914,7 +920,7 @@ fn fmt_traffic_fa(bytes: u64) -> String {
                 crate::i18n::t("youtube.unit_gb"),
             )
         } else {
-            (format!("{:.1}", g), crate::i18n::t("youtube.unit_gb"))
+            (format!("{g:.1}"), crate::i18n::t("youtube.unit_gb"))
         }
     } else {
         (
@@ -1218,7 +1224,9 @@ mod tests {
             Some("test.mp4".to_string())
         );
         assert_eq!(
-            extract_content_disposition_filename("attachment; filename*=UTF-8''%D9%81%D8%A7%DB%8C%D9%84.mp4"),
+            extract_content_disposition_filename(
+                "attachment; filename*=UTF-8''%D9%81%D8%A7%DB%8C%D9%84.mp4"
+            ),
             Some("فایل.mp4".to_string())
         );
     }

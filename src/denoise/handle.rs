@@ -56,7 +56,7 @@ use crate::i18n::{apply_premium_to_md, t, tf};
 use crate::log::next_trace_id;
 use crate::rank::{
     self,
-    quota::{QuotaKind, add_usage, get_usage},
+    quota::{QuotaKind, get_usage, refund_usage, reserve_usage},
 };
 use crate::stt::deepfilter;
 
@@ -162,12 +162,7 @@ pub async fn handle_denoise_audio(
         .audio
         .as_ref()
         .and_then(|a| a.file_name.as_deref())
-        .or_else(|| {
-            message
-                .video
-                .as_ref()
-                .and_then(|v| v.file_name.as_deref())
-        })
+        .or_else(|| message.video.as_ref().and_then(|v| v.file_name.as_deref()))
         .or_else(|| {
             message
                 .document
@@ -208,7 +203,7 @@ pub async fn handle_denoise_audio(
     let work_dir = std::env::temp_dir().join(format!("denoise_{trace_id}"));
     std::fs::create_dir_all(&work_dir).ok();
 
-    let input_path = work_dir.join(format!("input.{}", orig_ext));
+    let input_path = work_dir.join(format!("input.{orig_ext}"));
     let wav_path = work_dir.join("denoise_input.wav");
     let denoised_path = work_dir.join("denoised.wav");
     let output_path = work_dir.join(&clean_filename);
@@ -261,91 +256,175 @@ pub async fn handle_denoise_audio(
     let audio_duration = wav_duration(wav_str).unwrap_or(0.0);
     let duration_secs = audio_duration.ceil() as u64;
 
-    // quota check
+    // رزرو سهمیه پیش از کار (چک-سپس-کسر قبلاً دو درخواست هم‌زمان را هر دو
+    // می‌پذیرفت). پنجره‌ی کوتاه‌تر — روزانه — اول رزرو می‌شود؛ اگر هفتگی رد شد،
+    // روزانه پس داده می‌شود تا رد شدن یکی سهمیه‌ی دیگری را نخورد.
+    //
+    // ponytail: حداقل یک ثانیه رزرو می‌شود. اگر خواندن هدر WAV شکست بخورد
+    // duration صفر می‌شود و رزرو صفر همیشه جا می‌شود — یعنی کار مجانی روی
+    // سهمیه‌ی تمام‌شده.
+    let reserve_secs = duration_secs.max(1) as i64;
+    let mut reserved = false;
     if let Some(db) = database.as_ref() {
         let user_rank = rank::effective_rank(db.client(), user_id).await;
         let daily_limit = user_rank.denoise_daily_secs();
         let weekly_limit = user_rank.denoise_weekly_secs();
-        let daily_used = get_usage(db.client(), user_id, QuotaKind::DenoiseDaily, 86400)
-            .await
-            .unwrap_or(0) as u64;
-        let weekly_used = get_usage(db.client(), user_id, QuotaKind::DenoiseWeekly, 7 * 86400)
-            .await
-            .unwrap_or(0) as u64;
 
-        let daily_remaining = daily_limit.saturating_sub(daily_used);
-        let weekly_remaining = weekly_limit.saturating_sub(weekly_used);
+        // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
+        macro_rules! db_fail {
+            ($e:expr) => {{
+                log_trace(
+                    trace_id,
+                    "denoise_quota_reserve",
+                    &format!("err={} => fail", $e),
+                );
+                clean_up(&work_dir);
+                crate::rank::paywall::quota_db_error(api, chat_id, "denoise", &format!("{}", $e))
+                    .await;
+                return;
+            }};
+        }
 
-        if daily_remaining == 0 {
-            log_trace(
-                trace_id,
-                "denoise_quota_daily",
-                &format!("user_id={user_id} used={daily_used} limit={daily_limit}"),
-            );
-            let limit_str = format_duration_fa(daily_limit);
-            let limit_label = tf("rank.denoise_daily_limit", &[("limit", &limit_str)]);
-            let next = user_rank.denoise_next_rank();
-            clean_up(&work_dir);
-            if let Some(min_rank) = next {
-                crate::rank::paywall::block_limit(api, chat_id, &limit_label, min_rank).await;
-            } else {
-                let _ = send_text_with_back(
-                    api,
-                    chat_id,
-                    &tf("denoise.quota_daily_exceeded", &[("limit", &limit_str)]),
-                )
-                .await;
-            }
-            return;
-        }
-        if weekly_remaining == 0 {
-            log_trace(
-                trace_id,
-                "denoise_quota_weekly",
-                &format!("user_id={user_id} used={weekly_used} limit={weekly_limit}"),
-            );
-            let limit_str = format_duration_fa(weekly_limit);
-            let limit_label = tf("rank.denoise_weekly_limit", &[("limit", &limit_str)]);
-            let next = user_rank.denoise_next_rank();
-            clean_up(&work_dir);
-            if let Some(min_rank) = next {
-                crate::rank::paywall::block_limit(api, chat_id, &limit_label, min_rank).await;
-            } else {
-                let _ = send_text_with_back(
-                    api,
-                    chat_id,
-                    &tf("denoise.quota_weekly_exceeded", &[("limit", &limit_str)]),
-                )
-                .await;
-            }
-            return;
-        }
-        if duration_secs > daily_remaining || duration_secs > weekly_remaining {
-            let remaining = daily_remaining.min(weekly_remaining);
-            log_trace(
-                trace_id,
-                "denoise_quota_file_too_long",
-                &format!("user_id={user_id} duration={duration_secs} remaining={remaining}"),
-            );
-            let remaining_str = format_duration_fa(remaining);
-            let remaining_label = tf("rank.denoise_remaining", &[("remaining", &remaining_str)]);
-            let next = user_rank.denoise_next_rank();
-            clean_up(&work_dir);
-            if let Some(min_rank) = next {
-                crate::rank::paywall::block_limit(api, chat_id, &remaining_label, min_rank).await;
-            } else {
-                let _ = send_text_with_back(
-                    api,
-                    chat_id,
-                    &tf(
+        // پیام رد سه حالت دارد (روزانه تمام / هفتگی تمام / فایل بلندتر از
+        // باقی‌مانده). رزرو فقط می‌گوید «جا نشد»، پس مصرف را همین‌جا — تنها روی
+        // مسیر رد — می‌خوانیم؛ مسیر موفق هیچ کوئری اضافه‌ای ندارد.
+        macro_rules! deny {
+            ($event:expr) => {{
+                let d_used = get_usage(db.client(), user_id, QuotaKind::DenoiseDaily, 86400)
+                    .await
+                    .unwrap_or(0) as u64;
+                let w_used = get_usage(db.client(), user_id, QuotaKind::DenoiseWeekly, 7 * 86400)
+                    .await
+                    .unwrap_or(0) as u64;
+                let d_rem = daily_limit.saturating_sub(d_used);
+                let w_rem = weekly_limit.saturating_sub(w_used);
+                let (rank_key, user_key, ph, val) = if d_rem == 0 {
+                    (
+                        "rank.denoise_daily_limit",
+                        "denoise.quota_daily_exceeded",
+                        "limit",
+                        format_duration_fa(daily_limit),
+                    )
+                } else if w_rem == 0 {
+                    (
+                        "rank.denoise_weekly_limit",
+                        "denoise.quota_weekly_exceeded",
+                        "limit",
+                        format_duration_fa(weekly_limit),
+                    )
+                } else {
+                    (
+                        "rank.denoise_remaining",
                         "denoise.quota_file_too_long",
-                        &[("remaining", &remaining_str)],
+                        "remaining",
+                        format_duration_fa(d_rem.min(w_rem)),
+                    )
+                };
+                log_trace(
+                    trace_id,
+                    $event,
+                    &format!(
+                        "user_id={user_id} daily_used={d_used} weekly_used={w_used} duration={duration_secs} => blocked"
                     ),
+                );
+                clean_up(&work_dir);
+                if let Some(min_rank) = user_rank.denoise_next_rank() {
+                    let label = tf(rank_key, &[(ph, &val)]);
+                    crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
+                } else {
+                    let _ = send_text_with_back(api, chat_id, &tf(user_key, &[(ph, &val)])).await;
+                }
+                return;
+            }};
+        }
+
+        match reserve_usage(
+            db.client(),
+            user_id,
+            QuotaKind::DenoiseDaily,
+            reserve_secs,
+            86400,
+            daily_limit as i64,
+        )
+        .await
+        {
+            Ok(Some(used)) => log_trace(
+                trace_id,
+                "denoise_quota_reserved_daily",
+                &format!("used={used} limit={daily_limit}"),
+            ),
+            Ok(None) => deny!("denoise_quota_daily"),
+            Err(e) => db_fail!(e),
+        }
+
+        match reserve_usage(
+            db.client(),
+            user_id,
+            QuotaKind::DenoiseWeekly,
+            reserve_secs,
+            7 * 86400,
+            weekly_limit as i64,
+        )
+        .await
+        {
+            Ok(Some(used)) => {
+                reserved = true;
+                log_trace(
+                    trace_id,
+                    "denoise_quota_reserved_weekly",
+                    &format!("used={used} limit={weekly_limit}"),
+                );
+            }
+            Ok(None) => {
+                let _ = refund_usage(
+                    db.client(),
+                    user_id,
+                    QuotaKind::DenoiseDaily,
+                    reserve_secs,
+                    86400,
                 )
                 .await;
+                deny!("denoise_quota_weekly");
             }
-            return;
+            Err(e) => {
+                let _ = refund_usage(
+                    db.client(),
+                    user_id,
+                    QuotaKind::DenoiseDaily,
+                    reserve_secs,
+                    86400,
+                )
+                .await;
+                db_fail!(e);
+            }
         }
+    }
+
+    // برگرداندن هر دو پنجره وقتی کار به نتیجه نرسید.
+    macro_rules! refund {
+        ($why:expr) => {
+            if reserved {
+                if let Some(db) = database.as_ref() {
+                    log_trace(trace_id, "denoise_quota_refund", &format!("why={}", $why));
+                    for (kind, window) in [
+                        (QuotaKind::DenoiseDaily, 86400),
+                        (QuotaKind::DenoiseWeekly, 7 * 86400),
+                    ] {
+                        if let Err(e) =
+                            refund_usage(db.client(), user_id, kind, reserve_secs, window).await
+                        {
+                            log_trace(
+                                trace_id,
+                                "denoise_quota_refund",
+                                &format!("err={e} => fail"),
+                            );
+                            crate::stats::record_error_global("denoise", "quota_refund_failed")
+                                .await;
+                        }
+                    }
+                }
+            }
+        };
     }
 
     // 3. Denoise via DeepFilterNet — blocking (std::process::Command), run on thread pool.
@@ -354,7 +433,7 @@ pub async fn handle_denoise_audio(
     let progress_ticker = if let Some(msg_id) = status_msg_id {
         let api_clone = api.clone();
         let start_inst = std::time::Instant::now();
-        Some(tokio::spawn(async move {
+        Some(crate::app::spawn_user_task(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(1500));
             loop {
                 interval.tick().await;
@@ -366,9 +445,8 @@ pub async fn handle_denoise_audio(
                 let eta_secs = (est_total_secs - elapsed_secs).max(0.0);
 
                 let bar = crate::youtube::download::progress::build_bar(percent);
-                let elapsed_str = crate::youtube::download::progress::format_elapsed(
-                    start_inst.elapsed(),
-                );
+                let elapsed_str =
+                    crate::youtube::download::progress::format_elapsed(start_inst.elapsed());
                 let eta_str = crate::youtube::download::progress::format_elapsed(
                     std::time::Duration::from_secs_f64(eta_secs),
                 );
@@ -427,6 +505,7 @@ pub async fn handle_denoise_audio(
             &format!("user_id={user_id}"),
         );
         clean_up(&work_dir);
+        refund!("cancelled_at_completion");
         return;
     }
     let processing_secs = match denoise_res {
@@ -441,6 +520,7 @@ pub async fn handle_denoise_audio(
             crate::stats::record_error_global("denoise", &format!("denoise failed: {e}")).await;
             let _ = send_text_with_back(api, chat_id, &t("denoise.denoise_failed")).await;
             clean_up(&work_dir);
+            refund!("denoise_failed");
             return;
         }
     };
@@ -467,9 +547,14 @@ pub async fn handle_denoise_audio(
         crate::stats::record_error_global("denoise", &format!("reconvert failed: {e}")).await;
         let _ = send_text_with_back(api, chat_id, &t("denoise.convert_failed")).await;
         clean_up(&work_dir);
+        refund!("reconvert_failed");
         return;
     }
-    log_trace(trace_id, "denoise_reconverted", &format!("ext={orig_ext} video={is_video}"));
+    log_trace(
+        trace_id,
+        "denoise_reconverted",
+        &format!("ext={orig_ext} video={is_video}"),
+    );
 
     if cancel_flag.load(Ordering::SeqCst) {
         log_trace(
@@ -478,6 +563,7 @@ pub async fn handle_denoise_audio(
             &format!("user_id={user_id}"),
         );
         clean_up(&work_dir);
+        refund!("cancelled_before_send");
         return;
     }
 
@@ -530,35 +616,12 @@ pub async fn handle_denoise_audio(
             .await;
     }
 
-    // 6. ثبت مصرف quota
-    if let Some(db) = database.as_ref() {
-        let _ = add_usage(
-            db.client(),
-            user_id,
-            QuotaKind::DenoiseDaily,
-            duration_secs as i64,
-            86400,
-        )
-        .await;
-        let _ = add_usage(
-            db.client(),
-            user_id,
-            QuotaKind::DenoiseWeekly,
-            duration_secs as i64,
-            7 * 86400,
-        )
-        .await;
-        log_trace(
-            trace_id,
-            "denoise_quota_added",
-            &format!("user_id={user_id} secs={duration_secs}"),
-        );
-    }
+    // 6. سهمیه هنگام رزرو کسر شد؛ بدهکاری دومی اینجا نیست.
 
     // 7. Send report
-    let duration_str = escape_md(&format!("{:.1}", audio_duration));
-    let processing_str = escape_md(&format!("{:.1}", processing_secs));
-    let ratio_str = escape_md(&format!("{:.1}", efficiency));
+    let duration_str = escape_md(&format!("{audio_duration:.1}"));
+    let processing_str = escape_md(&format!("{processing_secs:.1}"));
+    let ratio_str = escape_md(&format!("{efficiency:.1}"));
     let report = apply_premium_to_md(&tf(
         "denoise.report",
         &[

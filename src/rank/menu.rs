@@ -29,8 +29,6 @@ fn fmt_number(num: u64) -> String {
     result.chars().rev().collect()
 }
 
-
-
 fn url_encode(input: &str) -> String {
     let mut encoded = String::with_capacity(input.len() * 3);
     for byte in input.as_bytes() {
@@ -39,7 +37,7 @@ fn url_encode(input: &str) -> String {
                 encoded.push(*byte as char);
             }
             _ => {
-                encoded.push_str(&format!("%{:02X}", byte));
+                encoded.push_str(&format!("%{byte:02X}"));
             }
         }
     }
@@ -65,7 +63,9 @@ pub fn build_shop_keyboard(selected: Rank, prices_cfg: &RankPricesConfig) -> Inl
     };
 
     let rank_price = prices_cfg.ranks.get(selected.as_str());
-    let custom_url = rank_price.and_then(|p| p.buy_url.as_ref()).filter(|u| !u.trim().is_empty());
+    let custom_url = rank_price
+        .and_then(|p| p.buy_url.as_ref())
+        .filter(|u| !u.trim().is_empty());
     let buy_url = match custom_url {
         Some(url) => {
             if url.contains("{rank}") {
@@ -76,15 +76,19 @@ pub fn build_shop_keyboard(selected: Rank, prices_cfg: &RankPricesConfig) -> Inl
         }
         None => {
             let admin_clean = prices_cfg.admin_username.trim_start_matches('@');
-            let base_url = if admin_clean.starts_with("http://") || admin_clean.starts_with("https://") {
-                admin_clean.to_string()
-            } else if admin_clean.starts_with("t.me/") {
-                format!("https://{admin_clean}")
-            } else {
-                format!("https://t.me/{admin_clean}")
-            };
+            let base_url =
+                if admin_clean.starts_with("http://") || admin_clean.starts_with("https://") {
+                    admin_clean.to_string()
+                } else if admin_clean.starts_with("t.me/") {
+                    format!("https://{admin_clean}")
+                } else {
+                    format!("https://t.me/{admin_clean}")
+                };
 
-            let prefilled = tf("rank.buy_prefilled_text", &[("rank", &selected.display_name())]);
+            let prefilled = tf(
+                "rank.buy_prefilled_text",
+                &[("rank", &selected.display_name())],
+            );
             let encoded_text = url_encode(&prefilled);
 
             if base_url.contains('?') {
@@ -143,7 +147,9 @@ pub async fn send_rank_detail(api: &Bot, chat_id: i64, message_id: Option<i32>, 
         let line_final = tf("rank.detail_price_final", &[("price", &final_str)]);
         let line_note = t("rank.detail_activate_note");
 
-        format!("{line_header}\n\n{line_orig}\n{line_disc}\n{line_final}\n\n<blockquote expandable>{features_text}</blockquote>\n\n{line_note}")
+        format!(
+            "{line_header}\n\n{line_orig}\n{line_disc}\n{line_final}\n\n<blockquote expandable>{features_text}</blockquote>\n\n{line_note}"
+        )
     };
 
     let text_html = apply_premium_to_html(&text);

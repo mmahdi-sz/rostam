@@ -8,7 +8,9 @@ use rand::Rng;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::constants::*;
-use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_plain, btn_icon_primary, btn_icon_success};
+use crate::emoji::panel::{
+    btn_icon, btn_icon_danger, btn_icon_plain, btn_icon_primary, btn_icon_success,
+};
 use crate::i18n::{apply_premium_to_md, t};
 
 pub async fn send_lang_picker(api: &Bot, chat_id: i64) -> crate::error::Result<()> {
@@ -214,7 +216,9 @@ pub async fn send_ai_lab(api: &Bot, chat_id: i64) -> crate::error::Result<()> {
         .chat_id(chat_id)
         .text(&text)
         .parse_mode(ParseMode::MarkdownV2)
-        .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(ai_lab_keyboard()))
+        .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(
+            ai_lab_keyboard(),
+        ))
         .build();
     api.send_message(&params).await?;
     Ok(())

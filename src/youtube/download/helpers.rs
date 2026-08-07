@@ -374,9 +374,9 @@ pub async fn translate_subtitles(
                 .to_string();
             srts.push(path.clone());
             for tgt in target_langs {
-                if fname.contains(&format!(".{}.", tgt))
-                    || fname.contains(&format!(".{}-", tgt))
-                    || fname.contains(&format!("_{}.srt", tgt))
+                if fname.contains(&format!(".{tgt}."))
+                    || fname.contains(&format!(".{tgt}-"))
+                    || fname.contains(&format!("_{tgt}.srt"))
                 {
                     has_target = true;
                 }
@@ -414,7 +414,7 @@ pub async fn translate_subtitles(
             continue;
         };
 
-        let out_path = dir.join(format!("translated_{}.srt", tgt));
+        let out_path = dir.join(format!("translated_{tgt}.srt"));
 
         let cores = acquire_cpu(0, trace_id).await;
         let num_threads = if cores.is_empty() { 4 } else { cores.len() };
@@ -623,17 +623,17 @@ pub async fn embed_subtitles(
             ("und", "Subtitle")
         };
 
-        cmd.arg(format!("-metadata:s:s:{}", i))
-            .arg(format!("language={}", lang_code));
-        cmd.arg(format!("-metadata:s:s:{}", i))
-            .arg(format!("title={}", lang_title));
-        cmd.arg(format!("-metadata:s:s:{}", i))
-            .arg(format!("handler_name={}", lang_title));
+        cmd.arg(format!("-metadata:s:s:{i}"))
+            .arg(format!("language={lang_code}"));
+        cmd.arg(format!("-metadata:s:s:{i}"))
+            .arg(format!("title={lang_title}"));
+        cmd.arg(format!("-metadata:s:s:{i}"))
+            .arg(format!("handler_name={lang_title}"));
 
         if i == 0 {
             cmd.arg("-disposition:s:0").arg("default");
         } else {
-            cmd.arg(format!("-disposition:s:{}", i)).arg("0");
+            cmd.arg(format!("-disposition:s:{i}")).arg("0");
         }
     }
     cmd.arg(&out_path);

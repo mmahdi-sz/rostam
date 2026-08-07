@@ -219,9 +219,123 @@ pub async fn add_usage(
     Ok(())
 }
 
+/// آیا `amount` در `limit` جا می‌شود؟
+///
+/// این گارد سمت Rust **لازم** است و redundant نیست: در `reserve_usage`،
+/// `DO UPDATE ... WHERE` فقط شاخه‌ی تعارض را می‌بندد. برای اولین ردیفِ کاربر
+/// (بدون تعارض) `INSERT` بی‌قید اجرا می‌شود، پس اگر همین‌جا جلوی
+/// `amount > limit` را نگیریم، اولین درخواستِ بزرگ‌تر از سهمیه رزرو می‌شود.
+/// مقدار منفی هم رد می‌شود تا یک باگ کست به refund مجانی تبدیل نشود.
+fn fits(amount: i64, limit: i64) -> bool {
+    amount >= 0 && amount <= limit
+}
+
+/// رزرو اتمیک سهمیه: اگر مصرف فعلی + amount از limit بگذرد، هیچ چیز تغییر نمی‌کند.
+/// روی همان پنجره‌ی کشویی `add_usage` کار می‌کند (پنجره منقضی → ریست).
+/// `Ok(None)` یعنی جا نبود؛ `Ok(Some(used_after))` یعنی رزرو شد.
+///
+/// چرا یک statement: `client` اینجا `Arc<Client>` است و `transaction()` به
+/// `&mut self` نیاز دارد، پس تراکنش وجود ندارد. بررسی سقف و افزایش شمارنده باید
+/// در همان یک statement باشد تا پنجره‌ی رقابت سمت برنامه صفر شود.
+pub async fn reserve_usage(
+    client: &Client,
+    user_id: i64,
+    kind: QuotaKind,
+    amount: i64,
+    window_secs: i64,
+    limit: i64,
+) -> Result<Option<i64>, tokio_postgres::Error> {
+    if !fits(amount, limit) {
+        return Ok(None);
+    }
+    let now = now_epoch();
+    let window_start = now - window_secs;
+
+    // `WHERE` همان دو `CASE` بالا را تکرار می‌کند، چون سقف روی مقدار
+    // «بعد از rollover» اعمال می‌شود؛ بدون `CASE` کاربری که پنجره‌اش
+    // منقضی شده با مصرف هفته‌ی قبل بلاک می‌شد.
+    let row = client
+        .query_opt(
+            "INSERT INTO user_quotas (user_id, quota_type, used, window_start)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (user_id, quota_type) DO UPDATE SET
+                used = CASE
+                    WHEN user_quotas.window_start > $5
+                    THEN user_quotas.used + EXCLUDED.used
+                    ELSE EXCLUDED.used
+                END,
+                window_start = CASE
+                    WHEN user_quotas.window_start > $5
+                    THEN user_quotas.window_start
+                    ELSE EXCLUDED.window_start
+                END
+             WHERE CASE
+                    WHEN user_quotas.window_start > $5
+                    THEN user_quotas.used + EXCLUDED.used
+                    ELSE EXCLUDED.used
+                   END <= $6
+             RETURNING used",
+            &[
+                &user_id,
+                &kind.as_str(),
+                &amount,
+                &now,
+                &window_start,
+                &limit,
+            ],
+        )
+        .await?;
+
+    // `RETURNING` وقتی `WHERE` رد شود هیچ ردیفی نمی‌دهد — پس `query_opt`،
+    // نه `query_one` (که صفر ردیف را `Err` می‌کند و سهمیه‌ی پرشده را
+    // خطای دیتابیس گزارش می‌داد).
+    Ok(row.map(|r| r.get::<_, i64>(0)))
+}
+
+/// برگرداندن سهمیه‌ی رزروشده (کار شکست خورد). هرگز زیر صفر نمی‌رود.
+/// اگر پنجره در این فاصله عوض شده باشد، ردیف دست‌نخورده می‌ماند — درست است،
+/// چون آن بدهی با ریست پنجره از بین رفته.
+pub async fn refund_usage(
+    client: &Client,
+    user_id: i64,
+    kind: QuotaKind,
+    amount: i64,
+    window_secs: i64,
+) -> Result<(), tokio_postgres::Error> {
+    let window_start = now_epoch() - window_secs;
+
+    // کلامپ صفر اختیاری نیست: بدون آن دو بار refund مصرف را منفی می‌کند و
+    // سهمیه‌ی کاربر بی‌نهایت می‌شود.
+    client
+        .execute(
+            "UPDATE user_quotas
+                SET used = GREATEST(used - $3, 0)
+              WHERE user_id = $1 AND quota_type = $2 AND window_start > $4",
+            &[&user_id, &kind.as_str(), &amount, &window_start],
+        )
+        .await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
+
+    #[test]
+    fn test_fits_boundaries() {
+        assert!(fits(0, 0));
+        assert!(!fits(1, 0));
+        assert!(fits(5, 5)); // مرز دقیق باید پاس شود (<= نه <)
+        assert!(!fits(6, 5));
+    }
+
+    #[test]
+    fn test_fits_rejects_negative() {
+        assert!(!fits(-1, 60));
+        assert!(!fits(-1, 0));
+        assert!(!fits(i64::MIN, i64::MAX));
+    }
 
     #[test]
     fn test_quota_kind_as_str() {

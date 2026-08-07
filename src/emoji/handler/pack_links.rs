@@ -69,7 +69,7 @@ pub(super) async fn build_pack_links_text(
                 "{}{}\n{}",
                 emoji_line,
                 escape_markdown_v2(":"),
-                escape_markdown_v2(&format!("https://t.me/addemoji/{}", set_name))
+                escape_markdown_v2(&format!("https://t.me/addemoji/{set_name}"))
             ));
         }
     }

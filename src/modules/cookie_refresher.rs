@@ -49,7 +49,7 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> anyhow::Result<()>
         );
         crate::stats::record_event_global("cookie", "refresh", "fail", 0).await;
         crate::stats::record_error_global("cookie", &format!("no links for profile {p}")).await;
-        let msg = format!("⚠️ فایل لینک‌های {} خالیه یا پیدا نشد!", p);
+        let msg = format!("⚠️ فایل لینک‌های {p} خالیه یا پیدا نشد!");
         notify(api, config.admin_chat_id, &msg).await;
         anyhow::bail!("no links available");
     }
@@ -57,9 +57,9 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> anyhow::Result<()>
     if !check_login(&config).map_err(|e| anyhow::anyhow!("{e}"))? {
         crate::stats::record_event_global("cookie", "refresh", "fail", 0).await;
         crate::stats::record_error_global("cookie", &format!("profile {p} not logged in")).await;
-        let msg = format!("⚠️ اکانت {} لاگین نشده!", p);
+        let msg = format!("⚠️ اکانت {p} لاگین نشده!");
         notify(api, config.admin_chat_id, &msg).await;
-        anyhow::bail!("profile {} is not logged in", p);
+        anyhow::bail!("profile {p} is not logged in");
     }
 
     println!(
@@ -85,9 +85,9 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> anyhow::Result<()>
         crate::stats::record_event_global("cookie", "refresh", "fail", 0).await;
         crate::stats::record_error_global("cookie", &format!("firefox crashed for profile {p}"))
             .await;
-        let msg = format!("⚠️ فایرفاکس اکانت {} قبل از اتمام زمان crash کرد!", p);
+        let msg = format!("⚠️ فایرفاکس اکانت {p} قبل از اتمام زمان crash کرد!");
         notify(api, config.admin_chat_id, &msg).await;
-        anyhow::bail!("firefox crashed for profile {}", p);
+        anyhow::bail!("firefox crashed for profile {p}");
     }
 
     if !config.cache_dir.is_empty() && config.cache_dir != config.profile_path {
@@ -96,7 +96,7 @@ pub async fn run(api: &Bot, config: CookieRefresherConfig) -> anyhow::Result<()>
 
     println!("[cookie_refresh profile={p} event=done] success=true");
     crate::stats::record_event_global("cookie", "refresh", "ok", 0).await;
-    let msg = format!("✅ کوکی‌های {} با موفقیت آپدیت شدن", p);
+    let msg = format!("✅ کوکی‌های {p} با موفقیت آپدیت شدن");
     notify(api, config.admin_chat_id, &msg).await;
     Ok(())
 }
@@ -142,7 +142,7 @@ fn check_login(config: &CookieRefresherConfig) -> Result<bool, String> {
 
 async fn kill_existing_firefox(profile_path: &str, profile_name: &str) {
     let p = profile_name;
-    let pattern = format!("firefox.*{}", profile_path);
+    let pattern = format!("firefox.*{profile_path}");
 
     println!(
         "[cookie_refresh profile={p} event=kill_existing] pkill -TERM profile_path={profile_path}"
@@ -280,7 +280,7 @@ async fn wait_or_crash(profile_path: &str, duration_secs: u64, profile_name: &st
 
 async fn is_firefox_running(profile_path: &str) -> bool {
     Command::new("pgrep")
-        .args(["-f", &format!("firefox.*{}", profile_path)])
+        .args(["-f", &format!("firefox.*{profile_path}")])
         .output()
         .await
         .map(|o| o.status.success())
@@ -291,14 +291,14 @@ async fn kill_firefox(profile_path: &str, profile_name: &str) {
     let p = profile_name;
     println!("[cookie_refresh profile={p} event=firefox_kill_term]");
     let _ = Command::new("pkill")
-        .args(["-TERM", "-f", &format!("firefox.*{}", profile_path)])
+        .args(["-TERM", "-f", &format!("firefox.*{profile_path}")])
         .output()
         .await;
     sleep(Duration::from_secs(3)).await;
     if is_firefox_running(profile_path).await {
         println!("[cookie_refresh profile={p} event=firefox_kill_force]");
         let _ = Command::new("pkill")
-            .args(["-9", "-f", &format!("firefox.*{}", profile_path)])
+            .args(["-9", "-f", &format!("firefox.*{profile_path}")])
             .output()
             .await;
         sleep(Duration::from_secs(1)).await;

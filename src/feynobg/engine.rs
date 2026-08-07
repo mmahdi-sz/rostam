@@ -91,11 +91,7 @@ pub fn spawn_session_reaper() {
 
             let unloaded = {
                 let mut h = holder.lock().unwrap_or_else(|e| e.into_inner());
-                if h.is_idle() {
-                    h.unload()
-                } else {
-                    false
-                }
+                if h.is_idle() { h.unload() } else { false }
             };
 
             if unloaded {
@@ -146,9 +142,9 @@ fn bilinear_resize(src: &[f32], src_w: u32, src_h: u32, dst_w: u32, dst_h: u32) 
             let val_d = src[(y_h * src_w + x_h) as usize];
 
             let val = val_a * (1.0 - x_weight) * (1.0 - y_weight)
-                    + val_b * x_weight * (1.0 - y_weight)
-                    + val_c * (1.0 - x_weight) * y_weight
-                    + val_d * x_weight * y_weight;
+                + val_b * x_weight * (1.0 - y_weight)
+                + val_c * (1.0 - x_weight) * y_weight
+                + val_d * x_weight * y_weight;
 
             dst[(i * dst_w + j) as usize] = val;
         }
@@ -181,11 +177,12 @@ pub async fn run_nobg(
     let process_res = tokio::task::spawn_blocking(move || -> Result<(), String> {
         // --- 1. Load image ---
         let t_load = Instant::now();
-        let img = image::open(&input_path_buf)
-            .map_err(|e| format!("image open: {e}"))?;
+        let img = image::open(&input_path_buf).map_err(|e| format!("image open: {e}"))?;
         let (orig_w, orig_h) = (img.width(), img.height());
-        eprintln!("[feynobg trace={trace_id} event=image_loaded] w={orig_w} h={orig_h} load_ms={:.0}",
-            t_load.elapsed().as_secs_f64() * 1000.0);
+        eprintln!(
+            "[feynobg trace={trace_id} event=image_loaded] w={orig_w} h={orig_h} load_ms={:.0}",
+            t_load.elapsed().as_secs_f64() * 1000.0
+        );
 
         // --- 2. Preprocess ---
         let t_pre = Instant::now();
@@ -216,17 +213,16 @@ pub async fn run_nobg(
             chw_input[2 * plane_size + idx] = b;
         }
 
-        eprintln!("[feynobg trace={trace_id} event=preprocess_done] ms={:.0}",
-            t_pre.elapsed().as_secs_f64() * 1000.0);
+        eprintln!(
+            "[feynobg trace={trace_id} event=preprocess_done] ms={:.0}",
+            t_pre.elapsed().as_secs_f64() * 1000.0
+        );
 
         // --- 3. ONNX Inference ---
         let t_inf = Instant::now();
 
-        let input_tensor = Tensor::from_array((
-            [1usize, 3, INPUT_SIZE, INPUT_SIZE],
-            chw_input,
-        ))
-        .map_err(|e| format!("tensor create: {e}"))?;
+        let input_tensor = Tensor::from_array(([1usize, 3, INPUT_SIZE, INPUT_SIZE], chw_input))
+            .map_err(|e| format!("tensor create: {e}"))?;
 
         // Lock the session for the duration of inference only.
         let mut h = holder.lock().map_err(|e| format!("session lock: {e}"))?;
@@ -288,14 +284,19 @@ pub async fn run_nobg(
         drop(mask_resized);
         drop(rgb8);
 
-        eprintln!("[feynobg trace={trace_id} event=postprocess_done] ms={:.0}",
-            t_post.elapsed().as_secs_f64() * 1000.0);
+        eprintln!(
+            "[feynobg trace={trace_id} event=postprocess_done] ms={:.0}",
+            t_post.elapsed().as_secs_f64() * 1000.0
+        );
 
         // --- 5. Save output PNG ---
         out_img
             .save(&output_path_buf)
             .map_err(|e| format!("save output: {e}"))?;
-        eprintln!("[feynobg trace={trace_id} event=output_saved] path={}", output_path_buf.display());
+        eprintln!(
+            "[feynobg trace={trace_id} event=output_saved] path={}",
+            output_path_buf.display()
+        );
 
         Ok(())
     })

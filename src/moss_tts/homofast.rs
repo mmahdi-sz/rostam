@@ -29,11 +29,34 @@ impl HomoFastResolver {
             vec![
                 HomographCandidate {
                     pronunciation: "شیر", // milk / lion (shir)
-                    context_words: &["جنگل", "حیوان", "درنده", "سلطان", "پاکت", "خوردن", "نوشیدن", "سفید", "گاوداری", "لبنیات", "مادر", "پستان"],
+                    context_words: &[
+                        "جنگل",
+                        "حیوان",
+                        "درنده",
+                        "سلطان",
+                        "پاکت",
+                        "خوردن",
+                        "نوشیدن",
+                        "سفید",
+                        "گاوداری",
+                        "لبنیات",
+                        "مادر",
+                        "پستان",
+                    ],
                 },
                 HomographCandidate {
                     pronunciation: "شِیر", // tap / valve (sher)
-                    context_words: &["آب", "بستن", "باز", "لوله", "حمام", "آشپزخانه", "چکه", "فلکه", "توالت"],
+                    context_words: &[
+                        "آب",
+                        "بستن",
+                        "باز",
+                        "لوله",
+                        "حمام",
+                        "آشپزخانه",
+                        "چکه",
+                        "فلکه",
+                        "توالت",
+                    ],
                 },
             ],
         );
@@ -43,7 +66,18 @@ impl HomoFastResolver {
             vec![
                 HomographCandidate {
                     pronunciation: "بار", // load / cargo / time (bār)
-                    context_words: &["کامیون", "حمل", "سنگین", "دفعه", "نوبت", "چندین", "یک", "اول", "دوم", "سفر"],
+                    context_words: &[
+                        "کامیون",
+                        "حمل",
+                        "سنگین",
+                        "دفعه",
+                        "نوبت",
+                        "چندین",
+                        "یک",
+                        "اول",
+                        "دوم",
+                        "سفر",
+                    ],
                 },
                 HomographCandidate {
                     pronunciation: "بَر", // fruit / ON (bar)
@@ -57,7 +91,9 @@ impl HomoFastResolver {
             vec![
                 HomographCandidate {
                     pronunciation: "سَر", // head / chief (sar)
-                    context_words: &["صورت", "بدن", "مو", "کلاه", "درد", "گوش", "چشم", "رئیس", "بزرگ"],
+                    context_words: &[
+                        "صورت", "بدن", "مو", "کلاه", "درد", "گوش", "چشم", "رئیس", "بزرگ",
+                    ],
                 },
                 HomographCandidate {
                     pronunciation: "سِر", // secret / numb (ser)
@@ -71,7 +107,17 @@ impl HomoFastResolver {
             vec![
                 HomographCandidate {
                     pronunciation: "گُل", // flower (gol)
-                    context_words: &["گیاه", "رز", "سرخ", "باغ", "بوستان", "گلدان", "زیبا", "عطر", "بو"],
+                    context_words: &[
+                        "گیاه",
+                        "رز",
+                        "سرخ",
+                        "باغ",
+                        "بوستان",
+                        "گلدان",
+                        "زیبا",
+                        "عطر",
+                        "بو",
+                    ],
                 },
                 HomographCandidate {
                     pronunciation: "گِل", // mud (gel)
@@ -82,16 +128,35 @@ impl HomoFastResolver {
 
         homographs.insert(
             "ماه",
-            vec![
-                HomographCandidate {
-                    pronunciation: "ماه", // moon / month (māh)
-                    context_words: &["آسمان", "شب", "سیاره", "سال", "روز", "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند", "شمسی", "قمری"],
-                },
-            ],
+            vec![HomographCandidate {
+                pronunciation: "ماه", // moon / month (māh)
+                context_words: &[
+                    "آسمان",
+                    "شب",
+                    "سیاره",
+                    "سال",
+                    "روز",
+                    "فروردین",
+                    "اردیبهشت",
+                    "خرداد",
+                    "تیر",
+                    "مرداد",
+                    "شهریور",
+                    "مهر",
+                    "آبان",
+                    "آذر",
+                    "دی",
+                    "بهمن",
+                    "اسفند",
+                    "شمسی",
+                    "قمری",
+                ],
+            }],
         );
 
         let stopwords = HashSet::from([
-            "از", "به", "در", "با", "که", "این", "آن", "و", "یا", "برای", "را", "است", "بود", "شد", "کرد", "بر", "تا", "نیز", "هم", "چون", "بی",
+            "از", "به", "در", "با", "که", "این", "آن", "و", "یا", "برای", "را", "است", "بود", "شد",
+            "کرد", "بر", "تا", "نیز", "هم", "چون", "بی",
         ]);
 
         Self {
@@ -118,7 +183,8 @@ impl HomoFastResolver {
         let mut result = Vec::with_capacity(words.len());
 
         for word in words {
-            let clean_word = word.trim_matches(|c: char| c.is_ascii_punctuation() || "،؛؟!«»()".contains(c));
+            let clean_word =
+                word.trim_matches(|c: char| c.is_ascii_punctuation() || "،؛؟!«»()".contains(c));
             if let Some(candidates) = self.homographs.get(clean_word) {
                 let mut best_candidate: Option<&str> = None;
                 let mut max_score = 0.0f32;

@@ -29,7 +29,10 @@ struct SessionsHolder {
 
 impl SessionsHolder {
     fn new() -> Self {
-        Self { sessions: None, last_used: Instant::now() }
+        Self {
+            sessions: None,
+            last_used: Instant::now(),
+        }
     }
 
     fn get_or_load(&mut self, trace_id: u64, threads: usize) -> Result<&Sessions, String> {
@@ -39,14 +42,14 @@ impl SessionsHolder {
             let t0 = Instant::now();
 
             let encoder = build_session(&base.join("vae_encoder.onnx"), threads)?;
-            let unet    = build_session(&base.join("unet.onnx"), threads)?;
+            let unet = build_session(&base.join("unet.onnx"), threads)?;
             let decoder = build_session(&base.join("vae_decoder.onnx"), threads)?;
 
             log_ev!("gwm", trace_id, "moebius_model_load_done",
                 "elapsed" => format!("{:.2}s", t0.elapsed().as_secs_f64()));
             self.sessions = Some(Sessions {
                 encoder: Mutex::new(encoder),
-                unet:    Mutex::new(unet),
+                unet: Mutex::new(unet),
                 decoder: Mutex::new(decoder),
             });
         }
@@ -93,7 +96,9 @@ pub fn spawn_session_reaper() {
             };
             if unloaded {
                 #[cfg(target_os = "linux")]
-                unsafe { libc::malloc_trim(0); }
+                unsafe {
+                    libc::malloc_trim(0);
+                }
                 eprintln!("[moebius] malloc_trim called after session unload");
             }
         }

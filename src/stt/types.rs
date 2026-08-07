@@ -34,7 +34,7 @@ impl SttConfig {
             (SttLang::En, SttModelSize::Large) => "vosk-model-en-us-0.22-lgraph",
             (SttLang::En, SttModelSize::Small) => "vosk-model-small-en-us-0.15",
         };
-        format!("{}/{}", base, name)
+        format!("{base}/{name}")
     }
 
     pub fn label_key(&self) -> &'static str {

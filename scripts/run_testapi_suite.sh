@@ -230,7 +230,17 @@ if [ "$(echo "$RES_RP" | jq -r '.ok')" != "true" ]; then echo "Fail: rank panel"
 
 echo "Testing /test/referral/spend"
 RES_REF=$(curl -s -X POST "$BASE_URL/test/referral/spend" -H "Content-Type: application/json" -d '{"points": 20, "tier": "Esfandyar"}')
-if [ "$(echo "$RES_REF" | jq -r '.ok')" != "true" ]; then echo "Fail: referral spend"; exit 1; fi
+if [ "$(echo "$RES_REF" | jq -r '.ok')" != "true" ]; then echo "Fail: referral spend. Got: $RES_REF"; exit 1; fi
+# مسیر واقعی: ۲۰ امتیاز خرج تیر ۲۰تایی ⇒ موجودی صفر، رتبه نشسته، ۳۱ روز.
+if [ "$(echo "$RES_REF" | jq -r '.remaining_points')" != "0" ]; then echo "Fail: referral spend did not debit. Got: $RES_REF"; exit 1; fi
+if [ "$(echo "$RES_REF" | jq -r '.granted_rank')" != "esfandyar" ]; then echo "Fail: referral spend rank not granted. Got: $RES_REF"; exit 1; fi
+if [ "$(echo "$RES_REF" | jq -r '.days_added')" != "31" ]; then echo "Fail: referral spend days. Got: $RES_REF"; exit 1; fi
+
+echo "Testing /test/referral/spend (insufficient points)"
+RES_REF_LOW=$(curl -s -X POST "$BASE_URL/test/referral/spend" -H "Content-Type: application/json" -d '{"points": 5, "tier": "Esfandyar"}')
+if [ "$(echo "$RES_REF_LOW" | jq -r '.ok')" != "false" ]; then echo "Fail: referral spend granted with 5 points. Got: $RES_REF_LOW"; exit 1; fi
+if [ "$(echo "$RES_REF_LOW" | jq -r '.granted_rank')" != "null" ]; then echo "Fail: rank granted without points. Got: $RES_REF_LOW"; exit 1; fi
+echo "✅ Referral spend tests passed!"
 
 echo "Testing /test/referral/leaderboard"
 RES_LDB=$(curl -s -X POST "$BASE_URL/test/referral/leaderboard" -H "Content-Type: application/json" -d '{}')
@@ -243,6 +253,82 @@ echo "✅ Referral leaderboard test passed!"
 echo "Testing /test/compress/submit"
 RES_FC=$(curl -s -X POST "$BASE_URL/test/compress/submit" -H "Content-Type: application/json" -d '{"user_id": 12345, "fmt": "7z", "level": 5, "algo": "lzma2"}')
 if [ "$(echo "$RES_FC" | jq -r '.ok')" != "true" ]; then echo "Fail: compress submit"; exit 1; fi
+
+echo ""
+echo "=== Running Redeem Tests (real handler, dev DB) ==="
+
+# ۱) کد تازه با ظرفیت ۱ ⇒ مصرف موفق
+echo "Testing /test/redeem/apply (Consumed)"
+RES_RD=$(curl -s -X POST "$BASE_URL/test/redeem/apply" -H "Content-Type: application/json" \
+    -d '{"seed": true, "max_uses": 1, "rank": "Sepahbod", "duration_days": 7}')
+if [ "$(echo "$RES_RD" | jq -r '.db')" != "connected" ]; then echo "Fail: redeem needs the dev DB. Got: $RES_RD"; exit 1; fi
+if [ "$(echo "$RES_RD" | jq -r '.ok')" != "true" ]; then echo "Fail: redeem consume. Got: $RES_RD"; exit 1; fi
+if [ "$(echo "$RES_RD" | jq -r '.used_count')" != "1" ]; then echo "Fail: used_count after first redeem. Got: $RES_RD"; exit 1; fi
+if [ "$(echo "$RES_RD" | jq -r '.user_rank.rank')" != "sepahbod" ]; then echo "Fail: rank not applied. Got: $RES_RD"; exit 1; fi
+
+# ۲) همان کاربر، همان کد، بدون seed ⇒ AlreadyRedeemed و ظرفیت دست‌نخورده
+echo "Testing /test/redeem/apply (AlreadyRedeemed)"
+RES_RD2=$(curl -s -X POST "$BASE_URL/test/redeem/apply" -H "Content-Type: application/json" -d '{}')
+if [ "$(echo "$RES_RD2" | jq -r '.ok')" != "false" ]; then echo "Fail: second redeem granted again. Got: $RES_RD2"; exit 1; fi
+if [ "$(echo "$RES_RD2" | jq -r '.used_count')" != "1" ]; then echo "Fail: second redeem burned capacity. Got: $RES_RD2"; exit 1; fi
+if [ "$(echo "$RES_RD2" | jq -r '.redemption_rows')" != "1" ]; then echo "Fail: duplicate redemption row. Got: $RES_RD2"; exit 1; fi
+
+# ۳) کد ناموجود ⇒ مسیر شکست (و پاک‌سازی ردیف‌های آزمایشی)
+echo "Testing /test/redeem/apply (invalid code)"
+RES_RD3=$(curl -s -X POST "$BASE_URL/test/redeem/apply" -H "Content-Type: application/json" \
+    -d '{"code": "TESTAPINOSUCH", "cleanup": true}')
+if [ "$(echo "$RES_RD3" | jq -r '.ok')" != "false" ]; then echo "Fail: invalid code accepted. Got: $RES_RD3"; exit 1; fi
+if [ "$(echo "$RES_RD3" | jq -r '.rendered_text')" == "null" ]; then echo "Fail: invalid code sent no message. Got: $RES_RD3"; exit 1; fi
+# پاک‌سازی ردیف‌های کد آزمایشی برای اجرای بعدی سوئیت
+curl -s -X POST "$BASE_URL/test/redeem/apply" -H "Content-Type: application/json" \
+    -d '{"cleanup": true}' > /dev/null
+echo "✅ Redeem tests passed!"
+
+echo ""
+echo "=== Running Quota Reserve Tests (real rank::quota path, dev DB) ==="
+# کاربر آزمایشی در بازه‌ی -999xxx؛ در پایان پاک می‌شود.
+QUSER=-999002
+q() { curl -s -X POST "$BASE_URL/test/quota" -H "Content-Type: application/json" -d "$1"; }
+qfield() { echo "$1" | jq -r "$2"; }
+
+# پاک‌سازی وضعیت قبلی: refund بزرگ سهمیه را صفر می‌کند (GREATEST با صفر).
+q '{"user_id":-999002,"kind":"upscale_2x_weekly","action":"refund","amount":1000000,"window_secs":604800}' > /dev/null
+q '{"user_id":-999002,"kind":"denoise_daily","action":"refund","amount":1000000,"window_secs":86400}' > /dev/null
+
+# ۱) شمارشی (upscale): دو رزرو با سقف ۲ ⇒ هر دو موفق، used=1 سپس ۲
+R=$(q '{"user_id":-999002,"kind":"upscale_2x_weekly","action":"reserve","amount":1,"window_secs":604800,"limit":2}')
+if [ "$(qfield "$R" .granted)" != "true" ] || [ "$(qfield "$R" .used_after)" != "1" ]; then echo "Fail: upscale reserve #1. Got: $R"; exit 1; fi
+R=$(q '{"user_id":-999002,"kind":"upscale_2x_weekly","action":"reserve","amount":1,"window_secs":604800,"limit":2}')
+if [ "$(qfield "$R" .granted)" != "true" ] || [ "$(qfield "$R" .used_after)" != "2" ]; then echo "Fail: upscale reserve #2. Got: $R"; exit 1; fi
+
+# ۲) رزرو سوم ⇒ رد، و مصرف دست‌نخورده (بدون کسر مضاعف)
+R=$(q '{"user_id":-999002,"kind":"upscale_2x_weekly","action":"reserve","amount":1,"window_secs":604800,"limit":2}')
+if [ "$(qfield "$R" .granted)" != "false" ]; then echo "Fail: upscale over-limit granted. Got: $R"; exit 1; fi
+if [ "$(qfield "$R" .used)" != "2" ]; then echo "Fail: rejected reserve changed used. Got: $R"; exit 1; fi
+
+# ۳) refund ⇒ برگشت به ۱، بعد رزرو دوباره جا می‌شود
+R=$(q '{"user_id":-999002,"kind":"upscale_2x_weekly","action":"refund","amount":1,"window_secs":604800}')
+if [ "$(qfield "$R" .used)" != "1" ]; then echo "Fail: upscale refund. Got: $R"; exit 1; fi
+R=$(q '{"user_id":-999002,"kind":"upscale_2x_weekly","action":"reserve","amount":1,"window_secs":604800,"limit":2}')
+if [ "$(qfield "$R" .granted)" != "true" ]; then echo "Fail: reserve after refund. Got: $R"; exit 1; fi
+
+# ۴) مقداری (denoise): سقف ۶۰ ثانیه، ۴۰ جا می‌شود
+R=$(q '{"user_id":-999002,"kind":"denoise_daily","action":"reserve","amount":40,"window_secs":86400,"limit":60}')
+if [ "$(qfield "$R" .granted)" != "true" ] || [ "$(qfield "$R" .used_after)" != "40" ]; then echo "Fail: denoise reserve 40. Got: $R"; exit 1; fi
+
+# ۵) ۴۰ دوم از باقی‌مانده بزرگ‌تر است ⇒ رد و used همان ۴۰
+R=$(q '{"user_id":-999002,"kind":"denoise_daily","action":"reserve","amount":40,"window_secs":86400,"limit":60}')
+if [ "$(qfield "$R" .granted)" != "false" ] || [ "$(qfield "$R" .used)" != "40" ]; then echo "Fail: denoise over-limit. Got: $R"; exit 1; fi
+
+# ۶) ۲۰ دقیقاً جا می‌شود ⇒ ۶۰؛ سپس refund بزرگ‌تر از مصرف منفی نمی‌شود
+R=$(q '{"user_id":-999002,"kind":"denoise_daily","action":"reserve","amount":20,"window_secs":86400,"limit":60}')
+if [ "$(qfield "$R" .granted)" != "true" ] || [ "$(qfield "$R" .used_after)" != "60" ]; then echo "Fail: denoise exact fit. Got: $R"; exit 1; fi
+R=$(q '{"user_id":-999002,"kind":"denoise_daily","action":"refund","amount":500,"window_secs":86400}')
+if [ "$(qfield "$R" .used)" != "0" ]; then echo "Fail: refund went negative or wrong. Got: $R"; exit 1; fi
+
+# پاک‌سازی ردیف‌های کاربر آزمایشی
+q '{"user_id":-999002,"kind":"upscale_2x_weekly","action":"refund","amount":1000000,"window_secs":604800}' > /dev/null
+echo "✅ Quota reserve tests passed! (test user $QUSER)"
 
 echo "✅ Extended TestAPI Endpoint Suite passed!"
 

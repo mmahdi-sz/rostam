@@ -15,20 +15,22 @@ use tokio::sync::mpsc;
 
 use super::engine::{ProgressSnapshot, run_tts_engine};
 use crate::bot::CB_TTS_CANCEL;
+use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, t, tf};
 use crate::log::next_trace_id;
-use crate::stats;
 use crate::rank;
-use crate::rank::quota::{get_usage, add_usage, QuotaKind};
-use crate::database::postgresql::PostgresDatabase;
+use crate::rank::quota::{QuotaKind, get_usage, refund_usage, reserve_usage};
+use crate::stats;
 
 pub fn tts_cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![InlineKeyboardButton::builder()
-            .text(&t("tts.cancel_button"))
-            .callback_data(CB_TTS_CANCEL)
-            .build()]])
+        .inline_keyboard(vec![vec![
+            InlineKeyboardButton::builder()
+                .text(&t("tts.cancel_button"))
+                .callback_data(CB_TTS_CANCEL)
+                .build(),
+        ]])
         .build()
 }
 
@@ -46,7 +48,9 @@ pub async fn enter_tts(
     if let Some(db) = &database {
         let user_rank = rank::effective_rank(db.client(), user_id).await;
         let limit = user_rank.tts_weekly_secs();
-        let used = get_usage(db.client(), user_id, QuotaKind::TtsWeekly, 7 * 86400).await.unwrap_or(0) as u64;
+        let used = get_usage(db.client(), user_id, QuotaKind::TtsWeekly, 7 * 86400)
+            .await
+            .unwrap_or(0) as u64;
 
         if used >= limit {
             log_ev!("tts", trace_id, "quota_check", "used" => used, "limit" => limit, "=>" => "blocked");
@@ -54,7 +58,13 @@ pub async fn enter_tts(
                 "tts.quota_weekly_limit",
                 &[("limit", &format!("{}m", limit / 60))],
             );
-            crate::rank::paywall::block_limit(api, chat_id, &label, crate::rank::types::Rank::Sohrab).await;
+            crate::rank::paywall::block_limit(
+                api,
+                chat_id,
+                &label,
+                crate::rank::types::Rank::Sohrab,
+            )
+            .await;
             flow_manager.set(user_id, FlowState::Idle);
             return;
         }
@@ -90,21 +100,74 @@ pub async fn handle_tts_text(
 
     let est_secs = std::cmp::max(1, (text_input.chars().count() as i64) / 12);
 
+    // رزرو پیش از کار بر پایه‌ی برآورد طول گفتار. سقف اینجا روی مقدارِ
+    // «بعد از افزودن» اعمال می‌شود، نه `used >= limit` قبلی — پس متنی که از
+    // باقی‌ماندهٔ سهمیه بلندتر باشد هم رد می‌شود.
+    let mut reserved = false;
     if let Some(db) = &database {
         let user_rank = rank::effective_rank(db.client(), user_id).await;
         let limit = user_rank.tts_weekly_secs();
-        let used = get_usage(db.client(), user_id, QuotaKind::TtsWeekly, 7 * 86400).await.unwrap_or(0) as u64;
-
-        if used >= limit {
-            log_ev!("tts", trace_id, "quota_check", "used" => used, "limit" => limit, "=>" => "blocked");
-            let label = tf(
-                "tts.quota_weekly_limit",
-                &[("limit", &format!("{}m", limit / 60))],
-            );
-            crate::rank::paywall::block_limit(api, chat_id, &label, crate::rank::types::Rank::Sohrab).await;
-            flow_manager.set(user_id, FlowState::Idle);
-            return;
+        match reserve_usage(
+            db.client(),
+            user_id,
+            QuotaKind::TtsWeekly,
+            est_secs,
+            7 * 86400,
+            limit as i64,
+        )
+        .await
+        {
+            Ok(Some(used_after)) => {
+                reserved = true;
+                log_ev!("tts", trace_id, "quota_reserved", "used" => used_after, "limit" => limit, "est" => est_secs);
+            }
+            Ok(None) => {
+                log_ev!("tts", trace_id, "quota_check", "limit" => limit, "est" => est_secs, "=>" => "blocked");
+                let label = tf(
+                    "tts.quota_weekly_limit",
+                    &[("limit", &format!("{}m", limit / 60))],
+                );
+                crate::rank::paywall::block_limit(
+                    api,
+                    chat_id,
+                    &label,
+                    crate::rank::types::Rank::Sohrab,
+                )
+                .await;
+                flow_manager.set(user_id, FlowState::Idle);
+                return;
+            }
+            Err(e) => {
+                // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
+                log_ev!("tts", trace_id, "quota_reserve", "err" => format!("{e}"), "=>" => "fail");
+                crate::rank::paywall::quota_db_error(api, chat_id, "tts", &format!("{e}")).await;
+                flow_manager.set(user_id, FlowState::Idle);
+                return;
+            }
         }
+    }
+
+    // برگرداندن سهمیه‌ی رزروشده وقتی کار به نتیجه نرسید.
+    macro_rules! refund {
+        ($why:expr) => {
+            if reserved {
+                if let Some(db) = &database {
+                    log_ev!("tts", trace_id, "quota_refund", "why" => $why);
+                    if let Err(e) = refund_usage(
+                        db.client(),
+                        user_id,
+                        QuotaKind::TtsWeekly,
+                        est_secs,
+                        7 * 86400,
+                    )
+                    .await
+                    {
+                        log_ev!("tts", trace_id, "quota_refund", "err" => format!("{e}"), "=>" => "fail");
+                        stats::record_error_global("tts", "quota_refund_failed").await;
+                    }
+                }
+            }
+        };
     }
 
     // Initial status message
@@ -122,6 +185,7 @@ pub async fn handle_tts_text(
         Ok(res) => res.result,
         Err(e) => {
             log_ev!("tts", trace_id, "send_status_failed", "err" => format!("{e:?}"));
+            refund!("send_status_failed");
             return;
         }
     };
@@ -132,16 +196,8 @@ pub async fn handle_tts_text(
     let text_clone = text_input.to_string();
 
     // Spawn TTS Engine Task
-    let engine_handle = tokio::spawn(async move {
-        run_tts_engine(
-            &text_clone,
-            user_id,
-            trace_id,
-            tx,
-        )
-        .await
-    });
-
+    let engine_handle =
+        tokio::spawn(async move { run_tts_engine(&text_clone, user_id, trace_id, tx).await });
 
     let mut last_edit = Instant::now();
 
@@ -198,12 +254,13 @@ pub async fn handle_tts_text(
                     .caption(&result_caption)
                     .parse_mode(ParseMode::MarkdownV2)
                     .build();
-                
+
                 let r = api.send_voice(&voice_params).await;
                 if let Err(e) = &r {
                     let err_str = format!("{e:?}");
                     log_ev!("tts", trace_id, "send_voice_failed", "err" => &err_str);
-                    if err_str.contains("VOICE_MESSAGES_FORBIDDEN") || err_str.contains("FORBIDDEN") {
+                    if err_str.contains("VOICE_MESSAGES_FORBIDDEN") || err_str.contains("FORBIDDEN")
+                    {
                         is_forbidden = true;
                     }
                 }
@@ -234,16 +291,12 @@ pub async fn handle_tts_text(
             let _ = std::fs::remove_file(&voice_path);
 
             if send_ok {
-                if let Some(db) = &database {
-                    let _ = add_usage(db.client(), user_id, QuotaKind::TtsWeekly, est_secs, 7 * 86400).await;
-                }
-                stats::record_event_user(user_id, "tts", "generate", "ok", text_input.len() as i64).await;
+                // سهمیه هنگام رزرو کسر شد؛ بدهکاری دومی اینجا نیست.
+                stats::record_event_user(user_id, "tts", "generate", "ok", text_input.len() as i64)
+                    .await;
                 log_ev!("tts", trace_id, "done", "status" => "ok");
 
-                flow_manager.set(
-                    user_id,
-                    FlowState::AwaitingTtsText,
-                );
+                flow_manager.set(user_id, FlowState::AwaitingTtsText);
 
                 let prompt_text = apply_premium_to_md(&t("tts.enter_text_default"));
 
@@ -257,6 +310,7 @@ pub async fn handle_tts_text(
             } else {
                 stats::record_error_global("tts", "send_voice_failed").await;
                 log_ev!("tts", trace_id, "done", "status" => "fail");
+                refund!("send_failed");
 
                 let err_key = if is_forbidden {
                     "tts.voice_forbidden_error"
@@ -269,7 +323,9 @@ pub async fn handle_tts_text(
                     .chat_id(chat_id)
                     .text(&err_text)
                     .parse_mode(ParseMode::MarkdownV2)
-                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(crate::bot::ai_lab_keyboard()))
+                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(
+                        crate::bot::ai_lab_keyboard(),
+                    ))
                     .build();
                 let _ = api.send_message(&err_params).await;
             }
@@ -277,13 +333,16 @@ pub async fn handle_tts_text(
         Err(err_msg) => {
             stats::record_error_global("tts", &err_msg).await;
             log_ev!("tts", trace_id, "done", "status" => "engine_err", "err" => &err_msg);
+            refund!("engine_err");
 
             let err_text = apply_premium_to_md(&t("tts.process_failed"));
             let err_params = SendMessageParams::builder()
                 .chat_id(chat_id)
                 .text(&err_text)
                 .parse_mode(ParseMode::MarkdownV2)
-                .reply_markup(ReplyMarkup::InlineKeyboardMarkup(crate::bot::ai_lab_keyboard()))
+                .reply_markup(ReplyMarkup::InlineKeyboardMarkup(
+                    crate::bot::ai_lab_keyboard(),
+                ))
                 .build();
             let _ = api.send_message(&err_params).await;
         }

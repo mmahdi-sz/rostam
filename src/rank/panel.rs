@@ -7,7 +7,6 @@ use frankenstein::{
 
 use super::quota;
 use super::store::get_user_rank;
-use super::types::Rank;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::panel::{btn_icon, btn_icon_primary, btn_icon_success};
 use crate::i18n::{apply_premium_to_html, t, tf};
@@ -31,12 +30,30 @@ fn fmt_jalali(epoch: i64) -> String {
     format!("{y}/{m:02}/{d:02}")
 }
 
-fn days_left(expires_at: i64) -> i64 {
+fn fmt_expiry_line(expires_at: i64) -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    ((expires_at - now) / 86_400).max(0)
+    let date_str = fmt_jalali(expires_at);
+    if now > expires_at {
+        tf("rank.expiry_expired", &[("date", &date_str)])
+    } else {
+        let diff = expires_at - now;
+        if diff >= 86_400 {
+            let days = diff / 86_400;
+            tf(
+                "rank.expiry_with_date",
+                &[("date", &date_str), ("days", &days.to_string())],
+            )
+        } else {
+            let hours = (diff / 3600).max(1);
+            tf(
+                "rank.expiry_with_hours",
+                &[("date", &date_str), ("hours", &hours.to_string())],
+            )
+        }
+    }
 }
 
 // ── نوار پیشرفت ───────────────────────────────────────────────────────────────
@@ -50,16 +67,16 @@ fn bar(used: u64, limit: u64, allowed: bool) -> String {
     let pct = (used * 5 / limit).min(5) as usize;
     let filled: String = "▓".repeat(pct);
     let empty: String = "░".repeat(5 - pct);
-    format!("{}{}", filled, empty)
+    format!("{filled}{empty}")
 }
 
 fn fmt_gib(bytes: u64) -> String {
     let gib = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
     if gib < 1.0 {
         let mib = bytes as f64 / (1024.0 * 1024.0);
-        tf("rank.unit_mib", &[("n", &format!("{:.0}", mib))])
+        tf("rank.unit_mib", &[("n", &format!("{mib:.0}"))])
     } else {
-        tf("rank.unit_gib", &[("n", &format!("{:.1}", gib))])
+        tf("rank.unit_gib", &[("n", &format!("{gib:.1}"))])
     }
 }
 
@@ -69,18 +86,12 @@ async fn build_main_text(
     user_id: i64,
 ) -> String {
     let client = db.client();
+    let rank = super::effective_rank(client, user_id).await;
     let rank_row = get_user_rank(client, user_id).await.ok().flatten();
-    let rank = rank_row.as_ref().map(|r| r.rank).unwrap_or(Rank::Dalavar);
     let expires_at = rank_row.as_ref().and_then(|r| r.expires_at);
 
     let expiry_line = match expires_at {
-        Some(ts) => {
-            let left = days_left(ts);
-            tf(
-                "rank.expiry_with_date",
-                &[("date", &fmt_jalali(ts)), ("days", &left.to_string())],
-            )
-        }
+        Some(ts) => fmt_expiry_line(ts),
         None => t("rank.expiry_unlimited"),
     };
 
@@ -170,8 +181,7 @@ async fn build_more_text(
     user_id: i64,
 ) -> String {
     let client = db.client();
-    let rank_row = get_user_rank(client, user_id).await.ok().flatten();
-    let rank = rank_row.as_ref().map(|r| r.rank).unwrap_or(Rank::Dalavar);
+    let rank = super::effective_rank(client, user_id).await;
 
     let week = 7 * 86400_i64;
     let day = 86400_i64;
@@ -424,7 +434,7 @@ pub async fn send_user_panel(
 }
 
 /// فعال‌سازی رتبه با امتیاز زیرمجموعه‌گیری. متن toast نتیجه را برمی‌گرداند.
-async fn process_claim(
+pub(crate) async fn process_claim(
     database: &Option<PostgresDatabase>,
     user_id: i64,
     threshold: u32,
@@ -479,9 +489,27 @@ async fn process_claim(
                 log_ev!("referral", trace_id, "rank_apply", "=>" => "fail", "err" => e);
                 return t("redeem.apply_error");
             }
-            crate::referral::record_activation(client, user_id, rank, threshold as i64, expires_at)
-                .await;
-            log_ev!("referral", trace_id, "rank_apply", "=>" => "ok");
+            // ترتیب عوض نشود: اول رتبه، بعد کسر امتیاز. برعکسش باگ آینه‌ای
+            // می‌سازد (امتیاز کسر شده، رتبه داده نشده).
+            match crate::referral::record_activation(
+                client,
+                user_id,
+                rank,
+                threshold as i64,
+                expires_at,
+            )
+            .await
+            {
+                Ok(true) => log_ev!("referral", trace_id, "rank_apply", "=>" => "ok"),
+                // کلیک دوم همزمان (یا موجودی همین‌الان خرج‌شده): رتبه همان است
+                // که درخواست اول ست کرد، پس کاربر همان چیزی را گرفته که خواسته —
+                // یک‌بار. پیام موفقیت درست است؛ فقط در trace متمایز می‌شود.
+                Ok(false) => log_ev!("referral", trace_id, "rank_apply", "=>" => "ok_no_debit"),
+                Err(e) => {
+                    log_ev!("referral", trace_id, "rank_apply", "=>" => "debit_fail", "err" => e);
+                    return t("redeem.apply_error");
+                }
+            }
             tf(
                 "referral.activate_success",
                 &[

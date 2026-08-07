@@ -39,6 +39,29 @@ impl Drop for TaskGuard {
     }
 }
 
+/// Spawn detached user-facing work.
+///
+/// `tokio::spawn` starts a fresh task, so it inherits neither the `LANG`
+/// task-local (every `t()` inside would silently fall back to Persian) nor any
+/// RAII guard held by the caller (the graceful-shutdown drain would not see the
+/// work). This does both. Use it for anything that sends messages to a user;
+/// use bare `tokio::spawn` for daemon tasks that must not delay shutdown.
+pub fn spawn_user_task<F>(fut: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    // `try_with` must run here, on the caller's task — inside the spawn it is
+    // always Err. This line is the whole fix; moving it in breaks it silently.
+    let lang = crate::i18n::LANG
+        .try_with(|l| l.clone())
+        .unwrap_or_else(|_| "fa".to_owned());
+    tokio::spawn(async move {
+        let _guard = TaskGuard::new();
+        crate::i18n::LANG.scope(lang, fut).await
+    })
+}
+
 pub async fn run() -> anyhow::Result<()> {
     crate::log::init_subscriber();
     let token = config::bot_token()?;
@@ -100,7 +123,7 @@ pub async fn run() -> anyhow::Result<()> {
 
     crate::health::mark_ready();
 
-    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
     tokio::spawn(async move {
         let ctrl_c = tokio::signal::ctrl_c();
         let sigterm = async {
@@ -155,23 +178,30 @@ pub async fn run() -> anyhow::Result<()> {
             break;
         }
 
-        let updates = match state.api.get_updates(&params).await {
-            Ok(response) => response.result,
-            Err(error) => {
-                let wait = match &error {
-                    frankenstein::Error::Api(e) if e.error_code == 429 => {
-                        e.parameters
-                            .as_ref()
-                            .and_then(|p| p.retry_after)
-                            .unwrap_or(5)
-                            .max(1) as u64
-                    }
-                    _ => 2,
-                };
-                eprintln!("get_updates failed: {error} (retry in {wait}s)");
-                tokio::time::sleep(Duration::from_secs(wait)).await;
-                continue;
-            }
+        // سیگنال نباید تا پایان long-poll فعلی (تا ۳۰ ثانیه) معطل بماند:
+        // هرکدام اول آمد، همان. `changed()` cancel-safe است و شرط بالای حلقه
+        // در تکرار بعد break می‌زند.
+        let updates = tokio::select! {
+            biased;
+            _ = shutdown_rx.changed() => continue,
+            result = state.api.get_updates(&params) => match result {
+                Ok(response) => response.result,
+                Err(error) => {
+                    let wait = match &error {
+                        frankenstein::Error::Api(e) if e.error_code == 429 => {
+                            e.parameters
+                                .as_ref()
+                                .and_then(|p| p.retry_after)
+                                .unwrap_or(5)
+                                .max(1) as u64
+                        }
+                        _ => 2,
+                    };
+                    eprintln!("get_updates failed: {error} (retry in {wait}s)");
+                    tokio::time::sleep(Duration::from_secs(wait)).await;
+                    continue;
+                }
+            },
         };
 
         while let Ok(cookie_id) = cooldown_done_rx.try_recv() {
@@ -209,4 +239,76 @@ pub async fn run() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering::SeqCst;
+
+    /// هر دو خاصیتِ `spawn_user_task` در یک تست بررسی می‌شوند، چون `ACTIVE_TASKS`
+    /// سراسری است و `cargo test` تست‌ها را موازی اجرا می‌کند؛ دو تست جدا روی
+    /// همان شمارنده به هم می‌خوردند.
+    #[tokio::test]
+    async fn spawn_user_task_scopes_lang_and_holds_guard() {
+        // ۱) زبان از تسک والد به تسک اسپاون‌شده منتقل می‌شود.
+        let inherited = crate::i18n::LANG
+            .scope("en".to_owned(), async {
+                spawn_user_task(async { crate::i18n::LANG.try_with(|l| l.clone()).ok() })
+                    .await
+                    .expect("spawned task must not panic")
+            })
+            .await;
+        assert_eq!(inherited.as_deref(), Some("en"), "LANG did not propagate");
+
+        // همان چیزی که کاربر می‌بیند: رشته‌ی رندرشده‌ی داخل تسک باید انگلیسی
+        // باشد، نه fallback فارسی. (کلید از config/i18n.json واقعی خوانده می‌شود.)
+        let rendered = crate::i18n::LANG
+            .scope("en".to_owned(), async {
+                spawn_user_task(async { crate::i18n::t("tts.cancel_button") })
+                    .await
+                    .expect("spawned task must not panic")
+            })
+            .await;
+        assert_eq!(rendered, "❌ Cancel", "t() inside the task fell back to fa");
+
+        // ضدنمونه، تا تست واقعاً چیزی بسنجد: `tokio::spawn` خام همان کلید را
+        // فارسی رندر می‌کند. اگر روزی این assert بشکند یعنی task-local خودش
+        // ارث‌بری می‌کند و `spawn_user_task` دیگر لازم نیست.
+        let raw = crate::i18n::LANG
+            .scope("en".to_owned(), async {
+                tokio::spawn(async { crate::i18n::t("tts.cancel_button") })
+                    .await
+                    .expect("spawned task must not panic")
+            })
+            .await;
+        assert_ne!(raw, rendered, "raw tokio::spawn unexpectedly kept LANG");
+
+        // بدون scope در والد، همان fallback فارسیِ t() اعمال می‌شود.
+        let scopeless = spawn_user_task(async { crate::i18n::LANG.try_with(|l| l.clone()).ok() })
+            .await
+            .expect("spawned task must not panic");
+        assert_eq!(scopeless.as_deref(), Some("fa"));
+
+        // ۲) تا وقتی تسک در جریان است، drain شمارش می‌کند — و بعد آزاد می‌شود.
+        let before = ACTIVE_TASKS.load(SeqCst);
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();
+        let handle = spawn_user_task(async move {
+            let _ = started_tx.send(());
+            let _ = release_rx.await;
+        });
+        let _ = started_rx.await;
+        assert!(
+            ACTIVE_TASKS.load(SeqCst) > before,
+            "guard not held while the task runs; shutdown would not drain it"
+        );
+        let _ = release_tx.send(());
+        handle.await.expect("spawned task must not panic");
+        assert_eq!(
+            ACTIVE_TASKS.load(SeqCst),
+            before,
+            "guard was never released"
+        );
+    }
 }

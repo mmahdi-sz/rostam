@@ -2,8 +2,17 @@
 Description=Vocal/Instrumental Separation Service
 After=network.target
 
+# NOTE: the installed unit at /etc/systemd/system/separation.service is
+# authoritative and differs from this template (it also carries
+# `After=... redis-server.service` / `Wants=redis-server.service`). Do not
+# copy this file over it. Applying User=/Group= requires downloads/,
+# cookie_profiles_cache/ and separation-service/ to be owned by that user
+# first, otherwise the service dies on its first write.
 [Service]
 Type=simple
+User=mahdi
+Group=mahdi
+NoNewPrivileges=yes
 WorkingDirectory=/mnt/data/mahdidev/ros/dev
 ExecStart=/mnt/data/mahdidev/ros/dev/separation-service/start.sh
 Restart=always

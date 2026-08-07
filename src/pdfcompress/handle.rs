@@ -229,7 +229,7 @@ pub async fn handle_pdf_level(
 
     let api2 = api.clone();
     let level_owned = level.to_string();
-    tokio::spawn(async move {
+    crate::app::spawn_user_task(async move {
         run_pdf_compress(
             api2,
             chat_id,
@@ -455,7 +455,7 @@ async fn run_gs(
                 return Err(std::io::Error::last_os_error());
             }
 
-            let cpu_limit = timeout_secs as libc::rlim_t; // use the config timeout
+            let cpu_limit = (timeout_secs.max(1)) as libc::rlim_t; // use the config timeout
             let rlim_cpu = libc::rlimit {
                 rlim_cur: cpu_limit,
                 rlim_max: cpu_limit,
@@ -478,7 +478,12 @@ async fn run_gs(
         }
     }
 
-    let wait = tokio::time::timeout(Duration::from_secs(timeout_secs), child.wait()).await;
+    let duration = if timeout_secs == 0 {
+        Duration::from_millis(1)
+    } else {
+        Duration::from_secs(timeout_secs)
+    };
+    let wait = tokio::time::timeout(duration, child.wait()).await;
     let status = match wait {
         Ok(Ok(status)) => status,
         Ok(Err(e)) => return Err(GsError::Failed(format!("wait: {e}"))),
@@ -546,7 +551,7 @@ fn fmt_bytes(bytes: u64) -> String {
     if mb >= 1024.0 {
         format!("{:.2} GB", mb / 1024.0)
     } else {
-        format!("{:.1} MB", mb)
+        format!("{mb:.1} MB")
     }
 }
 

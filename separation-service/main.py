@@ -402,4 +402,15 @@ async def cpu_release_endpoint(request: Request):
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=6589, log_level="info")
+    # امنیت: پیش‌فرض فقط loopback. تنها مصرف‌کننده‌ها همین باکس‌اند
+    # (همه‌ی call site های Rust روی http://127.0.0.1:6589 هاردکد شده‌اند).
+    # SEP_BIND_HOST یک escape hatch برای اجرای داخل کانتینر است، نه حالت عادی.
+    # `or` (نه فقط default آرگومان get) لازم است: متغیرِ ست‌شده‌ی خالی در uvicorn
+    # یعنی همه‌ی اینترفیس‌ها.
+    bind_host = os.environ.get("SEP_BIND_HOST", "").strip() or "127.0.0.1"
+    try:
+        bind_port = int(os.environ.get("SEP_PORT", "").strip() or 6589)
+    except ValueError:
+        bind_port = 6589
+    log.info(f"[separation event=bind] host={bind_host} port={bind_port}")
+    uvicorn.run("main:app", host=bind_host, port=bind_port, log_level="info")

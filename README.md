@@ -374,7 +374,7 @@ Or re-run the installer (idempotent) to also refresh assets and sidecars.
 git clone https://github.com/mmahdi-sz/rostam.git && cd rostam
 cp .env.example .env          # fill in BOT_TOKEN
 cargo build                   # debug build (needs files/runtime/libvosk.so)
-./target/debug/ros-telegram-bot
+./target/debug/rostam-dev
 ```
 
 `cargo build` links against `files/runtime/libvosk.so` (see `build.rs`), so the

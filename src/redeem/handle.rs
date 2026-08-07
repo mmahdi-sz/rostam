@@ -368,6 +368,8 @@ pub async fn handle_redeem(
     }
 
     // این کاربر قبلاً مصرف کرده؟ → پیام «مصرف شده در تاریخ ...»
+    // ponytail: این چک صرفاً fast-path است تا در حالت عادی سراغ نوشتن نرویم؛
+    // تصمیم واقعی داخل `mark_redeemed` و اتمیک گرفته می‌شود (RedeemOutcome).
     match store::get_user_redemption(client, code, user_id).await {
         Ok(Some(ts)) => {
             eprintln!("[redeem event=already_used user_id={user_id} code={code}]");
@@ -401,10 +403,24 @@ pub async fn handle_redeem(
             } => (rank, expires_at, total_days),
         };
 
-    // مصرف اتمیک؛ false یعنی ظرفیت پر شده
+    // مصرف اتمیک: تنها جایی که ظرفیت و «تکراری بودن کاربر» با هم و در یک
+    // statement تصمیم‌گیری می‌شوند. دو کلیک همزمان یکی Consumed و دیگری
+    // AlreadyRedeemed می‌گیرد، نه دو ظرفیت سوخته.
     match store::mark_redeemed(client, code, user_id).await {
-        Ok(true) => {}
-        Ok(false) => {
+        Ok(store::RedeemOutcome::Consumed) => {}
+        Ok(store::RedeemOutcome::AlreadyRedeemed) => {
+            eprintln!("[redeem event=already_used user_id={user_id} code={code}]");
+            // زمان مصرفِ خودِ همین کاربر؛ اگر خواندنش نشد، «همین حالا».
+            let ts = store::get_user_redemption(client, code, user_id)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(now_epoch);
+            let msg = tf("redeem.consumed", &[("datetime", &datetime_fa(ts))]);
+            send_with_back(api, chat_id, &msg).await;
+            return false;
+        }
+        Ok(store::RedeemOutcome::Exhausted) => {
             eprintln!("[redeem event=exhausted user_id={user_id} code={code}]");
             let last = store::get_last_redemption(client, code)
                 .await

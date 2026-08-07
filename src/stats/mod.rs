@@ -267,8 +267,10 @@ pub async fn record_error_global(feature: &str, message: impl std::fmt::Display)
 
     let Some(client) = db() else { return };
     // پیام رو کوتاه نگه می‌داریم که جدول و پیام تلگرام منفجر نشه.
+    // ترتیب مهم است: اول redact، بعد truncate — وگرنه توکنی که روی مرز ۵۰۰
+    // کاراکتر بیفتد نیمه‌کاره در DB ذخیره می‌شود (و دیگر قابل پاک‌سازی نیست).
     let msg_str = message.to_string();
-    let trimmed: String = msg_str.chars().take(500).collect();
+    let trimmed: String = crate::log::redact(&msg_str).chars().take(500).collect();
     let r = client
         .execute(
             "INSERT INTO stats_errors (feature, message) VALUES ($1, $2)",

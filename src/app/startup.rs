@@ -379,7 +379,11 @@ pub fn spawn_cooldown_refresh(
 }
 
 pub fn spawn_i18n_watcher() {
-    tokio::task::spawn_blocking(|| {
+    // ponytail: نه spawn_blocking — این حلقه هرگز تمام نمی‌شود و
+    // `Runtime::drop` منتظر پایان تسک‌های blocking می‌ماند، پس پروسه بعد از
+    // drain کامل هنگ می‌کرد تا systemd با SIGKILL بکشدش (≈۹۰ ثانیه در هر
+    // restart/deploy). یک ترد OS جدا با پایان `main` خودش می‌میرد.
+    std::thread::spawn(|| {
         use notify::{EventKind, RecursiveMode, Watcher, recommended_watcher};
         use std::sync::mpsc;
         let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();

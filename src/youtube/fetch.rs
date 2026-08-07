@@ -83,6 +83,10 @@ pub async fn fetch_video_info(
             || lower.contains("could not find cookies")
             || lower.contains("unable to open database file")
             || lower.contains("no cookies found")
+            || lower.contains("the page needs to be reloaded")
+            || lower.contains("confirm you're not a robot")
+            || lower.contains("confirm you’re not a robot")
+            || lower.contains("sign in to confirm")
         {
             log_trace(
                 trace_id,
@@ -193,7 +197,7 @@ pub async fn fetch_video_info(
                 log_trace(
                     trace_id,
                     "playlist_items_fetched",
-                    &format!("count={}", count),
+                    &format!("count={count}"),
                 );
                 (Some(count), items)
             }
@@ -231,6 +235,31 @@ pub async fn fetch_video_info(
                     );
                 }
             }
+        }
+    }
+
+    if !is_playlist && video_formats.is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let lower = stderr.to_ascii_lowercase();
+        if lower.contains("database is locked")
+            || lower.contains("the page needs to be reloaded")
+            || lower.contains("confirm you're not a robot")
+            || lower.contains("confirm you’re not a robot")
+            || lower.contains("sign in to confirm")
+            || lower.contains("no video formats found")
+        {
+            log_trace(
+                trace_id,
+                "yt_dlp_empty_formats_bad_cookie",
+                stderr.lines().last().unwrap_or("no video formats found"),
+            );
+            return Err(FetchError::BadCookie(
+                stderr
+                    .lines()
+                    .last()
+                    .unwrap_or("no video formats found")
+                    .to_string(),
+            ));
         }
     }
 
@@ -339,11 +368,7 @@ async fn fetch_playlist_items(
     }
 
     let count = items.len();
-    log_trace(
-        trace_id,
-        "playlist_items_parsed",
-        &format!("count={}", count),
-    );
+    log_trace(trace_id, "playlist_items_parsed", &format!("count={count}"));
     Ok((count, items))
 }
 

@@ -9,7 +9,7 @@ use crate::i18n::{t, tf};
 use crate::log::next_trace_id;
 use crate::rank::{
     self,
-    quota::{QuotaKind, add_usage, get_usage},
+    quota::{QuotaKind, get_usage, refund_usage, reserve_usage},
 };
 use crate::stt::config::*;
 use crate::stt::deepfilter;
@@ -437,11 +437,14 @@ pub async fn handle_stt_audio(
     let audio_duration = wav_duration(wav_str).unwrap_or(0.0);
     let duration_secs = audio_duration.ceil() as u64;
 
-    // 3. Quota check — بعد از دونستن طول فایل
+    // 3. رزرو سهمیه — بعد از دونستن طول فایل. پنجره‌ی کوتاه‌تر اول؛ اگر هفتگی رد
+    // شد روزانه پس داده می‌شود.
     let (daily_kind, weekly_kind) = match config.model_size {
         SttModelSize::Large => (QuotaKind::SttAccurateDaily, QuotaKind::SttAccurateWeekly),
         SttModelSize::Small => (QuotaKind::SttFastDaily, QuotaKind::SttFastWeekly),
     };
+    let mut reserved = false;
+    let mut reserve_secs: i64 = 0;
     if let Some(db) = database.as_ref() {
         let user_rank = rank::effective_rank(db.client(), user_id).await;
         let (daily_limit_opt, weekly_limit_opt) = match config.model_size {
@@ -473,78 +476,141 @@ pub async fn handle_stt_audio(
             };
 
         if let Some(daily_limit) = daily_limit_opt {
-            let daily_used = get_usage(db.client(), user_id, daily_kind, 86400)
-                .await
-                .unwrap_or(0) as u64;
-            let daily_remaining = daily_limit.saturating_sub(daily_used);
-            if daily_remaining == 0 {
-                remove_active_stt_job(user_id);
-                log_trace(
-                    trace_id,
-                    "stt_quota_daily",
-                    &format!(
-                        "user_id={user_id} kind={daily_key} used={daily_used} limit={daily_limit}"
-                    ),
-                );
-                let limit_str = format_duration_fa(daily_limit);
-                let label = tf(daily_limit_key, &[("limit", &limit_str)]);
-                delete_status(api, chat_id, status_msg_id).await;
-                clean_up(&work_dir);
-                let next = stt_next_rank(&user_rank);
-                if let Some(min_rank) = next {
-                    crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
-                } else {
-                    let _ = send_text(api, chat_id, &label).await;
-                }
-                return;
-            }
             let weekly_limit = weekly_limit_opt.unwrap_or(u64::MAX);
-            let weekly_used = get_usage(db.client(), user_id, weekly_kind, 7 * 86400)
-                .await
-                .unwrap_or(0) as u64;
-            let weekly_remaining = weekly_limit.saturating_sub(weekly_used);
-            if weekly_remaining == 0 {
-                remove_active_stt_job(user_id);
-                log_trace(
-                    trace_id,
-                    "stt_quota_weekly",
-                    &format!(
-                        "user_id={user_id} kind={weekly_key} used={weekly_used} limit={weekly_limit}"
-                    ),
-                );
-                let limit_str = format_duration_fa(weekly_limit);
-                let label = tf(weekly_limit_key, &[("limit", &limit_str)]);
-                delete_status(api, chat_id, status_msg_id).await;
-                clean_up(&work_dir);
-                let next = stt_next_rank(&user_rank);
-                if let Some(min_rank) = next {
-                    crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
-                } else {
-                    let _ = send_text(api, chat_id, &label).await;
-                }
-                return;
+
+            // ponytail: حداقل یک ثانیه — خواندن هدر WAV که شکست بخورد duration
+            // صفر می‌شود و رزرو صفر همیشه جا می‌شود، یعنی کار مجانی روی سهمیه‌ی
+            // تمام‌شده.
+            reserve_secs = duration_secs.max(1) as i64;
+
+            // پیام رد سه حالت دارد (روزانه تمام / هفتگی تمام / فایل بلندتر از
+            // باقی‌مانده). رزرو فقط می‌گوید «جا نشد»، پس مصرف را تنها روی مسیر
+            // رد می‌خوانیم.
+            macro_rules! deny {
+                ($event:expr) => {{
+                    let d_used = get_usage(db.client(), user_id, daily_kind, 86400)
+                        .await
+                        .unwrap_or(0) as u64;
+                    let w_used = get_usage(db.client(), user_id, weekly_kind, 7 * 86400)
+                        .await
+                        .unwrap_or(0) as u64;
+                    let d_rem = daily_limit.saturating_sub(d_used);
+                    let w_rem = weekly_limit.saturating_sub(w_used);
+                    let (key, ph, val) = if d_rem == 0 {
+                        (daily_limit_key, "limit", format_duration_fa(daily_limit))
+                    } else if w_rem == 0 {
+                        (weekly_limit_key, "limit", format_duration_fa(weekly_limit))
+                    } else {
+                        (file_key, "remaining", format_duration_fa(d_rem.min(w_rem)))
+                    };
+                    remove_active_stt_job(user_id);
+                    log_trace(
+                        trace_id,
+                        $event,
+                        &format!(
+                            "user_id={user_id} daily={daily_key} weekly={weekly_key} daily_used={d_used} weekly_used={w_used} duration={duration_secs} => blocked"
+                        ),
+                    );
+                    let label = tf(key, &[(ph, &val)]);
+                    delete_status(api, chat_id, status_msg_id).await;
+                    clean_up(&work_dir);
+                    if let Some(min_rank) = stt_next_rank(&user_rank) {
+                        crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
+                    } else {
+                        let _ = send_text(api, chat_id, &label).await;
+                    }
+                    return;
+                }};
             }
-            let remaining = daily_remaining.min(weekly_remaining);
-            if duration_secs > remaining {
-                remove_active_stt_job(user_id);
-                log_trace(
+
+            // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
+            macro_rules! db_fail {
+                ($e:expr) => {{
+                    remove_active_stt_job(user_id);
+                    log_trace(
+                        trace_id,
+                        "stt_quota_reserve",
+                        &format!("err={} => fail", $e),
+                    );
+                    delete_status(api, chat_id, status_msg_id).await;
+                    clean_up(&work_dir);
+                    crate::rank::paywall::quota_db_error(api, chat_id, "stt", &format!("{}", $e))
+                        .await;
+                    return;
+                }};
+            }
+
+            match reserve_usage(
+                db.client(),
+                user_id,
+                daily_kind,
+                reserve_secs,
+                86400,
+                daily_limit as i64,
+            )
+            .await
+            {
+                Ok(Some(used)) => log_trace(
                     trace_id,
-                    "stt_quota_file_too_long",
-                    &format!("user_id={user_id} duration={duration_secs} remaining={remaining}"),
-                );
-                let rem_str = format_duration_fa(remaining);
-                let label = tf(file_key, &[("remaining", &rem_str)]);
-                delete_status(api, chat_id, status_msg_id).await;
-                clean_up(&work_dir);
-                let next = stt_next_rank(&user_rank);
-                if let Some(min_rank) = next {
-                    crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
-                } else {
-                    let _ = send_text(api, chat_id, &label).await;
+                    "stt_quota_reserved_daily",
+                    &format!("used={used} limit={daily_limit}"),
+                ),
+                Ok(None) => deny!("stt_quota_daily"),
+                Err(e) => db_fail!(e),
+            }
+
+            // `weekly_limit` می‌تواند `u64::MAX` باشد (نامحدود)؛ کست به i64 آن را
+            // منفی می‌کند، پس روی سقف i64 کلامپ می‌شود.
+            let weekly_limit_i64 = weekly_limit.min(i64::MAX as u64) as i64;
+            match reserve_usage(
+                db.client(),
+                user_id,
+                weekly_kind,
+                reserve_secs,
+                7 * 86400,
+                weekly_limit_i64,
+            )
+            .await
+            {
+                Ok(Some(used)) => {
+                    reserved = true;
+                    log_trace(
+                        trace_id,
+                        "stt_quota_reserved_weekly",
+                        &format!("used={used} limit={weekly_limit}"),
+                    );
                 }
-                return;
+                Ok(None) => {
+                    let _ =
+                        refund_usage(db.client(), user_id, daily_kind, reserve_secs, 86400).await;
+                    deny!("stt_quota_weekly");
+                }
+                Err(e) => {
+                    let _ =
+                        refund_usage(db.client(), user_id, daily_kind, reserve_secs, 86400).await;
+                    db_fail!(e);
+                }
             }
         }
+    }
+
+    // برگرداندن هر دو پنجره وقتی کار به نتیجه نرسید.
+    macro_rules! refund {
+        ($why:expr) => {
+            if reserved {
+                if let Some(db) = database.as_ref() {
+                    log_trace(trace_id, "stt_quota_refund", &format!("why={}", $why));
+                    for (kind, window) in [(daily_kind, 86400), (weekly_kind, 7 * 86400)] {
+                        if let Err(e) =
+                            refund_usage(db.client(), user_id, kind, reserve_secs, window).await
+                        {
+                            log_trace(trace_id, "stt_quota_refund", &format!("err={e} => fail"));
+                            crate::stats::record_error_global("stt", "quota_refund_failed").await;
+                        }
+                    }
+                }
+            }
+        };
     }
 
     // ── Stage 3: Optional denoise ──
@@ -582,6 +648,7 @@ pub async fn handle_stt_audio(
         log_trace(trace_id, "stt_cancelled_after_denoise", "");
         remove_active_stt_job(user_id);
         clean_up(&work_dir);
+        refund!("cancelled_after_denoise");
         return;
     }
 
@@ -600,7 +667,7 @@ pub async fn handle_stt_audio(
     let api_timer = api.clone();
     let timer_msg_id = status_msg_id;
     let dur_label = duration_label.clone();
-    let timer_handle = tokio::spawn(async move {
+    let timer_handle = crate::app::spawn_user_task(async move {
         let mut tick = 2u64;
         while timer_flag.load(Ordering::Relaxed) && !cancel_timer_flag.load(Ordering::Relaxed) {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -648,6 +715,7 @@ pub async fn handle_stt_audio(
             let _ = send_text_with_back(api, chat_id, &t("stt.transcribe_failed")).await;
             delete_status(api, chat_id, status_msg_id).await;
             clean_up(&work_dir);
+            refund!("transcribe_failed");
             return;
         }
     };
@@ -662,6 +730,7 @@ pub async fn handle_stt_audio(
     if was_cancelled {
         log_trace(trace_id, "stt_cancelled_during_transcribe", "");
         clean_up(&work_dir);
+        refund!("cancelled_during_transcribe");
         return;
     }
 
@@ -716,30 +785,7 @@ pub async fn handle_stt_audio(
         .with_label_values(&[config.model_size.as_str(), "success"])
         .inc();
 
-    // ثبت مصرف quota
-    if let Some(db) = database.as_ref() {
-        let _ = add_usage(
-            db.client(),
-            user_id,
-            daily_kind,
-            duration_secs as i64,
-            86400,
-        )
-        .await;
-        let _ = add_usage(
-            db.client(),
-            user_id,
-            weekly_kind,
-            duration_secs as i64,
-            7 * 86400,
-        )
-        .await;
-        log_trace(
-            trace_id,
-            "stt_quota_added",
-            &format!("user_id={user_id} secs={duration_secs}"),
-        );
-    }
+    // سهمیه هنگام رزرو کسر شد؛ بدهکاری دومی اینجا نیست.
 
     clean_up(&work_dir);
 }

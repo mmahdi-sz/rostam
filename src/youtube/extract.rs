@@ -21,7 +21,7 @@ pub fn extract_youtube_urls(text: &str) -> Vec<String> {
             || lower.starts_with("m.youtube.com")
             || lower.starts_with("youtu.be")
         {
-            format!("https://{}", token)
+            format!("https://{token}")
         } else {
             continue;
         };
@@ -79,16 +79,16 @@ fn clean_youtube_url(url: &str) -> String {
 
     if kept_params.is_empty() {
         if let Some(f) = fragment {
-            format!("{}#{}", base, f)
+            format!("{base}#{f}")
         } else {
             base.to_string()
         }
     } else {
         let new_query = kept_params.join("&");
         if let Some(f) = fragment {
-            format!("{}?{}#{}", base, new_query, f)
+            format!("{base}?{new_query}#{f}")
         } else {
-            format!("{}?{}", base, new_query)
+            format!("{base}?{new_query}")
         }
     }
 }

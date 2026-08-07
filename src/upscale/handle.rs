@@ -19,7 +19,7 @@ use crate::i18n::{apply_premium_to_md, t, tf, to_fa_digits};
 use crate::log::next_trace_id;
 use crate::rank::{
     self,
-    quota::{QuotaKind, add_usage, get_usage},
+    quota::{QuotaKind, refund_usage, reserve_usage},
 };
 
 const UPSCALE_BIN: &str = "files/realesrgan/realesrgan-ncnn-vulkan";
@@ -178,7 +178,7 @@ fn upscale_keyboard(anime_expanded: bool, active_model: &str) -> InlineKeyboardM
     if anime_expanded {
         for (model_name, _scale, label_key) in ANIME_MODELS {
             let is_active = *model_name == active_model;
-            let cb = format!("{}{}", CB_UPSCALE_MODEL_PREFIX, model_name);
+            let cb = format!("{CB_UPSCALE_MODEL_PREFIX}{model_name}");
             rows.push(vec![if is_active {
                 btn_icon_success(&t(label_key), &cb, "")
             } else {
@@ -379,34 +379,63 @@ pub async fn handle_upscale_image(
         return;
     };
 
-    // ── چک سقف هفتگی بر اساس scale factor ──
+    // ── رزرو سقف هفتگی بر اساس scale factor (چک و کسر در یک statement) ──
     let quota_kind = upscale_quota_kind(scale_factor);
+    let mut reserved = false;
     if let Some(db) = database.as_ref() {
         let user_rank = rank::effective_rank(db.client(), user_id).await;
         let limit = user_rank.upscale_weekly_quota(scale_factor);
-        let used = get_usage(db.client(), user_id, quota_kind, 7 * 86400)
-            .await
-            .unwrap_or(0) as u32;
-        if used >= limit {
-            log_ev!("upscale", trace_id, "quota_check", "used" => used, "limit" => limit, "=>" => "blocked");
-            let label = tf(
-                "upscale.quota_weekly_limit",
-                &[
-                    (
-                        "scale",
-                        &format!("×{}", to_fa_digits(&scale_factor.to_string())),
-                    ),
-                    ("limit", &to_fa_digits(&limit.to_string())),
-                ],
-            );
-            if let Some(min_rank) = user_rank.upscale_next_rank() {
-                crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
-            } else {
-                let _ = send_text(api, chat_id, &label).await;
+        match reserve_usage(db.client(), user_id, quota_kind, 1, 7 * 86400, limit as i64).await {
+            Ok(Some(used_after)) => {
+                reserved = true;
+                log_ev!("upscale", trace_id, "quota_reserved", "used" => used_after, "limit" => limit);
             }
-            return;
+            Ok(None) => {
+                log_ev!("upscale", trace_id, "quota_check", "limit" => limit, "=>" => "blocked");
+                let label = tf(
+                    "upscale.quota_weekly_limit",
+                    &[
+                        (
+                            "scale",
+                            &format!("×{}", to_fa_digits(&scale_factor.to_string())),
+                        ),
+                        ("limit", &to_fa_digits(&limit.to_string())),
+                    ],
+                );
+                if let Some(min_rank) = user_rank.upscale_next_rank() {
+                    crate::rank::paywall::block_limit(api, chat_id, &label, min_rank).await;
+                } else {
+                    let _ = send_text(api, chat_id, &label).await;
+                }
+                return;
+            }
+            Err(e) => {
+                // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
+                log_ev!("upscale", trace_id, "quota_reserve", "err" => format!("{e}"), "=>" => "fail");
+                crate::rank::paywall::quota_db_error(api, chat_id, "upscale", &format!("{e}"))
+                    .await;
+                return;
+            }
         }
     }
+
+    // برگرداندن سهمیه‌ی رزروشده وقتی کار به نتیجه نرسید.
+    macro_rules! refund {
+        ($why:expr) => {
+            if reserved {
+                if let Some(db) = database.as_ref() {
+                    log_ev!("upscale", trace_id, "quota_refund", "why" => $why);
+                    if let Err(e) =
+                        refund_usage(db.client(), user_id, quota_kind, 1, 7 * 86400).await
+                    {
+                        log_ev!("upscale", trace_id, "quota_refund", "err" => format!("{e}"), "=>" => "fail");
+                        crate::stats::record_error_global("upscale", "quota_refund_failed").await;
+                    }
+                }
+            }
+        };
+    }
+
     let is_doc = message.document.is_some();
     let orig_ext = if is_doc {
         detect_doc_ext(&message)
@@ -437,7 +466,7 @@ pub async fn handle_upscale_image(
         let done_t = done_flag.clone();
         let cancel_t = cancel_flag.clone();
         let start_t = std::time::Instant::now();
-        tokio::spawn(async move {
+        crate::app::spawn_user_task(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(3)).await;
                 if done_t.load(Ordering::Relaxed) || cancel_t.load(Ordering::Relaxed) {
@@ -474,6 +503,7 @@ pub async fn handle_upscale_image(
         unregister_upscale(user_id);
         release_cpu(cores, trace_id).await;
         clean_up(&work_dir);
+        refund!("invalid_path");
         return;
     };
 
@@ -488,6 +518,7 @@ pub async fn handle_upscale_image(
         crate::stats::record_error_global("upscale", &format!("download failed: {e}")).await;
         edit_or_send(api, chat_id, status_msg_id, &t("upscale.download_failed")).await;
         clean_up(&work_dir);
+        refund!("download_failed");
         return;
     }
 
@@ -532,6 +563,7 @@ pub async fn handle_upscale_image(
             .await;
             edit_or_send(api, chat_id, status_msg_id, &t("upscale.cancelled")).await;
             clean_up(&work_dir);
+            refund!("cancelled");
             return;
         }
         Ok(Err(e)) => {
@@ -547,6 +579,7 @@ pub async fn handle_upscale_image(
             crate::stats::record_error_global("upscale", &format!("upscale failed: {e}")).await;
             edit_or_send(api, chat_id, status_msg_id, &t("upscale.upscale_failed")).await;
             clean_up(&work_dir);
+            refund!("upscale_failed");
             return;
         }
         Err(e) => {
@@ -562,6 +595,7 @@ pub async fn handle_upscale_image(
             crate::stats::record_error_global("upscale", &format!("spawn failed: {e}")).await;
             edit_or_send(api, chat_id, status_msg_id, &t("upscale.upscale_failed")).await;
             clean_up(&work_dir);
+            refund!("spawn_failed");
             return;
         }
     };
@@ -578,8 +612,8 @@ pub async fn handle_upscale_image(
             .await;
     }
 
-    let scale_str = escape_md(&format!("{}x", scale_factor));
-    let processing_str = escape_md(&format!("{:.1}", processing_secs));
+    let scale_str = escape_md(&format!("{scale_factor}x"));
+    let processing_str = escape_md(&format!("{processing_secs:.1}"));
     let full_caption = apply_premium_to_md(&format!(
         "{}\n\n{}",
         t("upscale.result_caption"),
@@ -609,11 +643,8 @@ pub async fn handle_upscale_image(
         log_ev!("upscale", trace_id, "send_photo", "=>" => if r.is_ok() { "ok" } else { "fail" });
     }
 
-    // ── ثبت مصرف quota ──
-    if let Some(db) = database.as_ref() {
-        let _ = add_usage(db.client(), user_id, quota_kind, 1, 7 * 86400).await;
-        log_ev!("upscale", trace_id, "quota_added", "user_id" => user_id, "scale" => scale_factor);
-    }
+    // سهمیه هنگام رزرو کسر شد؛ بدهکاری دومی اینجا نیست، وگرنه هر درخواست دو
+    // بار حساب می‌شد.
 
     crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "ok", 1).await;
 

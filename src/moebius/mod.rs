@@ -14,5 +14,5 @@ pub(crate) mod model;
 mod pipeline;
 mod scheduler;
 
-pub use pipeline::{MoebiusError, remove_watermark};
 pub use model::spawn_session_reaper;
+pub use pipeline::{MoebiusError, remove_watermark};

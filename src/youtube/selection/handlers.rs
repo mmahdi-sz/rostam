@@ -590,7 +590,7 @@ fn fmt_traffic_fa(bytes: u64) -> String {
                 crate::i18n::t("youtube.unit_gb"),
             )
         } else {
-            (format!("{:.1}", g), crate::i18n::t("youtube.unit_gb"))
+            (format!("{g:.1}"), crate::i18n::t("youtube.unit_gb"))
         }
     } else {
         (

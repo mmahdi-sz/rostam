@@ -80,10 +80,10 @@ pub async fn render_template(
         let fallback: String = row.get(1);
         let smart_name: String = row.get(2);
         let alias: Option<String> = row.get(3);
-        let replacement = format!("![{}](tg://emoji?id={})", fallback, custom_emoji_id);
-        result = result.replace(&format!("{{{}}}", smart_name), &replacement);
+        let replacement = format!("![{fallback}](tg://emoji?id={custom_emoji_id})");
+        result = result.replace(&format!("{{{smart_name}}}"), &replacement);
         if let Some(a) = alias.filter(|a| !a.is_empty()) {
-            result = result.replace(&format!("{{{}}}", a), &replacement);
+            result = result.replace(&format!("{{{a}}}"), &replacement);
         }
     }
     Ok(result)

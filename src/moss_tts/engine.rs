@@ -1,24 +1,25 @@
+use piper_rs::Piper;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::sync::mpsc;
-use piper_rs::PiperModel;
 
 use super::homofast::HomoFastResolver;
 use crate::youtube::download::progress::{build_bar, format_elapsed};
 
-static PIPER_MODEL: OnceLock<Option<Mutex<PiperModel>>> = OnceLock::new();
+static PIPER: OnceLock<Option<Mutex<Piper>>> = OnceLock::new();
 static HOMOFAST: OnceLock<HomoFastResolver> = OnceLock::new();
 
-fn get_piper_model() -> Option<&'static Mutex<PiperModel>> {
-    PIPER_MODEL
+fn get_piper() -> Option<&'static Mutex<Piper>> {
+    PIPER
         .get_or_init(|| {
+            let model_path = PathBuf::from("models/piper/fa_IR/fa_IR-mantatts-par.onnx");
             let config_path = PathBuf::from("models/piper/fa_IR/fa_IR-mantatts-par.onnx.json");
-            match piper_rs::from_config_path(&config_path) {
-                Ok(model) => Some(Mutex::new(model)),
+            match Piper::new(&model_path, &config_path) {
+                Ok(piper) => Some(Mutex::new(piper)),
                 Err(e) => {
-                    eprintln!("[tts] Failed to load Piper model from {:?}: {:?}", config_path, e);
+                    eprintln!("[tts] Failed to load Piper model from {model_path:?}: {e:?}");
                     None
                 }
             }
@@ -99,7 +100,9 @@ pub async fn run_tts_engine(
     crate::moebius::cpu::release_cpu(cores, trace_id).await;
 
     let output_wav_or_mp3 = format!("downloads/tts_{}_{}.wav", trace_id, rand::random::<u64>());
-    let output_ogg = output_wav_or_mp3.replace(".wav", ".ogg").replace(".mp3", ".ogg");
+    let output_ogg = output_wav_or_mp3
+        .replace(".wav", ".ogg")
+        .replace(".mp3", ".ogg");
     if let Some(parent) = Path::new(&output_wav_or_mp3).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -111,18 +114,26 @@ pub async fn run_tts_engine(
         let resolved_text = get_homofast().disambiguate(text);
         log_ev!("tts", trace_id, "homofast_resolved", "text" => &resolved_text);
 
-        if let Some(mutex) = get_piper_model() {
-            let mut wav_file = match std::fs::File::create(&output_wav_or_mp3) {
-                Ok(f) => f,
-                Err(e) => {
-                    log_ev!("tts", trace_id, "wav_create_failed", "err" => format!("{e:?}"));
-                    return Err("Failed to create audio buffer".to_string());
+        if let Some(mutex) = get_piper() {
+            let mut piper = mutex.lock().unwrap_or_else(|e| e.into_inner());
+            match piper.create(&resolved_text, false, None, None, None, None) {
+                Ok((samples, sample_rate)) => {
+                    let spec = hound::WavSpec {
+                        channels: 1,
+                        sample_rate,
+                        bits_per_sample: 32,
+                        sample_format: hound::SampleFormat::Float,
+                    };
+                    if let Ok(mut writer) = hound::WavWriter::create(&output_wav_or_mp3, spec) {
+                        for sample in samples {
+                            let _ = writer.write_sample(sample);
+                        }
+                        let _ = writer.finalize();
+                        Path::new(&output_wav_or_mp3).exists()
+                    } else {
+                        false
+                    }
                 }
-            };
-
-            let mut model = mutex.lock().unwrap_or_else(|e| e.into_inner());
-            match model.speak(&resolved_text, &mut wav_file, None) {
-                Ok(_) => Path::new(&output_wav_or_mp3).exists(),
                 Err(e) => {
                     log_ev!("tts", trace_id, "piper_synth_failed", "err" => format!("{e:?}"));
                     false
@@ -136,7 +147,11 @@ pub async fn run_tts_engine(
         // English branch: edge-tts CLI with en-US-AvaNeural (completely unchanged)
         let output_mp3 = output_wav_or_mp3.replace(".wav", ".mp3");
         let voice = "en-US-AvaNeural";
-        let edge_tts_bin = if Path::new("/mnt/data/mahdidev/ros/dev/separation-service/venv/bin/edge-tts").exists() {
+        let edge_tts_bin = if Path::new(
+            "/mnt/data/mahdidev/ros/dev/separation-service/venv/bin/edge-tts",
+        )
+        .exists()
+        {
             "/mnt/data/mahdidev/ros/dev/separation-service/venv/bin/edge-tts"
         } else {
             "edge-tts"

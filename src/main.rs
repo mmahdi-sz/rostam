@@ -9,7 +9,6 @@
     clippy::collapsible_if,
     clippy::to_string_in_format_args,
     clippy::unnecessary_sort_by,
-    clippy::manual_is_multiple_of,
     clippy::identity_op,
     clippy::manual_ok_err,
     clippy::derivable_impls,
@@ -23,18 +22,15 @@
     clippy::if_same_then_else,
     clippy::unnecessary_cast,
     clippy::needless_borrows_for_generic_args,
-)]
-
-#[global_allocator]
-static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-
-#[allow(
     clippy::double_ended_iterator_last,
     clippy::useless_format,
     clippy::manual_flatten,
     clippy::match_wildcard_for_single_variants,
     clippy::manual_map
 )]
+
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[macro_use]
 mod log;
@@ -46,9 +42,9 @@ mod cookie_pool;
 mod database;
 mod denoise;
 mod deoldify;
+mod emoji;
 mod feynobg;
 mod filecompress;
-mod emoji;
 mod force_join;
 mod gemini_watermark;
 mod i18n;

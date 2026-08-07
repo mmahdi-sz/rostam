@@ -48,7 +48,7 @@ pub async fn enter_gwm(
 ) {
     let trace_id = next_trace_id();
     flow_manager.set(user_id, FlowState::AwaitingGeminiWmImage);
-    log_ev!("gwm", trace_id, "enter", "raw" => "user_id={user_id} chat_id={chat_id}");
+    log_ev!("gwm", trace_id, "enter", "raw" => format!("user_id={user_id} chat_id={chat_id}"));
 
     let text = t("gemini_wm.prompt");
     let params = EditMessageTextParams::builder()
@@ -71,7 +71,7 @@ pub async fn handle_gwm_cancel(
     flow_manager: &mut FlowManager,
 ) {
     let trace_id = next_trace_id();
-    log_ev!("gwm", trace_id, "cancel", "raw" => "user_id={user_id} chat_id={chat_id}");
+    log_ev!("gwm", trace_id, "cancel", "raw" => format!("user_id={user_id} chat_id={chat_id}"));
     flow_manager.clear(user_id);
     let r = edit_to_ai_lab(api, chat_id, message_id).await;
     log_ev!("gwm", trace_id, "cancel_done", "raw" => format!("ok={}", r.is_ok()));
@@ -100,13 +100,13 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
     };
 
     let ext = detect_ext(message);
-    log_ev!("gwm", trace_id, "file_info", "raw" => "file_id={file_id} ext={ext}");
+    log_ev!("gwm", trace_id, "file_info", "raw" => format!("file_id={file_id} ext={ext}"));
 
     // Flow state is cleared by the dispatcher before spawning this task.
     let _ = send_text(api, chat_id, &t("gemini_wm.processing")).await;
 
     // Download image.
-    log_ev!("gwm", trace_id, "download_start", "raw" => "file_id={file_id}");
+    log_ev!("gwm", trace_id, "download_start", "raw" => format!("file_id={file_id}"));
     let work_dir = std::env::temp_dir().join(format!("gwm_{trace_id}"));
     std::fs::create_dir_all(&work_dir).ok();
     let input_path = work_dir.join(format!("input.{ext}"));
@@ -123,7 +123,7 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
         }
     };
     if let Err(e) = download_file(api, &file_id, path_str, trace_id).await {
-        log_ev!("gwm", trace_id, "download_failed", "raw" => "err={e}");
+        log_ev!("gwm", trace_id, "download_failed", "raw" => format!("err={e}"));
         crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
         crate::stats::record_error_global("gwm", &format!("download failed: {e}")).await;
         let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.download_failed")).await;
@@ -136,7 +136,7 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
     let image_bytes = match std::fs::read(&input_path) {
         Ok(b) => b,
         Err(e) => {
-            log_ev!("gwm", trace_id, "read_failed", "raw" => "err={e}");
+            log_ev!("gwm", trace_id, "read_failed", "raw" => format!("err={e}"));
             crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
             crate::stats::record_error_global("gwm", &format!("read failed: {e}")).await;
             let _ =
@@ -180,7 +180,7 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
     // region), regardless of the input format.
     let out_path = std::env::temp_dir().join(format!("gwm_out_{trace_id}.png"));
     if let Err(e) = std::fs::write(&out_path, &result_bytes) {
-        log_ev!("gwm", trace_id, "write_failed", "raw" => "err={e}");
+        log_ev!("gwm", trace_id, "write_failed", "raw" => format!("err={e}"));
         crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
         crate::stats::record_error_global("gwm", &format!("write failed: {e}")).await;
         let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.processing_failed")).await;
@@ -205,7 +205,7 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
                 .inc();
         }
         Err(e) => {
-            log_ev!("gwm", trace_id, "result_send_failed", "raw" => "err={e}");
+            log_ev!("gwm", trace_id, "result_send_failed", "raw" => format!("err={e}"));
             crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
             crate::metrics::get()
                 .gwm_requests_total

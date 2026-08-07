@@ -78,7 +78,7 @@ pub fn build_selection_text(
         .map(|f| {
             let br = f
                 .bitrate
-                .map(|b| format!("{:.0}", b))
+                .map(|b| format!("{b:.0}"))
                 .unwrap_or_else(|| "?".to_string());
             let sz = f
                 .bitrate
