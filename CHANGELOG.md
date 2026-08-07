@@ -9,6 +9,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-08-07
+
+### Fixed
+- **Blank Env Var Read as a Value**: `systemd`'s `EnvironmentFile` exports `KEY=` as an empty string, so `--skip-bot-api` (which writes `BOT_API_BASE_URL=`) made the bot build a Telegram client against an empty base URL and every `get_updates` failed with `HTTP error: builder error`. `config_value` now treats a blank env var as unset, so the bot falls back to the official API as intended.
+- **Installer: `rar` Never Installable on Debian**: `rar` ships in Debian's `non-free` component, and the official Debian images enable `main` only, so `apt-get install rar` always fell through to the "rar unavailable" warning and archive splitting stayed degraded. The installer now enables `contrib non-free non-free-firmware` on the existing Debian/Ubuntu suites before `apt-get update`, handling both the deb822 `.sources` and legacy one-line `sources.list` layouts, and is idempotent on re-run.
+- **Installer: Missing Model Assets**: `install.sh` never fetched the NLLB-200 translator, the background-removal ONNX or the Persian Piper voice, so a fresh install came up with translation, `/nobg` and Persian TTS dead. All three are downloaded now, and the 223-byte CTranslate2 `config.json` is generated. `ddcolor_modelscope.onnx` has no HTTP mirror — the installer now scrapes Google Drive's confirm token, pulls the 1.9 GB `ddcolorizer_onnx_models.zip`, extracts only that file and verifies its sha256 (`03d13d21…`), falling back to a warning instead of failing the install if Drive rate-limits.
+- **Installer: Missing Build and Runtime Packages**: the build died at `espeak-rs-sys` (`Unable to find libclang`) on a clean host; `clang` and `libclang-dev` are now installed, along with `espeak-ng` and `p7zip` (needed at runtime by Persian TTS and archive compression) and `sudo` (the script's own Postgres provisioning uses it, and minimal images do not ship it).
+- **Installer: Surge Unit Restart Loop**: the daemon unit was named `surge.service`, and `surge server start` refuses to run when it sees a unit by that name ("system service is already running"), so it restart-looped until systemd gave up and `:1700` was never reachable. Renamed to `rostam-surge.service`; the legacy unit is removed on upgrade.
+- **`edge-tts` Not Installed**: `src/moss_tts/engine.rs` expects it in `separation-service/venv/bin`, but it was absent from `requirements.txt`, so English TTS relied on the binary happening to be on `PATH`.
+
+### Added
+- **`ROSTAM_ASSET_CACHE`**: point it at a directory of already-downloaded model files and `install.sh` copies them in by basename instead of re-fetching ~8 GB — offline provisioning, and how the end-to-end container test runs.
+
+### Removed
+- **`Dockerfile` and `docker-compose.yml`**: neither could produce a working image — `migrations/` (embedded at compile time), `build.rs` and `files/runtime/libvosk.so` were never copied, the base image predated edition 2024, and the compose file published health/metrics on `0.0.0.0` with credentials that did not match `DATABASE_URL`. `install.sh` is the single supported install path; README's Quick Start now documents it.
+
 ## [2.1.1] - 2026-08-07
 
 ### Security

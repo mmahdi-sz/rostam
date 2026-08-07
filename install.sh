@@ -80,7 +80,14 @@ pac() {
   return "$rc"
 }
 
-fetch() { curl -fL --retry 3 --retry-delay 2 -o "$2" "$1"; }
+fetch() {
+  if [ -n "${ROSTAM_ASSET_CACHE:-}" ] && [ -f "$ROSTAM_ASSET_CACHE/$(basename "$2")" ]; then
+    say "cache hit: $(basename "$2")"
+    cp "$ROSTAM_ASSET_CACHE/$(basename "$2")" "$2"
+    return 0
+  fi
+  curl -fL --retry 3 --retry-delay 2 -o "$2" "$1"
+}
 
 need_file() {
   local url="$1" dest="$2" min="$3" label="$4"
@@ -97,16 +104,26 @@ need_file() {
 say "installing system packages…"
 if [ "$FAMILY" = "debian" ]; then
   export DEBIAN_FRONTEND=noninteractive
+  for f in /etc/apt/sources.list.d/*.sources; do
+    [ -f "$f" ] || continue
+    grep -qE '^Components:.*non-free' "$f" && continue
+    sed -i -E 's/^(Components:.*)$/\1 contrib non-free non-free-firmware/' "$f"
+  done
+  if [ -f /etc/apt/sources.list ] && grep -qE '^deb ' /etc/apt/sources.list \
+     && ! grep -qE '^deb .*non-free' /etc/apt/sources.list; then
+    sed -i -E '/^deb .*(debian|ubuntu)/ s/$/ contrib non-free non-free-firmware/' /etc/apt/sources.list
+  fi
   apt-get update -qq
   PKGS="git curl ca-certificates unzip tar xz-utils build-essential pkg-config \
         ffmpeg ghostscript redis-server postgresql postgresql-client \
-        python3 python3-venv python3-pip procps cmake g++ make gperf zlib1g-dev libssl-dev"
+        python3 python3-venv python3-pip procps cmake g++ make gperf zlib1g-dev libssl-dev \
+        espeak-ng p7zip-full sudo clang libclang-dev"
   [ "$SKIP_FIREFOX" = 0 ] && PKGS="$PKGS firefox-esr"
   apt-get install -y --no-install-recommends $PKGS
   apt-get install -y --no-install-recommends rar 2>/dev/null || warn "rar unavailable (surge archive-split degrades)"
 else
   PKGS="git curl ca-certificates unzip tar xz base-devel ffmpeg ghostscript \
-        redis postgresql python python-pip procps cmake gperf"
+        redis postgresql python python-pip procps cmake gperf espeak-ng p7zip sudo clang"
   [ "$SKIP_FIREFOX" = 0 ] && PKGS="$PKGS firefox"
   pac -Sy --noconfirm --needed archlinux-keyring
   pac -Syu --noconfirm --needed $PKGS
@@ -177,7 +194,6 @@ need_file "https://huggingface.co/simonw/Moebius-ONNX/resolve/main/unet.onnx"   
 need_file "https://huggingface.co/simonw/Moebius-ONNX/resolve/main/vae_decoder.onnx" files/models/moebius/vae_decoder.onnx 150000000 "moebius/vae_decoder.onnx"
 need_file "https://huggingface.co/simonw/Moebius-ONNX/resolve/main/vae_encoder.onnx" files/models/moebius/vae_encoder.onnx 100000000 "moebius/vae_encoder.onnx"
 
-# keep as tar.gz — the bot un-tars it at runtime
 need_file "https://github.com/Rikorose/DeepFilterNet/raw/1e96ef05e1ef75b3702f8c55ca065368deae637d/models/DeepFilterNet3_onnx.tar.gz" \
           files/models/deepfilter/DeepFilterNet3_onnx.tar.gz 5000000 "deepfilter model"
 if [ ! -x files/runtime/deep-filter ]; then
@@ -196,13 +212,72 @@ if [ ! -x files/realesrgan/realesrgan-ncnn-vulkan ]; then
   ok "Real-ESRGAN"
 else ok "Real-ESRGAN present — skipping"; fi
 
+PIPER_REPO="https://huggingface.co/kiarashQ/fa-ir-tts-piper-ar-mantatts-v1/resolve/main"
+need_file "$PIPER_REPO/fa_IR-mantatts-par.onnx"      models/piper/fa_IR/fa_IR-mantatts-par.onnx      200000000 "piper fa_IR model"
+need_file "$PIPER_REPO/fa_IR-mantatts-par.onnx.json" models/piper/fa_IR/fa_IR-mantatts-par.onnx.json 1000       "piper fa_IR config"
+
+need_file "https://huggingface.co/mmahdi-sz/FeyNobg-ONNX/resolve/main/feynobg_int8_dynamic.onnx" \
+          files/models/feynobg/feynobg_int8_dynamic.onnx 1000000000 "feynobg model"
+
+need_file "https://huggingface.co/JustFrederik/nllb-200-distilled-600M-ct2-int8/resolve/main/model.bin" \
+          files/models/nllb/model.bin 500000000 "nllb model.bin"
+need_file "https://huggingface.co/entai2965/nllb-200-distilled-600M-ctranslate2/resolve/main/shared_vocabulary.json" \
+          files/models/nllb/shared_vocabulary.json 1000000 "nllb vocabulary"
+need_file "https://huggingface.co/entai2965/nllb-200-distilled-600M-ctranslate2/resolve/main/tokenizer.json" \
+          files/models/nllb/tokenizer.json 1000000 "nllb tokenizer"
+if [ ! -f files/models/nllb/config.json ]; then
+  cat > files/models/nllb/config.json <<'JSON'
+{
+  "add_source_bos": false,
+  "add_source_eos": false,
+  "bos_token": "<s>",
+  "decoder_start_token": "</s>",
+  "eos_token": "</s>",
+  "layer_norm_epsilon": null,
+  "multi_query_attention": false,
+  "unk_token": "<unk>"
+}
+JSON
+  ok "nllb config.json written"
+else ok "nllb config.json present — skipping"; fi
+
+DDCOLOR_SHA=03d13d21b08cac6d9f6216cb79538b5826c240f910dbc55911dbb70ce280944b
+ddcolor_fetch() {
+  local id=1R05w65qEWW_H4lcW1NdfcqAEPdWvjqEW uuid
+  if [ -n "${ROSTAM_ASSET_CACHE:-}" ] && [ -f "$ROSTAM_ASSET_CACHE/ddcolor_modelscope.onnx" ]; then
+    mkdir -p files/models/deoldify
+    cp "$ROSTAM_ASSET_CACHE/ddcolor_modelscope.onnx" files/models/deoldify/ || return 1
+  else
+    say "downloading ddcolor models zip (1.9 GB, Google Drive)…"
+    curl -sL -c "$TMP/gck" "https://drive.usercontent.google.com/download?id=$id&export=download" -o "$TMP/gd.html" || return 1
+    uuid="$(grep -oE 'name="uuid" value="[^"]*"' "$TMP/gd.html" | cut -d'"' -f4)"
+    [ -n "$uuid" ] || return 1
+    curl -fL --retry 3 --retry-delay 2 -b "$TMP/gck" \
+      "https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t&uuid=$uuid" \
+      -o "$TMP/ddc.zip" || return 1
+    mkdir -p files/models/deoldify
+    unzip -o -q "$TMP/ddc.zip" ddcolor_modelscope.onnx -d files/models/deoldify || return 1
+    rm -f "$TMP/ddc.zip"
+  fi
+  [ "$(sha256sum files/models/deoldify/ddcolor_modelscope.onnx | cut -d' ' -f1)" = "$DDCOLOR_SHA" ] \
+    || { rm -f files/models/deoldify/ddcolor_modelscope.onnx; return 1; }
+}
+if [ -s files/models/deoldify/ddcolor_modelscope.onnx ]; then
+  ok "deoldify/ddcolor_modelscope.onnx present"
+elif ddcolor_fetch; then
+  ok "deoldify/ddcolor_modelscope.onnx downloaded (sha256 verified)"
+else
+  warn "ddcolor_modelscope.onnx unavailable — /colorize will fail."
+  warn "  Grab ddcolorizer_onnx_models.zip from instant-high/DDColor-onnx's README"
+  warn "  (Google Drive), extract ddcolor_modelscope.onnx into files/models/deoldify/,"
+  warn "  then restart rostam."
+fi
+
 rm -rf "$TMP"
 trap 'die "failed at line $LINENO (exit $?)"' ERR
 ok "assets ready"
 
 say "configuring PostgreSQL…"
-# Arch ships an EMPTY /var/lib/postgres/data with the package — initdb when it's
-# empty (not merely absent), else the service won't start.
 if [ "$FAMILY" = "arch" ] && [ -z "$(ls -A /var/lib/postgres/data 2>/dev/null)" ]; then
   install -d -o postgres -g postgres /var/lib/postgres/data
   sudo -u postgres initdb --locale=C.UTF-8 -E UTF8 -D /var/lib/postgres/data >/dev/null 2>&1 || true
@@ -238,8 +313,6 @@ if [ ! -f .env ]; then
   [ -n "${ADMIN_ID:-}" ] && set_env ADMIN_USER_ID "$ADMIN_ID"
   set_env DENO_PATH "$DENO_DIR/bin/deno"
   set_env DATABASE_URL "postgres://postgres:postgres@localhost:5432/ros_telegram_bot"
-  # absolute (not the relative default): the surge daemon and the bot must agree
-  # on one path regardless of each process's cwd.
   set_env SURGE_DOWNLOADS_ROOT "$INSTALL_DIR/downloads/surge"
   [ "$SKIP_BOTAPI" = 1 ] && set_env BOT_API_BASE_URL "" || set_env BOT_API_BASE_URL "http://127.0.0.1:$BOTAPI_PORT"
   chmod 600 .env
@@ -253,9 +326,6 @@ cargo build --release
 [ -x target/release/rostam-dev ] || die "bot binary missing after build"
 ok "bot built"
 
-# Sidecars are best-effort: a failure here (e.g. a pinned dep with no wheel for
-# this distro's Python) must NOT abort the install — the core bot is already
-# built and still gets its systemd service below.
 
 say "installing separation-service (:6589)…"
 bash "$INSTALL_DIR/separation-service/setup.sh" || warn "separation-service install failed (:6589 degrades)"
@@ -306,10 +376,9 @@ surge_install() {
     install -m 0755 "$st/surge" /usr/local/bin/surge || { rm -rf "$st"; return 1; }
     rm -rf "$st"
   fi
-  # Daemon runs as root with HOME=/root, so its API token lands in
-  # /root/.local/state/surge/token; the bot (also root) auto-reads the same file
-  # — no token needs wiring into .env.
-  cat > /etc/systemd/system/surge.service <<UNIT
+  systemctl disable --now surge.service >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/surge.service
+  cat > /etc/systemd/system/rostam-surge.service <<UNIT
 [Unit]
 Description=Surge download manager daemon
 After=network.target
@@ -325,10 +394,10 @@ Restart=on-failure
 WantedBy=multi-user.target
 UNIT
   systemctl daemon-reload
-  systemctl enable --now surge.service >/dev/null 2>&1 || systemctl restart surge.service
+  systemctl enable --now rostam-surge.service >/dev/null 2>&1 || systemctl restart rostam-surge.service
 }
 say "installing surge download manager (:1700)…"
-if surge_install; then ok "surge.service installed (:1700)"
+if surge_install; then ok "rostam-surge.service installed (:1700)"
 else warn "surge install failed (tools:surge degrades; core bot unaffected)"; fi
 
 say "installing rostam.service…"
@@ -367,6 +436,6 @@ systemctl is-active --quiet rostam.service && ok "rostam.service active" || warn
 echo
 ok "Done. Bot dir: $INSTALL_DIR"
 say "Logs: journalctl -u rostam -f"
-say "Sidecars: journalctl -u separation -f | -u telegram-bot-api -f"
+say "Sidecars: journalctl -u separation -f | -u rostam-surge -f | -u telegram-bot-api -f"
 [ -f "$INSTALL_DIR/.env" ] && grep -q '^BOT_TOKEN=$' "$INSTALL_DIR/.env" 2>/dev/null && warn "BOT_TOKEN is empty in .env — set it then: systemctl restart rostam"
 exit 0

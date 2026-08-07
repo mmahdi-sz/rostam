@@ -171,7 +171,9 @@ pub fn cookie_refresh_xdg_runtime_dir() -> Option<String> {
 pub fn config_value(key: &str) -> Option<String> {
     value_from_env_file(".env", key)
         .or_else(|| value_from_env_file("/etc/default/abc", key))
-        .or_else(|| env::var(key).ok())
+        // systemd's EnvironmentFile exports `KEY=` as an empty string, so an
+        // intentionally-blank line must read as unset, not as "".
+        .or_else(|| env::var(key).ok().filter(|v| !v.trim().is_empty()))
 }
 
 fn value_from_env_file(path: &str, target_key: &str) -> Option<String> {
@@ -209,6 +211,16 @@ fn unquote_env_value(value: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_blank_env_var_reads_as_unset() {
+        // `--skip-bot-api` writes `BOT_API_BASE_URL=` and systemd exports it as "".
+        unsafe { env::set_var("ROSTAM_TEST_BLANK", "") };
+        assert_eq!(config_value("ROSTAM_TEST_BLANK"), None);
+        unsafe { env::set_var("ROSTAM_TEST_BLANK", "x") };
+        assert_eq!(config_value("ROSTAM_TEST_BLANK"), Some("x".to_string()));
+        unsafe { env::remove_var("ROSTAM_TEST_BLANK") };
+    }
 
     #[test]
     fn test_unquote_env_value() {
