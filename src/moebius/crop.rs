@@ -1,24 +1,4 @@
-//! Windowing pipeline: given the located Gemini "sparkle" watermark, crop a
-//! model-sized (512×512) window around it, build the inpaint mask, and later
-//! paste the result back.
-//!
-//! The model is exported at a fixed 512×512 resolution (its cross-attention
-//! uses a rel-position embedding tied to that training resolution — see
-//! `pipeline.rs` docs), so full-resolution images can never be fed to it
-//! directly. The watermark's exact position depends on the image's aspect
-//! ratio (Gemini 3.5 moved it), so `detect::detect_watermark` finds it
-//! dynamically; this module then centers a 512 window on that point.
-//!
-//! When detection fails but the image is large in both dimensions (≥1024),
-//! `fixed_*` reproduce the legacy fixed-corner heuristic as a fallback
-//! (Gemini's classic 48px/32px-margin profile, reliable for that size class).
-//! For anything else, the pipeline reports "no watermark found" rather than
-//! inpainting a guessed region and risking damage to a clean image.
-//!
-//! For images smaller than 512 in either dimension, the window extends past
-//! the image edge; those out-of-bounds samples are edge-clamped (replicated),
-//! and `paste_into` discards whatever was written into the clamped region so
-//! it never leaks into the output.
+//! 512x512 crop window calculation, mask generation, and pasting for Moebius inpainting.
 
 use super::detect::Detection;
 

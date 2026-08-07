@@ -201,6 +201,12 @@ pub fn detect_social_platform(text: &str) -> Option<&'static str> {
     if host == "eitaa.com" || host.ends_with(".eitaa.com") {
         return Some("eitaa");
     }
+    // Play Store pages are HTML, not files — probing one yielded
+    // `name=details size=0` and offered it as a "download". Classify it so the
+    // dispatcher shows the unsupported-platform notice instead.
+    if host == "play.google.com" || host == "play.app.goo.gl" {
+        return Some("playstore");
+    }
     None
 }
 
@@ -1173,9 +1179,18 @@ async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
 #[cfg(test)]
 mod tests {
     use super::{
-        available_disk_space, extract_content_disposition_filename, is_direct_link,
-        safe_download_filename, sanitize_rename,
+        available_disk_space, detect_social_platform, extract_content_disposition_filename,
+        is_direct_link, safe_download_filename, sanitize_rename,
     };
+
+    #[test]
+    fn test_play_store_is_an_unsupported_platform_not_a_file() {
+        assert_eq!(
+            detect_social_platform("https://play.google.com/store/apps/details?id=com.example"),
+            Some("playstore")
+        );
+        assert_eq!(detect_social_platform("https://example.com/file.zip"), None);
+    }
 
     #[test]
     fn test_is_direct_link_ignores_telegram_urls() {

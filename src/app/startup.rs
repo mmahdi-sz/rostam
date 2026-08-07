@@ -17,6 +17,11 @@ use crate::i18n::{LANG, reload_i18n, t};
 use crate::modules;
 use crate::stats;
 
+/// Sentinel marking that this token has already been migrated off the official
+/// Bot API. `logOut` is a one-time migration step — Telegram rate-limits it, and
+/// with `Restart=always` a rate-limited retry loop feeds itself.
+const LOGOUT_SENTINEL: &str = "files/.official_logout_done";
+
 pub async fn build_bot_api(token: &str) -> anyhow::Result<Bot> {
     let Some(base_url) = config::bot_api_base_url() else {
         println!("BOT_API_BASE_URL is not set; using official Telegram Bot API.");
@@ -24,22 +29,41 @@ pub async fn build_bot_api(token: &str) -> anyhow::Result<Bot> {
     };
     let base_url = base_url.trim_end_matches('/').to_string();
     if base_url.contains("127.0.0.1") || base_url.contains("localhost") {
-        println!(
-            "Local Bot API base detected ({base_url}); logging out from official Telegram Bot API."
-        );
-        let official_api = Bot::new(token);
-        match official_api.log_out().await {
-            Ok(response) => println!(
-                "Official Telegram Bot API logOut result: {}",
-                response.result
-            ),
-            Err(error) => {
-                let desc = error.to_string();
-                if desc.contains("Logged out") || desc.contains("Unauthorized") {
-                    println!("Already logged out from official Telegram Bot API; continuing.");
-                } else {
-                    return Err(error.into());
+        if std::path::Path::new(LOGOUT_SENTINEL).exists() {
+            println!("Already migrated to the local Bot API ({LOGOUT_SENTINEL}); skipping logOut.");
+        } else {
+            println!(
+                "Local Bot API base detected ({base_url}); logging out from official Telegram Bot API."
+            );
+            let official_api = Bot::new(token);
+            match official_api.log_out().await {
+                Ok(response) => println!(
+                    "Official Telegram Bot API logOut result: {}",
+                    response.result
+                ),
+                Err(error) => {
+                    let desc = error.to_string();
+                    if desc.contains("Logged out") || desc.contains("Unauthorized") {
+                        println!("Already logged out from official Telegram Bot API; continuing.");
+                    } else {
+                        // Never fail startup here: with Restart=always a failed
+                        // logOut restart-loops and every loop sends another
+                        // logOut, driving the rate limit deeper. If the token
+                        // really is still bound to the official API, getUpdates
+                        // against the local server reports it.
+                        eprintln!(
+                            "official logOut failed ({desc}); continuing with the local Bot API."
+                        );
+                    }
                 }
+            }
+            if let Some(parent) = std::path::Path::new(LOGOUT_SENTINEL).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(e) = std::fs::write(LOGOUT_SENTINEL, "") {
+                eprintln!(
+                    "could not write {LOGOUT_SENTINEL} ({e}); logOut will run again on the next restart"
+                );
             }
         }
     } else {

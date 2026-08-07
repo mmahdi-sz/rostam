@@ -26,6 +26,20 @@ pub fn extract_youtube_urls(text: &str) -> Vec<String> {
             continue;
         };
 
+        // Handle concatenated URLs by stripping trailing glued schemes.
+        let lower_norm = normalized.to_ascii_lowercase();
+        let second_scheme = [
+            lower_norm[1..].find("http://"),
+            lower_norm[1..].find("https://"),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
+        let normalized = match second_scheme {
+            Some(i) => normalized[..i + 1].to_string(),
+            None => normalized,
+        };
+
         let host_part = normalized
             .split("://")
             .nth(1)
@@ -117,6 +131,13 @@ mod tests {
         let msg = "این یک متن معمولی بدون لینک یوتیوب است";
         let urls = extract_youtube_urls(msg);
         assert!(urls.is_empty());
+    }
+
+    #[test]
+    fn test_two_urls_glued_without_space() {
+        let msg = "https://www.youtube.com/playlist?list=PLabc123https://youtu.be/dQw4w9WgXcQ";
+        let urls = extract_youtube_urls(msg);
+        assert_eq!(urls[0], "https://www.youtube.com/playlist?list=PLabc123");
     }
 
     #[test]

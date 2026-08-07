@@ -23,7 +23,13 @@ pub struct Sessions {
 }
 
 struct SessionsHolder {
-    sessions: Option<Sessions>,
+    /// `Arc` so the idle reaper can drop the holder's handle while an
+    /// inference is still running: the running job owns its own clone and
+    /// the weights stay mapped until it finishes. Before this was an
+    /// `Option<Sessions>` handed out as `&'static` through a raw pointer, and
+    /// a run longer than `SESSION_IDLE_TIMEOUT` (single-threaded ONNX takes
+    /// ~6s per DDIM step, 19 steps ≈ 115s) was freed mid-loop — SIGSEGV.
+    sessions: Option<Arc<Sessions>>,
     last_used: Instant,
 }
 
@@ -35,7 +41,7 @@ impl SessionsHolder {
         }
     }
 
-    fn get_or_load(&mut self, trace_id: u64, threads: usize) -> Result<&Sessions, String> {
+    fn get_or_load(&mut self, trace_id: u64, threads: usize) -> Result<Arc<Sessions>, String> {
         if self.sessions.is_none() {
             let base = std::path::Path::new(MODEL_DIR);
             log_ev!("gwm", trace_id, "moebius_model_load_start", "dir" => MODEL_DIR, "threads" => threads);
@@ -47,14 +53,16 @@ impl SessionsHolder {
 
             log_ev!("gwm", trace_id, "moebius_model_load_done",
                 "elapsed" => format!("{:.2}s", t0.elapsed().as_secs_f64()));
-            self.sessions = Some(Sessions {
+            self.sessions = Some(Arc::new(Sessions {
                 encoder: Mutex::new(encoder),
                 unet: Mutex::new(unet),
                 decoder: Mutex::new(decoder),
-            });
+            }));
         }
         self.last_used = Instant::now();
-        Ok(self.sessions.as_ref().unwrap())
+        self.sessions
+            .clone()
+            .ok_or_else(|| "moebius sessions missing right after load".to_string())
     }
 
     fn unload(&mut self) -> bool {
@@ -105,6 +113,13 @@ pub fn spawn_session_reaper() {
     });
 }
 
+/// Test hook: drop the holder's handle as the idle reaper would.
+#[cfg(test)]
+pub(crate) fn force_unload() {
+    let mut h = sessions_holder().lock().unwrap_or_else(|e| e.into_inner());
+    h.unload();
+}
+
 fn build_session(path: &std::path::Path, threads: usize) -> Result<Session, String> {
     (|| -> ort::Result<Session> {
         Session::builder()?
@@ -116,36 +131,12 @@ fn build_session(path: &std::path::Path, threads: usize) -> Result<Session, Stri
     .map_err(|e| format!("{path:?}: {e}"))
 }
 
-/// Acquire the session set for one inference call.
-///
-/// The caller receives an `Arc<Mutex<SessionsHolder>>` and calls
-/// `get_or_load` inside `spawn_blocking`. This keeps the load + inference
-/// on a blocking thread and allows the lock to be held across the call.
-pub(crate) fn sessions(trace_id: u64, threads: usize) -> Result<&'static Sessions, String> {
-    // For backward compat with pipeline.rs callers: lock the holder,
-    // ensure sessions are loaded, then return a reference.
-    // SAFETY: we hold the Arc for the lifetime of the process; the
-    // returned `&Sessions` is valid as long as the holder is not unloaded.
-    // Callers must finish inference before releasing the lock — pipeline.rs
-    // already does this (it holds the individual session Mutex guards).
-    //
-    // NOTE: This returns &'static which is a lie if sessions are unloaded.
-    // The pipeline.rs holds individual Mutex<Session> locks during inference
-    // so an unload cannot race with an active inference. The reaper only
-    // unloads when `is_idle()` is true (no call for ≥ idle_timeout), and
-    // `get_or_load` resets `last_used` before returning, so a race between
-    // the reaper check and a new inference is benign: either the load wins
-    // (reaper sees last_used just updated → not idle) or the unload wins
-    // (next `sessions` call reloads).
+/// Acquire the session set for one inference call. The returned `Arc` keeps
+/// the weights alive for as long as the caller holds it, so the idle reaper
+/// can unload the holder's handle mid-inference without freeing memory the
+/// running job is still using.
+pub(crate) fn sessions(trace_id: u64, threads: usize) -> Result<Arc<Sessions>, String> {
     let holder = sessions_holder();
-    let mut h = holder.lock().map_err(|e| format!("sessions lock: {e}"))?;
-    let sess = h.get_or_load(trace_id, threads)?;
-    // SAFETY: SessionsHolder lives for the process lifetime (inside OnceLock<Arc>).
-    // The reference is valid until `unload()` is called by the reaper.
-    // The reaper only calls unload() when last_used.elapsed() >= timeout,
-    // and get_or_load() just updated last_used, so the reaper won't fire
-    // for at least another SESSION_IDLE_TIMEOUT after this call returns.
-    let sess_ptr: *const Sessions = sess as *const Sessions;
-    drop(h);
-    Ok(unsafe { &*sess_ptr })
+    let mut h = holder.lock().unwrap_or_else(|e| e.into_inner());
+    h.get_or_load(trace_id, threads)
 }

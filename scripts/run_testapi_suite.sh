@@ -220,6 +220,9 @@ echo "Testing /test/surge/validate_url"
 RES_SURGE=$(curl -s -X POST "$BASE_URL/test/surge/validate_url" -H "Content-Type: application/json" -d '{"url": "https://example.com/file.zip"}')
 if [ "$(echo "$RES_SURGE" | jq -r '.valid')" != "true" ]; then echo "Fail: surge validate_url"; exit 1; fi
 
+RES_SURGE_PS=$(curl -s -X POST "$BASE_URL/test/surge/validate_url" -H "Content-Type: application/json" -d '{"url": "https://play.google.com/store/apps/details?id=com.example"}')
+if [ "$(echo "$RES_SURGE_PS" | jq -r '.detected_platform')" != "playstore" ]; then echo "Fail: surge validate_url playstore"; exit 1; fi
+
 echo "Testing /test/health/deep"
 RES_HLT=$(curl -s -X POST "$BASE_URL/test/health/deep")
 if [ "$(echo "$RES_HLT" | jq -r '.ok')" != "true" ]; then echo "Fail: health deep"; exit 1; fi

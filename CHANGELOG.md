@@ -9,6 +9,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [2.1.3] - 2026-08-07
+
+### Added
+- **Google Play in the "Under Development" Platform List**: a Play Store link used to be treated as a direct download — production probed one and got `name=details size=0` (an HTML page), then offered it as a file. `play.google.com` / `play.app.goo.gl` now classify as the `playstore` platform, so the dispatcher answers with the `surge.unsupported_platform` notice plus the Tools menu. `platforms.playstore` added for `fa`/`en`/`it`/`ru`.
+
+### Fixed
+- **SIGSEGV Mid-Watermark-Removal**: production was killed twice on 2026-08-07 (`status=11/SEGV`, restart counter 3) inside the Moebius DDIM loop. `moebius::model::sessions` returned a `&'static Sessions` fabricated from a raw pointer into the holder's `Option<Sessions>`; the idle reaper freed it after `SESSION_IDLE_TIMEOUT` (120 s) counted from the *start* of the job, so any run longer than that had its ONNX sessions dropped mid-inference and dereferenced freed memory. The sessions are now an `Arc<Sessions>` the running job owns, so an unload only drops the holder's handle — no `unsafe` left in that path. The other ONNX engines (`feynobg`, `deoldify`) hold the holder lock across inference and were never affected.
+- **Unbrokered Moebius Job Ran Single-Threaded**: when `/cpu/acquire` timed out (three times in the same window; the broker holds all cores for up to 120 s under load), `threads` fell to `cores.len().max(1)` = 1, stretching a ~25 s run to ~115 s — which is what pushed it past the session idle timeout into the crash above. The fallback is now 2–4 threads.
+- **Two Glued Links Broke Playlist Downloads**: two URLs pasted without a space arrive as a single whitespace token, so the second one's scheme was appended to the first one's last query value and yt-dlp got `list=PL…gdhttps:` (`HTTP Error 400: Bad Request`, 4 recorded errors). `extract_youtube_urls` now cuts a token at an embedded `http(s)://` and keeps the first URL.
+- **`logOut` Sent on Every Restart**: `build_bot_api` called the official Bot API's `logOut` on every single start when `BOT_API_BASE_URL` pointed at a local server. `logOut` is a one-time migration step and Telegram rate-limits it, so a restart loop burned the limit; worse, any response that wasn't `Logged out`/`Unauthorized` (a `429`, for instance) returned `Err` and failed startup, and with `Restart=always` each restart sent another `logOut`. It now runs once, records `files/.official_logout_done`, skips on subsequent starts, and never fails startup on a `logOut` error — a token still bound to the official API surfaces through `get_updates` against the local server instead.
+
 ## [2.1.2] - 2026-08-07
 
 ### Fixed

@@ -1,19 +1,4 @@
-//! Orchestrates the full Gemini-watermark removal pipeline:
-//!
-//!   1. crop a 512×512 window anchored to the image's bottom-right corner
-//!      (`crop::compute_crop_window` — the watermark is always in there)
-//!   2. mask just the watermark's bounding box within that window
-//!   3. VAE-encode the masked window, run 19 DDIM steps (with classifier-free
-//!      guidance) through the UNet, VAE-decode the result
-//!   4. feather-blend the decoded window back over the original crop
-//!   5. paste that 512×512 window back into the full-resolution image
-//!
-//! Steps 3 is a direct port of moebius-web's `pipeline.ts` + `ddim.ts`
-//! (vendor-validated against the PyTorch reference to mean|Δ|≈0.0022 on the
-//! decoded image) — see that project's `notes.md` for the numeric derivation
-//! of every constant below. Do not change SCALING_FACTOR, NOISE_OFFSET, or
-//! the CFG id convention without re-reading that file; each was determined
-//! empirically against the exported graphs, not guessed.
+//! Orchestrates the full Gemini watermark removal pipeline (crop -> detect -> DDIM inpaint -> blend -> paste).
 
 use std::time::Instant;
 
@@ -60,7 +45,17 @@ pub async fn remove_watermark(
     trace_id: u64,
 ) -> Result<Vec<u8>, MoebiusError> {
     let cores = cpu::acquire_cpu(user_id, trace_id).await;
-    let threads = cores.len().max(1);
+    // Broker unreachable/timed out => empty reservation. Falling back to a
+    // single thread made a run take ~115s (6s per DDIM step) instead of ~25s;
+    // stay modest so an unbrokered job can't hog the box.
+    // ponytail: fixed 4-thread cap, revisit if the broker starts failing often.
+    let threads = if cores.is_empty() {
+        std::thread::available_parallelism()
+            .map(|n| (n.get() / 4).clamp(2, 4))
+            .unwrap_or(2)
+    } else {
+        cores.len()
+    };
     let cores_for_release = cores.clone();
 
     let result = tokio::task::spawn_blocking(move || {
@@ -126,7 +121,7 @@ fn run_pipeline_sync(
     let sessions = model::sessions(trace_id, threads).map_err(MoebiusError::Onnx)?;
 
     log_ev!("gwm", trace_id, "moebius_encode_start");
-    let masked_latent = encode(sessions, &masked_chw)?;
+    let masked_latent = encode(&sessions, &masked_chw)?;
     log_ev!("gwm", trace_id, "moebius_encode_done");
 
     let ddim = scheduler::make_ddim(NUM_STEPS, STRENGTH);
@@ -145,14 +140,14 @@ fn run_pipeline_sync(
     for (i, &t) in ddim.timesteps.iter().enumerate() {
         let prev_t = ddim.timesteps.get(i + 1).copied().unwrap_or(-1);
         log_ev!("gwm", trace_id, "moebius_step", "i" => i + 1, "total" => total_steps, "t" => t);
-        let eps = unet_cfg(sessions, &latents, &mask64, &masked_latent, t, GUIDANCE)?;
+        let eps = unet_cfg(&sessions, &latents, &mask64, &masked_latent, t, GUIDANCE)?;
         latents = scheduler::ddim_step(&eps, &latents, t, prev_t, &ddim);
     }
     log_ev!("gwm", trace_id, "moebius_denoise_done",
         "steps" => total_steps, "elapsed" => format!("{:.2}s", t_denoise.elapsed().as_secs_f64()));
 
     log_ev!("gwm", trace_id, "moebius_decode_latent_start");
-    let result_chw = decode(sessions, &latents)?;
+    let result_chw = decode(&sessions, &latents)?;
     let result_img = imaging::chw_to_rgb_image(&result_chw);
     log_ev!("gwm", trace_id, "moebius_decode_latent_done");
 
@@ -323,5 +318,37 @@ mod integration {
         let decoded = image::load_from_memory(&out).expect("output should be a valid image");
         assert_eq!(decoded.width(), 1024);
         assert_eq!(decoded.height(), 1024);
+    }
+
+    /// Ensure pipeline finishes cleanly without SIGSEGV even if idle reaper unloads sessions concurrently.
+    #[test]
+    #[ignore]
+    fn unload_during_inference_does_not_crash() {
+        let img = image::RgbImage::from_fn(1024, 1024, |x, y| {
+            image::Rgb([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
+        });
+        let mut bytes = Vec::new();
+        image::DynamicImage::ImageRgb8(img)
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                image::ImageFormat::Png,
+            )
+            .unwrap();
+
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let reaper_done = done.clone();
+        let reaper = std::thread::spawn(move || {
+            while !reaper_done.load(std::sync::atomic::Ordering::Relaxed) {
+                super::model::force_unload();
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        });
+
+        let out = run_pipeline_sync(&bytes, 999_998, 2).expect("pipeline should succeed");
+        done.store(true, std::sync::atomic::Ordering::Relaxed);
+        reaper.join().unwrap();
+
+        let decoded = image::load_from_memory(&out).expect("output should be a valid image");
+        assert_eq!(decoded.width(), 1024);
     }
 }

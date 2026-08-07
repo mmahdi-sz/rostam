@@ -21,29 +21,14 @@ pub fn trunc_id(id: i64) -> String {
     trunc(&id.to_string())
 }
 
-/// حذف توکن بات از هر رشته‌ای که از پروسه خارج می‌شود (لاگ، DB، پنل ادمین).
-///
-/// `reqwest` آدرس درخواست را به `Display`/`Debug` خطاهایش می‌چسباند
-/// (`... for url (https://api.telegram.org/bot<token>/getMe)`) و
-/// `frankenstein` همان را عیناً forward می‌کند، پس هر `format!("{e}")` روی یک
-/// خطای شبکه توکن کامل را چاپ می‌کند. این فیلتر جلوی آن را در خروجی می‌گیرد،
-/// نه در تک‌تک call site ها.
-///
-/// الگو: `/bot` + یک رقم، تا اولین `/` بعدی یا انتهای رشته. هر چهار جای
-/// ساخت URL در این کرِیت شکل `.../bot{token}/...` دارند. شرط «رقم» لازم است تا
-/// مسیرهای بی‌ربط مثل `example.com/bot/docs` خراب نشوند (توکن تلگرام با
-/// شناسه‌ی عددی بات شروع می‌شود).
-///
-/// ponytail: فقط توکن‌های داخل URL را می‌گیرد — همان تنها راهی که امروز در این
-/// کرِیت توکن به یک رشته‌ی فرمت‌شده راه پیدا می‌کند. اگر روزی جایی توکن لخت و
-/// بدون پیشوند `/bot` لاگ شود، این تابع آن را نمی‌بیند.
+/// Redact Telegram bot token (`/bot<token>`) from outgoing error/log strings.
 pub fn redact(s: &str) -> std::borrow::Cow<'_, str> {
     const NEEDLE: &str = "/bot";
     const MASK: &str = "/bot<redacted>";
 
     let is_token_start = |rest: &str| rest.as_bytes().first().is_some_and(u8::is_ascii_digit);
 
-    // مسیر داغ: هیچ تخصیص حافظه‌ای نباید انجام شود — هر خط لاگ از اینجا می‌گذرد.
+    // Hot path: zero allocation when no token is present.
     let Some(first) = s
         .match_indices(NEEDLE)
         .find(|(i, _)| is_token_start(&s[i + NEEDLE.len()..]))
@@ -59,7 +44,7 @@ pub fn redact(s: &str) -> std::borrow::Cow<'_, str> {
         out.push_str(&s[cursor..i]);
         out.push_str(MASK);
         let after = i + NEEDLE.len();
-        // توکن تا اولین `/` بعدی (یا انتهای رشته) ادامه دارد.
+        // Token continues until the next '/' or end of string.
         cursor = s[after..]
             .find('/')
             .map(|off| after + off)
@@ -92,8 +77,7 @@ tokio::task_local! {
 /// Lets existing log_trace(trace_id, event, details) callers migrate with
 /// a one-line shim: `fn log_trace(t,e,d){crate::log::emit("domain",t,e,d)}`
 pub fn emit(domain: &str, trace_id: u64, event: &str, details: &str) {
-    // توکن را همین‌جا، یک‌بار، حذف می‌کنیم: هم `line` از همین می‌سازد و هم
-    // capture مربوط به testapi از همین می‌خواند.
+    // Redact token once for both the log line and testapi capture.
     let details = redact(details);
     let line = if details.is_empty() {
         format!("[{domain} trace={trace_id} event={event}]")
@@ -131,7 +115,7 @@ macro_rules! log_actor_id {
             if k == "=>" { format!("=> {}", v) } else { format!("{}={}", k, v) }
         }); )*
         let joined = parts.join(" ");
-        // یک‌بار redact، هم برای خط لاگ و هم برای capture تست — و بدون کلون اضافه.
+        // Redact token once for log line and test capture.
         let details = $crate::log::redact(&joined);
         let line = format!("[{} trace={} actor] {}", $domain, $trace, details);
         tracing::info!(domain = $domain, trace = $trace, event = "actor", "{}", line);
@@ -334,26 +318,21 @@ mod tests {
 
     #[test]
     fn redact_leaves_local_bot_api_path_alone() {
-        // شاخه‌ی local Bot API در src/bot/files.rs — روی هر دانلود لاگ می‌شود.
+        // Local Bot API path logged on downloads.
         let s = "[bot trace=3 event=local_copy] path=/var/lib/telegram-bot-api/voice/file_1.oga";
         assert!(matches!(redact(s), std::borrow::Cow::Borrowed(_)));
         assert_eq!(redact(s), s);
     }
 
-    /// e2e: خطای واقعی `reqwest` (نه رشته‌ی دست‌ساز) از همان مسیری که در
-    /// production می‌گذرد رد می‌شود و در ردیف `stats_errors` دیتابیس dev
-    /// بدون توکن ذخیره می‌شود.
-    ///
-    /// به یک Postgres در حال اجرا نیاز دارد، پس `#[ignore]`:
-    /// `cargo test redact_e2e -- --ignored --nocapture`
+    /// E2E test to ensure reqwest errors stored in DB are redacted.
     #[tokio::test]
     #[ignore]
     async fn redact_e2e_reqwest_error_reaches_db_redacted() {
-        // توکن ساختگی است؛ توکن واقعی هیچ‌جای این تست خوانده نمی‌شود.
+        // Synthetic token for test only.
         const E2E_TOKEN: &str = "987654321:AAHe2e_synthetic_token_do_not_use";
         const FEATURE: &str = "e2e_redact_probe";
 
-        // پورت ۱ بسته است ⇒ خطای اتصال واقعی، بدون وابستگی به شبکه‌ی بیرون.
+        // Port 1 is closed to simulate connection failure locally.
         let url = format!("http://127.0.0.1:1/file/bot{E2E_TOKEN}/probe.oga");
         let err = reqwest::Client::new()
             .get(&url)

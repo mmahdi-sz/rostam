@@ -1073,7 +1073,8 @@
       "spotify": "اسپاتیفای",
       "aparat": "آپارات",
       "rubika": "روبیکا",
-      "eitaa": "ایتا"
+      "eitaa": "ایتا",
+      "playstore": "گوگل پلی"
     }
   },
   "en": {
@@ -2176,7 +2177,8 @@
       "spotify": "Spotify",
       "aparat": "Aparat",
       "rubika": "Rubika",
-      "eitaa": "Eitaa"
+      "eitaa": "Eitaa",
+      "playstore": "Google Play"
     }
   },
   "it": {
@@ -3253,7 +3255,8 @@
       "spotify": "Spotify",
       "aparat": "Aparat",
       "rubika": "Rubika",
-      "eitaa": "Eitaa"
+      "eitaa": "Eitaa",
+      "playstore": "Google Play"
     }
   },
   "ru": {
@@ -4330,7 +4333,8 @@
       "spotify": "Spotify",
       "aparat": "Aparat",
       "rubika": "Rubika",
-      "eitaa": "Eitaa"
+      "eitaa": "Eitaa",
+      "playstore": "Google Play"
     }
   }
 }

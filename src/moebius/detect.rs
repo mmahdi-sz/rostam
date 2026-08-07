@@ -1,41 +1,4 @@
-//! Multi-signal Gemini "sparkle" (✦) localization.
-//!
-//! Gemini's visible watermark is a small 4-pointed sparkle in the bottom-right
-//! corner. Its offset moved with Gemini 3.5 and now depends on aspect ratio
-//! (see `crop.rs`), so a fixed-corner formula misses it and we must find it
-//! dynamically. The *previous* approach — a single astroid ZNCC template slid
-//! over the corner, keeping the global argmax — was too weak: on busy images
-//! (anime, posters, patterned clothing) a textured corner routinely out-scores
-//! the real, faint sparkle, so the pipeline inpainted the wrong spot and left
-//! the watermark untouched.
-//!
-//! Shape correlation alone can't separate them (a diamond of fabric trim scores
-//! ~0.51 vs the sparkle's ~0.59). What *does* separate them, validated on real
-//! images, is a combination of independent signals scored per candidate:
-//!
-//!   * **D4 symmetry** — the sparkle is symmetric under both mirror axes, both
-//!     diagonals and rotation; the discriminator. Real sparkle ≈0.7-0.9, busy
-//!     textures ≤0.33. This is what shape-matching lacks.
-//!   * **signed astroid correlation** — the residual matches the 4-pointed
-//!     silhouette (rejects blobs/edges that are merely symmetric).
-//!   * **wedge / concavity** — brightness along the 4 axes minus the 4
-//!     diagonals: a *star* has bright rays and dark gaps (>0); a round
-//!     highlight/bokeh is symmetric AND astroid-ish but has no gaps (≈0). This
-//!     is the only signal that rejects a bright disk.
-//!   * **contrast (|overlay|)** — the sparkle is a real alpha overlay with
-//!     visible amplitude; rejects faint smooth regions whose normalized scores
-//!     spike on near-zero energy.
-//!
-//! Polarity is handled: on light backgrounds the sparkle renders *dark*, so the
-//! overlay sign is estimated per candidate and the shape/wedge signals are
-//! measured in that sign. All four gates must pass (AND), which biases the
-//! detector toward precision — a false positive inpaints and damages a clean
-//! image, a false negative just declines, so precision is the safer error.
-//!
-//! Pipeline: high-pass the luma (subtract a box blur — removes background so the
-//! signals key on the overlay, not the scene), scan the bottom-right region on
-//! a downscaled copy for symmetric candidates, then verify each at full
-//! resolution across several scales and keep the best that clears every gate.
+//! Gemini sparkle watermark localization using symmetry, correlation, concavity, and contrast signals.
 
 use image::{RgbImage, imageops};
 
