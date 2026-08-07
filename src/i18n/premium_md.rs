@@ -73,15 +73,30 @@ fn random_fire_id() -> Option<String> {
     Some(ids[idx].clone())
 }
 
+/// Wrap known emojis in MarkdownV2 custom-emoji syntax
+/// (`![😀](tg://emoji?id=…)`).
+///
+/// Text that is *already* a custom-emoji span is copied verbatim: several i18n
+/// strings (e.g. `fc.welcome`) ship the span pre-written, and re-wrapping the
+/// emoji inside it produced `![![📂](tg://emoji?id=A)](tg://emoji?id=B)`, which
+/// Telegram rejects with `Bad Request: ENTITY_TEXT_INVALID` — the whole file
+/// compression menu failed to render.
 pub fn apply_premium_to_md(text: &str) -> String {
     let mut result = String::with_capacity(text.len() + 64);
     let mut rest = text;
     'outer: while !rest.is_empty() {
+        // Pass an existing `![…](tg://emoji?id=…)` span through untouched.
+        if let Some(span) = existing_emoji_span(rest) {
+            result.push_str(&rest[..span]);
+            rest = &rest[span..];
+            continue;
+        }
+
         for (emoji_str, icon_key) in EMOJI_MAP {
             if rest.starts_with(emoji_str) {
                 let icon_id = t(&format!("emoji.panel.icons.{icon_key}"));
                 if !icon_id.is_empty() {
-                    result.push_str(&format!("\\![{emoji_str}](tg://emoji?id={icon_id})"));
+                    result.push_str(&format!("![{emoji_str}](tg://emoji?id={icon_id})"));
                     rest = &rest[emoji_str.len()..];
                     continue 'outer;
                 }
@@ -94,4 +109,30 @@ pub fn apply_premium_to_md(text: &str) -> String {
         rest = &rest[c.len_utf8()..];
     }
     result
+}
+
+/// If `s` starts with a custom-emoji span, return its byte length.
+fn existing_emoji_span(s: &str) -> Option<usize> {
+    let after_bracket = s.strip_prefix("![")?;
+    let close = after_bracket.find("](tg://emoji?id=")?;
+    let tail = &after_bracket[close + "](tg://emoji?id=".len()..];
+    let end = tail.find(')')?;
+    Some(2 + close + "](tg://emoji?id=".len() + end + 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pre_written_span_is_not_wrapped_again() {
+        let src = "• ![📂](tg://emoji?id=5341492148468465410) *ZIP*";
+        assert_eq!(apply_premium_to_md(src), src);
+    }
+
+    #[test]
+    fn escaped_bang_is_not_emitted() {
+        // `\![…]` renders as literal text, not a custom emoji entity.
+        assert!(!apply_premium_to_md("📁 test").contains("\\!["));
+    }
 }

@@ -184,6 +184,15 @@ pub async fn run_tts_engine(
                 "-y",
                 "-i",
                 &output_wav_or_mp3,
+                // Piper's WAV (written by hound with no channel mask) is read
+                // back as "1 channels (FL)", which libopus rejects:
+                // `Invalid channel layout 1 channels (FL) for specified
+                // mapping family -1`. Forcing mono + Opus's native 48 kHz
+                // makes the layout unambiguous.
+                "-ac",
+                "1",
+                "-ar",
+                "48000",
                 "-c:a",
                 "libopus",
                 "-b:a",

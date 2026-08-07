@@ -197,8 +197,17 @@ RES_DN=$(curl -s -X POST "$BASE_URL/test/denoise/process" -H "Content-Type: appl
 if [ "$(echo "$RES_DN" | jq -r '.ok')" != "true" ]; then echo "Fail: denoise process"; exit 1; fi
 
 echo "Testing /test/tts/generate"
-RES_TTS=$(curl -s -X POST "$BASE_URL/test/tts/generate" -H "Content-Type: application/json" -d '{"text": "سلام این یک تست است", "mode": "default"}')
-if [ "$(echo "$RES_TTS" | jq -r '.ok')" != "true" ]; then echo "Fail: tts generate"; exit 1; fi
+# Runs the real Piper/edge-tts engine + the ffmpeg opus conversion, so a broken
+# model path or a rejected channel layout fails here.
+RES_TTS=$(curl -s --max-time 300 -X POST "$BASE_URL/test/tts/generate" -H "Content-Type: application/json" -d '{"text": "سلام این یک تست است", "mode": "default"}')
+if [ "$(echo "$RES_TTS" | jq -r '.ok')" != "true" ]; then echo "Fail: tts generate (fa): $RES_TTS"; exit 1; fi
+if [ "$(echo "$RES_TTS" | jq -r '.output_ext')" != "ogg" ]; then echo "Fail: tts fa did not produce ogg: $RES_TTS"; exit 1; fi
+
+RES_TTS_EN=$(curl -s --max-time 300 -X POST "$BASE_URL/test/tts/generate" -H "Content-Type: application/json" -d '{"text": "hello this is a test"}')
+if [ "$(echo "$RES_TTS_EN" | jq -r '.output_ext')" != "ogg" ]; then echo "Fail: tts en did not produce ogg: $RES_TTS_EN"; exit 1; fi
+
+RES_TTS_BAD=$(curl -s --max-time 300 -X POST "$BASE_URL/test/tts/generate" -H "Content-Type: application/json" -d '{"text": ""}')
+if [ "$(echo "$RES_TTS_BAD" | jq -r '.ok')" != "false" ]; then echo "Fail: tts empty text should not succeed: $RES_TTS_BAD"; exit 1; fi
 
 echo "Testing /test/deoldify/colorized"
 RES_DEO=$(curl -s -X POST "$BASE_URL/test/deoldify/colorized" -H "Content-Type: application/json" -d '{"file_id": "file_bw_123", "render_factor": 24}')

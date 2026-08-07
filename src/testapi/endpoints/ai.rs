@@ -108,16 +108,48 @@ pub struct TtsResp {
     pub text: String,
     pub mode: String,
     pub result_caption: String,
+    /// Extension of the produced file — `ogg` means the ffmpeg/libopus
+    /// conversion succeeded, which is what silently broke in 2.1.3.
+    pub output_ext: Option<String>,
+    pub output_bytes: Option<u64>,
+    pub err: Option<String>,
 }
 
+/// Calls the real synthesis engine (`moss_tts::engine::run_tts_engine`), so a
+/// broken Piper model or a failing ffmpeg conversion shows up here instead of
+/// only in production.
 pub async fn test_tts_generate(Json(req): Json<TtsReq>) -> Json<TtsResp> {
     let mode = req.mode.unwrap_or_else(|| "default".to_string());
     let result_caption = crate::i18n::t("tts.result_caption");
+    let trace_id = crate::log::next_trace_id();
+
+    // Drain the progress channel so the engine never blocks on a full queue.
+    let (tx, mut rx) = tokio::sync::mpsc::channel(32);
+    tokio::spawn(async move { while rx.recv().await.is_some() {} });
+
+    let out = crate::moss_tts::engine::run_tts_engine(&req.text, -999_001, trace_id, tx).await;
+
+    let (ok, output_ext, output_bytes, err) = match out {
+        Ok(path) => {
+            let ext = path
+                .extension()
+                .map(|e| e.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let _ = std::fs::remove_file(&path);
+            (bytes > 0 && ext == "ogg", Some(ext), Some(bytes), None)
+        }
+        Err(e) => (false, None, None, Some(e)),
+    };
+
     Json(TtsResp {
-        ok: true,
+        ok,
         text: req.text,
         mode,
         result_caption,
+        output_ext,
+        output_bytes,
+        err,
     })
 }
 

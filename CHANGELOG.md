@@ -9,6 +9,17 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [2.1.4] - 2026-08-07
+
+### Fixed
+- **File Compression Menu Never Opened (`ENTITY_TEXT_INVALID`)**: every click on the compression tool logged `show_options_menu_err … Bad Request: ENTITY_TEXT_INVALID` and the menu never rendered. `fc.welcome` / `fc.welcome_7z` ship pre-written custom-emoji spans (`![📂](tg://emoji?id=…)`), and `apply_premium_to_md` re-wrapped the emoji *inside* them, producing a nested `![![📂](tg://emoji?id=A)](tg://emoji?id=B)` that Telegram rejects. The function now copies an existing span through untouched.
+- **Premium Emoji Rendered as Links, Not Emoji**: `apply_premium_to_md` emitted `\![…](tg://emoji?id=…)`. Verified against the Bot API: the escaped `!` makes Telegram return a `text_link` entity pointing at `tg://emoji?id=…` instead of a `custom_emoji` entity, so every emoji it wrapped showed up as a dead link. Now emitted unescaped, which the API confirms as `custom_emoji`.
+- **Persian TTS Always Failed with "پردازش هوش مصنوعی با خطا مواجه شد"**: Piper's WAV is written by `hound` as 32-bit float mono, which ffmpeg reads back as `1 channels (FL)` — a layout `libopus` rejects (`Invalid channel layout 1 channels (FL) for specified mapping family -1`), so the Ogg conversion produced nothing (`Nothing was written into output file`) and every Persian request ended in `tts_failed`. The conversion now passes `-ac 1 -ar 48000`, making the layout unambiguous and matching Opus's native rate. English (edge-tts MP3) was unaffected and still works.
+- **Missing eSpeak Data After a Partial `cargo clean`**: `espeak-rs-sys` ships its `espeak-ng-data` into `OUT_DIR`, and the path is baked into the binary. With that build directory pruned, startup logged `Error processing file '…/espeak-ng-data/phontab': No such file or directory` and Persian phonemization died before Piper ran. Rebuilt; no `espeak-ng-data` exists system-wide on this host, so the crate's copy is the only one.
+
+### Changed
+- **`/test/tts/generate` Calls the Real Engine**: it returned a hardcoded `ok: true` with an i18n caption and never touched `run_tts_engine`, which is why a completely dead Persian TTS passed the suite. It now runs the real synthesis + ffmpeg conversion and reports `output_ext` / `output_bytes` / `err`. `scripts/run_testapi_suite.sh` asserts an actual `ogg` for both Persian and English and that empty text fails.
+
 ## [2.1.3] - 2026-08-07
 
 ### Added
