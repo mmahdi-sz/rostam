@@ -1,11 +1,13 @@
 use std::time::Instant;
 
-use frankenstein::{AsyncTelegramApi, client_reqwest::Bot, methods::EditMessageTextParams};
+use frankenstein::{
+    AsyncTelegramApi, ParseMode, client_reqwest::Bot, methods::EditMessageTextParams,
+};
 
 use crate::bot::{edit_to_start_menu, send_long_text, send_text, send_text_with_back};
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
-use crate::i18n::{t, tf};
+use crate::i18n::{apply_premium_to_md, t, tf};
 use crate::log::next_trace_id;
 use crate::rank::{
     self,
@@ -165,11 +167,16 @@ pub async fn handle_stt_callback(
                 &format!("user_id={user_id} lang={lang:?} size={size:?} denoise={denoise}"),
             );
 
-            let text = tf("stt.ready_title", &[("model", config.label_key())]);
+            // label_key() برمی‌گرداند کلید i18n را، نه متن؛ بدون t() کاربر خود
+            // کلید («stt.language.en_big») را می‌دید. برچسب پرانتز دارد، پس
+            // پیش از رفتن داخل قالب MarkdownV2 اسکیپ می‌شود.
+            let model_label = crate::i18n::md_escape(&t(config.label_key()));
+            let text = apply_premium_to_md(&tf("stt.ready_title", &[("model", &model_label)]));
             let params = EditMessageTextParams::builder()
                 .chat_id(chat_id)
                 .message_id(message_id)
                 .text(&text)
+                .parse_mode(ParseMode::MarkdownV2)
                 .reply_markup(ready_keyboard())
                 .build();
             let _ = api.edit_message_text(&params).await;
@@ -346,11 +353,13 @@ pub async fn handle_stt_audio(
     }
 
     // ── Stage 1: Send initial status message & capture message_id ──
+    let text_with_emojis = crate::i18n::apply_premium_to_md(&t("stt.stage_downloading"));
     let status_msg_id = match api
         .send_message(
             &frankenstein::methods::SendMessageParams::builder()
                 .chat_id(chat_id)
-                .text(&t("stt.stage_downloading"))
+                .text(&text_with_emojis)
+                .parse_mode(frankenstein::ParseMode::MarkdownV2)
                 .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(
                     cancel_job_keyboard(),
                 ))
@@ -788,6 +797,25 @@ pub async fn handle_stt_audio(
     // سهمیه هنگام رزرو کسر شد؛ بدهکاری دومی اینجا نیست.
 
     clean_up(&work_dir);
+
+    // فلو با همان مدل مسلح می‌ماند تا کاربر بلافاصله ویس بعدی را بفرستد؛
+    // dispatch دیگر بعد از کار فلو را پاک نمی‌کند.
+    send_stt_ready_prompt(api, chat_id, config).await;
+}
+
+/// یادآوری «آماده‌ام، ویس بعدی را بفرست» با همان مدل انتخاب‌شده.
+pub async fn send_stt_ready_prompt(api: &Bot, chat_id: i64, config: &SttConfig) {
+    let model_label = crate::i18n::md_escape(&t(config.label_key()));
+    let text = apply_premium_to_md(&tf("stt.ready_again", &[("model", &model_label)]));
+    let params = frankenstein::methods::SendMessageParams::builder()
+        .chat_id(chat_id)
+        .text(&text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(
+            ready_keyboard(),
+        ))
+        .build();
+    let _ = api.send_message(&params).await;
 }
 
 fn wav_duration(path: &str) -> anyhow::Result<f64> {
@@ -849,13 +877,14 @@ fn stt_next_rank(rank: &rank::types::Rank) -> Option<rank::types::Rank> {
 
 async fn edit_status(api: &Bot, chat_id: i64, message_id: Option<i32>, text: &str) {
     if let Some(msg_id) = message_id {
-        let params = EditMessageTextParams::builder()
-            .chat_id(chat_id)
-            .message_id(msg_id)
-            .text(text)
-            .reply_markup(cancel_job_keyboard())
-            .build();
-        let _ = api.edit_message_text(&params).await;
+        let _ = crate::bot::messaging::edit_text_md(
+            api,
+            chat_id,
+            msg_id,
+            text,
+            Some(cancel_job_keyboard()),
+        )
+        .await;
     }
 }
 

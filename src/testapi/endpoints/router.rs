@@ -62,7 +62,6 @@ pub async fn test_callback(Json(payload): Json<Value>) -> axum::response::Respon
     let api = Bot::new_url("http://127.0.0.1:14379/bot".to_string());
 
     let (rate_limit_tx, _) = mpsc::unbounded_channel();
-    let (flow_clear_tx, _) = mpsc::unbounded_channel();
 
     let mut state = AppState {
         api,
@@ -70,7 +69,6 @@ pub async fn test_callback(Json(payload): Json<Value>) -> axum::response::Respon
         database: None,
         flow_manager: FlowManager::new(),
         rate_limit_tx,
-        flow_clear_tx,
         user_last_update: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     };
 

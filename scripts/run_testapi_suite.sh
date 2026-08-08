@@ -209,6 +209,25 @@ if [ "$(echo "$RES_TTS_EN" | jq -r '.output_ext')" != "ogg" ]; then echo "Fail: 
 RES_TTS_BAD=$(curl -s --max-time 300 -X POST "$BASE_URL/test/tts/generate" -H "Content-Type: application/json" -d '{"text": ""}')
 if [ "$(echo "$RES_TTS_BAD" | jq -r '.ok')" != "false" ]; then echo "Fail: tts empty text should not succeed: $RES_TTS_BAD"; exit 1; fi
 
+echo "Testing /test/tts/ux (char cap + job cancel button)"
+RES_TUX=$(curl -s -X POST "$BASE_URL/test/tts/ux" -H "Content-Type: application/json" -d '{"char_len": 10}')
+if [ "$(echo "$RES_TUX" | jq -r '.max_chars')" != "500" ]; then echo "Fail: tts max_chars: $RES_TUX"; exit 1; fi
+if [ "$(echo "$RES_TUX" | jq -r '.too_long')" != "false" ]; then echo "Fail: short text flagged too_long: $RES_TUX"; exit 1; fi
+if [ "$(echo "$RES_TUX" | jq -r '.progress_keyboard[0][0].callback_data')" != "tts:jobcancel" ]; then echo "Fail: tts progress cancel button missing: $RES_TUX"; exit 1; fi
+if [ "$(echo "$RES_TUX" | jq -r '.progress_keyboard[0][0].style')" != "danger" ]; then echo "Fail: tts cancel button not danger: $RES_TUX"; exit 1; fi
+# failure path: over the 500-char cap must render the i18n error, not an `!key!`
+RES_TUXL=$(curl -s -X POST "$BASE_URL/test/tts/ux" -H "Content-Type: application/json" -d '{"char_len": 501}')
+if [ "$(echo "$RES_TUXL" | jq -r '.too_long')" != "true" ]; then echo "Fail: 501 chars not rejected: $RES_TUXL"; exit 1; fi
+if echo "$RES_TUXL" | jq -r '.too_long_text' | grep -q '!tts'; then echo "Fail: tts.text_too_long missing from i18n: $RES_TUXL"; exit 1; fi
+if ! echo "$RES_TUXL" | jq -r '.too_long_text' | grep -q '501'; then echo "Fail: too_long_text lacks length: $RES_TUXL"; exit 1; fi
+
+echo "Testing /test/stt/ready (human model label + premium emoji)"
+RES_SR=$(curl -s -X POST "$BASE_URL/test/stt/ready" -H "Content-Type: application/json" -d '{"model": "fa_small"}')
+if [ "$(echo "$RES_SR" | jq -r '.ok')" != "true" ]; then echo "Fail: stt ready: $RES_SR"; exit 1; fi
+if echo "$RES_SR" | jq -r '.ready_title' | grep -q 'stt\.language'; then echo "Fail: stt ready_title leaks i18n key: $RES_SR"; exit 1; fi
+if [ "$(echo "$RES_SR" | jq -r '.premium_emoji_count')" == "0" ]; then echo "Fail: stt ready_title has no premium emoji: $RES_SR"; exit 1; fi
+if echo "$RES_SR" | jq -r '.ready_again' | grep -q 'stt\.language'; then echo "Fail: stt ready_again leaks i18n key: $RES_SR"; exit 1; fi
+
 echo "Testing /test/deoldify/colorized"
 RES_DEO=$(curl -s -X POST "$BASE_URL/test/deoldify/colorized" -H "Content-Type: application/json" -d '{"file_id": "file_bw_123", "render_factor": 24}')
 if [ "$(echo "$RES_DEO" | jq -r '.ok')" != "true" ]; then echo "Fail: deoldify colorized"; exit 1; fi
@@ -231,6 +250,68 @@ if [ "$(echo "$RES_SURGE" | jq -r '.valid')" != "true" ]; then echo "Fail: surge
 
 RES_SURGE_PS=$(curl -s -X POST "$BASE_URL/test/surge/validate_url" -H "Content-Type: application/json" -d '{"url": "https://play.google.com/store/apps/details?id=com.example"}')
 if [ "$(echo "$RES_SURGE_PS" | jq -r '.detected_platform')" != "playstore" ]; then echo "Fail: surge validate_url playstore"; exit 1; fi
+
+echo "Testing /test/sp/download_track"
+RES_SP=$(curl -s -X POST "$BASE_URL/test/sp/download_track" -H "Content-Type: application/json" -d '{"url": "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"}')
+if [ "$(echo "$RES_SP" | jq -r '.ok')" != "true" ]; then echo "Fail: spotify download_track ok"; exit 1; fi
+if [ "$(echo "$RES_SP" | jq -r '.detected_track_id')" != "4cOdK2wGLETKBW3PvgPWqT" ]; then echo "Fail: spotify detected_track_id"; exit 1; fi
+if [ "$(echo "$RES_SP" | jq -r '.cancel_callback')" != "sp:cancel" ]; then echo "Fail: spotify cancel_callback"; exit 1; fi
+
+RES_SP_INVALID=$(curl -s -X POST "$BASE_URL/test/sp/download_track" -H "Content-Type: application/json" -d '{"url": "https://example.com/not_spotify"}')
+if [ "$(echo "$RES_SP_INVALID" | jq -r '.ok')" != "false" ]; then echo "Fail: spotify invalid url accepted"; exit 1; fi
+
+echo "Testing /test/sp/cancel"
+RES_SP_CANCEL=$(curl -s -X POST "$BASE_URL/test/sp/cancel" -H "Content-Type: application/json" -d '{"user_id": 987654}')
+if [ "$(echo "$RES_SP_CANCEL" | jq -r '.ok')" != "true" ]; then echo "Fail: spotify cancel ok"; exit 1; fi
+echo "✅ Spotify tests passed!"
+
+echo "Testing /test/sc/download_track"
+RES_SC=$(curl -s -X POST "$BASE_URL/test/sc/download_track" -H "Content-Type: application/json" -d '{"url": "https://soundcloud.com/forss/vlick"}')
+if [ "$(echo "$RES_SC" | jq -r '.ok')" != "true" ]; then echo "Fail: soundcloud download_track ok"; exit 1; fi
+if [ "$(echo "$RES_SC" | jq -r '.detected_url')" != "https://soundcloud.com/forss/vlick" ]; then echo "Fail: soundcloud detected_url"; exit 1; fi
+if [ "$(echo "$RES_SC" | jq -r '.cancel_callback')" != "sc:cancel" ]; then echo "Fail: soundcloud cancel_callback"; exit 1; fi
+
+RES_SC_INVALID=$(curl -s -X POST "$BASE_URL/test/sc/download_track" -H "Content-Type: application/json" -d '{"url": "https://example.com/not_soundcloud"}')
+if [ "$(echo "$RES_SC_INVALID" | jq -r '.ok')" != "false" ]; then echo "Fail: soundcloud invalid url accepted"; exit 1; fi
+
+echo "Testing /test/sc/cancel"
+RES_SC_CANCEL=$(curl -s -X POST "$BASE_URL/test/sc/cancel" -H "Content-Type: application/json" -d '{"user_id": 987654}')
+if [ "$(echo "$RES_SC_CANCEL" | jq -r '.ok')" != "true" ]; then echo "Fail: soundcloud cancel ok"; exit 1; fi
+echo "✅ SoundCloud tests passed!"
+
+echo "Testing /test/ms/offer (spotify album, esfandyar)"
+RES_MS=$(curl -s -X POST "$BASE_URL/test/ms/offer" -H "Content-Type: application/json" -d '{"url": "https://open.spotify.com/album/1ATL5GLyefJaxhQzSPVrLX", "rank": "esfandyar"}')
+if [ "$(echo "$RES_MS" | jq -r '.ok')" != "true" ]; then echo "Fail: ms offer ok. Got: $RES_MS"; exit 1; fi
+if [ "$(echo "$RES_MS" | jq -r '.platform')" != "album" ]; then echo "Fail: ms offer platform. Got: $RES_MS"; exit 1; fi
+if [ "$(echo "$RES_MS" | jq -r '.track_limit')" != "null" ]; then echo "Fail: ms esfandyar must be unlimited. Got: $RES_MS"; exit 1; fi
+if [ "$(echo "$RES_MS" | jq -r '.keyboard[0][0].callback_data')" != "ms:mode:one" ]; then echo "Fail: ms one-by-one button. Got: $RES_MS"; exit 1; fi
+if [ "$(echo "$RES_MS" | jq -r '.keyboard[0][1].callback_data')" != "ms:mode:zip" ]; then echo "Fail: ms zip button. Got: $RES_MS"; exit 1; fi
+if [ "$(echo "$RES_MS" | jq -r '.keyboard[1][0].callback_data')" != "ms:cancel" ]; then echo "Fail: ms cancel button. Got: $RES_MS"; exit 1; fi
+
+echo "Testing /test/ms/offer (soundcloud set, sepahbod cap)"
+RES_MS_SC=$(curl -s -X POST "$BASE_URL/test/ms/offer" -H "Content-Type: application/json" -d '{"url": "https://soundcloud.com/chris-467177669/sets/songs", "rank": "sepahbod"}')
+if [ "$(echo "$RES_MS_SC" | jq -r '.platform')" != "soundcloud" ]; then echo "Fail: ms sc platform. Got: $RES_MS_SC"; exit 1; fi
+if [ "$(echo "$RES_MS_SC" | jq -r '.track_limit')" != "20" ]; then echo "Fail: ms sepahbod cap. Got: $RES_MS_SC"; exit 1; fi
+if [ "$(echo "$RES_MS_SC" | jq -r '.can_archive')" != "false" ]; then echo "Fail: ms sepahbod must not archive. Got: $RES_MS_SC"; exit 1; fi
+
+echo "Testing /test/ms/offer (dalavar paywall)"
+RES_MS_PW=$(curl -s -X POST "$BASE_URL/test/ms/offer" -H "Content-Type: application/json" -d '{"url": "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M", "rank": "dalavar"}')
+if [ "$(echo "$RES_MS_PW" | jq -r '.blocked')" != "true" ]; then echo "Fail: ms dalavar not blocked. Got: $RES_MS_PW"; exit 1; fi
+if [ "$(echo "$RES_MS_PW" | jq -r '.paywall_min_rank')" != "esfandyar" ]; then echo "Fail: ms paywall rank. Got: $RES_MS_PW"; exit 1; fi
+
+echo "Testing /test/ms/offer (not a set link)"
+RES_MS_BAD=$(curl -s -X POST "$BASE_URL/test/ms/offer" -H "Content-Type: application/json" -d '{"url": "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT", "rank": "rostam"}')
+if [ "$(echo "$RES_MS_BAD" | jq -r '.ok')" != "false" ]; then echo "Fail: ms track link accepted as set. Got: $RES_MS_BAD"; exit 1; fi
+
+echo "Testing /test/ms/mode (sepahbod zip blocked, one-by-one allowed)"
+RES_MS_ZIP=$(curl -s -X POST "$BASE_URL/test/ms/mode" -H "Content-Type: application/json" -d '{"rank": "sepahbod", "zip": true}')
+if [ "$(echo "$RES_MS_ZIP" | jq -r '.blocked')" != "true" ]; then echo "Fail: ms sepahbod zip allowed. Got: $RES_MS_ZIP"; exit 1; fi
+RES_MS_ONE=$(curl -s -X POST "$BASE_URL/test/ms/mode" -H "Content-Type: application/json" -d '{"rank": "sepahbod", "zip": false}')
+if [ "$(echo "$RES_MS_ONE" | jq -r '.ok')" != "true" ]; then echo "Fail: ms sepahbod one-by-one blocked. Got: $RES_MS_ONE"; exit 1; fi
+RES_MS_ZIP_OK=$(curl -s -X POST "$BASE_URL/test/ms/mode" -H "Content-Type: application/json" -d '{"rank": "esfandyar", "zip": true}')
+if [ "$(echo "$RES_MS_ZIP_OK" | jq -r '.blocked')" != "false" ]; then echo "Fail: ms esfandyar zip blocked. Got: $RES_MS_ZIP_OK"; exit 1; fi
+if [ "$(echo "$RES_MS_ZIP_OK" | jq -r '.archive_level')" != "9" ]; then echo "Fail: ms archive level must be 9. Got: $RES_MS_ZIP_OK"; exit 1; fi
+echo "✅ MusicSet tests passed!"
 
 echo "Testing /test/health/deep"
 RES_HLT=$(curl -s -X POST "$BASE_URL/test/health/deep")
@@ -265,6 +346,62 @@ echo "✅ Referral leaderboard test passed!"
 echo "Testing /test/compress/submit"
 RES_FC=$(curl -s -X POST "$BASE_URL/test/compress/submit" -H "Content-Type: application/json" -d '{"user_id": 12345, "fmt": "7z", "level": 5, "algo": "lzma2"}')
 if [ "$(echo "$RES_FC" | jq -r '.ok')" != "true" ]; then echo "Fail: compress submit"; exit 1; fi
+
+echo "Testing /test/compress/ux (solid mode colors)"
+RES_FCU=$(curl -s -X POST "$BASE_URL/test/compress/ux" -H "Content-Type: application/json" -d '{"fmt": "7z", "level": 5, "solid": false}')
+if [ "$(echo "$RES_FCU" | jq -r '.ok')" != "true" ]; then echo "Fail: compress ux"; exit 1; fi
+if [ "$(echo "$RES_FCU" | jq -r '.solid_button_color')" != "success" ]; then
+    echo "Fail: whole-folder solid button must be green. Got: $(echo "$RES_FCU" | jq -r '.solid_button_color')"; exit 1
+fi
+if [ "$(echo "$RES_FCU" | jq -r '.max_level_toast')" != "null" ]; then echo "Fail: toast leaked below max level"; exit 1; fi
+if [ -z "$(echo "$RES_FCU" | jq -r '.progress_keyboard[0][0].callback_data')" ]; then echo "Fail: progress cancel button missing"; exit 1; fi
+if [ "$(echo "$RES_FCU" | jq -r '.progress_keyboard[0][0].callback_data')" != "fc:jobcancel" ]; then echo "Fail: progress cancel callback"; exit 1; fi
+if [ "$(echo "$RES_FCU" | jq -r '.ask_password_keyboard[0][0].callback_data')" != "fc:cancel" ]; then echo "Fail: ask-password cancel button missing"; exit 1; fi
+if [[ ! "$(echo "$RES_FCU" | jq -r '.progress_text')" == *"02:05"* ]]; then echo "Fail: progress elapsed not mm:ss"; exit 1; fi
+if [ -z "$(echo "$RES_FCU" | jq -r '.password_need_text')" ]; then echo "Fail: password_need_text missing"; exit 1; fi
+
+RES_FCS=$(curl -s -X POST "$BASE_URL/test/compress/ux" -H "Content-Type: application/json" -d '{"fmt": "7z", "solid": true}')
+if [ "$(echo "$RES_FCS" | jq -r '.solid_button_color')" != "primary" ]; then
+    echo "Fail: per-file solid button must be blue. Got: $(echo "$RES_FCS" | jq -r '.solid_button_color')"; exit 1
+fi
+
+# مسیر خطا/مرزی: زدن «+» روی سقف باید توست حداکثر فشرده‌سازی بدهد
+RES_FCM=$(curl -s -X POST "$BASE_URL/test/compress/ux" -H "Content-Type: application/json" -d '{"fmt": "rar", "level": 5, "bump_level": true}')
+if [ "$(echo "$RES_FCM" | jq -r '.max_level')" != "5" ]; then echo "Fail: rar max level should be 5"; exit 1; fi
+if [ "$(echo "$RES_FCM" | jq -r '.level')" != "5" ]; then echo "Fail: level must clamp at max"; exit 1; fi
+TOAST=$(echo "$RES_FCM" | jq -r '.max_level_toast')
+if [ "$TOAST" == "null" ] || [[ ! "$TOAST" == *"rar"* ]] || [[ ! "$TOAST" == *"5"* ]]; then
+    echo "Fail: max level toast wrong. Got: $TOAST"; exit 1
+fi
+echo "✅ File compress UX test passed!"
+
+# ZSTD: سقف درجه ۱۹، و دکمه‌های رمز/پارت/solid باید از کیبورد حذف باشند —
+# نمایش دکمهٔ رمز برای zstd یعنی کاربر رمز می‌دهد و آرشیو بی‌رمز می‌گیرد.
+echo "Testing /test/compress/ux (zstd capabilities)"
+RES_FCZ=$(curl -s -X POST "$BASE_URL/test/compress/ux" -H "Content-Type: application/json" -d '{"fmt": "zstd", "level": 19, "bump_level": true}')
+if [ "$(echo "$RES_FCZ" | jq -r '.ok')" != "true" ]; then echo "Fail: compress ux zstd"; exit 1; fi
+if [ "$(echo "$RES_FCZ" | jq -r '.fmt')" != "zstd" ]; then echo "Fail: zstd fmt not parsed"; exit 1; fi
+if [ "$(echo "$RES_FCZ" | jq -r '.max_level')" != "19" ]; then echo "Fail: zstd max level should be 19"; exit 1; fi
+if [ "$(echo "$RES_FCZ" | jq -r '.level')" != "19" ]; then echo "Fail: zstd level must clamp at 19"; exit 1; fi
+for FLD in has_password_button has_split_button has_solid_button; do
+    if [ "$(echo "$RES_FCZ" | jq -r ".$FLD")" != "false" ]; then
+        echo "Fail: zstd must not expose $FLD"; exit 1
+    fi
+done
+if [ -z "$(echo "$RES_FCZ" | jq -r '.welcome_text')" ] || [[ ! "$(echo "$RES_FCZ" | jq -r '.welcome_text')" == *"ZSTD"* ]]; then
+    echo "Fail: zstd welcome text missing"; exit 1
+fi
+ZTOAST=$(echo "$RES_FCZ" | jq -r '.max_level_toast')
+if [ "$ZTOAST" == "null" ] || [[ ! "$ZTOAST" == *"zstd"* ]] || [[ ! "$ZTOAST" == *"19"* ]]; then
+    echo "Fail: zstd max level toast wrong. Got: $ZTOAST"; exit 1
+fi
+# و ۷z همان دکمه‌ها را باید داشته باشد (تا گیت قابلیت‌ها بقیه را خراب نکرده باشد)
+for FLD in has_password_button has_split_button has_solid_button; do
+    if [ "$(echo "$RES_FCU" | jq -r ".$FLD")" != "true" ]; then
+        echo "Fail: 7z lost $FLD"; exit 1
+    fi
+done
+echo "✅ File compress ZSTD test passed!"
 
 echo ""
 echo "=== Running Redeem Tests (real handler, dev DB) ==="

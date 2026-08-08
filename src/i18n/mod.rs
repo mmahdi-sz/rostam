@@ -9,6 +9,12 @@ pub use lookup::RESOLVED_I18N_KEYS;
 pub use lookup::{LANG, reload as reload_i18n, t, tf};
 pub use premium_md::{apply_premium_to_html, apply_premium_to_md};
 
+/// Get current thread-local language code (defaults to "fa").
+pub fn current_lang() -> String {
+    LANG.try_with(|l| l.clone())
+        .unwrap_or_else(|_| "fa".to_owned())
+}
+
 /// Escape all MarkdownV2 special characters. Apply to every dynamic value in MarkdownV2 messages.
 pub fn md_escape(s: &str) -> String {
     const SPECIAL: &[char] = &[

@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
@@ -17,6 +19,16 @@ use crate::log::next_trace_id;
 use crate::rank;
 use crate::rank::quota::{QuotaKind, refund_usage, reserve_usage};
 use crate::stats;
+
+/// پرچم لغو هر کاربر تا دکمهٔ «انصراف» روی پیام وضعیت کاری کند.
+static ACTIVE_DEOLDIFY_JOBS: LazyLock<Mutex<std::collections::HashMap<i64, Arc<AtomicBool>>>> =
+    LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+fn remove_active_deoldify_job(user_id: i64) {
+    if let Ok(mut jobs) = ACTIVE_DEOLDIFY_JOBS.lock() {
+        jobs.remove(&user_id);
+    }
+}
 
 pub fn deoldify_cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
@@ -164,6 +176,9 @@ pub async fn handle_deoldify_image(
                 .chat_id(chat_id)
                 .text(&formatted_prep)
                 .parse_mode(ParseMode::MarkdownV2)
+                .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(
+                    deoldify_cancel_keyboard(),
+                ))
                 .build(),
         )
         .await
@@ -175,7 +190,39 @@ pub async fn handle_deoldify_image(
             return;
         }
     };
-    let _ = status_msg;
+
+    // پرچم لغو + تیکر زمان سپری‌شده روی همان پیام وضعیت.
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    if let Ok(mut jobs) = ACTIVE_DEOLDIFY_JOBS.lock() {
+        jobs.insert(user_id, cancel_flag.clone());
+    }
+    let timer_running = Arc::new(AtomicBool::new(true));
+    let timer_flag = timer_running.clone();
+    let timer_cancel = cancel_flag.clone();
+    let api_timer = api.clone();
+    let status_msg_id = status_msg.message_id;
+    let timer_handle = crate::app::spawn_user_task(async move {
+        let started = std::time::Instant::now();
+        while timer_flag.load(Ordering::Relaxed) && !timer_cancel.load(Ordering::Relaxed) {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            if !timer_flag.load(Ordering::Relaxed) || timer_cancel.load(Ordering::Relaxed) {
+                break;
+            }
+            let secs = started.elapsed().as_secs();
+            let text = tf(
+                "deoldify.preparing",
+                &[("elapsed", &format!("{:02}:{:02}", secs / 60, secs % 60))],
+            );
+            let params = EditMessageTextParams::builder()
+                .chat_id(chat_id)
+                .message_id(status_msg_id)
+                .text(&apply_premium_to_md(&text))
+                .parse_mode(ParseMode::MarkdownV2)
+                .reply_markup(deoldify_cancel_keyboard())
+                .build();
+            let _ = api_timer.edit_message_text(&params).await;
+        }
+    });
 
     let work_dir = format!("downloads/deoldify_{user_id}_{trace_id}");
     let _ = std::fs::create_dir_all(&work_dir);
@@ -183,8 +230,17 @@ pub async fn handle_deoldify_image(
     let input_path = PathBuf::from(format!("{work_dir}/input.jpg"));
     let output_path = PathBuf::from(format!("{work_dir}/output.jpg"));
 
+    // توقف تیکر + آزادکردن پرچم لغو در هر مسیر خروج.
+    macro_rules! stop_timer {
+        () => {{
+            timer_running.store(false, Ordering::Relaxed);
+            remove_active_deoldify_job(user_id);
+        }};
+    }
+
     // Download photo from Telegram
     if let Err(e) = crate::bot::files::download_telegram_file(api, &file_id, &input_path).await {
+        stop_timer!();
         log_ev!("deoldify", trace_id, "download_failed", "err" => format!("{e:?}"));
         let _ = api
             .delete_message(
@@ -211,6 +267,16 @@ pub async fn handle_deoldify_image(
 
     // Run DeOldify Colorizer
     let process_res = run_deoldify_colorize(&input_path, &output_path, 24, user_id, trace_id).await;
+    stop_timer!();
+    let _ = timer_handle.await;
+
+    // کاربر وسط کار «انصراف» زده: نتیجه دور ریخته می‌شود و سهمیه برمی‌گردد.
+    if cancel_flag.load(Ordering::Relaxed) {
+        log_ev!("deoldify", trace_id, "cancelled_mid_job", "user_id" => user_id);
+        let _ = std::fs::remove_dir_all(&work_dir);
+        refund!("cancelled_mid_job");
+        return;
+    }
 
     match process_res {
         Ok(duration) => {
@@ -290,6 +356,22 @@ pub async fn handle_deoldify_image(
     }
 
     let _ = std::fs::remove_dir_all(&work_dir);
+
+    // فلو دوباره مسلح می‌شود تا کاربر بی‌درنگ عکس بعدی را بفرستد.
+    flow_manager.set(user_id, FlowState::AwaitingDeoldifyImage);
+    let prompt = apply_premium_to_md(&t("deoldify.prompt"));
+    let _ = api
+        .send_message(
+            &SendMessageParams::builder()
+                .chat_id(chat_id)
+                .text(&prompt)
+                .parse_mode(ParseMode::MarkdownV2)
+                .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(
+                    deoldify_cancel_keyboard(),
+                ))
+                .build(),
+        )
+        .await;
 }
 
 pub async fn handle_deoldify_cancel(
@@ -301,6 +383,13 @@ pub async fn handle_deoldify_cancel(
 ) {
     let trace_id = next_trace_id();
     log_ev!("deoldify", trace_id, "cancelled", "user_id" => user_id);
+
+    // کار در جریان هم لغو می‌شود، نه فقط فلو.
+    if let Ok(mut jobs) = ACTIVE_DEOLDIFY_JOBS.lock() {
+        if let Some(flag) = jobs.remove(&user_id) {
+            flag.store(true, Ordering::Relaxed);
+        }
+    }
 
     flow_manager.set(user_id, FlowState::Idle);
 

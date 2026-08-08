@@ -36,3 +36,6 @@ pub const CB_LANG_SET: &str = "lang:set:";
 pub const CB_TOOLS_FILECOMPRESS: &str = "tools:fc";
 #[allow(dead_code)]
 pub const CB_FC_CANCEL: &str = "fc:cancel";
+pub const CB_SP_CANCEL: &str = "sp:cancel";
+pub const CB_SC_CANCEL: &str = "sc:cancel";
+pub const CB_SEP_DIRECT: &str = "sep:direct";

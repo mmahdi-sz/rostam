@@ -3,6 +3,7 @@ pub enum CompressFmt {
     Zip,
     SevenZ,
     Rar,
+    Zstd,
 }
 
 impl CompressFmt {
@@ -11,6 +12,7 @@ impl CompressFmt {
             "zip" => Some(Self::Zip),
             "7z" => Some(Self::SevenZ),
             "rar" => Some(Self::Rar),
+            "zstd" => Some(Self::Zstd),
             _ => None,
         }
     }
@@ -20,6 +22,7 @@ impl CompressFmt {
             Self::Zip => "zip",
             Self::SevenZ => "7z",
             Self::Rar => "rar",
+            Self::Zstd => "zstd",
         }
     }
 
@@ -29,6 +32,7 @@ impl CompressFmt {
             Self::Zip => "ZIP",
             Self::SevenZ => "7Z",
             Self::Rar => "RAR",
+            Self::Zstd => "ZSTD",
         }
     }
 
@@ -38,7 +42,33 @@ impl CompressFmt {
             Self::Zip => ".zip",
             Self::SevenZ => ".7z",
             Self::Rar => ".rar",
+            Self::Zstd => ".tar.zst",
         }
+    }
+
+    /// سقف درجهٔ فشرده‌سازی هر فرمت. RAR تا ۵، zstd تا ۱۹ (بدون `--ultra`).
+    pub fn max_level(&self) -> u8 {
+        match self {
+            Self::Rar => 5,
+            Self::Zstd => 19,
+            _ => 9,
+        }
+    }
+
+    /// zstd رمزگذاری ندارد. دکمه‌اش باید پنهان بماند، وگرنه کاربر رمز می‌دهد و
+    /// آرشیو بی‌رمز می‌گیرد.
+    pub fn supports_password(&self) -> bool {
+        !matches!(self, Self::Zstd)
+    }
+
+    /// tar.zst همیشه یک استریم پیوسته است، پس solid انتخابی نیست.
+    pub fn supports_solid(&self) -> bool {
+        matches!(self, Self::SevenZ | Self::Rar)
+    }
+
+    /// zstd معادل `-v` ندارد؛ تقسیم به پارت فقط با 7z/zip/rar.
+    pub fn supports_split(&self) -> bool {
+        !matches!(self, Self::Zstd)
     }
 }
 
@@ -112,8 +142,23 @@ mod tests {
         assert_eq!(CompressFmt::from_str("zip"), Some(CompressFmt::Zip));
         assert_eq!(CompressFmt::from_str("7z"), Some(CompressFmt::SevenZ));
         assert_eq!(CompressFmt::from_str("rar"), Some(CompressFmt::Rar));
+        assert_eq!(CompressFmt::from_str("zstd"), Some(CompressFmt::Zstd));
         assert_eq!(CompressFmt::from_str("invalid"), None);
         assert_eq!(CompressFmt::SevenZ.as_str(), "7z");
+    }
+
+    #[test]
+    fn test_fmt_capabilities() {
+        // zstd: نه رمز، نه solid انتخابی، نه پارت — و سقف درجه ۱۹.
+        assert!(!CompressFmt::Zstd.supports_password());
+        assert!(!CompressFmt::Zstd.supports_solid());
+        assert!(!CompressFmt::Zstd.supports_split());
+        assert_eq!(CompressFmt::Zstd.max_level(), 19);
+        assert_eq!(CompressFmt::Rar.max_level(), 5);
+        assert_eq!(CompressFmt::SevenZ.max_level(), 9);
+        assert!(CompressFmt::SevenZ.supports_password());
+        assert!(CompressFmt::Zip.supports_split());
+        assert!(!CompressFmt::Zip.supports_solid());
     }
 
     #[test]

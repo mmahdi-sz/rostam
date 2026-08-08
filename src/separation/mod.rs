@@ -6,5 +6,6 @@ pub mod handle;
 mod types;
 
 pub use handle::{
-    CB_SEP_PREFIX, enter_separation, handle_separation_audio, handle_separation_callback,
+    CB_SEP_PREFIX, enter_separation, handle_direct_separation, handle_separation_audio,
+    handle_separation_callback,
 };

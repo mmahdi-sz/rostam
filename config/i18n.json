@@ -38,9 +38,9 @@
       "result_caption": "✅ **صدا با موفقیت ساخته شد\\!**",
       "process_failed": "پردازش هوش مصنوعی با خطا مواجه شد\\. دوباره تلاش کنید\\.",
       "voice_forbidden_error": "⚠️ *خطا در ارسال صدا*\n\nبه نظر می‌رسد در تنظیمات حریم خصوصی تلگرام خود، دریافت پیام‌های صوتی \\(Voice\\) را محدود کرده‌اید\\.\n\nلطفاً برای دریافت خروجی، به مسیر زیر بروید:\n⚙️ `Settings > Privacy and Security > Voice Messages`\nو ربات ما را در بخش *Exceptions \\(استثناها\\)* اضافه کنید، یا تنظیمات را روی *Everybody* قرار دهید\\.",
-      "quota_weekly_limit": "سقف هفتگی تبدیل متن به صدا \\\\({limit} دقیقه در هفته\\\\) پر شده\\\\. برای سهمیه بیشتر رتبه خود را ارتقا دهید\\\\."
+      "quota_weekly_limit": "سقف هفتگی تبدیل متن به صدا \\\\({limit} دقیقه در هفته\\\\) پر شده\\\\. برای سهمیه بیشتر رتبه خود را ارتقا دهید\\\\.",
+      "text_too_long": "⚠️ متن بیش از حد بلند است: {len} کاراکتر از حداکثر {max}\\. کوتاه‌ترش کنید و دوباره بفرستید\\."
     },
-
     "deoldify": {
       "prompt": "🎨 **بخش رنگ‌آمیزی هوشمند عکس‌های قدیمی**\n\nاین ابزار با شبکه عصبی عمیق، تصاویر سیاه و سفید یا تک‌رنگ قدیمی شما را با حفظ بافت و روشنایی اصلی به عکس‌های رنگی طبیعی تبدیل می‌کند\\.\n\n📥 **لطفاً عکس سیاه و سفید خود را ارسال کنید:**\n*\\(پشتیبانی از فرمت‌های JPG, PNG, WEBP و فایل تصویری\\)*",
       "preparing": "🎨 **تصویر دریافت شد\\. در حال رنگ‌آمیزی با هوش مصنوعی\\.\\.\\. ⏳**\n\n⏱️ **زمان سپری‌شده:** {elapsed}",
@@ -73,7 +73,8 @@
         "en_small": "انگلیسی (سریع)"
       },
       "denoise_label": "بهبود خودکار صدا قبل از رونویسی",
-      "ready_title": "مدل {model} — آماده است.\n\nفایل صوتی یا صدای خود را ارسال کنید.\nفرمتهای پشتیبانیشده: OGG, MP3, WAV, M4A",
+      "ready_title": "✅ مدل {model} آماده است\\.\n\n🎙 فایل صوتی یا صدای خود را ارسال کنید\\.\n📁 فرمت‌های پشتیبانی‌شده: OGG, MP3, WAV, M4A",
+      "ready_again": "✅ مدل {model} همچنان آماده است\\.\n\n🎙 ویس یا فایل صوتی بعدی را بفرستید\\.\n📁 فرمت‌های پشتیبانی‌شده: OGG, MP3, WAV, M4A",
       "cancel_button": "لغو عملیات",
       "preparing": "فایل دریافت شد. در حال آمادهسازی...",
       "stage_downloading": "📥 در حال دریافت فایل از تلگرام...",
@@ -88,7 +89,7 @@
       "denoise_on": "فعال",
       "denoise_off": "غیرفعال",
       "denoise_feature_name": "بهبود خودکار صدا",
-      "result_report": "مشخصات رونویسی:\n\nزبان: {lang}\nمدل: {model}\nبهبود خودکار صدا: {denoise}\nمدت صدا: {dur} ثانیه\nزمان پردازش: {total} ثانیه\nزمان نویزگیری: {denoise_time} ثانیه\n\nرونویسی {lang} ({model}) — انجام شد.\n\n{text}",
+      "result_report": "📋 مشخصات رونویسی:\n\n🌐 زبان: {lang}\n🔬 مدل: {model}\n🧹 بهبود خودکار صدا: {denoise}\n⏱ مدت صدا: {dur} ثانیه\n⚡ زمان پردازش: {total} ثانیه\n⏱ زمان نویزگیری: {denoise_time} ثانیه\n\n✅ رونویسی {lang} ({model}) — انجام شد.\n\n{text}",
       "lang_fa": "فارسی",
       "lang_en": "انگلیسی",
       "model_large": "دقیق",
@@ -655,6 +656,8 @@
       "select_mode": "حالت جداسازی رو انتخاب کن:",
       "processing": "⏳ در حال جداسازی صدا...",
       "processing_queued": "⏳ در حال پردازش درخواست شما...",
+      "progress": "⏳ در حال جداسازی صدا...\n\n⏱ زمان سپری‌شده: {elapsed}\n⌛ زمان تقریبی باقی‌مانده: {remaining}",
+      "done_report": "✅ جداسازی کامل شد.\n\n🎵 مدت آهنگ: {duration}\n⏱ زمان کل عملیات: {total}",
       "extracting_audio": "⏳ در حال استخراج صدا از ویدیو...",
       "compressing_audio": "⏳ در حال فشرده‌سازی صدا ({attempt} از {max})...",
       "result": {
@@ -891,8 +894,10 @@
       "surge_button": "دانلود لینک مستقیم"
     },
     "fc": {
-      "welcome": "📁 *به فشرده‌سازی خوش آمدید*\n\nدر این قسمت میتوانید فایل های خود را فشرده سازی بکنید\nفرمت‌های پشتیبانی‌شده:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n\n*فرمت خروجی رو انتخاب کن👇:*",
-      "welcome_7z": "📁 *به فشرده‌سازی خوش آمدید*\n\nدر این قسمت میتوانید فایل های خود را فشرده سازی بکنید\nفرمت‌های پشتیبانی‌شده:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n\n\n  • 🚀 *LZMA2 \\(پیش‌فرض\\):*\n  بهترین کاهش حجم برای انواع فایل‌ها \\(عکس، ویدیو، نرم‌افزار و فایل‌های ترکیبی\\)\\.\n  • 📝 *PPMd:*\n  حداکثر فشرده‌سازی برای متن و کد \\(بهترین گزینه برای سورس‌کد، فایل‌های متنی، لاگ، JSON و اسناد\\)\\.\n  • ⚡️ *BZip2:*\n  سازگاری بالا با سیستم‌های قدیمی و سرعت باز شدن خوب \\(مناسب فایل‌های متنی معمولی و آرشیوهای قدیمی\\)\\.\n\n*فرمت خروجی رو انتخاب کن👇:*",
+      "welcome": "📁 *به فشرده‌سازی خوش آمدید*\n\nدر این قسمت میتوانید فایل های خود را فشرده سازی بکنید\nفرمت‌های پشتیبانی‌شده:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n*فرمت خروجی رو انتخاب کن👇:*",
+      "welcome_7z": "📁 *به فشرده‌سازی خوش آمدید*\n\nدر این قسمت میتوانید فایل های خود را فشرده سازی بکنید\nفرمت‌های پشتیبانی‌شده:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n\n  • 🚀 *LZMA2 \\(پیش‌فرض\\):*\n  بهترین کاهش حجم برای انواع فایل‌ها \\(عکس، ویدیو، نرم‌افزار و فایل‌های ترکیبی\\)\\.\n  • 📝 *PPMd:*\n  حداکثر فشرده‌سازی برای متن و کد \\(بهترین گزینه برای سورس‌کد، فایل‌های متنی، لاگ، JSON و اسناد\\)\\.\n  • ⚡️ *BZip2:*\n  سازگاری بالا با سیستم‌های قدیمی و سرعت باز شدن خوب \\(مناسب فایل‌های متنی معمولی و آرشیوهای قدیمی\\)\\.\n\n*فرمت خروجی رو انتخاب کن👇:*",
+      "welcome_zstd": "📁 *به فشرده‌سازی خوش آمدید*\n\nدر این قسمت میتوانید فایل های خود را فشرده سازی بکنید\nفرمت‌های پشتیبانی‌شده:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n\n  • ⚡️ *ZSTD \\(tar\\.zst\\):*\n  سریع‌ترین فشرده‌سازی با نسبت حجم خوب؛ درجه ۱ تا ۱۹\\.\n  همهٔ فایل‌ها در یک استریم پیوسته فشرده می‌شوند، پس برای مجموعهٔ فایل‌های شبیه هم بهترین کاهش حجم را می‌دهد\\.\n  • ⚠️ *zstd رمزگذاری و تقسیم به پارت ندارد\\.* برای رمز یا آرشیو چندتکه از 7Z یا RAR استفاده کن\\.\n\n*فرمت خروجی رو انتخاب کن👇:*",
+      "fmt_button_zstd": "ZSTD",
       "fmt_button_zip": "ZIP",
       "fmt_button_7z": "7Z",
       "fmt_button_rar": "RAR",
@@ -933,7 +938,9 @@
         "timeout": "عملیات بیش از حد طول کشید و متوقف شد.",
         "obfuscate_needs_password": "⚠️ مبهم‌سازی داخل فایل فقط زمانی که رمزگذاری فعال باشد کار می‌کند. ابتدا رمزگذاری را روشن کنید.",
         "send_failed": "خطا در ارسال فایل خروجی."
-      }
+      },
+      "max_level_notice": "حداکثر فشرده سازی فرمت {fmt} مقدار {max} است",
+      "password_need_text": "⚠️ لطفا متن بفرست \\(رمز فایل\\)\\."
     },
     "pdfcompress": {
       "mode_prompt": "چطوری می‌خوای PDF‌ت رو کوچیک کنیم؟",
@@ -1075,6 +1082,56 @@
       "rubika": "روبیکا",
       "eitaa": "ایتا",
       "playstore": "گوگل پلی"
+    },
+    "spotify": {
+      "starting": "🟢 *لینک اسپاتیفای دریافت شد\\.*\nدر حال آغاز پردازش\\.\\.\\.",
+      "fetching_metadata": "🔍 *در حال دریافت اطلاعات موزیک از اسپاتیفای\\.\\.\\.*",
+      "searching_youtube": "🎵 *در حال جستجوی فایل صوتی در یوتیوب\\.\\.\\.*\n\n📌 *عنوان:* {title}\n👤 *خواننده:* {artist}",
+      "downloading": "📥 *در حال دانلود و پردازش صوتی \\(320kbps\\)\\.\\.\\.*\n\n📌 *عنوان:* {title}\n👤 *خواننده:* {artist}",
+      "tagging": "🎨 *در حال ساخت کاور و تنظیم اطلاعات ID3\\.\\.\\.*",
+      "uploading": "📤 *در حال ارسال موزیک به تلگرام\\.\\.\\.*",
+      "done_caption": "🎵 *{title}*\n👤 *خواننده:* {artist}\n💿 *آلبوم:* {album}\n📅 *تاریخ انتشار:* {date}",
+      "cancelled": "❌ *عملیات دانلود اسپاتیفای لغو شد\\.*",
+      "track_not_found": "⚠️ *موزیک مورد نظر در اسپاتیفای یافت نشد یا لینک نامعتبر است\\.*",
+      "no_yt_match": "⚠️ *فایل صوتی منطبق برای این موزیک یافت نشد\\.*",
+      "download_failed": "⚠️ *خطا در دانلود یا پردازش موزیک اسپاتیفای\\.*",
+      "cancel_button": "❌ انصراف",
+      "sep_button": "✂️ جداسازی موزیک و خواننده",
+      "only_single_tracks": "⚠️ در حال حاضر فقط دانلود تک‌تراک \\(Single Track\\) اسپاتیفای پشتیبانی می‌شود\\. لطفاً لینک یک آهنگ مشخص را ارسال کنید\\."
+    },
+    "soundcloud": {
+      "starting": "📥 *در حال دریافت اطلاعات موزیک ساوندکلاد\\.\\.\\.*",
+      "downloading": "📥 *در حال دانلود و پردازش صوتی \\(320kbps\\)\\.\\.\\.*\n\n📌 *عنوان:* {title}\n👤 *خواننده:* {artist}",
+      "tagging": "🎨 *در حال ساخت کاور و تنظیم اطلاعات ID3\\.\\.\\.*",
+      "uploading": "📤 *در حال ارسال موزیک به تلگرام\\.\\.\\.*",
+      "done_caption": "🎵 *{title}*\n👤 *خواننده:* {artist}\n📅 *تاریخ انتشار:* {date}",
+      "cancelled": "❌ *عملیات دانلود ساوندکلاد لغو شد\\.*",
+      "track_not_found": "⚠️ *موزیک مورد نظر در ساوندکلاد یافت نشد یا لینک نامعتبر است\\.*",
+      "drm_protected": "⚠️ *این ترک در ساوندکلاد DRM دارد و قابل دانلود نیست\\.*",
+      "download_failed": "⚠️ *خطا در دانلود یا پردازش موزیک ساوندکلاد\\.*",
+      "cancel_button": "❌ انصراف",
+      "only_single_tracks": "⚠️ در حال حاضر فقط دانلود تک‌تراک \\(Single Track\\) ساوندکلاد پشتیبانی می‌شود\\. لطفاً لینک یک آهنگ مشخص را ارسال کنید\\."
+    },
+    "musicset": {
+      "feature_name": "دانلود آلبوم و پلی‌لیست",
+      "zip_limit": "فایل فشردهٔ آلبوم و پلی‌لیست",
+      "fetching_list": "📃 *در حال دریافت فهرست ترک‌ها\\.\\.\\.*",
+      "list_failed": "⚠️ *دریافت فهرست ترک‌ها ناموفق بود یا لینک نامعتبر است\\.*",
+      "list_private": "🔒 *این پلی‌لیست خصوصی است یا حذف شده\\.*\n\nاسپاتیفای فهرست ترک‌های پلی‌لیست خصوصی را به بیرون نمی‌دهد \\(لینک `?pt=` هم فقط داخل اپ خودش کار می‌کند\\)\\.\n\n*چطور عمومی‌اش کنیم؟* این کار را باید *صاحب پلی‌لیست* انجام دهد:\n1\\. اپ اسپاتیفای، پلی‌لیست را باز کن\n2\\. منوی سه‌نقطه \\(⋯\\) را بزن\n3\\. گزینهٔ *Make public* یا *عمومی کردن* را بزن\n4\\. دوباره *Share* بزن و *Copy link* بگیر\n\nبعد همان لینک را برای من بفرست\\. 🎵",
+      "ask_mode": "🎼 *{title}*\n🎵 *تعداد ترک:* {count}\n\n*میخوای به چه صورت اپلودش کنم برات؟؟؟*",
+      "capped_notice": "⚠️ *با رنک فعلی فقط {shown} ترک از {total} ترک دانلود می‌شود\\.*",
+      "btn_one": "تکی تکی",
+      "btn_zip": "فایل فشرده",
+      "btn_cancel": "لغو",
+      "starting": "🚀 *شروع دانلود\\.\\.\\.*",
+      "progress": "🎼 *{title}*\n📥 *ترک {i} از {n}*\n🎵 *اسم ترک:* {name}\n⏱ *زمان سپری‌شده:* {elapsed}",
+      "track_caption": "🎵 *{title}*\n👤 *خواننده:* {artist}",
+      "zipping": "🗜 *در حال فشرده‌سازی با 7zip \\(درجهٔ ۹\\)\\.\\.\\.*",
+      "part_caption": "📦 *پارت {i} از {n}*",
+      "zip_failed": "⚠️ *ساخت آرشیو فشرده ناموفق بود\\.*",
+      "done": "✅ *{title}*\n🎵 *{n} ترک ارسال شد\\.* \\(ناموفق: {failed}\\)",
+      "cancelled": "❌ *دانلود آلبوم/پلی‌لیست لغو شد\\.*",
+      "expired": "⚠️ *این درخواست منقضی شده\\. لینک را دوباره بفرست\\.*"
     }
   },
   "en": {
@@ -1116,9 +1173,9 @@
       "result_caption": "✅ **Voice generated successfully\\!**",
       "process_failed": "AI processing failed\\. Please try again\\.",
       "voice_forbidden_error": "⚠️ *Voice Message Error*\n\nIt seems you have restricted receiving Voice messages in your Telegram Privacy Settings\\.\n\nPlease go to:\n⚙️ `Settings > Privacy and Security > Voice Messages`\nAnd add our bot to the *Exceptions* list, or set the setting to *Everybody* to receive output\\.",
-      "quota_weekly_limit": "Weekly text\\-to\\-speech quota \\\\({limit} minutes per week\\\\) exceeded\\\\. Upgrade your rank for more quota\\\\."
+      "quota_weekly_limit": "Weekly text\\-to\\-speech quota \\\\({limit} minutes per week\\\\) exceeded\\\\. Upgrade your rank for more quota\\\\.",
+      "text_too_long": "⚠️ Text is too long: {len} characters, the limit is {max}\\. Shorten it and send again\\."
     },
-
     "deoldify": {
       "prompt": "🎨 **Smart Image Colorizer**\n\nThis tool uses deep neural networks to convert your old black and white or monochrome photos into natural colored photos while preserving original luminosity\\.\n\n📥 **Please send your black and white photo:**\n*\\(Supports JPG, PNG, WEBP and image documents\\)*",
       "preparing": "🎨 **Image received\\. Colorizing with AI\\.\\.\\. ⏳**\n\n⏱️ **Elapsed time:** {elapsed}",
@@ -1151,7 +1208,8 @@
         "en_small": "English (fast)"
       },
       "denoise_label": "Auto noise reduction before transcription",
-      "ready_title": "Model {model} — ready.\n\nSend your audio file or voice message.\nSupported formats: OGG, MP3, WAV, M4A",
+      "ready_title": "✅ {model} model is ready\\.\n\n🎙 Send your audio file or voice message\\.\n📁 Supported formats: OGG, MP3, WAV, M4A",
+      "ready_again": "✅ {model} model is still ready\\.\n\n🎙 Send the next voice or audio file\\.\n📁 Supported formats: OGG, MP3, WAV, M4A",
       "cancel_button": "Cancel",
       "preparing": "File received. Preparing...",
       "stage_downloading": "📥 Downloading file from Telegram...",
@@ -1166,7 +1224,7 @@
       "denoise_on": "On",
       "denoise_off": "Off",
       "denoise_feature_name": "Auto noise reduction",
-      "result_report": "Transcription details:\n\nLanguage: {lang}\nModel: {model}\nAuto noise reduction: {denoise}\nAudio duration: {dur}s\nProcessing time: {total}s\nDenoising time: {denoise_time}s\n\nTranscription {lang} ({model}) — done.\n\n{text}",
+      "result_report": "📋 Transcription details:\n\n🌐 Language: {lang}\n🔬 Model: {model}\n🧹 Auto noise reduction: {denoise}\n⏱ Audio duration: {dur}s\n⚡ Processing time: {total}s\n⏱ Denoising time: {denoise_time}s\n\n✅ Transcription {lang} ({model}) — done.\n\n{text}",
       "lang_fa": "Persian",
       "lang_en": "English",
       "model_large": "Accurate",
@@ -1733,6 +1791,8 @@
       "select_mode": "Select separation mode:",
       "processing": "⏳ Separating vocals...",
       "processing_queued": "⏳ Processing your request...",
+      "progress": "⏳ Separating vocals...\n\n⏱ Elapsed: {elapsed}\n⌛ Estimated remaining: {remaining}",
+      "done_report": "✅ Separation complete.\n\n🎵 Track length: {duration}\n⏱ Total time: {total}",
       "extracting_audio": "⏳ Extracting audio from video...",
       "compressing_audio": "⏳ Compressing audio ({attempt} of {max})...",
       "result": {
@@ -1995,8 +2055,10 @@
       "surge_button": "Direct Link Download"
     },
     "fc": {
-      "welcome": "📁 *Welcome to File Compression*\n\nCompress your files here\\.\nSupported formats:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n\n*Select output format👇:*",
-      "welcome_7z": "📁 *Welcome to File Compression*\n\nCompress your files here\\.\nSupported formats:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n\n\n  • 🚀 *LZMA2 \\(Default\\):*\n  Best overall size reduction for all file types\\.\n  • 📝 *PPMd:*\n  Maximum compression for text, code, logs, and documents\\.\n  • ⚡️ *BZip2:*\n  High compatibility for legacy systems\\.\n\n*Select output format👇:*",
+      "welcome": "📁 *Welcome to File Compression*\n\nCompress your files here\\.\nSupported formats:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n*Select output format👇:*",
+      "welcome_7z": "📁 *Welcome to File Compression*\n\nCompress your files here\\.\nSupported formats:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n\n  • 🚀 *LZMA2 \\(Default\\):*\n  Best overall size reduction for all file types\\.\n  • 📝 *PPMd:*\n  Maximum compression for text, code, logs, and documents\\.\n  • ⚡️ *BZip2:*\n  High compatibility for legacy systems\\.\n\n*Select output format👇:*",
+      "welcome_zstd": "📁 *Welcome to File Compression*\n\nCompress your files here\\.\nSupported formats:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n\n  • ⚡️ *ZSTD \\(tar\\.zst\\):*\n  Fastest compression with a strong ratio; levels 1 to 19\\.\n  Everything is packed into one continuous stream, so similar files compress best\\.\n  • ⚠️ *zstd has no password and no multi\\-part split\\.* Use 7Z or RAR for those\\.\n\n*Select output format👇:*",
+      "fmt_button_zstd": "ZSTD",
       "fmt_button_zip": "ZIP",
       "fmt_button_7z": "7Z",
       "fmt_button_rar": "RAR",
@@ -2037,7 +2099,9 @@
         "timeout": "Operation timed out.",
         "obfuscate_needs_password": "⚠️ Header encryption requires password protection. Enable password first.",
         "send_failed": "Sending output file failed."
-      }
+      },
+      "max_level_notice": "Max compression for {fmt} is {max}",
+      "password_need_text": "⚠️ Please send text \\(the archive password\\)\\."
     },
     "pdfcompress": {
       "mode_prompt": "How would you like to shrink your PDF?",
@@ -2179,6 +2243,56 @@
       "rubika": "Rubika",
       "eitaa": "Eitaa",
       "playstore": "Google Play"
+    },
+    "spotify": {
+      "starting": "🟢 *Spotify link detected\\.*\nStarting download job\\.\\.\\.",
+      "fetching_metadata": "🔍 *Fetching track metadata from Spotify\\.\\.\\.*",
+      "searching_youtube": "🎵 *Searching for matching audio on YouTube\\.\\.\\.*\n\n📌 *Title:* {title}\n👤 *Artist:* {artist}",
+      "downloading": "📥 *Downloading & processing audio \\(320kbps\\)\\.\\.\\.*\n\n📌 *Title:* {title}\n👤 *Artist:* {artist}",
+      "tagging": "🎨 *Embedding ID3 tags and cover art\\.\\.\\.*",
+      "uploading": "📤 *Uploading audio track to Telegram\\.\\.\\.*",
+      "done_caption": "🎵 *{title}*\n👤 *Artist:* {artist}\n💿 *Album:* {album}\n📅 *Release Date:* {date}",
+      "cancelled": "❌ *Spotify download job was cancelled\\.*",
+      "track_not_found": "⚠️ *Track not found on Spotify or invalid link\\.*",
+      "no_yt_match": "⚠️ *No matching audio found for this track\\.*",
+      "download_failed": "⚠️ *Failed to download or process Spotify track\\.*",
+      "cancel_button": "❌ Cancel",
+      "sep_button": "✂️ Vocal & Music Separation",
+      "only_single_tracks": "⚠️ Currently only Spotify single tracks are supported\\. Please send a direct link to a single track\\."
+    },
+    "soundcloud": {
+      "starting": "📥 *Fetching SoundCloud track metadata\\.\\.\\.*",
+      "downloading": "📥 *Downloading & processing audio \\(320kbps\\)\\.\\.\\.*\n\n📌 *Title:* {title}\n👤 *Artist:* {artist}",
+      "tagging": "🎨 *Embedding ID3 tags and cover art\\.\\.\\.*",
+      "uploading": "📤 *Uploading audio track to Telegram\\.\\.\\.*",
+      "done_caption": "🎵 *{title}*\n👤 *Artist:* {artist}\n📅 *Release Date:* {date}",
+      "cancelled": "❌ *SoundCloud download job was cancelled\\.*",
+      "track_not_found": "⚠️ *Track not found on SoundCloud or invalid link\\.*",
+      "drm_protected": "⚠️ *This SoundCloud track is DRM protected and cannot be downloaded\\.*",
+      "download_failed": "⚠️ *Failed to download or process SoundCloud track\\.*",
+      "cancel_button": "❌ Cancel",
+      "only_single_tracks": "⚠️ Currently only SoundCloud single tracks are supported\\. Please send a direct link to a single track\\."
+    },
+    "musicset": {
+      "feature_name": "Album & playlist download",
+      "zip_limit": "Album/playlist archive",
+      "fetching_list": "📃 *Fetching track list\\.\\.\\.*",
+      "list_failed": "⚠️ *Could not fetch the track list, or the link is invalid\\.*",
+      "list_private": "🔒 *This playlist is private or deleted\\.*\n\nSpotify does not expose the track list of a private playlist \\(a `?pt=` link only works inside the Spotify app\\)\\.\n\n*How to make it public?* The *playlist owner* has to do it:\n1\\. Open the playlist in the Spotify app\n2\\. Tap the three\\-dot menu \\(⋯\\)\n3\\. Choose *Make public*\n4\\. Tap *Share*, then *Copy link*\n\nThen send me that link\\. 🎵",
+      "ask_mode": "🎼 *{title}*\n🎵 *Tracks:* {count}\n\n*How should I upload it for you?*",
+      "capped_notice": "⚠️ *Your rank allows only {shown} of {total} tracks\\.*",
+      "btn_one": "One by one",
+      "btn_zip": "Archive",
+      "btn_cancel": "Cancel",
+      "starting": "🚀 *Starting download\\.\\.\\.*",
+      "progress": "🎼 *{title}*\n📥 *Track {i} of {n}*\n🎵 *Track name:* {name}\n⏱ *Elapsed:* {elapsed}",
+      "track_caption": "🎵 *{title}*\n👤 *Artist:* {artist}",
+      "zipping": "🗜 *Compressing with 7zip \\(level 9\\)\\.\\.\\.*",
+      "part_caption": "📦 *Part {i} of {n}*",
+      "zip_failed": "⚠️ *Failed to build the archive\\.*",
+      "done": "✅ *{title}*\n🎵 *{n} tracks sent\\.* \\(failed: {failed}\\)",
+      "cancelled": "❌ *Album/playlist download was cancelled\\.*",
+      "expired": "⚠️ *This request expired\\. Send the link again\\.*"
     }
   },
   "it": {
@@ -2220,9 +2334,9 @@
       "result_caption": "✅ **Voce generata con successo\\!**",
       "process_failed": "Elaborazione AI fallita\\. Riprova\\.",
       "voice_forbidden_error": "⚠️ *Errore Messaggio Vocale*\n\nSembra che tu abbia limitato la ricezione di messaggi vocali nelle impostazioni della privacy di Telegram\\.\n\nVai su:\n⚙️ `Impostazioni > Privacy e sicurezza > Messaggi vocali`\nE aggiungi il nostro bot alla lista delle *Eccezioni*, oppure imposta su *Tutti* per ricevere l'output di\\.",
-      "quota_weekly_limit": "Quota settimanale sintesi vocale \\\\({limit} minuti a settimana\\\\) esaurita\\\\. Aumenta il tuo rango per più quota\\\\."
+      "quota_weekly_limit": "Quota settimanale sintesi vocale \\\\({limit} minuti a settimana\\\\) esaurita\\\\. Aumenta il tuo rango per più quota\\\\.",
+      "text_too_long": "⚠️ Il testo è troppo lungo: {len} caratteri, il limite è {max}\\. Accorcialo e riprova\\."
     },
-
     "deoldify": {
       "prompt": "🎨 **Colorizzazione Foto**\n\nQuesto strumento utilizza reti neurali profonde per convertire le tue vecchie foto in bianco e nero in foto a colori naturali preservando la luminosità originale\\.\n\n📥 **Invia la tua foto in bianco e nero:**\n*\\(Supporta JPG, PNG, WEBP e documenti immagine\\)*",
       "preparing": "🎨 **Immagine ricevuta\\. Colorizzazione in corso\\.\\.\\. ⏳**\n\n⏱️ **Tempo trascorso:** {elapsed}",
@@ -2255,7 +2369,8 @@
         "en_small": "Inglese (veloce)"
       },
       "denoise_label": "Riduzione automatica del rumore prima della trascrizione",
-      "ready_title": "Modello {model} — pronto.\n\nInvia il tuo file audio o messaggio vocale.\nFormati supportati: OGG, MP3, WAV, M4A",
+      "ready_title": "✅ Il modello {model} è pronto\\.\n\n🎙 Invia il tuo file audio o messaggio vocale\\.\n📁 Formati supportati: OGG, MP3, WAV, M4A",
+      "ready_again": "✅ Il modello {model} è ancora pronto\\.\n\n🎙 Invia il prossimo vocale o file audio\\.\n📁 Formati supportati: OGG, MP3, WAV, M4A",
       "cancel_button": "Annulla",
       "preparing": "File ricevuto. Preparazione in corso...",
       "stage_downloading": "📥 Download del file da Telegram...",
@@ -2270,7 +2385,7 @@
       "denoise_on": "Attivo",
       "denoise_off": "Disattivo",
       "denoise_feature_name": "Riduzione automatica del rumore",
-      "result_report": "Dettagli trascrizione:\n\nLingua: {lang}\nModello: {model}\nRiduzione rumore: {denoise}\nDurata audio: {dur}s\nTempo elaborazione: {total}s\nTempo denoise: {denoise_time}s\n\nTrascrizione {lang} ({model}) — completata.\n\n{text}",
+      "result_report": "📋 Dettagli trascrizione:\n\n🌐 Lingua: {lang}\n🔬 Modello: {model}\n🧹 Riduzione rumore: {denoise}\n⏱ Durata audio: {dur}s\n⚡ Tempo elaborazione: {total}s\n⏱ Tempo denoise: {denoise_time}s\n\n✅ Trascrizione {lang} ({model}) — completata.\n\n{text}",
       "lang_fa": "Persiano",
       "lang_en": "Inglese",
       "model_large": "Preciso",
@@ -2837,6 +2952,8 @@
       "select_mode": "Seleziona modalità di separazione:",
       "processing": "⏳ Separazione vocale in corso...",
       "processing_queued": "⏳ Elaborazione richiesta in corso...",
+      "progress": "⏳ Separazione vocale in corso...\n\n⏱ Tempo trascorso: {elapsed}\n⌛ Tempo rimanente stimato: {remaining}",
+      "done_report": "✅ Separazione completata.\n\n🎵 Durata del brano: {duration}\n⏱ Tempo totale: {total}",
       "extracting_audio": "⏳ Estrazione audio dal video...",
       "compressing_audio": "⏳ Compressione audio ({attempt} di {max})...",
       "result": {
@@ -3073,8 +3190,10 @@
       "surge_button": "Download da link diretto"
     },
     "fc": {
-      "welcome": "📁 *Benvenuto nella Compressione File*\n\nComprimi i tuoi file qui\\.\nFormati supportati:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n\n*Seleziona formato di uscita👇:*",
-      "welcome_7z": "📁 *Benvenuto nella Compressione File*\n\nComprimi i tuoi file qui\\.\nFormati supportati:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n\n\n  • 🚀 *LZMA2 \\(Predefinito\\):*\n  Migliore riduzione delle dimensioni per tutti i tipi di file\\.\n  • 📝 *PPMd:*\n  Compressione massima per testo, codice e documenti\\.\n  • ⚡️ *BZip2:*\n  Alta compatibilità per sistemi precedenti\\.\n\n*Seleziona formato di uscita👇:*",
+      "welcome": "📁 *Benvenuto nella Compressione File*\n\nComprimi i tuoi file qui\\.\nFormati supportati:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n*Seleziona formato di uscita👇:*",
+      "welcome_7z": "📁 *Benvenuto nella Compressione File*\n\nComprimi i tuoi file qui\\.\nFormati supportati:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n\n  • 🚀 *LZMA2 \\(Predefinito\\):*\n  Migliore riduzione delle dimensioni per tutti i tipi di file\\.\n  • 📝 *PPMd:*\n  Compressione massima per testo, codice e documenti\\.\n  • ⚡️ *BZip2:*\n  Alta compatibilità per sistemi precedenti\\.\n\n*Seleziona formato di uscita👇:*",
+      "welcome_zstd": "📁 *Benvenuto nella Compressione File*\n\nComprimi i tuoi file qui\\.\nFormati supportati:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n\n  • ⚡️ *ZSTD \\(tar\\.zst\\):*\n  Compressione più veloce con un buon rapporto; livelli da 1 a 19\\.\n  Tutto viene compresso in un unico flusso continuo, quindi i file simili si comprimono meglio\\.\n  • ⚠️ *zstd non supporta password né divisione in parti\\.* Per queste usa 7Z o RAR\\.\n\n*Seleziona formato di uscita👇:*",
+      "fmt_button_zstd": "ZSTD",
       "fmt_button_zip": "ZIP",
       "fmt_button_7z": "7Z",
       "fmt_button_rar": "RAR",
@@ -3115,7 +3234,9 @@
         "timeout": "Operazione scaduta.",
         "obfuscate_needs_password": "⚠️ L'offuscamento dell'header richiede la password. Abilita prima la password.",
         "send_failed": "Invio del file di output fallito."
-      }
+      },
+      "max_level_notice": "La compressione massima per {fmt} è {max}",
+      "password_need_text": "⚠️ Invia del testo \\(la password dell'archivio\\)\\."
     },
     "pdfcompress": {
       "mode_prompt": "Come vuoi ridurre il tuo PDF?",
@@ -3257,6 +3378,56 @@
       "rubika": "Rubika",
       "eitaa": "Eitaa",
       "playstore": "Google Play"
+    },
+    "spotify": {
+      "starting": "🟢 *Link Spotify rilevato\\.*\nAvvio del download\\.\\.\\.",
+      "fetching_metadata": "🔍 *Recupero dettagli da Spotify\\.\\.\\.*",
+      "searching_youtube": "🎵 *Ricerca audio su YouTube\\.\\.\\.*\n\n📌 *Titolo:* {title}\n👤 *Artista:* {artist}",
+      "downloading": "📥 *Download e elaborazione audio \\(320kbps\\)\\.\\.\\.*\n\n📌 *Titolo:* {title}\n👤 *Artista:* {artist}",
+      "tagging": "🎨 *Inserimento tag ID3 e copertina\\.\\.\\.*",
+      "uploading": "📤 *Invio traccia audio a Telegram\\.\\.\\.*",
+      "done_caption": "🎵 *{title}*\n👤 *Artista:* {artist}\n💿 *Album:* {album}\n📅 *Data di Uscita:* {date}",
+      "cancelled": "❌ *Download Spotify annullato\\.*",
+      "track_not_found": "⚠️ *Traccia non trovata su Spotify o link non valido\\.*",
+      "no_yt_match": "⚠️ *Nessun audio corrispondente trovato\\.*",
+      "download_failed": "⚠️ *Errore nel download o nella lavorazione del brano\\.*",
+      "cancel_button": "❌ Annulla",
+      "sep_button": "✂️ Separazione Vocale & Musica",
+      "only_single_tracks": "⚠️ Al momento sono supportate solo le singole tracce Spotify\\. Invia il link diretto a una singola traccia\\."
+    },
+    "soundcloud": {
+      "starting": "📥 *Download informazioni traccia SoundCloud\\.\\.\\.*",
+      "downloading": "📥 *Download e elaborazione audio \\(320kbps\\)\\.\\.\\.*\n\n📌 *Titolo:* {title}\n👤 *Artista:* {artist}",
+      "tagging": "🎨 *Inserimento tag ID3 e copertina\\.\\.\\.*",
+      "uploading": "📤 *Invio traccia audio a Telegram\\.\\.\\.*",
+      "done_caption": "🎵 *{title}*\n👤 *Artista:* {artist}\n📅 *Data di Uscita:* {date}",
+      "cancelled": "❌ *Download SoundCloud annullato\\.*",
+      "track_not_found": "⚠️ *Traccia non trovata su SoundCloud o link non valido\\.*",
+      "drm_protected": "⚠️ *Questa traccia SoundCloud è protetta da DRM e non può essere scaricata\\.*",
+      "download_failed": "⚠️ *Errore nel download o nella lavorazione del brano\\.*",
+      "cancel_button": "❌ Annulla",
+      "only_single_tracks": "⚠️ Al momento sono supportate solo le singole tracce SoundCloud\\. Invia il link diretto a una singola traccia\\."
+    },
+    "musicset": {
+      "feature_name": "Download album e playlist",
+      "zip_limit": "Archivio album/playlist",
+      "fetching_list": "📃 *Recupero elenco tracce\\.\\.\\.*",
+      "list_failed": "⚠️ *Impossibile recuperare l'elenco tracce o link non valido\\.*",
+      "list_private": "🔒 *Questa playlist è privata o eliminata\\.*\n\nSpotify non espone la lista dei brani di una playlist privata \\(un link `?pt=` funziona solo dentro l'app Spotify\\)\\.\n\n*Come renderla pubblica?* Deve farlo il *proprietario della playlist*:\n1\\. Apri la playlist nell'app Spotify\n2\\. Tocca il menu con tre punti \\(⋯\\)\n3\\. Scegli *Make public*\n4\\. Tocca *Share*, poi *Copy link*\n\nPoi inviami quel link\\. 🎵",
+      "ask_mode": "🎼 *{title}*\n🎵 *Tracce:* {count}\n\n*Come vuoi che te lo carichi?*",
+      "capped_notice": "⚠️ *Il tuo rango consente solo {shown} tracce su {total}\\.*",
+      "btn_one": "Una per una",
+      "btn_zip": "Archivio",
+      "btn_cancel": "Annulla",
+      "starting": "🚀 *Avvio download\\.\\.\\.*",
+      "progress": "🎼 *{title}*\n📥 *Traccia {i} di {n}*\n🎵 *Nome traccia:* {name}\n⏱ *Tempo:* {elapsed}",
+      "track_caption": "🎵 *{title}*\n👤 *Artista:* {artist}",
+      "zipping": "🗜 *Compressione con 7zip \\(livello 9\\)\\.\\.\\.*",
+      "part_caption": "📦 *Parte {i} di {n}*",
+      "zip_failed": "⚠️ *Creazione archivio non riuscita\\.*",
+      "done": "✅ *{title}*\n🎵 *{n} tracce inviate\\.* \\(non riuscite: {failed}\\)",
+      "cancelled": "❌ *Download album/playlist annullato\\.*",
+      "expired": "⚠️ *Richiesta scaduta\\. Invia di nuovo il link\\.*"
     }
   },
   "ru": {
@@ -3298,9 +3469,9 @@
       "result_caption": "✅ **Аудио успешно создано\\!**",
       "process_failed": "Ошибка ИИ\\-обработки\\. Попробуйте снова\\.",
       "voice_forbidden_error": "⚠️ *Ошибка отправки аудио*\n\nПохоже, в настройках конфиденциальности Telegram ограничено получение голосовых сообщений\\.\n\nПерейдите в:\n⚙️ `Настройки > Конфиденциальность > Голосовые сообщения`\nи добавьте бота в исключения.",
-      "quota_weekly_limit": "Недельный лимит синтеза речи \\\\({limit} минут в неделю\\\\) исчерпан\\\\. Повысьте ранг для увеличения лимита\\\\."
+      "quota_weekly_limit": "Недельный лимит синтеза речи \\\\({limit} минут в неделю\\\\) исчерпан\\\\. Повысьте ранг для увеличения лимита\\\\.",
+      "text_too_long": "⚠️ Текст слишком длинный: {len} символов, предел — {max}\\. Сократите и отправьте снова\\."
     },
-
     "deoldify": {
       "prompt": "🎨 **Раскрашивание черно-белых фото**\n\nПревращает черно-белые снимки в цветные с помощью глубокой нейросети\\.\n\n📥 **Отправьте черно-белое фото:**\n*\\(Поддерживаются JPG, PNG, WEBP\\)*",
       "preparing": "🎨 **Изображение получено\\. Раскрашивание с помощью ИИ\\.\\.\\. ⏳**\n\n⏱️ **Прошло времени:** {elapsed}",
@@ -3333,7 +3504,8 @@
         "en_small": "Английский (быстрый)"
       },
       "denoise_label": "Авто-улучшение звука перед распознаванием",
-      "ready_title": "Модель {model} — готова.\n\nОтправьте голосовое сообщение или аудиофайл.\nПоддерживаемые форматы: OGG, MP3, WAV, M4A",
+      "ready_title": "✅ Модель {model} готова\\.\n\n🎙 Отправьте голосовое сообщение или аудиофайл\\.\n📁 Поддерживаемые форматы: OGG, MP3, WAV, M4A",
+      "ready_again": "✅ Модель {model} по-прежнему готова\\.\n\n🎙 Отправьте следующее голосовое или аудиофайл\\.\n📁 Поддерживаемые форматы: OGG, MP3, WAV, M4A",
       "cancel_button": "Отмена операции",
       "preparing": "Файл получен. Подготовка...",
       "stage_downloading": "📥 Скачивание файла из Telegram...",
@@ -3348,7 +3520,7 @@
       "denoise_on": "Включено",
       "denoise_off": "Выключено",
       "denoise_feature_name": "Авто-улучшение аудио",
-      "result_report": "Детали распознавания:\n\nЯзык: {lang}\nМодель: {model}\nАвто-улучшение: {denoise}\nДлительность: {dur} сек\nОбщее время: {total} сек\nВремя шумоподавления: {denoise_time} сек\n\nРаспознавание {lang} ({model}) — завершено.\n\n{text}",
+      "result_report": "📋 Детали распознавания:\n\n🌐 Язык: {lang}\n🔬 Модель: {model}\n🧹 Авто-улучшение: {denoise}\n⏱ Длительность: {dur} сек\n⚡ Общее время: {total} сек\n⏱ Время шумоподавления: {denoise_time} сек\n\n✅ Распознавание {lang} ({model}) — завершено.\n\n{text}",
       "lang_fa": "Персидский",
       "lang_en": "Английский",
       "model_large": "Точный",
@@ -3915,6 +4087,8 @@
       "select_mode": "Select separation mode:",
       "processing": "⏳ Separating vocals...",
       "processing_queued": "⏳ Processing your request...",
+      "progress": "⏳ Разделение вокала...\n\n⏱ Прошло: {elapsed}\n⌛ Осталось примерно: {remaining}",
+      "done_report": "✅ Разделение завершено.\n\n🎵 Длительность трека: {duration}\n⏱ Общее время: {total}",
       "extracting_audio": "⏳ Extracting audio from video...",
       "compressing_audio": "⏳ Compressing audio ({attempt} of {max})...",
       "result": {
@@ -4151,8 +4325,10 @@
       "surge_button": "Прямая загрузка"
     },
     "fc": {
-      "welcome": "📁 *Добро пожаловать в сжатие файлов*\n\nСжимайте свои файлы здесь\\.\nПоддерживаемые форматы:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n\n*Выберите формат вывода👇:*",
-      "welcome_7z": "📁 *Добро пожаловать в сжатие файлов*\n\nСжимайте свои файлы здесь\\.\nПоддерживаемые форматы:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n\n\n  • 🚀 *LZMA2 \\(По умолчанию\\):*\n  Лучшее уменьшение размера для всех типов файлов\\.\n  • 📝 *PPMd:*\n  Максимальное сжатие для текста, кода и документов\\.\n  • ⚡️ *BZip2:*\n  Высокая совместимость для старых систем\\.\n\n*Выберите формат вывода👇:*",
+      "welcome": "📁 *Добро пожаловать в сжатие файлов*\n\nСжимайте свои файлы здесь\\.\nПоддерживаемые форматы:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n*Выберите формат вывода👇:*",
+      "welcome_7z": "📁 *Добро пожаловать в сжатие файлов*\n\nСжимайте свои файлы здесь\\.\nПоддерживаемые форматы:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n\n  • 🚀 *LZMA2 \\(По умолчанию\\):*\n  Лучшее уменьшение размера для всех типов файлов\\.\n  • 📝 *PPMd:*\n  Максимальное сжатие для текста, кода и документов\\.\n  • ⚡️ *BZip2:*\n  Высокая совместимость для старых систем\\.\n\n*Выберите формат вывода👇:*",
+      "welcome_zstd": "📁 *Добро пожаловать в сжатие файлов*\n\nСжимайте свои файлы здесь\\.\nПоддерживаемые форматы:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n\n  • ⚡️ *ZSTD \\(tar\\.zst\\):*\n  Самое быстрое сжатие с хорошим коэффициентом; уровни от 1 до 19\\.\n  Всё упаковывается в один непрерывный поток, поэтому похожие файлы сжимаются лучше всего\\.\n  • ⚠️ *zstd не поддерживает пароль и разбиение на части\\.* Для этого используйте 7Z или RAR\\.\n\n*Выберите формат вывода👇:*",
+      "fmt_button_zstd": "ZSTD",
       "fmt_button_zip": "📁 ZIP",
       "fmt_button_7z": "🗜 7Z",
       "fmt_button_rar": "📦 RAR",
@@ -4193,7 +4369,9 @@
         "timeout": "Время ожидания истекло.",
         "obfuscate_needs_password": "⚠️ Шифрование заголовка требует пароля. Сначала включите пароль.",
         "send_failed": "Ошибка отправки готового файла."
-      }
+      },
+      "max_level_notice": "Максимальное сжатие для {fmt} — {max}",
+      "password_need_text": "⚠️ Отправьте текст \\(пароль архива\\)\\."
     },
     "pdfcompress": {
       "mode_prompt": "How would you like to shrink your PDF?",
@@ -4335,6 +4513,56 @@
       "rubika": "Rubika",
       "eitaa": "Eitaa",
       "playstore": "Google Play"
+    },
+    "spotify": {
+      "starting": "🟢 *Ссылка Spotify обнаружена\\.*\nЗапуск загрузки\\.\\.\\.",
+      "fetching_metadata": "🔍 *Получение информации о треке из Spotify\\.\\.\\.*",
+      "searching_youtube": "🎵 *Поиск совпадения на YouTube\\.\\.\\.*\n\n📌 *Название:* {title}\n👤 *Исполнитель:* {artist}",
+      "downloading": "📥 *Загрузка и обработка аудио \\(320kbps\\)\\.\\.\\.*\n\n📌 *Название:* {title}\n👤 *Исполнитель:* {artist}",
+      "tagging": "🎨 *Встраивание тегов ID3 и обложки\\.\\.\\.*",
+      "uploading": "📤 *Отправка аудиофайла в Telegram\\.\\.\\.*",
+      "done_caption": "🎵 *{title}*\n👤 *Исполнитель:* {artist}\n💿 *Альбом:* {album}\n📅 *Дата релиза:* {date}",
+      "cancelled": "❌ *Загрузка Spotify отменена\\.*",
+      "track_not_found": "⚠️ *Трек не найден в Spotify или неверная ссылка\\.*",
+      "no_yt_match": "⚠️ *Подходящее аудио не найдено\\.*",
+      "download_failed": "⚠️ *Ошибка загрузки или обработки трека Spotify\\.*",
+      "cancel_button": "❌ Отмена",
+      "sep_button": "✂️ Разделение вокала и музыки",
+      "only_single_tracks": "⚠️ В настоящее время поддерживаются только отдельные треки Spotify\\. Отправьте прямую ссылку на отдельный трек\\."
+    },
+    "soundcloud": {
+      "starting": "📥 *Получение информации о треке SoundCloud\\.\\.\\.*",
+      "downloading": "📥 *Загрузка и обработка аудио \\(320kbps\\)\\.\\.\\.*\n\n📌 *Название:* {title}\n👤 *Исполнитель:* {artist}",
+      "tagging": "🎨 *Настройка тегов ID3 и обложки\\.\\.\\.*",
+      "uploading": "📤 *Отправка аудиофайла в Telegram\\.\\.\\.*",
+      "done_caption": "🎵 *{title}*\n👤 *Исполнитель:* {artist}\n📅 *Дата релиза:* {date}",
+      "cancelled": "❌ *Загрузка SoundCloud отменена\\.*",
+      "track_not_found": "⚠️ *Трек не найден в SoundCloud или неверная ссылка\\.*",
+      "drm_protected": "⚠️ *Этот трек SoundCloud защищён DRM и не может быть загружен\\.*",
+      "download_failed": "⚠️ *Ошибка загрузки или обработки трека SoundCloud\\.*",
+      "cancel_button": "❌ Отмена",
+      "only_single_tracks": "⚠️ В настоящее время поддерживаются только отдельные треки SoundCloud\\. Отправьте прямую ссылку на отдельный трек\\."
+    },
+    "musicset": {
+      "feature_name": "Скачивание альбомов и плейлистов",
+      "zip_limit": "Архив альбома/плейлиста",
+      "fetching_list": "📃 *Получение списка треков\\.\\.\\.*",
+      "list_failed": "⚠️ *Не удалось получить список треков или ссылка неверна\\.*",
+      "list_private": "🔒 *Этот плейлист приватный или удалён\\.*\n\nSpotify не отдаёт список треков приватного плейлиста \\(ссылка `?pt=` работает только внутри приложения Spotify\\)\\.\n\n*Как сделать его публичным?* Это должен сделать *владелец плейлиста*:\n1\\. Открой плейлист в приложении Spotify\n2\\. Нажми меню из трёх точек \\(⋯\\)\n3\\. Выбери *Make public*\n4\\. Нажми *Share*, затем *Copy link*\n\nПотом отправь мне эту ссылку\\. 🎵",
+      "ask_mode": "🎼 *{title}*\n🎵 *Треков:* {count}\n\n*Как загрузить их для вас?*",
+      "capped_notice": "⚠️ *Ваш ранг позволяет только {shown} из {total} треков\\.*",
+      "btn_one": "По одному",
+      "btn_zip": "Архив",
+      "btn_cancel": "Отмена",
+      "starting": "🚀 *Начинаем загрузку\\.\\.\\.*",
+      "progress": "🎼 *{title}*\n📥 *Трек {i} из {n}*\n🎵 *Название трека:* {name}\n⏱ *Прошло:* {elapsed}",
+      "track_caption": "🎵 *{title}*\n👤 *Исполнитель:* {artist}",
+      "zipping": "🗜 *Сжатие через 7zip \\(уровень 9\\)\\.\\.\\.*",
+      "part_caption": "📦 *Часть {i} из {n}*",
+      "zip_failed": "⚠️ *Не удалось создать архив\\.*",
+      "done": "✅ *{title}*\n🎵 *Отправлено треков: {n}\\.* \\(ошибок: {failed}\\)",
+      "cancelled": "❌ *Загрузка альбома/плейлиста отменена\\.*",
+      "expired": "⚠️ *Запрос устарел\\. Отправьте ссылку снова\\.*"
     }
   }
 }

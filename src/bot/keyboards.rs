@@ -106,7 +106,7 @@ pub fn start_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup {
             "clapper",
         )],
         vec![btn_icon(&t("start.tools_button"), CB_START_TOOLS, "wrench")],
-        vec![btn_icon_success(
+        vec![btn_icon(
             &t("start.leaderboard_button"),
             CB_START_LEADERBOARD,
             "trophy",
@@ -152,46 +152,30 @@ pub fn ai_lab_back_keyboard() -> InlineKeyboardMarkup {
 pub fn ai_lab_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
-            vec![btn_icon_success(
+            vec![btn_icon(
                 &t("start.ai_denoise_button"),
                 CB_AI_DENOISE,
                 "soundwave",
             )],
-            vec![btn_icon_success(
+            vec![btn_icon(
                 &t("start.ai_upscale_button"),
                 CB_AI_UPSCALE,
                 "sparkles",
             )],
-            vec![btn_icon_success(
-                &t("start.ai_stt_button"),
-                CB_AI_STT,
-                "microphone",
-            )],
-            vec![btn_icon_success(
-                &t("start.ai_sep_button"),
-                CB_AI_SEP,
-                "headphones",
-            )],
-            vec![btn_icon_success(
+            vec![btn_icon(&t("start.ai_stt_button"), CB_AI_STT, "microphone")],
+            vec![btn_icon(&t("start.ai_sep_button"), CB_AI_SEP, "headphones")],
+            vec![btn_icon(
                 &t("start.ai_gwm_button"),
                 CB_AI_GWM,
                 "gemini_logo",
             )],
-            vec![btn_icon_success(
-                &t("start.ai_tts_button"),
-                CB_AI_TTS,
-                "microphone",
-            )],
-            vec![btn_icon_success(
+            vec![btn_icon(&t("start.ai_tts_button"), CB_AI_TTS, "microphone")],
+            vec![btn_icon(
                 &t("start.ai_deoldify_button"),
                 CB_AI_DEOLDIFY,
                 "sparkles",
             )],
-            vec![btn_icon_success(
-                &t("start.ai_nobg_button"),
-                CB_AI_NOBG,
-                "edit",
-            )],
+            vec![btn_icon(&t("start.ai_nobg_button"), CB_AI_NOBG, "edit")],
             vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
         ])
         .build()
@@ -210,6 +194,7 @@ pub async fn edit_to_ai_lab(api: &Bot, chat_id: i64, message_id: i32) -> crate::
     Ok(())
 }
 
+#[allow(dead_code)] // ponytail: منوی هوش مصنوعی؛ فلوها اکنون خودشان ادامه می‌دهند.
 pub async fn send_ai_lab(api: &Bot, chat_id: i64) -> crate::error::Result<()> {
     let text = apply_premium_to_md(&t("start.ai_lab_title"));
     let params = frankenstein::methods::SendMessageParams::builder()
@@ -328,6 +313,36 @@ pub async fn edit_to_start_menu(
     Ok(())
 }
 
+pub fn sp_cancel_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn_icon_danger(
+            &t("spotify.cancel_button"),
+            CB_SP_CANCEL,
+            "cancel",
+        )]])
+        .build()
+}
+
+pub fn sc_cancel_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn_icon_danger(
+            &t("soundcloud.cancel_button"),
+            CB_SC_CANCEL,
+            "cancel",
+        )]])
+        .build()
+}
+
+pub fn audio_separation_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn_icon_primary(
+            &t("spotify.sep_button"),
+            CB_SEP_DIRECT,
+            "music_note",
+        )]])
+        .build()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -354,6 +369,13 @@ mod tests {
     fn test_ai_lab_keyboard() {
         let kbd = ai_lab_keyboard();
         assert!(!kbd.inline_keyboard.is_empty());
+    }
+
+    #[test]
+    fn test_audio_separation_keyboard() {
+        let kbd = audio_separation_keyboard();
+        let btn = &kbd.inline_keyboard[0][0];
+        assert_eq!(btn.callback_data.as_deref(), Some("sep:direct"));
     }
 
     #[test]

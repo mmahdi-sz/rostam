@@ -34,7 +34,8 @@ use crate::pdfcompress::{
     handle_pdf_level, handle_pdf_mode_simple,
 };
 use crate::separation::{
-    CB_SEP_PREFIX, enter_separation, handle_separation_audio, handle_separation_callback,
+    CB_SEP_PREFIX, enter_separation, handle_direct_separation, handle_separation_audio,
+    handle_separation_callback,
 };
 use crate::stats;
 use crate::stt::handle::{enter_stt_config, handle_stt_audio, handle_stt_callback};
@@ -338,7 +339,6 @@ async fn handle_message(
         database,
         flow_manager,
         rate_limit_tx,
-        flow_clear_tx,
         ..
     } = state;
     let user_id = message.from.as_ref().map(|u| u.id as i64);
@@ -611,16 +611,10 @@ async fn handle_message(
                         let api2 = api.clone();
                         let chat_id2 = message.chat.id;
                         let db2 = database.clone();
-                        let tx2 = flow_clear_tx.clone();
+                        // فلو عمداً پاک نمی‌شود: کاربر بعد از نتیجه با همان مدل
+                        // می‌تواند ویس بعدی را بفرستد (لغو/بازگشت پاکش می‌کند).
                         // Spawn so the event loop stays free during STT (minutes-long operation)
                         super::spawn_user_task(async move {
-                            struct SttFlowGuard(tokio::sync::mpsc::UnboundedSender<i64>, i64);
-                            impl Drop for SttFlowGuard {
-                                fn drop(&mut self) {
-                                    let _ = self.0.send(self.1);
-                                }
-                            }
-                            let _guard = SttFlowGuard(tx2, uid);
                             handle_stt_audio(&api2, chat_id2, &fid, uid, &config, db2).await;
                         });
                     }
@@ -831,6 +825,43 @@ async fn handle_message(
                         &format!("user_id={uid} chat_id={}", message.chat.id),
                     );
                     flow_manager.clear(uid);
+                    if crate::musicset::try_route_set(api, message.chat.id, uid, database, txt) {
+                        return Ok(());
+                    }
+                    if let Some(track_id) = crate::spotify::extract_spotify_track_id(txt) {
+                        let api2 = api.clone();
+                        let chat_id2 = message.chat.id;
+                        let msg_id2 = message.message_id;
+                        let db2 = database.clone();
+                        super::spawn_user_task(async move {
+                            if let Err(e) = crate::spotify::handle_spotify_url(
+                                &api2, chat_id2, msg_id2, uid, trace_id, &track_id, &db2,
+                            )
+                            .await
+                            {
+                                crate::stats::record_error_global("spotify", e).await;
+                            }
+                        });
+                        return Ok(());
+                    }
+
+                    if let Some(sc_url) = crate::soundcloud::extract_soundcloud_url(txt) {
+                        let api2 = api.clone();
+                        let chat_id2 = message.chat.id;
+                        let msg_id2 = message.message_id;
+                        let db2 = database.clone();
+                        super::spawn_user_task(async move {
+                            if let Err(e) = crate::soundcloud::handle_soundcloud_url(
+                                &api2, chat_id2, msg_id2, uid, trace_id, &sc_url, &db2,
+                            )
+                            .await
+                            {
+                                crate::stats::record_error_global("soundcloud", e).await;
+                            }
+                        });
+                        return Ok(());
+                    }
+
                     let platform = crate::surge_dl::detect_social_platform(txt);
                     if platform == Some("youtube") {
                         let urls = extract_youtube_urls(txt);
@@ -861,6 +892,30 @@ async fn handle_message(
                             {
                                 crate::stats::record_error_global("youtube", e).await;
                             }
+                        });
+                        return Ok(());
+                    } else if platform == Some("spotify") {
+                        let api2 = api.clone();
+                        let chat_id2 = message.chat.id;
+                        super::spawn_user_task(async move {
+                            let _ = crate::bot::send_text(
+                                &api2,
+                                chat_id2,
+                                &t("spotify.only_single_tracks"),
+                            )
+                            .await;
+                        });
+                        return Ok(());
+                    } else if platform == Some("soundcloud") {
+                        let api2 = api.clone();
+                        let chat_id2 = message.chat.id;
+                        super::spawn_user_task(async move {
+                            let _ = crate::bot::send_text(
+                                &api2,
+                                chat_id2,
+                                &t("soundcloud.only_single_tracks"),
+                            )
+                            .await;
                         });
                         return Ok(());
                     } else if let Some(p) = platform {
@@ -923,6 +978,16 @@ async fn handle_message(
                     .await;
                     return Ok(());
                 }
+                // هر چیز غیرمتنی در مرحلهٔ رمز: راهنمای «متن بفرست»، نه سقوط
+                // به مسیر گرفتن فایل.
+                let trace_id = next_trace_id();
+                log_trace(
+                    trace_id,
+                    "filecompress_password_non_text",
+                    &format!("user_id={uid} chat_id={}", message.chat.id),
+                );
+                crate::filecompress::send_password_need_text(api, message.chat.id).await;
+                return Ok(());
             }
 
             if matches!(
@@ -1050,6 +1115,58 @@ async fn handle_message(
                 }
 
                 if let Some(uid) = user_id {
+                    if crate::musicset::try_route_set(api, message.chat.id, uid, database, text) {
+                        return Ok(());
+                    }
+                    if let Some(track_id) = crate::spotify::extract_spotify_track_id(text) {
+                        let trace_id = next_trace_id();
+                        log_trace(
+                            trace_id,
+                            "route_spotify_url",
+                            &format!(
+                                "user_id={uid} chat_id={} track_id={track_id}",
+                                message.chat.id
+                            ),
+                        );
+                        let api2 = api.clone();
+                        let chat_id2 = message.chat.id;
+                        let msg_id2 = message.message_id;
+                        let db2 = database.clone();
+                        super::spawn_user_task(async move {
+                            if let Err(e) = crate::spotify::handle_spotify_url(
+                                &api2, chat_id2, msg_id2, uid, trace_id, &track_id, &db2,
+                            )
+                            .await
+                            {
+                                crate::stats::record_error_global("spotify", e).await;
+                            }
+                        });
+                        return Ok(());
+                    }
+
+                    if let Some(sc_url) = crate::soundcloud::extract_soundcloud_url(text) {
+                        let trace_id = next_trace_id();
+                        log_trace(
+                            trace_id,
+                            "route_soundcloud_url",
+                            &format!("user_id={uid} chat_id={} url={sc_url}", message.chat.id),
+                        );
+                        let api2 = api.clone();
+                        let chat_id2 = message.chat.id;
+                        let msg_id2 = message.message_id;
+                        let db2 = database.clone();
+                        super::spawn_user_task(async move {
+                            if let Err(e) = crate::soundcloud::handle_soundcloud_url(
+                                &api2, chat_id2, msg_id2, uid, trace_id, &sc_url, &db2,
+                            )
+                            .await
+                            {
+                                crate::stats::record_error_global("soundcloud", e).await;
+                            }
+                        });
+                        return Ok(());
+                    }
+
                     if let Some(platform) = crate::surge_dl::detect_social_platform(text) {
                         if platform == "youtube" {
                             let urls = extract_youtube_urls(text);
@@ -1089,6 +1206,30 @@ async fn handle_message(
                                 {
                                     crate::stats::record_error_global("youtube", e).await;
                                 }
+                            });
+                            return Ok(());
+                        } else if platform == "spotify" {
+                            let api2 = api.clone();
+                            let chat_id2 = message.chat.id;
+                            super::spawn_user_task(async move {
+                                let _ = crate::bot::send_text(
+                                    &api2,
+                                    chat_id2,
+                                    &t("spotify.only_single_tracks"),
+                                )
+                                .await;
+                            });
+                            return Ok(());
+                        } else if platform == "soundcloud" {
+                            let api2 = api.clone();
+                            let chat_id2 = message.chat.id;
+                            super::spawn_user_task(async move {
+                                let _ = crate::bot::send_text(
+                                    &api2,
+                                    chat_id2,
+                                    &t("soundcloud.only_single_tracks"),
+                                )
+                                .await;
                             });
                             return Ok(());
                         } else {
@@ -1146,7 +1287,6 @@ async fn handle_callback(
         api,
         flow_manager,
         database,
-        flow_clear_tx,
         ..
     } = state;
     let cb_user_id = callback_query.from.id;
@@ -1211,6 +1351,82 @@ async fn handle_callback(
     }
 
     if crate::youtube::handle_quality_callback(api, &callback_query, database).await {
+        return Ok(());
+    }
+
+    if cb_data == crate::bot::CB_SP_CANCEL {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        crate::spotify::cancel_spotify_job(cb_user_id as i64);
+        return Ok(());
+    }
+
+    if cb_data == crate::bot::CB_SC_CANCEL {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        crate::soundcloud::cancel_soundcloud_job(cb_user_id as i64);
+        return Ok(());
+    }
+
+    if cb_data == crate::musicset::CB_MS_MODE_ONE || cb_data == crate::musicset::CB_MS_MODE_ZIP {
+        let zip_mode = cb_data == crate::musicset::CB_MS_MODE_ZIP;
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        let msg_id = match callback_query.message.as_ref() {
+            Some(MaybeInaccessibleMessage::Message(m)) => m.message_id,
+            _ => 0,
+        };
+        crate::musicset::handle_mode_callback(
+            api,
+            cb_chat_id,
+            cb_user_id as i64,
+            msg_id,
+            zip_mode,
+            database,
+        )
+        .await;
+        return Ok(());
+    }
+
+    if cb_data == crate::musicset::CB_MS_CANCEL {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            crate::musicset::take_pending(cb_user_id as i64, message.message_id);
+            let _ = edit_to_start_menu(api, message.chat.id, message.message_id).await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == crate::musicset::CB_MS_JOBCANCEL {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        crate::musicset::cancel_job(cb_user_id as i64);
         return Ok(());
     }
 
@@ -1608,13 +1824,8 @@ async fn handle_callback(
             "cb_filecompress_action",
             &format!("user_id={cb_user_id} chat_id={cb_chat_id} action={cb_data}"),
         );
-        let _ = api
-            .answer_callback_query(
-                &AnswerCallbackQueryParams::builder()
-                    .callback_query_id(callback_query.id.clone())
-                    .build(),
-            )
-            .await;
+        // پاسخ callback داخل خود هندلر داده می‌شود: مسیر «حداکثر درجه»
+        // باید توست متنی بفرستد و تلگرام هر query را فقط یک بار می‌پذیرد.
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             crate::filecompress::handle_fc_callback(
                 api,
@@ -1623,6 +1834,7 @@ async fn handle_callback(
                 cb_user_id as i64,
                 flow_manager,
                 action,
+                &callback_query.id,
                 database,
             )
             .await;
@@ -2048,6 +2260,30 @@ async fn handle_callback(
                     .build(),
             )
             .await;
+
+        if cb_data == crate::bot::CB_SEP_DIRECT {
+            if let Some(MaybeInaccessibleMessage::Message(message)) = &callback_query.message {
+                let file_id = message
+                    .audio
+                    .as_ref()
+                    .map(|a| a.file_id.as_str())
+                    .or_else(|| message.voice.as_ref().map(|v| v.file_id.as_str()))
+                    .or_else(|| message.document.as_ref().map(|d| d.file_id.as_str()));
+
+                if let Some(fid) = file_id {
+                    handle_direct_separation(
+                        api,
+                        message.chat.id,
+                        cb_user_id as i64,
+                        fid,
+                        flow_manager,
+                    )
+                    .await;
+                }
+            }
+            return Ok(());
+        }
+
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             handle_separation_callback(
                 api,
@@ -2056,7 +2292,6 @@ async fn handle_callback(
                 message.message_id,
                 cb_user_id as i64,
                 flow_manager,
-                flow_clear_tx.clone(),
                 database,
             )
             .await;
@@ -2212,6 +2447,26 @@ async fn handle_callback(
             )
             .await;
         }
+        return Ok(());
+    }
+
+    if cb_data == crate::moss_tts::CB_TTS_JOB_CANCEL {
+        let trace_id = next_trace_id();
+        let signalled = crate::moss_tts::signal_tts_cancel(cb_user_id as i64);
+        log_trace(
+            trace_id,
+            "tts_job_cancel",
+            &format!("user_id={cb_user_id} signalled={signalled}"),
+        );
+        // متن توست از i18n می‌آید؛ خودِ پیام پیشرفت را هندلر اصلی پاک می‌کند.
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .text(crate::i18n::t("tts.cancel_button"))
+                    .build(),
+            )
+            .await;
         return Ok(());
     }
 

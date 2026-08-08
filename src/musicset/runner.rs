@@ -1,0 +1,557 @@
+//! اجرای صف دانلود یک آلبوم/پلی‌لیست.
+//!
+//! هر ترک از همان مسیر تک‌ترکی پلتفرم خودش رد می‌شود
+//! (`run_yt_dlp_audio` + `apply_id3_tags` برای اسپاتیفای،
+//! `download_soundcloud_audio` + `apply_soundcloud_id3_tags` برای ساوندکلاد)،
+//! پس هیچ منطق دانلود/تگ‌گذاری‌ای اینجا تکرار نشده.
+
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use frankenstein::{
+    AsyncTelegramApi, ParseMode,
+    client_reqwest::Bot,
+    input_file::{FileUpload, InputFile},
+    methods::{DeleteMessageParams, SendAudioParams, SendDocumentParams},
+};
+
+use crate::database::postgresql::PostgresDatabase;
+use crate::filecompress::config::{CompressAlgo, CompressConfig, CompressFmt};
+use crate::filecompress::engine::run_compress;
+use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
+use crate::moebius::cpu::{acquire_cpu, release_cpu};
+use crate::musicset::{
+    MS_SPLIT_MB, MsUnregisterGuard, PendingSet, SetItems, edit_status, job_cancel_keyboard,
+    register_cancel, send_status,
+};
+
+/// پاک‌سازی پوشهٔ کار روی هر مسیر خروج، شامل panic.
+struct WorkDirGuard {
+    dir: PathBuf,
+    trace_id: u64,
+}
+
+impl Drop for WorkDirGuard {
+    fn drop(&mut self) {
+        let dir = self.dir.clone();
+        let trace_id = self.trace_id;
+        tokio::spawn(async move {
+            if dir.exists() {
+                if let Err(e) = tokio::fs::remove_dir_all(&dir).await {
+                    log_ev!("ms", trace_id, "dir_cleanup_err", "err" => e.to_string());
+                }
+            }
+        });
+    }
+}
+
+fn mmss(d: Duration) -> String {
+    let s = d.as_secs();
+    format!("{:02}:{:02}", s / 60, s % 60)
+}
+
+/// نام خوانا از URL ساوندکلاد تا وقتی متادیتای واقعی برسد.
+fn sc_slug(url: &str) -> String {
+    let base = url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .trim_end_matches('/');
+    match base.rsplit('/').next() {
+        Some(s) if !s.is_empty() => s.replace(['-', '_'], " "),
+        _ => String::from("..."),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sc_slug;
+
+    #[test]
+    fn slug_from_sc_url() {
+        assert_eq!(
+            sc_slug("https://soundcloud.com/zedbazi/az-ghadim?in=x/sets/y"),
+            "az ghadim"
+        );
+        assert_eq!(sc_slug("https://soundcloud.com/a/b/"), "b");
+    }
+}
+
+/// یک ترک دانلود و تگ‌گذاری شده — آمادهٔ آپلود یا آرشیو.
+struct Track {
+    mp3: PathBuf,
+    cover: Option<PathBuf>,
+    title: String,
+    artist: String,
+    duration_secs: u64,
+}
+
+pub async fn run_set_job(
+    api: Bot,
+    chat_id: i64,
+    user_id: i64,
+    trace_id: u64,
+    pending: PendingSet,
+    zip_mode: bool,
+    // همان پیام پرسش حالت آپلود؛ به‌جای پیام تازه ویرایش می‌شود.
+    status_msg_id: i32,
+    database: Option<PostgresDatabase>,
+) {
+    let cancel = register_cancel(user_id);
+    let _cancel_guard = MsUnregisterGuard(user_id);
+
+    let root = if pending.domain == "sp" {
+        crate::config::spotify_download_root()
+    } else {
+        crate::config::soundcloud_download_root()
+    };
+    let job_dir = PathBuf::from(root).join(format!("set_{}_{trace_id}", user_id.abs()));
+    if let Err(e) = tokio::fs::create_dir_all(&job_dir).await {
+        log_ev!("ms", trace_id, "workdir_fail", "err" => e.to_string());
+        crate::stats::record_error_global("musicset", format!("workdir: {e}")).await;
+        return;
+    }
+    let _dir_guard = WorkDirGuard {
+        dir: job_dir.clone(),
+        trace_id,
+    };
+
+    let total = pending.len();
+    log_ev!("ms", trace_id, "job_start", "tracks" => total, "mode" => if zip_mode { "zip" } else { "one" });
+
+    let status_msg_id = if status_msg_id > 0 {
+        status_msg_id
+    } else {
+        send_status(&api, chat_id, &t("musicset.starting")).await
+    };
+    edit_status(
+        &api,
+        chat_id,
+        status_msg_id,
+        &t("musicset.starting"),
+        Some(job_cancel_keyboard()),
+    )
+    .await;
+
+    // ── تیکر زنده: هر ۳ ثانیه شمارنده و کلاک را به‌روز می‌کند ────────────────
+    let done_idx = Arc::new(AtomicUsize::new(0));
+    // نام ترک جاری؛ ticker فقط می‌خواندش، حلقهٔ اصلی قبل از هر دانلود می‌نویسد.
+    let cur_name = Arc::new(Mutex::new(String::from("...")));
+    let tick_stop = Arc::new(AtomicBool::new(false));
+    let ticker = crate::app::spawn_user_task({
+        let api = api.clone();
+        let done_idx = done_idx.clone();
+        let cur_name = cur_name.clone();
+        let tick_stop = tick_stop.clone();
+        let title = md_escape(&pending.title);
+        let started = Instant::now();
+        async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                if tick_stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                let name = cur_name
+                    .lock()
+                    .map(|g| g.clone())
+                    .unwrap_or_else(|_| String::from("..."));
+                let text = tf(
+                    "musicset.progress",
+                    &[
+                        ("title", &title),
+                        (
+                            "i",
+                            &(done_idx.load(Ordering::Relaxed) + 1)
+                                .min(total)
+                                .to_string(),
+                        ),
+                        ("n", &total.to_string()),
+                        ("name", &md_escape(&name)),
+                        ("elapsed", &md_escape(&mmss(started.elapsed()))),
+                    ],
+                );
+                edit_status(
+                    &api,
+                    chat_id,
+                    status_msg_id,
+                    &text,
+                    Some(job_cancel_keyboard()),
+                )
+                .await;
+            }
+        }
+    });
+
+    macro_rules! stop_ticker {
+        () => {{
+            tick_stop.store(true, Ordering::Relaxed);
+        }};
+    }
+
+    // اسپاتیفای هستهٔ CPU را یک‌بار برای کل صف نگه می‌دارد؛ ساوندکلاد
+    // در `download_soundcloud_audio` هر ترک را خودش رزرو می‌کند.
+    let cores = if pending.domain == "sp" {
+        acquire_cpu(user_id, trace_id).await
+    } else {
+        Vec::new()
+    };
+
+    let mut ready: Vec<Track> = Vec::new();
+    let mut failed = 0usize;
+    let mut cancelled = false;
+
+    for idx in 0..total {
+        if cancel.load(Ordering::SeqCst) {
+            cancelled = true;
+            break;
+        }
+        let stem = format!("t{:03}", idx + 1);
+        // اسپاتیفای نام را از قبل دارد؛ ساوندکلاد فقط URL، پس slug تا وقتی متادیتا برسد.
+        {
+            let guess = match &pending.items {
+                SetItems::Spotify(items) => {
+                    format!("{} - {}", items[idx].artist, items[idx].title)
+                }
+                SetItems::Soundcloud(urls) => sc_slug(&urls[idx]),
+            };
+            if let Ok(mut g) = cur_name.lock() {
+                *g = guess;
+            }
+        }
+        let track = match &pending.items {
+            SetItems::Spotify(items) => {
+                fetch_spotify_track_file(&job_dir, &stem, &items[idx], &cores, trace_id, &cancel)
+                    .await
+            }
+            SetItems::Soundcloud(urls) => {
+                fetch_soundcloud_track_file(&job_dir, &stem, &urls[idx], user_id, trace_id, &cancel)
+                    .await
+            }
+        };
+
+        let track = match track {
+            Some(t) => t,
+            None => {
+                if cancel.load(Ordering::SeqCst) {
+                    cancelled = true;
+                    break;
+                }
+                failed += 1;
+                log_ev!("ms", trace_id, "track_fail", "idx" => idx + 1);
+                done_idx.store(idx + 1, Ordering::Relaxed);
+                continue;
+            }
+        };
+
+        if let Ok(mut g) = cur_name.lock() {
+            *g = if track.artist.is_empty() {
+                track.title.clone()
+            } else {
+                format!("{} - {}", track.artist, track.title)
+            };
+        }
+
+        if zip_mode {
+            ready.push(track);
+        } else {
+            upload_track(&api, chat_id, user_id, trace_id, &track, &database).await;
+            // فایل رفت، جا باز کن — پلی‌لیست ۴۰۰ ترکی دیسک را پر می‌کند.
+            let _ = tokio::fs::remove_file(&track.mp3).await;
+            if let Some(c) = &track.cover {
+                let _ = tokio::fs::remove_file(c).await;
+            }
+        }
+        done_idx.store(idx + 1, Ordering::Relaxed);
+    }
+
+    if !cores.is_empty() && !zip_mode {
+        release_cpu(cores.clone(), trace_id).await;
+    }
+
+    if cancelled {
+        if !cores.is_empty() && zip_mode {
+            release_cpu(cores, trace_id).await;
+        }
+        stop_ticker!();
+        let _ = ticker.await;
+        log_ev!("ms", trace_id, "job_cancelled", "=>" => "cancel", "done" => done_idx.load(Ordering::Relaxed));
+        delete_status(&api, chat_id, status_msg_id).await;
+        // MarkdownV2 لازم است: متن i18n خودش escape شده
+        send_status(&api, chat_id, &t("musicset.cancelled")).await;
+        let _ = crate::bot::send_start_menu(&api, chat_id).await;
+        return;
+    }
+
+    if zip_mode {
+        let cores = if cores.is_empty() {
+            acquire_cpu(user_id, trace_id).await
+        } else {
+            cores
+        };
+        edit_status(
+            &api,
+            chat_id,
+            status_msg_id,
+            &t("musicset.zipping"),
+            Some(job_cancel_keyboard()),
+        )
+        .await;
+        let ok = archive_and_upload(
+            &api, chat_id, user_id, trace_id, &job_dir, &ready, &cancel, &cores, &database,
+        )
+        .await;
+        release_cpu(cores, trace_id).await;
+        if !ok {
+            stop_ticker!();
+            let _ = ticker.await;
+            delete_status(&api, chat_id, status_msg_id).await;
+            send_status(&api, chat_id, &t("musicset.zip_failed")).await;
+            let _ = crate::bot::send_start_menu(&api, chat_id).await;
+            return;
+        }
+    }
+
+    stop_ticker!();
+    let _ = ticker.await;
+
+    let uploaded = total - failed;
+    log_ev!("ms", trace_id, "job_done", "=>" => "ok", "uploaded" => uploaded, "failed" => failed);
+    crate::stats::record_event_user(user_id, "musicset", "set", "ok", uploaded as i64).await;
+    crate::stats::record_event_global("musicset", "set", "ok", uploaded as i64).await;
+
+    delete_status(&api, chat_id, status_msg_id).await;
+    let done_text = tf(
+        "musicset.done",
+        &[
+            ("title", &md_escape(&pending.title)),
+            ("n", &uploaded.to_string()),
+            ("failed", &failed.to_string()),
+        ],
+    );
+    send_status(&api, chat_id, &done_text).await;
+    // re-arm: ورودی این قابلیت فقط یک لینک است، پس منوی استارت همان prompt است.
+    let _ = crate::bot::send_start_menu(&api, chat_id).await;
+}
+
+async fn delete_status(api: &Bot, chat_id: i64, message_id: i32) {
+    if message_id > 0 {
+        let _ = api
+            .delete_message(
+                &DeleteMessageParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(message_id)
+                    .build(),
+            )
+            .await;
+    }
+}
+
+/// اسپاتیفای: متادیتا از embed/API، فایل از بهترین تطبیق یوتیوب.
+async fn fetch_spotify_track_file(
+    job_dir: &std::path::Path,
+    stem: &str,
+    item: &crate::spotify::client::SpotifySetItem,
+    cores: &[i32],
+    trace_id: u64,
+    cancel: &Arc<AtomicBool>,
+) -> Option<Track> {
+    use crate::spotify::handle::{DlOutcome, run_yt_dlp_audio};
+
+    log_ev!("ms", trace_id, "track_enter", "stem" => stem, "title" => &item.title, "artist" => &item.artist);
+    let meta = crate::spotify::client::fetch_spotify_track(&item.track_id)
+        .await
+        .ok()?;
+    let cand = crate::spotify::search::find_best_youtube_match(
+        &meta.primary_artist,
+        &meta.title,
+        meta.duration_ms,
+        trace_id,
+    )
+    .await
+    .ok()?;
+
+    match run_yt_dlp_audio(job_dir, stem, &cand.webpage_url, cores, trace_id, cancel).await {
+        DlOutcome::Ok => {}
+        DlOutcome::Cancelled | DlOutcome::Failed => return None,
+    }
+
+    let mp3 = job_dir.join(format!("{stem}.mp3"));
+    if !mp3.exists() {
+        return None;
+    }
+    let cover =
+        crate::spotify::tagging::apply_id3_tags(&mp3, &meta, &format!("cover_{stem}"), trace_id)
+            .await
+            .unwrap_or(None);
+
+    Some(Track {
+        mp3,
+        cover,
+        title: meta.title,
+        artist: meta.artists_joined,
+        duration_secs: (meta.duration_ms + 500) / 1000,
+    })
+}
+
+async fn fetch_soundcloud_track_file(
+    job_dir: &std::path::Path,
+    stem: &str,
+    sc_url: &str,
+    user_id: i64,
+    trace_id: u64,
+    cancel: &Arc<AtomicBool>,
+) -> Option<Track> {
+    let meta = crate::soundcloud::fetch::fetch_soundcloud_meta(trace_id, sc_url)
+        .await
+        .ok()?;
+    let mp3 = crate::soundcloud::handle::download_soundcloud_audio(
+        job_dir, stem, sc_url, user_id, trace_id, cancel,
+    )
+    .await
+    .ok()?;
+    let cover = crate::soundcloud::handle::apply_soundcloud_id3_tags(
+        &mp3,
+        &meta,
+        &format!("cover_{stem}"),
+        trace_id,
+    )
+    .await
+    .unwrap_or(None);
+
+    Some(Track {
+        mp3,
+        cover,
+        title: meta.title,
+        artist: meta.artist,
+        duration_secs: meta.duration_secs,
+    })
+}
+
+async fn add_traffic(database: &Option<PostgresDatabase>, user_id: i64, path: &std::path::Path) {
+    let Some(db) = database else { return };
+    let size = tokio::fs::metadata(path)
+        .await
+        .map(|m| m.len() as i64)
+        .unwrap_or(0);
+    if let Some(first_up) = crate::rank::quota::get_first_upload_at(db.client(), user_id).await {
+        let _ = crate::rank::quota::add_traffic(db.client(), user_id, size, first_up).await;
+    }
+}
+
+async fn upload_track(
+    api: &Bot,
+    chat_id: i64,
+    user_id: i64,
+    trace_id: u64,
+    track: &Track,
+    database: &Option<PostgresDatabase>,
+) {
+    let caption = tf(
+        "musicset.track_caption",
+        &[
+            ("title", &md_escape(&track.title)),
+            ("artist", &md_escape(&track.artist)),
+        ],
+    );
+    let mut params = SendAudioParams::builder()
+        .chat_id(chat_id)
+        .audio(FileUpload::InputFile(InputFile {
+            path: track.mp3.clone(),
+        }))
+        .performer(track.artist.clone())
+        .title(track.title.clone())
+        .duration(track.duration_secs as u32)
+        .caption(apply_premium_to_md(&caption))
+        .parse_mode(ParseMode::MarkdownV2)
+        .build();
+    if let Some(cover) = &track.cover {
+        params.thumbnail = Some(FileUpload::InputFile(InputFile {
+            path: cover.clone(),
+        }));
+    }
+
+    match api.send_audio(&params).await {
+        Ok(_) => {
+            add_traffic(database, user_id, &track.mp3).await;
+        }
+        Err(e) => {
+            log_ev!("ms", trace_id, "track_upload_fail", "err" => e.to_string());
+            crate::stats::record_error_global("musicset", format!("upload_audio: {e}")).await;
+        }
+    }
+}
+
+/// 7z روی درجهٔ ۹ با split؛ هر پارت به‌عنوان document آپلود می‌شود.
+#[allow(clippy::too_many_arguments)]
+async fn archive_and_upload(
+    api: &Bot,
+    chat_id: i64,
+    user_id: i64,
+    trace_id: u64,
+    job_dir: &std::path::Path,
+    tracks: &[Track],
+    cancel: &Arc<AtomicBool>,
+    cores: &[i32],
+    database: &Option<PostgresDatabase>,
+) -> bool {
+    if tracks.is_empty() {
+        return false;
+    }
+    let inputs: Vec<PathBuf> = tracks.iter().map(|t| t.mp3.clone()).collect();
+    let config = CompressConfig {
+        fmt: CompressFmt::SevenZ,
+        algo: CompressAlgo::Lzma2,
+        level: 9,
+        password: None,
+        split_mb: Some(MS_SPLIT_MB),
+        obfuscate: false,
+        solid: false,
+    };
+
+    log_ev!("ms", trace_id, "archive_enter", "files" => inputs.len());
+    let result = match run_compress(
+        job_dir,
+        &config,
+        &inputs,
+        Duration::from_secs(3600),
+        cores,
+        trace_id,
+        cancel,
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            log_ev!("ms", trace_id, "archive_enter", "=>" => "fail", "err" => format!("{e}"));
+            crate::stats::record_error_global("musicset", format!("compress: {e}")).await;
+            return false;
+        }
+    };
+    log_ev!("ms", trace_id, "archive_enter", "=>" => "ok", "parts" => result.output_paths.len());
+
+    let parts = result.output_paths.len();
+    for (i, path) in result.output_paths.iter().enumerate() {
+        if cancel.load(Ordering::SeqCst) {
+            return false;
+        }
+        let caption = tf(
+            "musicset.part_caption",
+            &[("i", &(i + 1).to_string()), ("n", &parts.to_string())],
+        );
+        let params = SendDocumentParams::builder()
+            .chat_id(chat_id)
+            .document(path.clone())
+            .caption(apply_premium_to_md(&caption))
+            .parse_mode(ParseMode::MarkdownV2)
+            .build();
+        if let Err(e) = api.send_document(&params).await {
+            log_ev!("ms", trace_id, "part_upload_fail", "err" => e.to_string());
+            crate::stats::record_error_global("musicset", format!("upload_part: {e}")).await;
+            return false;
+        }
+        add_traffic(database, user_id, path).await;
+    }
+    true
+}

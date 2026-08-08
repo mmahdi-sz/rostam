@@ -1,6 +1,7 @@
 use piper_rs::Piper;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tokio::sync::mpsc;
@@ -49,6 +50,7 @@ pub async fn run_tts_engine(
     user_id: i64,
     trace_id: u64,
     progress_tx: mpsc::Sender<ProgressSnapshot>,
+    cancel: Arc<AtomicBool>,
 ) -> Result<PathBuf, String> {
     log_ev!("tts", trace_id, "engine_start", "text_len" => text.len());
 
@@ -63,6 +65,13 @@ pub async fn run_tts_engine(
     let frame_delay = Duration::from_millis(25);
     for current_frame in 1..=total_frames {
         tokio::time::sleep(frame_delay).await;
+
+        // انصراف پیش از سنتز واقعی: CPU برگردانده می‌شود و هیچ فایلی ساخته نمی‌شود.
+        if cancel.load(Ordering::Relaxed) {
+            crate::moebius::cpu::release_cpu(cores, trace_id).await;
+            log_ev!("tts", trace_id, "engine_cancelled", "frame" => current_frame);
+            return Err("cancelled".to_string());
+        }
 
         let percent = ((current_frame as f32 / total_frames as f32) * 100.0).min(100.0);
         let bar = build_bar(percent);

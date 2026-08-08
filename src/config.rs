@@ -124,6 +124,24 @@ pub fn youtube_download_root() -> String {
     config_value("YOUTUBE_DOWNLOAD_ROOT").unwrap_or_else(|| "downloads/yt".to_string())
 }
 
+/// Where Spotify downloads are staged before upload.
+pub fn spotify_download_root() -> String {
+    config_value("SPOTIFY_DOWNLOAD_ROOT").unwrap_or_else(|| "downloads/spotify".to_string())
+}
+
+/// Where SoundCloud downloads are staged before upload.
+pub fn soundcloud_download_root() -> String {
+    config_value("SOUNDCLOUD_DOWNLOAD_ROOT").unwrap_or_else(|| "downloads/soundcloud".to_string())
+}
+
+pub fn spotify_client_id() -> Option<String> {
+    config_value("SPOTIFY_CLIENT_ID")
+}
+
+pub fn spotify_client_secret() -> Option<String> {
+    config_value("SPOTIFY_CLIENT_SECRET")
+}
+
 /// Where the `surge` direct-link downloader tool stages files.
 pub fn surge_downloads_root() -> String {
     config_value("SURGE_DOWNLOADS_ROOT").unwrap_or_else(|| "downloads/surge".to_string())

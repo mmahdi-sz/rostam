@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use frankenstein::{
@@ -16,12 +19,30 @@ use tokio::sync::mpsc;
 use super::engine::{ProgressSnapshot, run_tts_engine};
 use crate::bot::CB_TTS_CANCEL;
 use crate::database::postgresql::PostgresDatabase;
+use crate::emoji::panel::btn_icon_danger;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, t, tf};
 use crate::log::next_trace_id;
 use crate::rank;
 use crate::rank::quota::{QuotaKind, get_usage, refund_usage, reserve_usage};
 use crate::stats;
+
+/// سقف طول متن ورودی؛ همان عددی که در `tts.enter_text_default` به کاربر
+/// وعده داده می‌شود — پیش از این هیچ‌جا اعمال نمی‌شد.
+pub const TTS_MAX_CHARS: usize = 500;
+
+pub const CB_TTS_JOB_CANCEL: &str = "tts:jobcancel";
+
+/// پرچم لغو هر کاربر برای کارِ در جریان؛ به موتور هم پاس می‌شود تا
+/// حلقهٔ تولید بشکند و CPU آزاد شود، نه اینکه خروجی دور ریخته شود.
+static ACTIVE_TTS_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn remove_active_tts_job(user_id: i64) {
+    if let Ok(mut jobs) = ACTIVE_TTS_JOBS.lock() {
+        jobs.remove(&user_id);
+    }
+}
 
 pub fn tts_cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
@@ -32,6 +53,28 @@ pub fn tts_cancel_keyboard() -> InlineKeyboardMarkup {
                 .build(),
         ]])
         .build()
+}
+
+/// انصراف روی پیام پیشرفت — کار در جریان را لغو می‌کند.
+fn tts_job_cancel_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn_icon_danger(
+            &t("tts.cancel_button"),
+            CB_TTS_JOB_CANCEL,
+            "cancel",
+        )]])
+        .build()
+}
+
+/// از دکمهٔ «انصراف» روی پیام پیشرفت صدا زده می‌شود.
+pub fn signal_tts_cancel(user_id: i64) -> bool {
+    if let Ok(mut jobs) = ACTIVE_TTS_JOBS.lock() {
+        if let Some(flag) = jobs.remove(&user_id) {
+            flag.store(true, Ordering::Relaxed);
+            return true;
+        }
+    }
+    false
 }
 
 pub async fn enter_tts(
@@ -98,7 +141,34 @@ pub async fn handle_tts_text(
     let trace_id = next_trace_id();
     log_ev!("tts", trace_id, "generate", "user_id" => user_id, "chat_id" => chat_id);
 
-    let est_secs = std::cmp::max(1, (text_input.chars().count() as i64) / 12);
+    // سقف ۵۰۰ کاراکتر تا اینجا فقط یک وعده در متن راهنما بود. بر کاراکتر
+    // شمرده می‌شود نه بایت، وگرنه متن فارسی نصف سقف واقعی رد می‌شد.
+    let char_len = text_input.chars().count();
+    if char_len > TTS_MAX_CHARS {
+        log_ev!("tts", trace_id, "text_too_long", "len" => char_len, "max" => TTS_MAX_CHARS, "=>" => "blocked");
+        let msg = apply_premium_to_md(&tf(
+            "tts.text_too_long",
+            &[
+                ("len", &char_len.to_string()),
+                ("max", &TTS_MAX_CHARS.to_string()),
+            ],
+        ));
+        // فلو مسلح می‌ماند تا کاربر بی‌درنگ متن کوتاه‌تر بفرستد.
+        flow_manager.set(user_id, FlowState::AwaitingTtsText);
+        let _ = api
+            .send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(&msg)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(tts_cancel_keyboard()))
+                    .build(),
+            )
+            .await;
+        return;
+    }
+
+    let est_secs = std::cmp::max(1, (char_len as i64) / 12);
 
     // رزرو پیش از کار بر پایه‌ی برآورد طول گفتار. سقف اینجا روی مقدارِ
     // «بعد از افزودن» اعمال می‌شود، نه `used >= limit` قبلی — پس متنی که از
@@ -195,9 +265,16 @@ pub async fn handle_tts_text(
 
     let text_clone = text_input.to_string();
 
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    if let Ok(mut jobs) = ACTIVE_TTS_JOBS.lock() {
+        jobs.insert(user_id, cancel_flag.clone());
+    }
+    let engine_cancel = cancel_flag.clone();
+
     // Spawn TTS Engine Task
-    let engine_handle =
-        tokio::spawn(async move { run_tts_engine(&text_clone, user_id, trace_id, tx).await });
+    let engine_handle = tokio::spawn(async move {
+        run_tts_engine(&text_clone, user_id, trace_id, tx, engine_cancel).await
+    });
 
     let mut last_edit = Instant::now();
 
@@ -219,6 +296,7 @@ pub async fn handle_tts_text(
                 .message_id(status_msg_id)
                 .text(&formatted)
                 .parse_mode(ParseMode::MarkdownV2)
+                .reply_markup(tts_job_cancel_keyboard())
                 .build();
 
             let _ = api.edit_message_text(&edit_params).await;
@@ -231,12 +309,35 @@ pub async fn handle_tts_text(
         Err(e) => Err(format!("Join error: {e}")),
     };
 
+    remove_active_tts_job(user_id);
+
     // Delete progress message
     let del_params = DeleteMessageParams::builder()
         .chat_id(chat_id)
         .message_id(status_msg_id)
         .build();
     let _ = api.delete_message(&del_params).await;
+
+    // کاربر وسط کار «انصراف» زده: سهمیه برمی‌گردد و فلو دوباره مسلح می‌شود.
+    if cancel_flag.load(Ordering::Relaxed) {
+        log_ev!("tts", trace_id, "cancelled_mid_job", "user_id" => user_id);
+        refund!("cancelled");
+        if let Ok(path) = &engine_res {
+            let _ = std::fs::remove_file(path);
+        }
+        flow_manager.set(user_id, FlowState::AwaitingTtsText);
+        let _ = api
+            .send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(&apply_premium_to_md(&t("tts.cancelled")))
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .reply_markup(ReplyMarkup::InlineKeyboardMarkup(tts_cancel_keyboard()))
+                    .build(),
+            )
+            .await;
+        return;
+    }
 
     match engine_res {
         Ok(voice_path) => {
@@ -371,4 +472,14 @@ pub async fn handle_tts_cancel(
         .build();
 
     let _ = api.edit_message_text(&params).await;
+}
+
+// دسترسی‌های فقط-تست به همان کیبورد تولید.
+#[cfg(feature = "testapi")]
+pub fn tts_job_cancel_keyboard_for_test() -> InlineKeyboardMarkup {
+    tts_job_cancel_keyboard()
+}
+#[cfg(feature = "testapi")]
+pub fn tts_cancel_keyboard_for_test() -> InlineKeyboardMarkup {
+    tts_cancel_keyboard()
 }

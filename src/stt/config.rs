@@ -41,7 +41,7 @@ pub fn config_keyboard(denoise: bool) -> InlineKeyboardMarkup {
 pub fn ready_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![vec![
-            btn_icon(&t("stt.cancel_button"), CB_STT_CANCEL, "cancel"),
+            btn_icon_danger(&t("stt.cancel_button"), CB_STT_CANCEL, "cancel"),
             btn_icon(&t("start.main_menu"), CB_STT_MAIN_MENU, "panel"),
         ]])
         .build()
@@ -50,7 +50,7 @@ pub fn ready_keyboard() -> InlineKeyboardMarkup {
 /// Build the cancel keyboard for an active processing job.
 pub fn cancel_job_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon(
+        .inline_keyboard(vec![vec![btn_icon_danger(
             &t("stt.cancel_button"),
             CB_STT_JOB_CANCEL,
             "cancel",

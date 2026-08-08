@@ -148,6 +148,21 @@ impl Rank {
         }
     }
 
+    /// آلبوم/پلی‌لیست موسیقی اسپاتیفای و ساوندکلاد
+    /// (`Some(0)` = ممنوع، `None` = نامحدود)
+    pub fn music_set_limit(&self) -> Option<u32> {
+        match self {
+            Self::Dalavar | Self::Sohrab => Some(0), // ممنوع
+            Self::Sepahbod => Some(20),
+            Self::Esfandyar | Self::Rostam => None,
+        }
+    }
+
+    /// آرشیو 7z ست موسیقی — سپهبد فقط تکی‌تکی می‌گیرد
+    pub fn can_music_set_archive(&self) -> bool {
+        matches!(self, Self::Esfandyar | Self::Rostam)
+    }
+
     /// زیرنویس فایل جداگانه
     pub fn can_subtitle_file(&self) -> bool {
         matches!(self, Self::Sepahbod | Self::Esfandyar | Self::Rostam)
@@ -358,6 +373,17 @@ mod tests {
         assert_eq!(Rank::Sepahbod.playlist_limit(), Some(10));
         assert_eq!(Rank::Esfandyar.playlist_limit(), None);
         assert_eq!(Rank::Rostam.playlist_limit(), None);
+    }
+
+    #[test]
+    fn test_music_set_limit() {
+        assert_eq!(Rank::Dalavar.music_set_limit(), Some(0));
+        assert_eq!(Rank::Sohrab.music_set_limit(), Some(0));
+        assert_eq!(Rank::Sepahbod.music_set_limit(), Some(20));
+        assert_eq!(Rank::Esfandyar.music_set_limit(), None);
+        assert_eq!(Rank::Rostam.music_set_limit(), None);
+        assert!(!Rank::Sepahbod.can_music_set_archive());
+        assert!(Rank::Esfandyar.can_music_set_archive());
     }
 
     #[test]

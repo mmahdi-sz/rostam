@@ -127,7 +127,9 @@ pub async fn test_tts_generate(Json(req): Json<TtsReq>) -> Json<TtsResp> {
     let (tx, mut rx) = tokio::sync::mpsc::channel(32);
     tokio::spawn(async move { while rx.recv().await.is_some() {} });
 
-    let out = crate::moss_tts::engine::run_tts_engine(&req.text, -999_001, trace_id, tx).await;
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let out =
+        crate::moss_tts::engine::run_tts_engine(&req.text, -999_001, trace_id, tx, cancel).await;
 
     let (ok, output_ext, output_bytes, err) = match out {
         Ok(path) => {
@@ -196,5 +198,142 @@ pub async fn test_nobg_process(Json(req): Json<NobgReq>) -> Json<NobgResp> {
         ok: true,
         file_id: req.file_id,
         result_caption,
+    })
+}
+
+// ── TTS UX surface (سقف کاراکتر / کیبورد لغو) ────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct TtsUxReq {
+    /// طول متن ورودی به کاراکتر؛ برای بازتولید مسیر «متن بلند».
+    pub char_len: Option<usize>,
+}
+
+#[derive(Serialize)]
+pub struct TtsUxButton {
+    pub text: String,
+    pub callback_data: String,
+    pub style: String,
+}
+
+#[derive(Serialize)]
+pub struct TtsUxResp {
+    pub ok: bool,
+    pub max_chars: usize,
+    pub char_len: usize,
+    /// آیا سقف رد شده و متن باید پس زده شود.
+    pub too_long: bool,
+    /// متن خطای سقف؛ فقط وقتی too_long باشد.
+    pub too_long_text: Option<String>,
+    pub progress_keyboard: Vec<Vec<TtsUxButton>>,
+    pub ask_text_keyboard: Vec<Vec<TtsUxButton>>,
+    pub cancelled_text: String,
+}
+
+fn dump_tts(kbd: &frankenstein::types::InlineKeyboardMarkup) -> Vec<Vec<TtsUxButton>> {
+    kbd.inline_keyboard
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|b| TtsUxButton {
+                    text: b.text.clone(),
+                    callback_data: b.callback_data.clone().unwrap_or_default(),
+                    style: match b.style {
+                        Some(frankenstein::types::ButtonStyle::Success) => "success",
+                        Some(frankenstein::types::ButtonStyle::Primary) => "primary",
+                        Some(frankenstein::types::ButtonStyle::Danger) => "danger",
+                        _ => "default",
+                    }
+                    .to_string(),
+                })
+                .collect()
+        })
+        .collect()
+}
+
+pub async fn test_tts_ux(Json(req): Json<TtsUxReq>) -> Json<TtsUxResp> {
+    let max_chars = crate::moss_tts::TTS_MAX_CHARS;
+    let char_len = req.char_len.unwrap_or(10);
+    let too_long = char_len > max_chars;
+    let too_long_text = if too_long {
+        Some(crate::i18n::tf(
+            "tts.text_too_long",
+            &[
+                ("len", &char_len.to_string()),
+                ("max", &max_chars.to_string()),
+            ],
+        ))
+    } else {
+        None
+    };
+
+    Json(TtsUxResp {
+        ok: true,
+        max_chars,
+        char_len,
+        too_long,
+        too_long_text,
+        progress_keyboard: dump_tts(&crate::moss_tts::tts_job_cancel_keyboard_for_test()),
+        ask_text_keyboard: dump_tts(&crate::moss_tts::tts_cancel_keyboard_for_test()),
+        cancelled_text: crate::i18n::t("tts.cancelled"),
+    })
+}
+
+// ── STT ready surface (برچسب مدل + ایموجی پریمیوم) ───────────────────────────
+
+#[derive(Deserialize)]
+pub struct SttReadyReq {
+    /// یکی از fa_big / fa_small / en_big / en_small
+    pub model: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SttReadyResp {
+    pub ok: bool,
+    pub model: String,
+    /// برچسب آدم‌خوان همان دکمهٔ اینلاین — نباید کلید i18n باشد.
+    pub model_label: String,
+    /// متن نهایی پس از MarkdownV2 + جایگزینی ایموجی پریمیوم.
+    pub ready_title: String,
+    pub ready_again: String,
+    /// تعداد ایموجی‌های پریمیوم رندرشده در متن.
+    pub premium_emoji_count: usize,
+}
+
+pub async fn test_stt_ready(Json(req): Json<SttReadyReq>) -> Json<SttReadyResp> {
+    use crate::stt::types::{SttConfig, SttLang, SttModelSize};
+
+    let model = req.model.unwrap_or_else(|| "fa_small".to_string());
+    let (lang, size) = match model.as_str() {
+        "fa_big" => (SttLang::Fa, SttModelSize::Large),
+        "en_big" => (SttLang::En, SttModelSize::Large),
+        "en_small" => (SttLang::En, SttModelSize::Small),
+        _ => (SttLang::Fa, SttModelSize::Small),
+    };
+    let config = SttConfig {
+        lang,
+        model_size: size,
+        denoise: false,
+    };
+
+    let model_label = crate::i18n::t(config.label_key());
+    let escaped = crate::i18n::md_escape(&model_label);
+    let ready_title = crate::i18n::apply_premium_to_md(&crate::i18n::tf(
+        "stt.ready_title",
+        &[("model", &escaped)],
+    ));
+    let ready_again = crate::i18n::apply_premium_to_md(&crate::i18n::tf(
+        "stt.ready_again",
+        &[("model", &escaped)],
+    ));
+    let premium_emoji_count = ready_title.matches("tg://emoji?id=").count();
+
+    Json(SttReadyResp {
+        ok: true,
+        model,
+        model_label,
+        ready_title,
+        ready_again,
+        premium_emoji_count,
     })
 }

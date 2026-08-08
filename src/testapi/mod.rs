@@ -47,6 +47,10 @@ pub async fn run() -> anyhow::Result<()> {
             post(endpoints::compress::test_filecompress),
         )
         .route(
+            "/test/compress/ux",
+            post(endpoints::compress::test_filecompress_ux),
+        )
+        .route(
             "/test/stt/recognize",
             post(endpoints::ai::test_stt_recognize),
         )
@@ -61,6 +65,8 @@ pub async fn run() -> anyhow::Result<()> {
             post(endpoints::ai::test_denoise_process),
         )
         .route("/test/tts/generate", post(endpoints::ai::test_tts_generate))
+        .route("/test/tts/ux", post(endpoints::ai::test_tts_ux))
+        .route("/test/stt/ready", post(endpoints::ai::test_stt_ready))
         .route(
             "/test/deoldify/colorized",
             post(endpoints::ai::test_deoldify_colorize),
@@ -93,6 +99,24 @@ pub async fn run() -> anyhow::Result<()> {
         .route(
             "/test/referral/leaderboard",
             post(endpoints::referral::test_referral_leaderboard),
+        )
+        .route(
+            "/test/sp/download_track",
+            post(endpoints::spotify::test_spotify_download_track),
+        )
+        .route(
+            "/test/sp/cancel",
+            post(endpoints::spotify::test_spotify_cancel),
+        )
+        .route("/test/ms/offer", post(endpoints::musicset::test_ms_offer))
+        .route("/test/ms/mode", post(endpoints::musicset::test_ms_mode))
+        .route(
+            "/test/sc/download_track",
+            post(endpoints::soundcloud::test_soundcloud_download_track),
+        )
+        .route(
+            "/test/sc/cancel",
+            post(endpoints::soundcloud::test_soundcloud_cancel),
         )
         // Catch-all for outgoing frankenstein calls
         .route(

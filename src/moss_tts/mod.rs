@@ -4,4 +4,13 @@ pub mod engine;
 pub mod handle;
 pub mod homofast;
 
-pub use handle::{enter_tts, handle_tts_cancel, handle_tts_text};
+pub use handle::{
+    CB_TTS_JOB_CANCEL, enter_tts, handle_tts_cancel, handle_tts_text, signal_tts_cancel,
+};
+
+// سقف کاراکتر داخل خودِ handle اعمال می‌شود؛ بیرون فقط testapi می‌خواندش.
+#[cfg(feature = "testapi")]
+pub use handle::TTS_MAX_CHARS;
+
+#[cfg(feature = "testapi")]
+pub use handle::{tts_cancel_keyboard_for_test, tts_job_cancel_keyboard_for_test};

@@ -84,7 +84,6 @@ pub async fn run() -> anyhow::Result<()> {
     let cookie_status = cookie_pool.status();
 
     let (rate_limit_tx, mut rate_limit_rx) = tokio::sync::mpsc::unbounded_channel();
-    let (flow_clear_tx, mut flow_clear_rx) = tokio::sync::mpsc::unbounded_channel::<i64>();
     let (cooldown_done_tx, mut cooldown_done_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
     fetch_bot_username(&api).await;
@@ -108,7 +107,6 @@ pub async fn run() -> anyhow::Result<()> {
         database,
         flow_manager: FlowManager::new(),
         rate_limit_tx,
-        flow_clear_tx,
         user_last_update: std::sync::Arc::new(tokio::sync::Mutex::new(
             std::collections::HashMap::new(),
         )),
@@ -213,10 +211,6 @@ pub async fn run() -> anyhow::Result<()> {
                 .lock()
                 .await
                 .remove_from_cooldown(&cookie_id);
-        }
-
-        while let Ok(user_id) = flow_clear_rx.try_recv() {
-            state.flow_manager.clear(user_id);
         }
 
         while let Ok(source) = rate_limit_rx.try_recv() {

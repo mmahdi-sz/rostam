@@ -11,11 +11,10 @@ use frankenstein::{
     methods::{DeleteMessageParams, EditMessageTextParams, SendAudioParams},
     types::{InlineKeyboardMarkup, Message},
 };
-use tokio::sync::mpsc::UnboundedSender;
 
 use crate::bot::{edit_to_ai_lab, send_text_with_ai_back};
 use crate::database::postgresql::PostgresDatabase;
-use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
+use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_primary, btn_icon_success};
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{entities_for_text, t, tf};
 use crate::log::next_trace_id;
@@ -59,20 +58,19 @@ fn prompt_keyboard(msg_id: i32) -> InlineKeyboardMarkup {
 }
 
 fn mode_keyboard(msg_id: i32) -> InlineKeyboardMarkup {
+    // یک ستون، سه ردیف: کیفیت بالا (سبز) / سریع (آبی) / برگشت (قرمز).
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
-            vec![
-                btn_icon_success(
-                    &t("separation.btn.quality"),
-                    &format!("sep:quality:{msg_id}"),
-                    "quality_high",
-                ),
-                btn_icon(
-                    &t("separation.btn.fast"),
-                    &format!("sep:fast:{msg_id}"),
-                    "speed_fast",
-                ),
-            ],
+            vec![btn_icon_success(
+                &t("separation.btn.quality"),
+                &format!("sep:quality:{msg_id}"),
+                "quality_high",
+            )],
+            vec![btn_icon_primary(
+                &t("separation.btn.fast"),
+                &format!("sep:fast:{msg_id}"),
+                "speed_fast",
+            )],
             vec![btn_icon_danger(
                 &t("separation.btn.cancel"),
                 &format!("sep:cancel:{msg_id}"),
@@ -217,6 +215,49 @@ pub async fn handle_separation_audio(
     }
 }
 
+/// Direct entry into separation mode selection from inline buttons under audio messages.
+pub async fn handle_direct_separation(
+    api: &Bot,
+    chat_id: i64,
+    user_id: i64,
+    file_id: &str,
+    flow_manager: &mut FlowManager,
+) {
+    let trace_id = next_trace_id();
+    log_actor_id!("sep", trace_id, user_id, "clicked" => "sep:direct");
+    log_ev!("sep", trace_id, "direct_enter", "file_id" => file_id);
+
+    let filename = "audio.mp3".to_string();
+
+    let text = t("separation.select_mode");
+    let kb = mode_keyboard(0);
+    let params = frankenstein::methods::SendMessageParams::builder()
+        .chat_id(chat_id)
+        .text(&text)
+        .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(kb))
+        .build();
+
+    match api.send_message(&params).await {
+        Ok(resp) => {
+            let prompt_id = resp.result.message_id;
+            flow_manager.set(
+                user_id,
+                FlowState::AwaitingSeparationMode {
+                    file_id: file_id.to_string(),
+                    filename,
+                    prompt_msg_id: Some(prompt_id),
+                    is_video: false,
+                },
+            );
+        }
+        Err(e) => log_trace(
+            trace_id,
+            "direct_mode_keyboard_failed",
+            &format!("=> fail err={e}"),
+        ),
+    }
+}
+
 /// Handles all sep:* callbacks.
 pub async fn handle_separation_callback(
     api: &Bot,
@@ -225,7 +266,6 @@ pub async fn handle_separation_callback(
     message_id: i32,
     user_id: i64,
     flow_manager: &mut FlowManager,
-    flow_clear_tx: UnboundedSender<i64>,
     database: &Option<PostgresDatabase>,
 ) {
     let trace_id = next_trace_id();
@@ -386,10 +426,13 @@ pub async fn handle_separation_callback(
     // رزرو پیش از کار: چک-سپس-کسر قبلاً دو درخواست هم‌زمان را هر دو می‌پذیرفت.
     let mut reserved = false;
     let mut reserve_secs: i64 = 0;
+    // مدت آهنگ بیرون از بلوک نگه داشته می‌شود: تخمین زمان باقی‌مانده و گزارش
+    // پایانی هر دو به آن نیاز دارند.
+    let audio_duration_secs;
     {
         let tmp_probe = tmp_dir.join("probe_audio");
         std::fs::write(&tmp_probe, &audio_bytes).unwrap_or(());
-        let audio_duration_secs = if let Some(tmp_probe_str) = tmp_probe.to_str() {
+        audio_duration_secs = if let Some(tmp_probe_str) = tmp_probe.to_str() {
             let probe = tokio::process::Command::new("ffprobe")
                 .args([
                     "-v",
@@ -626,6 +669,7 @@ pub async fn handle_separation_callback(
     let api_task = api.clone();
     let cancel_task = cancel_flag.clone();
     let db_task = database.clone();
+    let fm_task = flow_manager.clone();
     crate::app::spawn_user_task(async move {
         // برگرداندن هر دو پنجره وقتی کار به نتیجه نرسید.
         macro_rules! refund {
@@ -653,58 +697,46 @@ pub async fn handle_separation_callback(
             };
         }
 
-        // If server looked free but job hasn't finished in 8s → we're actually queued.
-        // Show the "در صف" message then.
-        let api_queue = api_task.clone();
-        let cancel_queue = cancel_task.clone();
-        let queue_msg_task = crate::app::spawn_user_task(async move {
-            tokio::time::sleep(Duration::from_secs(8)).await;
-            if cancel_queue.load(Ordering::Relaxed) {
-                return;
-            }
-            if !server_free {
-                return;
-            } // already showing queue msg
-            let text = t("separation.processing");
-            let entities = entities_for_text(&text);
-            let kb = queue_cancel_keyboard();
-            let mut params = EditMessageTextParams::builder()
-                .chat_id(chat_id)
-                .message_id(message_id)
-                .text(&text)
-                .reply_markup(kb)
-                .build();
-            if !entities.is_empty() {
-                params.entities = Some(entities);
-            }
-            let _ = api_queue.edit_message_text(&params).await;
-            log_trace(trace_id, "queue_msg_shown_delayed", "");
-        });
-
-        // Status-update task: after 5 min (if not done) edit to "still busy".
+        // تیکر وضعیت: هر ۵ ثانیه زمان سپری‌شده و تخمین باقی‌مانده را به‌روز
+        // می‌کند. تخمین = ۳ برابر مدت آهنگ برای سریع و ۵ برابر برای کیفیت بالا.
         let api_status = api_task.clone();
         let cancel_status = cancel_task.clone();
+        let eta_total = audio_duration_secs.saturating_mul(match mode {
+            SeparationMode::Fast => 3,
+            SeparationMode::Quality => 5,
+        });
         let status_task = crate::app::spawn_user_task(async move {
-            tokio::time::sleep(Duration::from_secs(300)).await;
-            if cancel_status.load(Ordering::Relaxed) {
-                return;
+            let started = std::time::Instant::now();
+            loop {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                if cancel_status.load(Ordering::Relaxed) {
+                    return;
+                }
+                let elapsed = started.elapsed().as_secs();
+                let remaining = eta_total.saturating_sub(elapsed);
+                let text = tf(
+                    "separation.progress",
+                    &[
+                        ("elapsed", &format_clock(elapsed)),
+                        ("remaining", &format_clock(remaining)),
+                    ],
+                );
+                let entities = entities_for_text(&text);
+                let mut params = EditMessageTextParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(message_id)
+                    .text(&text)
+                    .reply_markup(queue_cancel_keyboard())
+                    .build();
+                if !entities.is_empty() {
+                    params.entities = Some(entities);
+                }
+                let _ = api_status.edit_message_text(&params).await;
             }
-            let text = t("separation.queue.still_busy");
-            let entities = entities_for_text(&text);
-            let kb = queue_cancel_keyboard();
-            let mut params = EditMessageTextParams::builder()
-                .chat_id(chat_id)
-                .message_id(message_id)
-                .text(&text)
-                .reply_markup(kb)
-                .build();
-            if !entities.is_empty() {
-                params.entities = Some(entities);
-            }
-            let _ = api_status.edit_message_text(&params).await;
         });
 
         // Race separation against cancel signal (cancel aborts the HTTP request via drop).
+        let op_started = std::time::Instant::now();
         let cancelled = Arc::new(AtomicBool::new(false));
         let cancelled2 = cancelled.clone();
         let sep_result = tokio::select! {
@@ -726,12 +758,12 @@ pub async fn handle_separation_callback(
             } => { None }
         };
 
-        queue_msg_task.abort();
         // Abort orphan status-update task now that we have a result.
         status_task.abort();
 
-        // Signal main loop to clear FlowState (AwaitingSeparationQueued → Idle).
-        let _ = flow_clear_tx.send(user_id);
+        // فلو مستقیم اینجا تنظیم می‌شود، نه با کانال: کانال در ابتدای حلقه‌ی
+        // اصلی خالی می‌شود و مسلح‌کردن دوباره‌ی فلو را پاک می‌کرد.
+        fm_task.clear(user_id);
 
         if cancelled.load(Ordering::Relaxed) {
             log_trace(trace_id, "cancelled_in_queue", "");
@@ -860,7 +892,29 @@ pub async fn handle_separation_callback(
                     .with_label_values(&["success"])
                     .inc();
 
-                let _ = crate::bot::send_ai_lab(&api_task, chat_id).await;
+                // گزارش پایانی + برگشت به فلو جداسازی (نه منوی هوش مصنوعی) تا
+                // کاربر بتواند بلافاصله آهنگ بعدی را بفرستد.
+                let report = tf(
+                    "separation.done_report",
+                    &[
+                        ("duration", &format_clock(audio_duration_secs)),
+                        ("total", &format_clock(op_started.elapsed().as_secs())),
+                    ],
+                );
+                let text = format!("{report}\n\n{}", t("separation.send_audio_prompt"));
+                let entities = entities_for_text(&text);
+                fm_task.set(user_id, FlowState::AwaitingSeparation);
+                let mut params = frankenstein::methods::SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(&text)
+                    .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(
+                        prompt_keyboard(0),
+                    ))
+                    .build();
+                if !entities.is_empty() {
+                    params.entities = Some(entities);
+                }
+                let _ = api_task.send_message(&params).await;
 
                 std::fs::remove_dir_all(&tmp_dir).ok();
                 log_trace(trace_id, "cleanup_done", "");
@@ -1079,6 +1133,18 @@ async fn download_file(api: &Bot, file_id: &str, trace_id: u64) -> crate::error:
         &format!("status={status} bytes={}", bytes.len()),
     );
     Ok(bytes)
+}
+
+/// mm:ss (یا hh:mm:ss) برای نمایش زمان سپری‌شده/باقی‌مانده.
+fn format_clock(secs: u64) -> String {
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    if h > 0 {
+        format!("{h:02}:{m:02}:{s:02}")
+    } else {
+        format!("{m:02}:{s:02}")
+    }
 }
 
 fn format_duration_fa(secs: u64) -> String {

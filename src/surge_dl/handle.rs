@@ -158,6 +158,10 @@ pub fn detect_social_platform(text: &str) -> Option<&'static str> {
     if host == "tiktok.com" || host.ends_with(".tiktok.com") || host == "vt.tiktok.com" {
         return Some("tiktok");
     }
+    if host == "soundcloud.com" || host.ends_with(".soundcloud.com") || host == "on.soundcloud.com"
+    {
+        return Some("soundcloud");
+    }
     if host == "twitter.com"
         || host.ends_with(".twitter.com")
         || host == "x.com"

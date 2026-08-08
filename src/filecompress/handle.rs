@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::Duration;
 
 use frankenstein::{
@@ -17,13 +19,27 @@ use super::engine::{CompressError, run_compress};
 use crate::bot::{download_telegram_file, edit_to_tools, send_text_with_back};
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::flow::CompressFileEntry;
-use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_plain, btn_icon_success};
+use crate::emoji::panel::{
+    btn_icon, btn_icon_danger, btn_icon_plain, btn_icon_primary, btn_icon_success,
+};
 use crate::emoji::{FlowManager, FlowState};
-use crate::i18n::{apply_premium_to_md, t};
+use crate::i18n::{apply_premium_to_md, t, tf};
 use crate::log::next_trace_id;
 use crate::rank::{self, quota::QuotaKind};
 
 const SEP_BASE: &str = "http://127.0.0.1:6589";
+
+/// پرچم لغو هر کاربر تا دکمهٔ «انصراف» روی پیام پیشرفت کاری کند.
+/// پرچم به `run_compress` هم می‌رود: پروسه‌ی 7z/rar کشته می‌شود، پس
+/// انصراف واقعاً CPU را آزاد می‌کند و فقط خروجی را دور نمی‌ریزد.
+static ACTIVE_FC_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn remove_active_fc_job(user_id: i64) {
+    if let Ok(mut jobs) = ACTIVE_FC_JOBS.lock() {
+        jobs.remove(&user_id);
+    }
+}
 
 pub const CB_TOOLS_FILECOMPRESS: &str = "tools:fc";
 pub const CB_FC_PREFIX: &str = "fc:";
@@ -50,7 +66,13 @@ fn options_keyboard(config: &CompressConfig) -> InlineKeyboardMarkup {
     } else {
         btn_icon_plain("RAR", "fc:fmt:rar", "rar_logo")
     };
-    rows.push(vec![zip_btn, sz_btn, rar_btn]);
+    // آیکون اختصاصی zstd هنوز ست نشده — نام آیکون بعداً پر می‌شود.
+    let zstd_btn = if config.fmt == CompressFmt::Zstd {
+        btn_icon_success("ZSTD", "fc:fmt:zstd", "")
+    } else {
+        btn_icon_plain("ZSTD", "fc:fmt:zstd", "")
+    };
+    rows.push(vec![zip_btn, sz_btn, rar_btn, zstd_btn]);
 
     // Row 2: Algorithm selection (7Z only)
     if config.fmt == CompressFmt::SevenZ {
@@ -86,39 +108,44 @@ fn options_keyboard(config: &CompressConfig) -> InlineKeyboardMarkup {
         btn_icon("\u{200B}", "fc:lvl:up", "next"),
     ]);
 
-    // Row 5: Password Encryption Toggle
-    let (pass_label, pass_btn) = if config.password.is_some() {
-        (
-            t("fc.toggle_password"),
-            btn_icon_success(&t("fc.status_on"), "fc:toggle:pass", "check"),
-        )
-    } else {
-        (
-            t("fc.toggle_password"),
-            btn_icon_danger(&t("fc.status_off"), "fc:toggle:pass", "cross"),
-        )
-    };
-    rows.push(vec![
-        btn_icon_plain(&pass_label, "fc:toggle:pass", "warning"),
-        pass_btn,
-    ]);
+    // Row 5: Password Encryption Toggle — فرمت‌هایی که رمز ندارند دکمه هم نمی‌گیرند،
+    // وگرنه کاربر رمز می‌دهد و آرشیو بی‌رمز تحویل می‌گیرد.
+    if config.fmt.supports_password() {
+        let (pass_label, pass_btn) = if config.password.is_some() {
+            (
+                t("fc.toggle_password"),
+                btn_icon_success(&t("fc.status_on"), "fc:toggle:pass", "check"),
+            )
+        } else {
+            (
+                t("fc.toggle_password"),
+                btn_icon_danger(&t("fc.status_off"), "fc:toggle:pass", "cross"),
+            )
+        };
+        rows.push(vec![
+            btn_icon_plain(&pass_label, "fc:toggle:pass", "warning"),
+            pass_btn,
+        ]);
+    }
 
     // Row 6: Split into parts Toggle
-    let (split_label, split_btn) = if let Some(mb) = config.split_mb {
-        (
-            t("fc.toggle_split"),
-            btn_icon_success(&format!("{mb} MB"), "fc:toggle:split", "check"),
-        )
-    } else {
-        (
-            t("fc.toggle_split"),
-            btn_icon_danger(&t("fc.status_off"), "fc:toggle:split", "cross"),
-        )
-    };
-    rows.push(vec![
-        btn_icon_plain(&split_label, "fc:toggle:split", "replace_mode"),
-        split_btn,
-    ]);
+    if config.fmt.supports_split() {
+        let (split_label, split_btn) = if let Some(mb) = config.split_mb {
+            (
+                t("fc.toggle_split"),
+                btn_icon_success(&format!("{mb} MB"), "fc:toggle:split", "check"),
+            )
+        } else {
+            (
+                t("fc.toggle_split"),
+                btn_icon_danger(&t("fc.status_off"), "fc:toggle:split", "cross"),
+            )
+        };
+        rows.push(vec![
+            btn_icon_plain(&split_label, "fc:toggle:split", "replace_mode"),
+            split_btn,
+        ]);
+    }
 
     // Split size controls if split enabled
     if let Some(mb) = config.split_mb {
@@ -164,22 +191,19 @@ fn options_keyboard(config: &CompressConfig) -> InlineKeyboardMarkup {
         ]);
     }
 
-    // Row 9: Solid Mode Toggle (BLUE for "کل پوشه: سریع تر" per user request!)
-    let (solid_label, solid_btn) = if config.solid {
-        (
-            t("fc.toggle_solid"),
-            btn_icon(&t("fc.solid_mode_solid"), "fc:toggle:solid", "pack_folder"),
-        )
-    } else {
-        (
-            t("fc.toggle_solid"),
-            btn_icon(&t("fc.solid_mode_normal"), "fc:toggle:solid", "rocket"),
-        )
-    };
-    rows.push(vec![
-        btn_icon(&solid_label, "fc:toggle:solid", "pack_folder"),
-        solid_btn,
-    ]);
+    // Row 9: Solid Mode Toggle — «تک تک: مقاوم تر» آبی، «کل پوشه: سریع تر» سبز.
+    // tar.zst همیشه یک استریم پیوسته است، پس انتخابی برای ارائه وجود ندارد.
+    if config.fmt.supports_solid() {
+        let solid_btn = if config.solid {
+            btn_icon_primary(&t("fc.solid_mode_solid"), "fc:toggle:solid", "pack_folder")
+        } else {
+            btn_icon_success(&t("fc.solid_mode_normal"), "fc:toggle:solid", "rocket")
+        };
+        rows.push(vec![
+            btn_icon(&t("fc.toggle_solid"), "fc:toggle:solid", "pack_folder"),
+            solid_btn,
+        ]);
+    }
 
     // Row 10: Confirm + Cancel
     rows.push(vec![
@@ -189,6 +213,28 @@ fn options_keyboard(config: &CompressConfig) -> InlineKeyboardMarkup {
 
     InlineKeyboardMarkup::builder()
         .inline_keyboard(rows)
+        .build()
+}
+
+/// فقط دکمهٔ انصراف — برای مرحلهٔ گرفتن رمز.
+fn cancel_only_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn_icon_danger(
+            &t("fc.cancel_button"),
+            CB_FC_CANCEL,
+            "cancel",
+        )]])
+        .build()
+}
+
+/// انصراف روی پیام پیشرفت؛ کار در جریان را لغو می‌کند.
+fn job_cancel_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn_icon_danger(
+            &t("fc.cancel_button"),
+            "fc:jobcancel",
+            "cancel",
+        )]])
         .build()
 }
 
@@ -228,6 +274,15 @@ pub async fn enter_filecompress(
 
 // ── Callback Handler ───────────────────────────────────────────────────────────
 
+/// پاسخ به callback؛ متن پر = توست گذرا روی صفحهٔ کاربر.
+async fn fc_answer(api: &Bot, cb_id: &str, text: Option<String>) {
+    let b = frankenstein::methods::AnswerCallbackQueryParams::builder().callback_query_id(cb_id);
+    let _ = match text {
+        Some(txt) => api.answer_callback_query(&b.text(txt).build()).await,
+        None => api.answer_callback_query(&b.build()).await,
+    };
+}
+
 pub async fn handle_fc_callback(
     api: &Bot,
     chat_id: i64,
@@ -235,14 +290,38 @@ pub async fn handle_fc_callback(
     user_id: i64,
     flow_manager: &FlowManager,
     action: &str,
+    cb_id: &str,
     _database: &Option<PostgresDatabase>,
 ) {
     let trace_id = next_trace_id();
     crate::log_ev!("filecompress", trace_id, "callback", "action" => action, "user_id" => user_id);
 
+    // پاسخ فوری برای همه، مگر مسیرهایی که خودشان توست/هشدار می‌فرستند.
+    if !matches!(action, "lvl:up" | "lvl:down" | "toggle:obfuscate") {
+        fc_answer(api, cb_id, None).await;
+    }
+
     if action == "cancel" {
         flow_manager.clear(user_id);
         let _ = edit_to_tools(api, chat_id, message_id).await;
+        return;
+    }
+
+    if action == "jobcancel" {
+        crate::log_ev!("filecompress", trace_id, "job_cancelled", "user_id" => user_id);
+        if let Ok(mut jobs) = ACTIVE_FC_JOBS.lock() {
+            if let Some(flag) = jobs.remove(&user_id) {
+                flag.store(true, Ordering::Relaxed);
+            }
+        }
+        flow_manager.clear(user_id);
+        let params = EditMessageTextParams::builder()
+            .chat_id(chat_id)
+            .message_id(message_id)
+            .text(&apply_premium_to_md(&t("fc.cancelled")))
+            .parse_mode(ParseMode::MarkdownV2)
+            .build();
+        let _ = api.edit_message_text(&params).await;
         return;
     }
 
@@ -253,7 +332,7 @@ pub async fn handle_fc_callback(
     let state = flow_manager.get(user_id);
 
     match action {
-        "fmt:zip" | "fmt:7z" | "fmt:rar" => {
+        "fmt:zip" | "fmt:7z" | "fmt:rar" | "fmt:zstd" => {
             let fmt_str = &action["fmt:".len()..];
             let fmt = CompressFmt::from_str(fmt_str).unwrap_or(CompressFmt::SevenZ);
             let mut config = match state {
@@ -261,8 +340,17 @@ pub async fn handle_fc_callback(
                 _ => CompressConfig::default(),
             };
             config.fmt = fmt;
-            if config.fmt == CompressFmt::Rar && config.level > 5 {
-                config.level = 5;
+            // تنظیماتی که فرمت جدید پشتیبانی نمی‌کند پاک می‌شوند، نه فقط پنهان:
+            // یک رمزِ جامانده در state آرشیو بی‌رمز تولید می‌کند بدون هیچ هشداری.
+            if config.level > config.fmt.max_level() {
+                config.level = config.fmt.max_level();
+            }
+            if !config.fmt.supports_password() {
+                config.password = None;
+                config.obfuscate = false;
+            }
+            if !config.fmt.supports_split() {
+                config.split_mb = None;
             }
             flow_manager.set(
                 user_id,
@@ -293,12 +381,25 @@ pub async fn handle_fc_callback(
                 FlowState::AwaitingCompressOptions { config } => config,
                 _ => return,
             };
-            let max_level = if config.fmt == CompressFmt::Rar { 5 } else { 9 };
+            let max_level = config.fmt.max_level();
             if action == "lvl:up" && config.level < max_level {
                 config.level += 1;
             } else if action == "lvl:down" && config.level > 0 {
                 config.level -= 1;
             }
+            // روی حداکثر درجه، توست گذرا با نام فرمت و سقفش.
+            let toast = if config.level >= max_level {
+                Some(tf(
+                    "fc.max_level_notice",
+                    &[
+                        ("fmt", config.fmt.as_str()),
+                        ("max", &max_level.to_string()),
+                    ],
+                ))
+            } else {
+                None
+            };
+            fc_answer(api, cb_id, toast).await;
             flow_manager.set(
                 user_id,
                 FlowState::AwaitingCompressOptions {
@@ -312,6 +413,10 @@ pub async fn handle_fc_callback(
                 FlowState::AwaitingCompressOptions { config } => config,
                 _ => return,
             };
+            // دکمه برای این فرمت نمایش داده نمی‌شود، اما پیام قدیمی هنوز کلیک‌پذیر است.
+            if !config.fmt.supports_password() {
+                return;
+            }
             if config.password.is_some() {
                 config.password = None;
                 config.obfuscate = false; // Turn off obfuscation if password removed
@@ -331,6 +436,9 @@ pub async fn handle_fc_callback(
                 FlowState::AwaitingCompressOptions { config } => config,
                 _ => return,
             };
+            if !config.fmt.supports_split() {
+                return;
+            }
             if config.split_mb.is_some() {
                 config.split_mb = None;
             } else {
@@ -352,13 +460,14 @@ pub async fn handle_fc_callback(
             if config.password.is_none() {
                 // Cannot enable header obfuscation without password
                 let params = frankenstein::methods::AnswerCallbackQueryParams::builder()
-                    .callback_query_id(action)
+                    .callback_query_id(cb_id)
                     .text(t("fc.error.obfuscate_needs_password"))
                     .show_alert(true)
                     .build();
                 let _ = api.answer_callback_query(&params).await;
                 return;
             }
+            fc_answer(api, cb_id, None).await;
             config.obfuscate = !config.obfuscate;
             flow_manager.set(
                 user_id,
@@ -373,6 +482,9 @@ pub async fn handle_fc_callback(
                 FlowState::AwaitingCompressOptions { config } => config,
                 _ => return,
             };
+            if !config.fmt.supports_solid() {
+                return;
+            }
             config.solid = !config.solid;
             flow_manager.set(
                 user_id,
@@ -387,6 +499,9 @@ pub async fn handle_fc_callback(
                 FlowState::AwaitingCompressOptions { config } => config,
                 _ => return,
             };
+            if !config.fmt.supports_split() {
+                return;
+            }
             let current_mb = config.split_mb.unwrap_or(1000) as i32;
             let delta: i32 = action["part:".len()..].parse().unwrap_or(0);
             let new_mb = (current_mb + delta).clamp(5, 2000) as u32;
@@ -412,6 +527,7 @@ pub async fn handle_fc_callback(
                     .message_id(message_id)
                     .text(&apply_premium_to_md(&t("fc.ask_password")))
                     .parse_mode(ParseMode::MarkdownV2)
+                    .reply_markup(cancel_only_keyboard())
                     .build();
                 let _ = api.edit_message_text(&params).await;
             } else {
@@ -456,10 +572,10 @@ pub async fn handle_fc_callback(
 }
 
 async fn show_options_menu(api: &Bot, chat_id: i64, message_id: i32, config: &CompressConfig) {
-    let key = if config.fmt == CompressFmt::SevenZ {
-        "fc.welcome_7z"
-    } else {
-        "fc.welcome"
+    let key = match config.fmt {
+        CompressFmt::SevenZ => "fc.welcome_7z",
+        CompressFmt::Zstd => "fc.welcome_zstd",
+        _ => "fc.welcome",
     };
     let text = apply_premium_to_md(&t(key));
     let params = EditMessageTextParams::builder()
@@ -523,6 +639,20 @@ pub async fn handle_fc_password_text(
             prompt_msg_id,
         },
     );
+}
+
+/// کاربر در مرحلهٔ رمز فایل فرستاده: بگو متن لازم است، با دکمهٔ انصراف.
+pub async fn send_password_need_text(api: &Bot, chat_id: i64) {
+    let _ = api
+        .send_message(
+            &SendMessageParams::builder()
+                .chat_id(chat_id)
+                .text(&apply_premium_to_md(&t("fc.password_need_text")))
+                .parse_mode(ParseMode::MarkdownV2)
+                .reply_markup(ReplyMarkup::InlineKeyboardMarkup(cancel_only_keyboard()))
+                .build(),
+        )
+        .await;
 }
 
 fn extract_media_file_info(message: &Message, index: usize) -> Option<(String, String, u64)> {
@@ -649,7 +779,12 @@ pub async fn handle_fc_file(
                 .build(),
         )
         .build();
-    let _ = api.send_message(&reply_params).await;
+    // تأییدیه بیرون از مسیر حلقهٔ آپدیت‌ها می‌رود: فوروارد سریع چند فایل قبلاً
+    // برای هر فایل دو رفت‌وبرگشت تلگرام را سریالی صبر می‌کرد.
+    let api_ack = api.clone();
+    crate::app::spawn_user_task(async move {
+        let _ = api_ack.send_message(&reply_params).await;
+    });
 
     if files.len() >= 20 {
         // Auto-start on reaching max 20 files
@@ -663,6 +798,7 @@ pub async fn handle_fc_file(
             files,
             trace_id,
             database,
+            flow_manager,
         )
         .await;
     } else {
@@ -682,7 +818,10 @@ pub async fn handle_fc_file(
             .text(&text)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let _ = api.edit_message_text(&params).await;
+        let api_edit = api.clone();
+        crate::app::spawn_user_task(async move {
+            let _ = api_edit.edit_message_text(&params).await;
+        });
     }
 }
 
@@ -723,12 +862,14 @@ pub async fn handle_fc_done_text(
         files,
         trace_id,
         database,
+        flow_manager,
     )
     .await;
 }
 
 // ── Compression Pipeline ───────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn start_compression_task(
     api: &Bot,
     chat_id: i64,
@@ -738,6 +879,7 @@ async fn start_compression_task(
     files: Vec<CompressFileEntry>,
     trace_id: u64,
     database: &Option<PostgresDatabase>,
+    flow_manager: &FlowManager,
 ) {
     // Remove reply keyboard first
     let remove_kb = frankenstein::types::ReplyKeyboardRemove::builder()
@@ -848,9 +990,10 @@ async fn start_compression_task(
                     &t("fc.processing")
                         .replace("{bar}", "░░░░░░░░░░")
                         .replace("{percent}", "0")
-                        .replace("{elapsed}", "0s"),
+                        .replace("{elapsed}", "00:00"),
                 ))
                 .parse_mode(ParseMode::MarkdownV2)
+                .reply_markup(ReplyMarkup::InlineKeyboardMarkup(job_cancel_keyboard()))
                 .build(),
         )
         .await
@@ -859,8 +1002,43 @@ async fn start_compression_task(
         Err(_) => prompt_msg_id,
     };
 
+    // پرچم لغو + تیکر زمان سپری‌شده روی همان پیام پیشرفت.
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    if let Ok(mut jobs) = ACTIVE_FC_JOBS.lock() {
+        jobs.insert(user_id, cancel_flag.clone());
+    }
+    let timer_running = Arc::new(AtomicBool::new(true));
+    let timer_flag = timer_running.clone();
+    let timer_cancel = cancel_flag.clone();
+    let api_timer = api.clone();
+    let timer_handle = crate::app::spawn_user_task(async move {
+        let started = std::time::Instant::now();
+        while timer_flag.load(Ordering::Relaxed) && !timer_cancel.load(Ordering::Relaxed) {
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            if !timer_flag.load(Ordering::Relaxed) || timer_cancel.load(Ordering::Relaxed) {
+                break;
+            }
+            let secs = started.elapsed().as_secs();
+            let text = apply_premium_to_md(
+                &t("fc.processing")
+                    .replace("{bar}", "░░░░░░░░░░")
+                    .replace("{percent}", "0")
+                    .replace("{elapsed}", &format_clock(secs)),
+            );
+            let params = EditMessageTextParams::builder()
+                .chat_id(chat_id)
+                .message_id(progress_msg)
+                .text(&text)
+                .parse_mode(ParseMode::MarkdownV2)
+                .reply_markup(job_cancel_keyboard())
+                .build();
+            let _ = api_timer.edit_message_text(&params).await;
+        }
+    });
+
     let api_clone = api.clone();
     let db_clone = database.clone();
+    let fm = flow_manager.clone();
     crate::app::spawn_user_task(async move {
         run_filecompress_worker(
             api_clone,
@@ -871,11 +1049,51 @@ async fn start_compression_task(
             files,
             trace_id,
             db_clone,
+            fm,
+            cancel_flag,
+            timer_running,
+            timer_handle,
         )
         .await;
     });
 }
 
+// دسترسی‌های فقط-تست به کیبوردهای واقعی (testapi باید همان کد تولید را بخواند).
+#[cfg(feature = "testapi")]
+pub fn options_keyboard_for_test(config: &CompressConfig) -> InlineKeyboardMarkup {
+    options_keyboard(config)
+}
+
+#[cfg(feature = "testapi")]
+pub fn cancel_only_keyboard_for_test() -> InlineKeyboardMarkup {
+    cancel_only_keyboard()
+}
+
+#[cfg(feature = "testapi")]
+pub fn job_cancel_keyboard_for_test() -> InlineKeyboardMarkup {
+    job_cancel_keyboard()
+}
+
+#[cfg(feature = "testapi")]
+pub fn format_clock_for_test(secs: u64) -> String {
+    format_clock(secs)
+}
+
+/// mm:ss (یا hh:mm:ss) برای نمایش زمان سپری‌شده.
+fn format_clock(secs: u64) -> String {
+    if secs >= 3600 {
+        format!(
+            "{:02}:{:02}:{:02}",
+            secs / 3600,
+            (secs % 3600) / 60,
+            secs % 60
+        )
+    } else {
+        format!("{:02}:{:02}", secs / 60, secs % 60)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn run_filecompress_worker(
     api: Bot,
     chat_id: i64,
@@ -885,7 +1103,19 @@ async fn run_filecompress_worker(
     files: Vec<CompressFileEntry>,
     trace_id: u64,
     database: Option<PostgresDatabase>,
+    flow_manager: FlowManager,
+    cancel_flag: Arc<AtomicBool>,
+    timer_running: Arc<AtomicBool>,
+    timer_handle: tokio::task::JoinHandle<()>,
 ) {
+    // توقف تیکر + آزادکردن پرچم لغو در هر مسیر خروج.
+    macro_rules! stop_timer {
+        () => {{
+            timer_running.store(false, Ordering::Relaxed);
+            remove_active_fc_job(user_id);
+        }};
+    }
+
     // ورود به این تابع فقط وقتی رخ می‌دهد که `database` موجود بوده و هر دو
     // پنجره رزرو شده‌اند، پس `database.is_some()` همان پرچم reserved است.
     macro_rules! refund {
@@ -911,6 +1141,7 @@ async fn run_filecompress_worker(
     let work_dir = std::env::temp_dir().join(format!("filecompress_{trace_id}"));
     if let Err(e) = std::fs::create_dir_all(&work_dir) {
         crate::log_ev!("filecompress", trace_id, "mkdir_failed", "err" => format!("{e}"));
+        stop_timer!();
         refund!("mkdir_failed");
         let _ = send_text_with_back(&api, chat_id, &t("fc.error.compress_failed")).await;
         return;
@@ -919,16 +1150,32 @@ async fn run_filecompress_worker(
     let mut local_input_paths = Vec::new();
 
     for (idx, entry) in files.iter().enumerate() {
+        if cancel_flag.load(Ordering::Relaxed) {
+            crate::log_ev!("filecompress", trace_id, "cancelled_during_download", "idx" => idx);
+            stop_timer!();
+            refund!("cancelled");
+            std::fs::remove_dir_all(&work_dir).ok();
+            return;
+        }
         let local_path = work_dir.join(&entry.filename);
         crate::log_ev!("filecompress", trace_id, "downloading_file", "idx" => idx, "name" => &entry.filename);
         if let Err(e) = download_telegram_file(&api, &entry.file_id, &local_path).await {
             crate::log_ev!("filecompress", trace_id, "download_failed", "err" => format!("{e}"));
+            stop_timer!();
             refund!("download_failed");
             std::fs::remove_dir_all(&work_dir).ok();
             let _ = send_text_with_back(&api, chat_id, &t("fc.error.download_failed")).await;
             return;
         }
         local_input_paths.push(local_path);
+    }
+
+    if cancel_flag.load(Ordering::Relaxed) {
+        crate::log_ev!("filecompress", trace_id, "cancelled_before_engine", "user_id" => user_id);
+        stop_timer!();
+        refund!("cancelled");
+        std::fs::remove_dir_all(&work_dir).ok();
+        return;
     }
 
     let cores = acquire_cpu(user_id, trace_id).await;
@@ -942,10 +1189,21 @@ async fn run_filecompress_worker(
         timeout,
         &cores,
         trace_id,
+        &cancel_flag,
     )
     .await;
 
     release_cpu(cores, trace_id).await;
+    stop_timer!();
+    let _ = timer_handle.await;
+
+    // کاربر وسط کار «انصراف» زده: خروجی دور ریخته می‌شود و سهمیه برمی‌گردد.
+    if cancel_flag.load(Ordering::Relaxed) {
+        crate::log_ev!("filecompress", trace_id, "cancelled_mid_job", "user_id" => user_id);
+        refund!("cancelled");
+        std::fs::remove_dir_all(&work_dir).ok();
+        return;
+    }
 
     let result = match compress_res {
         Ok(r) => r,
@@ -1059,6 +1317,30 @@ async fn run_filecompress_worker(
         .await;
 
     std::fs::remove_dir_all(&work_dir).ok();
+
+    // فلو با همان تنظیمات دوباره مسلح می‌شود تا کاربر بی‌درنگ دستهٔ بعدی را
+    // بفرستد؛ نیازی به رفتن از اول منوی ابزارها نیست.
+    let upload_text = apply_premium_to_md(&t("fc.upload_prompt").replace("{count}", "0"));
+    let send_res = api
+        .send_message(
+            &SendMessageParams::builder()
+                .chat_id(chat_id)
+                .text(&upload_text)
+                .parse_mode(ParseMode::MarkdownV2)
+                .reply_markup(ReplyMarkup::ReplyKeyboardMarkup(done_reply_keyboard()))
+                .build(),
+        )
+        .await;
+    if let Ok(m) = send_res {
+        flow_manager.set(
+            user_id,
+            FlowState::AwaitingCompressFiles {
+                config: Box::new(config),
+                files: Vec::new(),
+                prompt_msg_id: m.result.message_id,
+            },
+        );
+    }
 }
 
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
