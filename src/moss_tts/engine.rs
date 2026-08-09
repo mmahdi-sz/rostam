@@ -66,7 +66,7 @@ pub async fn run_tts_engine(
     for current_frame in 1..=total_frames {
         tokio::time::sleep(frame_delay).await;
 
-        // انصراف پیش از سنتز واقعی: CPU برگردانده می‌شود و هیچ فایلی ساخته نمی‌شود.
+        // Cancel before actual synthesis: release CPU and return without creating files.
         if cancel.load(Ordering::Relaxed) {
             crate::moebius::cpu::release_cpu(cores, trace_id).await;
             log_ev!("tts", trace_id, "engine_cancelled", "frame" => current_frame);

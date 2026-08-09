@@ -147,7 +147,7 @@ pub async fn handle_nobg_image(
                 return;
             }
             Err(e) => {
-                // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
+                // fail closed — notify user on DB error
                 log_ev!("feynobg", trace_id, "quota_reserve", "err" => format!("{e}"), "=>" => "fail");
                 crate::rank::paywall::quota_db_error(api, chat_id, "feynobg", &format!("{e}"))
                     .await;
@@ -157,7 +157,7 @@ pub async fn handle_nobg_image(
         }
     }
 
-    // برگرداندن سهمیه‌ی رزروشده وقتی کار به نتیجه نرسید.
+    // Refund reserved quota on failure
     macro_rules! refund {
         ($why:expr) => {
             if reserved {
@@ -291,7 +291,7 @@ pub async fn handle_nobg_image(
                 log_ev!("feynobg", trace_id, "success", "duration" => sec_str);
                 stats::record_event_user(user_id, "nobg", "process", "ok", 1).await;
 
-                // سهمیه هنگام رزرو کسر شد؛ بدهکاری دومی اینجا نیست.
+                // Quota was deducted during reservation; no secondary charge here
 
                 // UX Improvement: Show prompt menu again so user can immediately send another photo
                 let prompt_text = apply_premium_to_md(&t("nobg.prompt"));

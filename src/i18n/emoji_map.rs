@@ -79,7 +79,7 @@ pub static EMOJI_MAP: &[(&str, &str)] = &[
     ("✨", "sparkles"),
     ("📺", "tv"),
     ("🤖", "bot_premium_emoji"),
-    // rank.guide decorations
+    // rank shop / features decorations
     ("⚔️", "swords"),
     ("⚔", "swords"),
     ("🎖️", "medal"),

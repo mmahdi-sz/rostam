@@ -379,7 +379,7 @@ pub async fn handle_upscale_image(
         return;
     };
 
-    // ── رزرو سقف هفتگی بر اساس scale factor (چک و کسر در یک statement) ──
+    // ── Reserve weekly quota by scale factor ──
     let quota_kind = upscale_quota_kind(scale_factor);
     let mut reserved = false;
     if let Some(db) = database.as_ref() {
@@ -410,7 +410,6 @@ pub async fn handle_upscale_image(
                 return;
             }
             Err(e) => {
-                // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
                 log_ev!("upscale", trace_id, "quota_reserve", "err" => format!("{e}"), "=>" => "fail");
                 crate::rank::paywall::quota_db_error(api, chat_id, "upscale", &format!("{e}"))
                     .await;
@@ -419,7 +418,7 @@ pub async fn handle_upscale_image(
         }
     }
 
-    // برگرداندن سهمیه‌ی رزروشده وقتی کار به نتیجه نرسید.
+    // Refund reserved quota on failure.
     macro_rules! refund {
         ($why:expr) => {
             if reserved {
@@ -643,8 +642,7 @@ pub async fn handle_upscale_image(
         log_ev!("upscale", trace_id, "send_photo", "=>" => if r.is_ok() { "ok" } else { "fail" });
     }
 
-    // سهمیه هنگام رزرو کسر شد؛ بدهکاری دومی اینجا نیست، وگرنه هر درخواست دو
-    // بار حساب می‌شد.
+    // Quota was already reserved; no second deduction needed.
 
     crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "ok", 1).await;
 

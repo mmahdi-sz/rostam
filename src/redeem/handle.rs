@@ -27,7 +27,7 @@ fn now_epoch() -> i64 {
         .unwrap_or(0)
 }
 
-/// تاریخ جلالی + ساعت به وقت تهران (+۳:۳۰)، با ارقام انگلیسی
+/// Jalali datetime string (+3:30 Tehran time).
 fn datetime_fa(epoch: i64) -> String {
     let Some(utc) = Utc.timestamp_opt(epoch, 0).single() else {
         return String::new();
@@ -35,13 +35,13 @@ fn datetime_fa(epoch: i64) -> String {
     let dt = utc.with_timezone(&Tehran);
     let (jy, jm, jd) = gregorian_to_jalali(dt.year(), dt.month() as i32, dt.day() as i32);
     format!(
-        "{jy:04}/{jm:02}/{jd:02} ساعت {:02}:{:02}",
+        "{jy:04}/{jm:02}/{jd:02} hour {:02}:{:02}",
         dt.hour(),
         dt.minute()
     )
 }
 
-/// فقط تاریخ جلالی به وقت تهران (برای نمایش انقضا)
+/// Jalali date string (+3:30 Tehran time) for expiration display.
 fn date_fa(epoch: i64) -> String {
     let Some(utc) = Utc.timestamp_opt(epoch, 0).single() else {
         return String::new();
@@ -51,17 +51,13 @@ fn date_fa(epoch: i64) -> String {
     to_fa_digits(&format!("{jy:04}/{jm:02}/{jd:02}"))
 }
 
-// ── مدل تجمیع/پیشرفت مقام ──
-//
-// جدول ارزش واحد (وزن صحیح، Rank::weight()): نسبت تبدیل = وزن‌فعلی ÷ وزن‌جدید، گرد به بالا (rank::types::ceil_div).
-// بازتولید نسبت‌های تعریف‌شده: سپهبد→اسفندیار ۳/۵=۰٫۶، اسفندیار/سهراب→رستم ۵/۱۰=۰٫۵.
 use crate::rank::types::ceil_div;
 
-/// پلن فعال‌سازی پس از در نظر گرفتن مقام فعلی کاربر
+/// Rank activation plan after evaluating user's current rank.
 enum Plan {
-    /// مقام پایین‌تر از مقام فعلی → کد نباید مصرف شود
+    /// Rank lower than current rank -> reject code.
     Reject,
-    /// اعمال مقام؛ expires_at = None یعنی نامحدود (total_days هم None)
+    /// Apply rank (`expires_at = None` means permanent).
     Apply {
         rank: Rank,
         expires_at: Option<i64>,
@@ -69,7 +65,7 @@ enum Plan {
     },
 }
 
-/// محاسبه‌ی پلن بر اساس مقام فعلی کاربر و مقام/مدت کد جدید
+/// Calculates plan based on user's current rank and new code rank/duration.
 async fn plan_redeem(client: &Client, user_id: i64, new_rank: Rank, new_days: i32) -> Plan {
     let now = now_epoch();
     let new_days = new_days as i64;
@@ -103,12 +99,12 @@ async fn plan_redeem(client: &Client, user_id: i64, new_rank: Rank, new_days: i3
     let wc = cur.rank.weight();
     let wn = new_rank.weight();
 
-    // مقام پایین‌تر → رد
+    // Lower rank -> reject
     if wn < wc {
         return Plan::Reject;
     }
 
-    // مقام فعلی نامحدود است → مقام جدید هم نامحدود می‌ماند (هم‌ارزش/ارتقا)
+    // Current rank is permanent -> new rank stays permanent
     let Some(cur_exp) = cur.expires_at else {
         return Plan::Apply {
             rank: new_rank,
@@ -119,8 +115,7 @@ async fn plan_redeem(client: &Client, user_id: i64, new_rank: Rank, new_days: i3
 
     let remaining_days = ceil_div((cur_exp - now).max(0), 86_400);
 
-    // هم‌ارزش (مقام یکسان یا اسفندیار↔سهراب) → جمع کامل
-    // ارتقا → تبدیل روزهای فعلی با نسبت وزن
+    // Equal rank -> full add; Upgrade -> weight-proportionally convert remaining days
     let converted = if wn == wc {
         remaining_days
     } else {
@@ -134,23 +129,16 @@ async fn plan_redeem(client: &Client, user_id: i64, new_rank: Rank, new_days: i3
     }
 }
 
-// ──────────────────────────────── پنل گرافیکی ساخت کد (ادمین) ────────────────────────────────
+// ──────────────────────────────── Code Generation Admin Panel ────────────────────────────────
 
-/// باز کردن پنل: state پیش‌فرض در Redis + ارسال پیام پنل
-pub async fn open_panel(api: &Bot, chat_id: i64, admin_id: i64) {
+/// Opens code generation panel by editing the admin panel message in place.
+pub async fn open_panel_edit(api: &Bot, chat_id: i64, message_id: i32, admin_id: i64) {
     let sel = GenSelection::default();
     panel_state::save(admin_id, sel).await;
-    let params = SendMessageParams::builder()
-        .chat_id(chat_id)
-        .text(panel_text(&sel))
-        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(build_keyboard(&sel)))
-        .build();
-    if let Err(e) = api.send_message(&params).await {
-        eprintln!("[redeem event=panel_open_failed chat_id={chat_id} err={e}]");
-    }
+    refresh_panel(api, chat_id, message_id, &sel).await;
 }
 
-/// به‌روزرسانی پیام پنل پس از تغییر انتخاب
+/// Refreshes panel message after selection changes.
 async fn refresh_panel(api: &Bot, chat_id: i64, message_id: i32, sel: &GenSelection) {
     let params = EditMessageTextParams::builder()
         .chat_id(chat_id)
@@ -166,7 +154,7 @@ async fn refresh_panel(api: &Bot, chat_id: i64, message_id: i32, sel: &GenSelect
     }
 }
 
-/// هندل کلیک روی دکمه‌های پنل (gc:*). برمی‌گرداند true اگر مصرف شد.
+/// Handles panel button callbacks (`gc:*`).
 pub async fn handle_panel_callback(
     api: &Bot,
     chat_id: i64,
@@ -219,9 +207,9 @@ pub async fn handle_panel_callback(
     }
 }
 
-// ──────────────────────────────── تولید کد ────────────────────────────────
+// ──────────────────────────────── Code Generation ────────────────────────────────
 
-/// منطق مشترک ساخت کد (هم پنل، هم دستور `/re`)
+/// Shared code generation logic (panel & `/re` command).
 async fn do_generate(
     api: &Bot,
     chat_id: i64,
@@ -241,7 +229,7 @@ async fn do_generate(
         eprintln!("[redeem event=create_failed code={code} err={e}]");
         let _ = send_text(api, chat_id, &t("redeem.gen_error")).await;
         return;
-    }
+    };
 
     eprintln!(
         "[redeem event=created code={code} rank={} days={days} uses={uses} by={created_by}]",
@@ -255,9 +243,7 @@ async fn do_generate(
         format!("https://t.me/{username}?start=redeem{code}")
     };
 
-    // نکته: to_fa_digits روی کل پیام اعمال نمی‌شود تا ارقام داخل لینک (کد) سالم بماند؛
-    // فقط مقدار «روز» فارسی می‌شود.
-    let _ = uses; // در بنر نمایش داده نمی‌شود؛ در لاگ ثبت شده
+    let _ = uses;
     let rank_name = rank.display_name();
     let msg = tf(
         "redeem.created",
@@ -270,7 +256,7 @@ async fn do_generate(
     let _ = send_text(api, chat_id, &msg).await;
 }
 
-/// ساخت کد از طریق دستور متنی `/re 30d es 1u` (فقط ادمین)
+/// Generates code via text command `/re 30d es 1u` (admin only).
 pub async fn handle_generate(
     api: &Bot,
     chat_id: i64,
@@ -288,9 +274,9 @@ pub async fn handle_generate(
     }
 }
 
-// ──────────────────────────────── redeem کاربر ────────────────────────────────
+// ──────────────────────────────── User Redemption ────────────────────────────────
 
-/// کیبورد تک‌دکمه‌ای «برگشت» به منوی اصلی
+/// Back button inline keyboard for main menu.
 fn back_keyboard() -> InlineKeyboardMarkup {
     let btn = InlineKeyboardButton {
         text: t("redeem.back_button"),
@@ -312,7 +298,7 @@ fn back_keyboard() -> InlineKeyboardMarkup {
         .build()
 }
 
-/// ارسال پیام با دکمه‌ی برگشت (HTML)
+/// Sends HTML message with back button.
 async fn send_with_back(api: &Bot, chat_id: i64, text: &str) {
     let params = SendMessageParams::builder()
         .chat_id(chat_id)
@@ -325,8 +311,7 @@ async fn send_with_back(api: &Bot, chat_id: i64, text: &str) {
     }
 }
 
-/// redeem کد توسط کاربر (deep-link استارت: `redeem<CODE>`).
-/// برمی‌گردونه true اگه redeem موفق بود (برای نمایش lang_picker بعدش).
+/// Redeems code for user (start deep-link `redeem<CODE>`). Returns `true` if successful.
 pub async fn handle_redeem(
     api: &Bot,
     chat_id: i64,
@@ -357,7 +342,7 @@ pub async fn handle_redeem(
         }
     };
 
-    // انقضای lazy: کد منقضی → حذف و «نامعتبر»
+    // Lazy expiration check
     if let Some(exp) = row.expires_at {
         if now_epoch() > exp {
             let _ = store::delete_code(client, code).await;
@@ -367,9 +352,6 @@ pub async fn handle_redeem(
         }
     }
 
-    // این کاربر قبلاً مصرف کرده؟ → پیام «مصرف شده در تاریخ ...»
-    // ponytail: این چک صرفاً fast-path است تا در حالت عادی سراغ نوشتن نرویم؛
-    // تصمیم واقعی داخل `mark_redeemed` و اتمیک گرفته می‌شود (RedeemOutcome).
     match store::get_user_redemption(client, code, user_id).await {
         Ok(Some(ts)) => {
             eprintln!("[redeem event=already_used user_id={user_id} code={code}]");
@@ -385,7 +367,6 @@ pub async fn handle_redeem(
         }
     }
 
-    // محاسبه‌ی پلن با توجه به مقام فعلی — downgrade قبل از مصرف رد می‌شود
     let (apply_rank, apply_expires, apply_total) =
         match plan_redeem(client, user_id, row.rank, row.duration_days).await {
             Plan::Reject => {
@@ -403,14 +384,10 @@ pub async fn handle_redeem(
             } => (rank, expires_at, total_days),
         };
 
-    // مصرف اتمیک: تنها جایی که ظرفیت و «تکراری بودن کاربر» با هم و در یک
-    // statement تصمیم‌گیری می‌شوند. دو کلیک همزمان یکی Consumed و دیگری
-    // AlreadyRedeemed می‌گیرد، نه دو ظرفیت سوخته.
     match store::mark_redeemed(client, code, user_id).await {
         Ok(store::RedeemOutcome::Consumed) => {}
         Ok(store::RedeemOutcome::AlreadyRedeemed) => {
             eprintln!("[redeem event=already_used user_id={user_id} code={code}]");
-            // زمان مصرفِ خودِ همین کاربر؛ اگر خواندنش نشد، «همین حالا».
             let ts = store::get_user_redemption(client, code, user_id)
                 .await
                 .ok()
@@ -454,7 +431,6 @@ pub async fn handle_redeem(
     );
     crate::stats::record_event_user(user_id, "rank", "redeem", "ok", 0).await;
 
-    // پیام موفقیت: مقام + تاریخ انقضای جلالی + مجموع روز (یا «نامحدود»)
     let apply_rank_name = apply_rank.display_name();
     let msg = match (apply_expires, apply_total) {
         (Some(exp), Some(days)) => tf(
@@ -469,7 +445,7 @@ pub async fn handle_redeem(
     };
     let _ = send_text(api, chat_id, &msg).await;
 
-    // نوتیف به ادمین
+    // Admin notification
     if let Some(admin_id) = config::admin_user_id() {
         let username_display = username
             .map(|u| md_escape(&format!("@{u}")))

@@ -17,7 +17,7 @@ use tokio_postgres::Client;
 use self::store::get_user_rank;
 use self::types::Rank;
 
-/// مقام فعلی کاربر — اگر منقضی شده یا نبود، دلاور برمی‌گرده
+/// Effective user rank — returns Dalavar if expired or absent.
 pub async fn effective_rank(client: &Client, user_id: i64) -> Rank {
     let Ok(Some(row)) = get_user_rank(client, user_id).await else {
         return Rank::Dalavar;

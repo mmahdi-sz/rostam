@@ -20,7 +20,6 @@ use crate::emoji::FlowManager;
 use startup::{
     build_bot_api, fetch_bot_username, init_database, init_emoji_cache, set_bot_commands,
     spawn_cookie_refresher, spawn_cooldown_refresh, spawn_i18n_watcher, spawn_redeem_sweeper,
-    spawn_referral_confirm_sweeper,
 };
 use state::AppState;
 
@@ -73,7 +72,6 @@ pub async fn run() -> anyhow::Result<()> {
         if db.is_some() {
             init_emoji_cache(&database_url).await;
             spawn_redeem_sweeper(&database_url);
-            spawn_referral_confirm_sweeper(&database_url, &api);
         }
         db
     } else {
@@ -176,9 +174,8 @@ pub async fn run() -> anyhow::Result<()> {
             break;
         }
 
-        // سیگنال نباید تا پایان long-poll فعلی (تا ۳۰ ثانیه) معطل بماند:
-        // هرکدام اول آمد، همان. `changed()` cancel-safe است و شرط بالای حلقه
-        // در تکرار بعد break می‌زند.
+        // Signal shouldn't wait for current 30s long-poll to finish:
+        // Whichever triggers first is used. `changed()` is cancel-safe and top condition breaks loop on next iteration.
         let updates = tokio::select! {
             biased;
             _ = shutdown_rx.changed() => continue,
@@ -240,12 +237,11 @@ mod tests {
     use super::*;
     use std::sync::atomic::Ordering::SeqCst;
 
-    /// هر دو خاصیتِ `spawn_user_task` در یک تست بررسی می‌شوند، چون `ACTIVE_TASKS`
-    /// سراسری است و `cargo test` تست‌ها را موازی اجرا می‌کند؛ دو تست جدا روی
-    /// همان شمارنده به هم می‌خوردند.
+    /// Both properties of `spawn_user_task` tested together as `ACTIVE_TASKS`
+    /// is global and tests run concurrently.
     #[tokio::test]
     async fn spawn_user_task_scopes_lang_and_holds_guard() {
-        // ۱) زبان از تسک والد به تسک اسپاون‌شده منتقل می‌شود.
+        // 1) Language propagates from parent to spawned task.
         let inherited = crate::i18n::LANG
             .scope("en".to_owned(), async {
                 spawn_user_task(async { crate::i18n::LANG.try_with(|l| l.clone()).ok() })
@@ -255,8 +251,7 @@ mod tests {
             .await;
         assert_eq!(inherited.as_deref(), Some("en"), "LANG did not propagate");
 
-        // همان چیزی که کاربر می‌بیند: رشته‌ی رندرشده‌ی داخل تسک باید انگلیسی
-        // باشد، نه fallback فارسی. (کلید از config/i18n.json واقعی خوانده می‌شود.)
+        // Rendered string inside task should be English, not Persian fallback.
         let rendered = crate::i18n::LANG
             .scope("en".to_owned(), async {
                 spawn_user_task(async { crate::i18n::t("tts.cancel_button") })
@@ -266,9 +261,7 @@ mod tests {
             .await;
         assert_eq!(rendered, "❌ Cancel", "t() inside the task fell back to fa");
 
-        // ضدنمونه، تا تست واقعاً چیزی بسنجد: `tokio::spawn` خام همان کلید را
-        // فارسی رندر می‌کند. اگر روزی این assert بشکند یعنی task-local خودش
-        // ارث‌بری می‌کند و `spawn_user_task` دیگر لازم نیست.
+        // Counter-example: raw `tokio::spawn` renders in Persian fallback.
         let raw = crate::i18n::LANG
             .scope("en".to_owned(), async {
                 tokio::spawn(async { crate::i18n::t("tts.cancel_button") })
@@ -278,13 +271,13 @@ mod tests {
             .await;
         assert_ne!(raw, rendered, "raw tokio::spawn unexpectedly kept LANG");
 
-        // بدون scope در والد، همان fallback فارسیِ t() اعمال می‌شود.
+        // Without parent scope, fallback to "fa" applies.
         let scopeless = spawn_user_task(async { crate::i18n::LANG.try_with(|l| l.clone()).ok() })
             .await
             .expect("spawned task must not panic");
         assert_eq!(scopeless.as_deref(), Some("fa"));
 
-        // ۲) تا وقتی تسک در جریان است، drain شمارش می‌کند — و بعد آزاد می‌شود.
+        // 2) Task count maintained while running.
         let before = ACTIVE_TASKS.load(SeqCst);
         let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
         let (started_tx, started_rx) = tokio::sync::oneshot::channel::<()>();

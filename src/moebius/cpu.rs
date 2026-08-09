@@ -39,7 +39,20 @@ pub async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
     }
 }
 
+/// Hands freed heap pages back to the kernel. glibc parks them in per-thread
+/// arenas instead, so after one big job (Vosk model, whole-file buffer) RSS
+/// stays at the high-water mark through hours of idle. Only walks the free
+/// lists — safe to call on every job exit.
+pub fn trim_memory() {
+    #[cfg(target_env = "gnu")]
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}
+
 pub async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
+    // Job finished — return the pages before going idle.
+    trim_memory();
     if cores.is_empty() {
         return;
     }
@@ -76,5 +89,16 @@ pub fn pin_current_thread(cores: &[i32], trace_id: u64) {
     #[cfg(not(target_os = "linux"))]
     {
         let _ = (cores, trace_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_trim_memory_is_callable() {
+        // Smoke test: the FFI call must not abort under the real allocator.
+        let big: Vec<u8> = vec![7u8; 8 << 20];
+        drop(big);
+        super::trim_memory();
     }
 }

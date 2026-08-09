@@ -286,7 +286,7 @@ pub async fn handle_surge_text(
     let (filename, size_bytes) = probe_url(url).await;
     log_ev!("surge_dl", trace_id, "probed", "name" => &filename, "size" => format!("{size_bytes:?}"));
 
-    // ── چک فضای آزاد دیسک (کسر ۲۰٪ بافر) ──
+    // ── Check free disk space (with 20% buffer) ──
     let downloads_root = crate::config::surge_downloads_root();
     if let Ok(free_bytes) = available_disk_space(&downloads_root) {
         let max_allowed = (free_bytes as f64 * 0.8) as u64;
@@ -304,7 +304,7 @@ pub async fn handle_surge_text(
         }
     }
 
-    // ── چک ترافیک (روزانه + ماهانه) با احتساب حجم فایل جدید ──
+    // ── Check traffic quotas (daily + monthly) including new file size ──
     if let Some(db) = database.as_ref() {
         let client = db.client();
         let user_rank = rank::effective_rank(client, user_id).await;
@@ -864,14 +864,10 @@ fn extract_content_disposition_filename(header: &str) -> Option<String> {
     None
 }
 
-/// حدس اسم + حجم فایل با یه درخواست HEAD قبل از شروع دانلود واقعی — surge CLI
-/// حالت dry-run نداره (فقط `add` که واقعاً دانلود رو شروع می‌کنه)، پس این فقط
-/// یه پیش‌نمایشه؛ اگه HEAD رد بشه یا هدر نداشته باشه، با بهترین حدس ادامه می‌دیم.
+/// Probes filename and size via HEAD request before download.
 async fn probe_url(url: &str) -> (String, Option<u64>) {
     let fallback = filename_from_url(url);
-    // بعضی سرورها (مثل thinkbroadband) بدون User-Agent با 403 و یه صفحه‌ی خطای
-    // کوچیک جواب می‌دن — بدون این هدر و بدون چک status، حجمِ همون صفحه‌ی خطا رو
-    // به اشتباه به عنوان حجم فایل برمی‌گردونیم.
+    // User-Agent prevents 403 error page size from being misreported as file size.
     let resp = match reqwest::Client::new()
         .head(url)
         .header(reqwest::header::USER_AGENT, "Mozilla/5.0")
@@ -917,7 +913,7 @@ fn now_epoch() -> i64 {
         .unwrap_or(0)
 }
 
-/// قالب‌بندی حجم به فارسی: «۵ گیگابایت» / «۷۵۰ مگابایت».
+/// Format byte traffic as formatted string.
 fn fmt_traffic_fa(bytes: u64) -> String {
     const GB: f64 = (1u64 << 30) as f64;
     const MB: f64 = (1u64 << 20) as f64;
@@ -962,7 +958,7 @@ fn fmt_elapsed(d: Duration) -> String {
     format!("{:02}:{:02}", s / 60, s % 60)
 }
 
-/// حجم/زمان — چون تلگرام سرعت آپلود رو گزارش نمی‌ده (برخلاف دانلود که خودِ surge گزارش می‌ده).
+/// Calculate transfer speed from bytes and elapsed duration.
 fn fmt_speed_from(bytes: u64, elapsed: Duration) -> String {
     let secs = elapsed.as_secs_f64().max(0.001);
     let mb_per_sec = bytes as f64 / (1024.0 * 1024.0) / secs;
@@ -989,9 +985,7 @@ async fn show_sent_menu(
     let is_admin = crate::config::admin_user_id()
         .map(|id| id == chat_id)
         .unwrap_or(false);
-    // زمان‌ها رو خودمون اندازه می‌گیریم و سرعت رو از تقسیم حجم بر زمان حساب می‌کنیم —
-    // فیلد avg_speed خودِ surge واحدش قابل‌اعتماد نبود (برای دانلود ۹ثانیه‌ای عددی
-    // مثل ۱۶۱۸۵۳۹۰۶٫۷۳MB/s برمی‌گردوند).
+    // Speed calculated from total bytes and measured duration.
     let text = tf(
         "surge.sent",
         &[

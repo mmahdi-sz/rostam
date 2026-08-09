@@ -1,21 +1,15 @@
-use frankenstein::client_reqwest::Bot;
 use tokio_postgres::Client;
 
 use crate::rank::types::{Rank, ceil_div};
 
-/// مدت انتظار قبل از تأیید نهایی یه دعوت (روز) — کاربر باید تا این مدت عضو قفل اجباری بماند.
-pub const PENDING_DAYS: i64 = 2;
-
-/// آستانه‌های تعداد دعوت برای هر رتبه، به ترتیب پلکانی زیرمجموعه‌گیری
-/// (سهراب < اسفندیار < رستم) — این ترتیب با وزن عمومی رتبه‌ها (`Rank::weight`)
-/// فرق دارد، چون آنجا اسفندیار/سهراب برای کد هدیه هم‌وزن تعریف شده‌اند.
+/// Referral tier thresholds (`Sohrab` < `Esfandyar` < `Rostam`).
 pub const TIERS: &[(u32, Rank)] = &[
     (10, Rank::Sohrab),
     (20, Rank::Esfandyar),
     (50, Rank::Rostam),
 ];
 
-/// جایگاه یک رتبه در پلکان زیرمجموعه‌گیری. رتبه‌های خارج از پلکان (دلاور/سپهبد) پایین‌ترین‌اند.
+/// Tier hierarchy index (`Dalavar`/`Sepahbod` return `-1`).
 fn tier_position(rank: Rank) -> i32 {
     TIERS
         .iter()
@@ -24,7 +18,7 @@ fn tier_position(rank: Rank) -> i32 {
         .unwrap_or(-1)
 }
 
-/// مدت هر فعال‌سازی با امتیاز (روز).
+/// Duration per point activation in days.
 pub const ACTIVATION_DAYS: i64 = 31;
 
 fn now_epoch() -> i64 {
@@ -34,17 +28,16 @@ fn now_epoch() -> i64 {
         .unwrap_or(0)
 }
 
-/// شروع یه دعوت در انتظار تأیید. فقط وقتی `referred_id` برای اولین‌بار در بات دیده
-/// شده باید صدا زده شود (توسط caller گیت می‌شود) — این تابع خودش هم با PK یکتا از
-/// دوباره‌نویسی جلوگیری می‌کند. تأیید نهایی (و شمارش امتیاز) با `sweep_confirm` انجام
-/// می‌شود، بعد از اینکه کاربر حداقل `PENDING_DAYS` روز عضو قفل اجباری مانده باشد.
+/// Stash a referral link payload. Caller gates it to first-ever sighting of
+/// `referred_id`; the PK makes it once-only anyway. Becomes a point in
+/// `confirm_on_join` as soon as the user is in the force-join channel.
 pub async fn record_referral(client: &Client, referred_id: i64, referrer_id: i64) {
     let now = now_epoch();
     let r = client
         .execute(
             "INSERT INTO referral_pending (referred_id, referrer_id, started_at)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (referred_id) DO NOTHING",
+          VALUES ($1, $2, $3)
+          ON CONFLICT (referred_id) DO NOTHING",
             &[&referred_id, &referrer_id, &now],
         )
         .await;
@@ -56,64 +49,30 @@ pub async fn record_referral(client: &Client, referred_id: i64, referrer_id: i64
     }
 }
 
-/// دعوت‌های در انتظاری که `PENDING_DAYS` روز از شروعشان گذشته را بررسی می‌کند:
-/// عضو قفل اجباری مانده → تأیید و به `referrals` منتقل می‌شود (امتیاز می‌گیرد)؛
-/// عضو نمانده → حذف می‌شود (باطل). توسط یه job دوره‌ای در startup.rs صدا زده می‌شود.
-pub async fn sweep_confirm(client: &Client, api: &Bot) {
-    let cutoff = now_epoch() - PENDING_DAYS * 86_400;
-    let rows = match client
-        .query(
-            "SELECT referred_id, referrer_id FROM referral_pending WHERE started_at <= $1",
-            &[&cutoff],
+/// Confirm a pending referral the moment the user joins the force-join channel.
+/// Point is permanent: leaving later keeps it, re-joining gives no second point
+/// (PK on `referred_id`). Returns true if a new point was just recorded.
+pub async fn confirm_on_join(client: &Client, referred_id: i64) -> bool {
+    let now = now_epoch();
+    let r = client
+        .execute(
+            "WITH moved AS (
+                 DELETE FROM referral_pending WHERE referred_id = $1
+                 RETURNING referrer_id
+             )
+             INSERT INTO referrals (referred_id, referrer_id, created_at)
+             SELECT $1, referrer_id, $2 FROM moved
+             ON CONFLICT (referred_id) DO NOTHING",
+            &[&referred_id, &now],
         )
-        .await
-    {
-        Ok(rows) => rows,
+        .await;
+    match r {
+        Ok(n) => n > 0,
         Err(e) => {
-            eprintln!("[referral event=sweep_query_failed] err={e}");
+            eprintln!("[referral event=confirm_on_join_failed] referred_id={referred_id} err={e}");
             crate::stats::record_error_global("referral", &e.to_string()).await;
-            return;
+            false
         }
-    };
-
-    let mut confirmed = 0u32;
-    let mut discarded = 0u32;
-    for row in rows {
-        let referred_id: i64 = row.get(0);
-        let referrer_id: i64 = row.get(1);
-
-        if crate::force_join::is_joined(api, referred_id).await {
-            let now = now_epoch();
-            let r = client
-                .execute(
-                    "INSERT INTO referrals (referred_id, referrer_id, created_at)
-                 VALUES ($1, $2, $3)
-                 ON CONFLICT (referred_id) DO NOTHING",
-                    &[&referred_id, &referrer_id, &now],
-                )
-                .await;
-            if let Err(e) = r {
-                eprintln!(
-                    "[referral event=confirm_insert_failed] referred_id={referred_id} err={e}"
-                );
-                crate::stats::record_error_global("referral", &e.to_string()).await;
-                continue;
-            }
-            confirmed += 1;
-        } else {
-            discarded += 1;
-        }
-
-        let _ = client
-            .execute(
-                "DELETE FROM referral_pending WHERE referred_id = $1",
-                &[&referred_id],
-            )
-            .await;
-    }
-
-    if confirmed > 0 || discarded > 0 {
-        eprintln!("[referral event=sweep_done] confirmed={confirmed} discarded={discarded}");
     }
 }
 
@@ -128,7 +87,7 @@ pub async fn count_referrals(client: &Client, referrer_id: i64) -> i64 {
         .unwrap_or(0)
 }
 
-/// تعداد دعوت‌های این referrer که هنوز در انتظار تأیید (۲ روز عضویت) هستند.
+/// Count pending referrals for referrer.
 pub async fn count_pending(client: &Client, referrer_id: i64) -> i64 {
     client
         .query_one(
@@ -140,7 +99,7 @@ pub async fn count_pending(client: &Client, referrer_id: i64) -> i64 {
         .unwrap_or(0)
 }
 
-/// مجموع امتیازهایی که تا الان صرف فعال‌سازی رتبه شده.
+/// Total spent referral points for user.
 pub async fn total_spent_points(client: &Client, user_id: i64) -> i64 {
     client
         .query_one(
@@ -152,13 +111,7 @@ pub async fn total_spent_points(client: &Client, user_id: i64) -> i64 {
         .unwrap_or(0)
 }
 
-/// ثبت یک فعال‌سازی و کسر امتیاز، در **یک** statement.
-///
-/// `Ok(true)` یعنی امتیاز کسر شد. `Ok(false)` یعنی کسر نشد — یا موجودی در همین
-/// فاصله توسط درخواست دیگری خرج شده بود (`WHERE` موجودی را در لحظه‌ی اجرا
-/// می‌سنجد، نه در لحظه‌ی خواندن پنل)، یا این دقیقاً همان ردیفی است که درخواست
-/// همزمانِ دیگر ساخته (ایندکس یکتای V005). هیچ‌کدام خطا نیست: کاربر گرانت خودش
-/// را یک‌بار گرفته و نباید دوبار حساب شود.
+/// Records activation and deducts referral points in a single statement.
 pub async fn record_activation(
     client: &Client,
     user_id: i64,
@@ -167,11 +120,6 @@ pub async fn record_activation(
     expires_at: i64,
 ) -> Result<bool, tokio_postgres::Error> {
     let now = now_epoch();
-    // هر دو جای `$3` صریحاً `::bigint` است: اگر یکی خام بماند، Postgres یک‌بار
-    // از ستون `points_spent` (integer) و یک‌بار از مقایسه با `count(*)` (bigint)
-    // نوع را استنباط می‌کند و statement با
-    // «inconsistent types deduced for parameter $3» رد می‌شود. تبدیل bigint به
-    // integer در انتساب ستون خودکار است.
     let rows = client
         .query(
             "INSERT INTO referral_activations (user_id, rank, points_spent, activated_at, expires_at)
@@ -203,31 +151,29 @@ pub async fn record_activation(
     }
 }
 
-/// نتیجه‌ی محاسبه‌ی فعال‌سازی بر اساس رتبه‌ی فعلی کاربر.
+/// Referral activation calculation plan.
 pub enum ActivationPlan {
-    /// رتبه‌ی درخواستی پایین‌تر از رتبه‌ی فعال فعلی (در پلکان زیرمجموعه‌گیری) است.
+    /// Requested rank is lower in referral tier order than current active rank.
     Reject,
-    /// کاربر همین الان رتبه‌ی نامحدود دارد — فعال‌سازی با امتیاز فایده‌ای ندارد.
+    /// User currently has permanent rank.
     AlreadyUnlimited,
-    /// اعمال شود؛ همون فرمول وزنی کد هدیه (`redeem::plan_redeem`): اگر رتبه‌ی فعال
-    /// هم‌ارز/بالاتر باشد، باقیمانده‌ی روزهایش با نسبت وزن تبدیل و با ۳۱ روز جدید جمع می‌شود؛
-    /// وگرنه فقط ۳۱ روز از همین لحظه.
+    /// Apply rank activation with converted remaining days.
     Apply { rank: Rank, expires_at: i64 },
 }
 
-/// موجودی امتیازهای زیرمجموعه‌گیری قابل خرج (تعداد کل - خرج شده)
+/// Available referral points (`total - spent`).
 #[allow(dead_code)]
 pub fn available_points(total_referrals: i64, total_spent: i64) -> i64 {
     total_referrals.saturating_sub(total_spent).max(0)
 }
 
-/// آیا موجودی کاربر برای دریافت یک آستانه (پلکان) کافی است؟
+/// Checks if available points meet tier threshold.
 #[allow(dead_code)]
 pub fn can_claim_tier(total_referrals: i64, total_spent: i64, tier_threshold: u32) -> bool {
     available_points(total_referrals, total_spent) >= tier_threshold as i64
 }
 
-/// محاسبه‌ی روزهای تبدیل‌شده از رتبه‌ی قبلی به رتبه‌ی جدید با نسبت وزن‌ها
+/// Calculates converted days from current rank to target rank based on weights.
 pub fn calculate_converted_days(remaining_days: i64, cur_weight: i64, target_weight: i64) -> i64 {
     if target_weight == cur_weight || target_weight == 0 {
         remaining_days
@@ -262,7 +208,6 @@ pub async fn plan_activation(client: &Client, user_id: i64, tier_rank: Rank) -> 
         };
     }
 
-    // ترتیب اختصاصی پلکان زیرمجموعه‌گیری، نه وزن عمومی رتبه‌ها.
     if tier_position(tier_rank) < tier_position(cur.rank) {
         return ActivationPlan::Reject;
     }
@@ -331,7 +276,6 @@ pub mod tests {
 
     #[test]
     fn test_referral_constants() {
-        assert_eq!(PENDING_DAYS, 2);
         assert_eq!(ACTIVATION_DAYS, 31);
     }
 
@@ -374,12 +318,11 @@ pub mod tests {
         assert!(!rendered.is_empty());
     }
 
-    /// e2e روی دیتابیس dev: موجودی ۱۰ امتیاز و ۶ درخواست همزمان با هزینه‌ی ۱۰
-    /// باید دقیقاً یک‌بار کسر شود و موجودی هرگز منفی نشود.
+    /// E2E test on dev DB: 10 points balance with 6 concurrent requests costing 10 each
+    /// must deduct exactly once, and balance must never go negative.
     ///
-    /// دو گارد جدا آزمایش می‌شوند: فاز ۱ با `expires_at` متفاوت (ایندکس یکتا
-    /// شلیک نمی‌کند، فقط شرط `WHERE` می‌ماند) و فاز ۲ با `expires_at` یکسان
-    /// (همان چیزی که دو کلیک واقعی می‌سازند و ایندکس یکتا می‌گیردش).
+    /// Tests two guards: phase 1 with distinct `expires_at` (WHERE clause guard)
+    /// and phase 2 with identical `expires_at` (unique index guard).
     ///
     /// `cargo test record_activation_e2e -- --ignored --nocapture`
     #[tokio::test]

@@ -47,7 +47,7 @@ pub fn spawn_download(
 ) {
     let cancel = register_cancel(request_id);
     crate::app::spawn_user_task(async move {
-        // check اگر playlist است یا single video
+        // Check whether playlist or single video.
         if let Some(req_peek) = super::store::get_request(request_id) {
             if req_peek.is_playlist && !req_peek.playlist_items.is_empty() {
                 run_playlist_download(
@@ -161,14 +161,14 @@ async fn run_playlist_download(
         ),
     );
 
-    // پیام شروع
+    // Start message
     let start_msg = tf(
         "youtube.download.playlist.start",
         &[("count", &total_videos.to_string())],
     );
     edit_status(&api, status_chat_id, status_message_id, start_msg).await;
 
-    // پیام وضعیت را پین می‌کنیم تا لای فایل‌های ارسالی گم نشود.
+    // Pin status message so it is not lost among sent files.
     let _ = api
         .pin_chat_message(
             &PinChatMessageParams::builder()
@@ -180,7 +180,7 @@ async fn run_playlist_download(
         .await;
 
     let mut sent = 0usize;
-    // (video_num, title, reason) برای هر ویدیویی که ارسال نشد
+    // (video_num, title, reason) for failed video deliveries
     let mut failures: Vec<(usize, String, String)> = Vec::new();
 
     for (idx, item) in req.playlist_items.iter().enumerate() {
@@ -205,10 +205,10 @@ async fn run_playlist_download(
         );
         edit_status(&api, status_chat_id, status_message_id, progress_msg).await;
 
-        // ساخت URL برای یک ویدیو
+        // Build video URL
         let video_url = format!("https://www.youtube.com/watch?v={}", item.id);
 
-        // دانلود + ارسال تک ویدیو به پیوی کاربر
+        // Download and send single video to chat
         match download_single_playlist_item(
             &api,
             &video_url,
@@ -240,7 +240,7 @@ async fn run_playlist_download(
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     }
 
-    // گزارش نهایی: هر ویدیوی ناموفق تک‌تک با دلیل، و در آخر part sent/total
+    // Final report: list failed videos with reason, followed by part sent/total.
     const MAX_LISTED: usize = 15;
     let mut lines: Vec<String> = Vec::new();
     if failures.is_empty() {
@@ -281,7 +281,7 @@ async fn run_playlist_download(
         maybe_send_non_h264_notice(&api, req.chat_id, &codec_name, trace_id).await;
     }
 
-    // آنپین پیام وضعیت — کار تمام شده و گزارش نهایی روی همان پیام است.
+    // Unpin status message once completed.
     let _ = api
         .unpin_chat_message(
             &UnpinChatMessageParams::builder()
@@ -301,8 +301,8 @@ async fn run_playlist_download(
     }
 }
 
-/// یک ویدیوی پلی‌لیست را در یک پوشه‌ی جدا دانلود، به پیوی کاربر ارسال، و پوشه را پاک می‌کند.
-/// `Ok(bytes)` = ارسال موفق؛ `Err(reason)` = دلیل خوانا برای گزارش کاربر.
+/// Downloads a playlist video in a separate directory, sends it to user, and cleans up.
+/// `Ok(bytes)` = successful upload; `Err(reason)` = failure reason for user report.
 async fn download_single_playlist_item(
     api: &Bot,
     video_url: &str,
@@ -316,7 +316,7 @@ async fn download_single_playlist_item(
     let height = selection.height;
     let codec = selection.codec;
 
-    // یک پوشه‌ی جدا برای هر ویدیو تا فایل‌ها با هم قاطی نشوند
+    // Isolated directory for each video to prevent collisions
     let dir = PathBuf::from(format!(
         "{}/{trace_id}/pl_{video_num}",
         crate::config::youtube_download_root()
@@ -330,8 +330,7 @@ async fn download_single_playlist_item(
         return Err(e.to_string());
     }
 
-    // به‌جای format_id ثابت (که فقط برای ویدیوی نماینده معتبر است) از انتخاب‌گر
-    // مبتنی بر ارتفاع/کدک استفاده می‌کنیم تا هر ویدیو فرمت خودش را انتخاب کند.
+    // Use height/codec format selector instead of fixed format_id to select format per video.
     let vcodec_prefix = match codec {
         super::super::types::VideoCodec::H264 => "avc1",
         super::super::types::VideoCodec::H265 => "hevc",
@@ -363,7 +362,7 @@ async fn download_single_playlist_item(
         .arg("-o")
         .arg(&output_template);
 
-    // handling subtitles اگر موجود است
+    // Handle subtitles if present
     if !selection.subtitle_langs.is_empty() {
         let sub_langs = selection.subtitle_langs.join(",");
         cmd.arg("--write-subs")
@@ -423,7 +422,7 @@ async fn download_single_playlist_item(
         return Err(reason);
     }
 
-    // فایل خروجی: از خط after_move:filepath یا بزرگ‌ترین فایل پوشه
+    // Output file: from after_move:filepath line or largest file in directory
     let stdout = String::from_utf8_lossy(&output.stdout);
     let path = stdout
         .lines()
@@ -452,7 +451,7 @@ async fn download_single_playlist_item(
         .map(|m| m.len())
         .unwrap_or(0);
 
-    // کپشن مثل دانلود تکی
+    // Caption formatted like single download
     let quality_label = quality_label_for(height);
     let codec_name = t(codec.label_key());
     let bitrate_str = find_format(req, height, codec)
@@ -560,7 +559,7 @@ async fn run_download(
     let trace_id = req.trace_id;
     let user_id = req.user_id.unwrap_or(0);
 
-    // ثبت شروع دانلود
+    // Record download start
     let stats_job_id = stats::record_download_start(user_id).await;
     let _active_dl_guard = crate::metrics::ActiveDownloadGuard::new();
     let _duration_guard = crate::metrics::RequestDurationGuard::new("youtube");
@@ -1228,8 +1227,8 @@ async fn run_download(
 
     // In File mode, deliver the standalone subtitle file(s) as documents.
     // (Embedded mode bakes them into the mp4 and needs no separate upload.)
-    // زیرنویس‌های ترجمه‌شده (translated_<lang>.srt) در مرحله‌ی ترجمه‌ی پیش از
-    // این ساخته شده‌اند و همین‌جا کنار بقیه فرستاده می‌شوند.
+    // Translated subtitles (translated_<lang>.srt) generated in prior translation step
+    // are sent alongside remaining subtitle files.
     if upload_ok
         && !is_audio
         && selection.subtitle_mode == SubtitleMode::File

@@ -5,9 +5,9 @@ use frankenstein::{AsyncTelegramApi, ParseMode, client_reqwest::Bot, methods::Se
 
 pub const CB_RANK_SHOW_MENU: &str = "rank:menu";
 
-/// محدودیت نوع ۱ — قابلیت برای این رتبه اصلاً در دسترس نیست
-/// feature: نام فارسی قابلیت، مثلاً «تبدیل صدا به متن»
-/// min_rank: حداقل رتبه لازم
+/// Type 1 restriction — feature is unavailable for this rank.
+/// feature: Feature name.
+/// min_rank: Minimum required rank.
 pub async fn block_feature(api: &Bot, chat_id: i64, feature: &str, min_rank: Rank) {
     crate::stats::record_event_global("paywall", "feature", min_rank.as_str(), 0).await;
     let min_rank_name = min_rank.display_name();
@@ -28,16 +28,10 @@ pub async fn block_feature(api: &Bot, chat_id: i64, feature: &str, min_rank: Ran
     send_rank_detail(api, chat_id, None, min_rank).await;
 }
 
-/// محدودیت نوع ۳ — رزرو سهمیه به‌خاطر خطای دیتابیس ممکن نشد ⇒ **fail closed**.
+/// Type 3 restriction — quota reservation failed due to DB error (fail closed).
 ///
-/// کار انجام نمی‌شود و به کاربر گفته می‌شود به ادمین اطلاع دهد. توجه: نقشه‌ی
-/// ۰۱۵ «fail open» را پیشنهاد کرده بود (مثل رفتار قبلیِ `.unwrap_or(0)`)، ولی
-/// تصمیم کاربر در ۲۰۲۶-۰۸-۰۷ این بود که در خطای دیتابیس کاربر مطلع شود؛ عمداً
-/// خلاف پیشنهاد نقشه عمل شده.
-///
-/// ponytail: بدون `parse_mode` فرستاده می‌شود — همین یک متن از ۸ هندلر با
-/// پارس‌مودهای متفاوت (HTML و MarkdownV2) صدا می‌شود و متن خام هیچ‌جا escape
-/// نمی‌خواهد؛ تلگرام خودش `@username` را لینک می‌کند.
+/// Cancels operation and notifies user to contact admin.
+/// Sent without `parse_mode` as raw text to avoid escape conflicts across HTML/MarkdownV2 handlers.
 pub async fn quota_db_error(api: &Bot, chat_id: i64, feature: &str, err: &str) {
     crate::stats::record_error_global(feature, &format!("quota_reserve_failed: {err}")).await;
     let params = SendMessageParams::builder()
@@ -49,9 +43,9 @@ pub async fn quota_db_error(api: &Bot, chat_id: i64, feature: &str, err: &str) {
     }
 }
 
-/// محدودیت نوع ۲ — قابلیت هست ولی با محدودیت عددی (مدت، حجم، تعداد)
-/// limit: توضیح محدودیت، مثلاً «۳۰ دقیقه» یا «۵ گیگابایت روزانه»
-/// min_rank: حداقل رتبه برای بیشتر
+/// Type 2 restriction — feature exists with numeric limit (duration, size, count).
+/// limit: Limit description.
+/// min_rank: Minimum rank required for higher limits.
 pub async fn block_limit(api: &Bot, chat_id: i64, limit: &str, min_rank: Rank) {
     crate::stats::record_event_global("paywall", "limit", min_rank.as_str(), 0).await;
     let min_rank_name = min_rank.display_name();

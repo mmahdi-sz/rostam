@@ -1,10 +1,4 @@
-//! `/test/redeem/apply` — مسیر واقعی مصرف کد هدیه.
-//!
-//! هیچ چیزی بازنویسی نشده: کد آزمایشی با همان `store::create_code` ساخته
-//! می‌شود و تصمیم با همان `handle::handle_redeem` گرفته می‌شود که deep-link
-//! واقعی صدا می‌زند. سه سناریو با همین یک اندپوینت پوشش داده می‌شود:
-//! ۱) seed + مصرف موفق (`Consumed`)، ۲) صدا زدن دوباره با همان کاربر
-//! (`AlreadyRedeemed`)، ۳) کد ناموجود (`redeem.invalid`).
+//! `/test/redeem/apply` — test endpoint for code redemption.
 
 use crate::bot::messaging::CAPTURED_EMOJIS;
 use crate::i18n::RESOLVED_I18N_KEYS;
@@ -19,7 +13,7 @@ use serde::Deserialize;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
-/// شناسه‌های آزمایشی در بازه‌ی `-999xxx` می‌مانند تا با کاربر واقعی برخورد نکنند.
+/// Test user ID in `-999xxx` range to avoid collisions.
 const DEFAULT_UID: i64 = -999_200;
 const DEFAULT_CODE: &str = "TESTAPIREDEEM";
 
@@ -27,13 +21,12 @@ const DEFAULT_CODE: &str = "TESTAPIREDEEM";
 pub struct RedeemApplyReq {
     pub code: Option<String>,
     pub user_id: Option<i64>,
-    /// قبل از اجرا کد را از نو بساز (و ردیف‌های قبلی‌اش را پاک کن).
+    /// Re-seed code before execution (clears prior rows).
     pub seed: Option<bool>,
     pub max_uses: Option<i32>,
     pub rank: Option<String>,
     pub duration_days: Option<i32>,
-    /// بعد از اجرا ردیف‌های آزمایشی پاک شوند (پیش‌فرض: نه، تا تماس دوم
-    /// بتواند `AlreadyRedeemed` را ببیند).
+    /// Clean up test rows after execution (default false).
     pub cleanup: Option<bool>,
 }
 
@@ -65,7 +58,7 @@ pub async fn test_redeem_apply(Json(req): Json<RedeemApplyReq>) -> axum::respons
                 .into_response();
         };
         let client = db.client();
-        // شروع تمیز: اجرای دوباره‌ی سوئیت نباید به ردیف اجرای قبلی گیر کند.
+        // Clean start for seed run.
         if let Err(e) = purge(client, &code, user_id).await {
             return (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -109,7 +102,7 @@ pub async fn test_redeem_apply(Json(req): Json<RedeemApplyReq>) -> axum::respons
                         .scope(i18n_keys.clone(), async {
                             CAPTURED_EMOJIS
                                 .scope(emojis.clone(), async {
-                                    // هندلر واقعیِ deep-link — بدون هیچ shim.
+                                    // Invoke real deep-link handler.
                                     crate::redeem::handle::handle_redeem(
                                         &api,
                                         user_id,
@@ -129,8 +122,7 @@ pub async fn test_redeem_apply(Json(req): Json<RedeemApplyReq>) -> axum::respons
         })
         .await;
 
-    // وضعیت واقعی دیتابیس بعد از اجرا — همان چیزی که باگ «دو ظرفیت سوخته» را
-    // لو می‌دهد، نه متن پیام.
+    // Fetch database state post-execution.
     let (used_count, redemption_rows, user_rank) = match database {
         Some(db) => {
             let client = db.client();
@@ -196,8 +188,7 @@ pub async fn test_redeem_apply(Json(req): Json<RedeemApplyReq>) -> axum::respons
     .into_response()
 }
 
-/// پاک‌کردن هر اثری از این کد/کاربر آزمایشی. فقط ردیف‌های `-999xxx` و کد
-/// آزمایشی را می‌بیند، پس روی داده‌ی واقعی dev اثری ندارد.
+/// Purges test code and user records (`-999xxx`).
 async fn purge(
     client: &tokio_postgres::Client,
     code: &str,

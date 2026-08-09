@@ -1,9 +1,8 @@
-//! چند قفل عضویت اجباری/اختیاری — هر قفل در Redis (Hash) ذخیره می‌شود.
+//! Multiple mandatory/optional membership locks stored in Redis (Hash).
 //!
-//! هر قفل: id عددی، لینک، شناسه‌ی چت (`@username` یا آیدی عددی — برای چک عضویت با
-//! `getChatMember`)، حالت (`mandatory`/`optional`). فقط قفل‌های اجباریِ قابل‌شناسایی
-//! (شناسه‌ی چت معتبر) در گیت چک می‌شن؛ اختیاری‌ها فقط لینکشون کنار پیام قفل نمایش
-//! داده می‌شه، بدون تایید عضویت واقعی.
+//! Each lock: numeric id, link, chat identifier (`@username` or numeric ID — for membership check via
+//! `getChatMember`), mode (`mandatory`/`optional`). Only mandatory identifiable locks
+//! (valid chat identifier) are checked; optional ones display their link without membership verification.
 
 use frankenstein::{
     AsyncTelegramApi,
@@ -42,7 +41,7 @@ const ENABLED_KEY: &str = "force_join:enabled";
 const NEXT_ID_KEY: &str = "force_join:next_id";
 const LOCK_IDS_KEY: &str = "force_join:lock_ids";
 
-// پنل ادمین — دکمه‌های زیرمنوی «قفل اجباری»
+// Admin panel — "Force join lock" submenu buttons
 pub const CB_FJ_TOGGLE: &str = "fj:toggle";
 pub const CB_FJ_VIEW: &str = "fj:view";
 pub const CB_FJ_NOOP: &str = "fj:nop";
@@ -66,13 +65,13 @@ pub struct Lock {
     pub display_override: String,
     pub mode: String,
     pub created_at: i64,
-    pub expires_at: i64, // 0 = بدون حد زمان
-    pub member_cap: i64, // 0 = بدون سقف عضو
+    pub expires_at: i64, // 0 = no time limit
+    pub member_cap: i64, // 0 = no member limit
     pub reserve_link: String,
 }
 
 impl Lock {
-    /// نام نمایشی: بازنویسی دستی ادمین، وگرنه اسم واقعی چت (getChat)، وگرنه شناسه، وگرنه لینک.
+    /// Display name: Admin manual override, else chat title (getChat), else identifier, else link.
     fn display_name(&self) -> String {
         if !self.display_override.is_empty() {
             self.display_override.clone()
@@ -117,7 +116,7 @@ fn now_epoch() -> i64 {
         .unwrap_or(0)
 }
 
-/// ارقام فارسی/عربی → انگلیسی، برای پارس کردن ورودی عددی ادمین.
+/// Persian/Arabic digits → English, for parsing admin numeric input.
 fn to_en_digits(s: &str) -> String {
     s.chars()
         .map(|c| match c {
@@ -128,7 +127,7 @@ fn to_en_digits(s: &str) -> String {
         .collect()
 }
 
-/// تاریخ/ساعت شمسی به‌وقت تهران با ارقام انگلیسی — از مسیر مطمئن chrono + gregorian_to_jalali.
+/// Jalali date/time in Tehran timezone with English digits via chrono + gregorian_to_jalali.
 fn fmt_jalali_dt(epoch: i64) -> String {
     use chrono::{Datelike, Timelike};
     use chrono_tz::Asia::Tehran;
@@ -148,8 +147,8 @@ fn no_preview() -> LinkPreviewOptions {
     LinkPreviewOptions::builder().is_disabled(true).build()
 }
 
-/// مثل `crate::bot::edit_text` ولی همیشه پیش‌نمایش لینک را خاموش می‌کنه —
-/// قفل‌ها متن خام لینک رو نشون می‌دن و نباید پیش‌نمایش بسازن.
+/// Like `crate::bot::edit_text` but always disables link preview —
+/// locks display raw link text and should not generate previews.
 async fn edit_text_np(
     api: &Bot,
     chat_id: i64,
@@ -184,7 +183,7 @@ async fn edit_text_np(
     };
 }
 
-/// مثل `crate::bot::send_text` ولی همیشه پیش‌نمایش لینک را خاموش می‌کنه.
+/// Like `crate::bot::send_text` but always disables link preview.
 async fn send_text_np(api: &Bot, chat_id: i64, text: &str) {
     let params = SendMessageParams::builder()
         .chat_id(chat_id)
@@ -231,8 +230,8 @@ fn linked_count_key(lock_id: i64) -> String {
     format!("force_join:lock:{lock_id}:linked_count")
 }
 
-/// شناسه‌ی چت را از یک لینک عمومی `t.me/username` استخراج می‌کند؛ برای لینک‌های
-/// خصوصی (`+`) یا غیر-تلگرامی (اینستاگرام و…) چیزی برنمی‌گرداند.
+/// Extracts chat identifier from a public `t.me/username` link; returns None for
+/// private (`+`) or non-Telegram links.
 fn derive_identifier(link: &str) -> Option<String> {
     if !link.contains("t.me/") {
         return None;
@@ -244,7 +243,7 @@ fn derive_identifier(link: &str) -> Option<String> {
     Some(format!("@{seg}"))
 }
 
-/// اسم واقعی چت را از تلگرام می‌گیره (نه یوزرنیم) — مثلاً «Vilix»، نه «@vilix».
+/// Gets actual chat title from Telegram (not username) — e.g. "Vilix", not "@vilix".
 async fn fetch_chat_title(api: &Bot, chat_id: ChatId) -> String {
     let params = GetChatParams::builder().chat_id(chat_id).build();
     match api.get_chat(&params).await {
@@ -253,7 +252,7 @@ async fn fetch_chat_title(api: &Bot, chat_id: ChatId) -> String {
     }
 }
 
-/// افزودن قفل جدید (پیش‌فرض: اختیاری). شناسه‌ی چت اگه داده نشده باشه، از لینک استخراج می‌شه.
+/// Adds a new lock (default: optional). Chat identifier extracted from link if omitted.
 pub async fn add_lock(api: &Bot, link: &str, identifier: Option<&str>) -> i64 {
     let resolved = identifier
         .map(|s| s.to_string())
@@ -338,7 +337,7 @@ async fn set_field(id: i64, field: &str, value: &str) {
         .await;
 }
 
-/// حذف کامل یک قفل (از لیست + هش + شمارنده‌ها).
+/// Deletes a lock completely (from list + hash + counters).
 pub async fn delete_lock(id: i64) {
     let Ok(mut c) = conn().await else { return };
     let _: Result<i64, _> = redis::cmd("LREM")
@@ -355,13 +354,13 @@ pub async fn delete_lock(id: i64) {
         .await;
 }
 
-/// ذخیره‌ی نام نمایشی دلخواه ادمین.
+/// Saves custom admin display name.
 pub async fn set_display_name(id: i64, name: &str) {
     set_field(id, "display_override", name.trim()).await;
 }
 
-/// حد زمان: ورودی تعداد روز (مثلاً «۷» یا «30»)؛ «0»/«-»/«حذف» → بدون حد.
-/// خروجی: true اگر ورودی معتبر بود.
+/// Time limit: input number of days (e.g. "7" or "30"); "0"/"-"/"delete" → no limit.
+/// Returns true if input was valid.
 pub async fn set_time_limit(id: i64, input: &str) -> bool {
     let s = to_en_digits(input.trim());
     if s == "0" || s == "-" || s.contains("حذف") {
@@ -377,7 +376,7 @@ pub async fn set_time_limit(id: i64, input: &str) -> bool {
     }
 }
 
-/// حد عضو: سقف عضوگیری از این قفل؛ «0»/«-»/«حذف» → بدون سقف.
+/// Member cap: max members for this lock; "0"/"-"/"delete" → no limit.
 pub async fn set_member_cap(id: i64, input: &str) -> bool {
     let s = to_en_digits(input.trim());
     if s == "0" || s == "-" || s.contains("حذف") {
@@ -393,7 +392,7 @@ pub async fn set_member_cap(id: i64, input: &str) -> bool {
     }
 }
 
-/// لینک رزرو (جایگزین همین قفل).
+/// Reserve link (fallback for this lock).
 pub async fn set_reserve_link(id: i64, link: &str) {
     set_field(id, "reserve_link", link.trim()).await;
 }
@@ -429,7 +428,7 @@ async fn list_locks() -> Vec<Lock> {
     out
 }
 
-/// قفل‌های اجباریِ فعال: اجباری + شناسه‌ی معتبر + منقضی‌نشده + به سقف عضو نرسیده.
+/// Active mandatory locks: mandatory + valid identifier + not expired + member cap not reached.
 async fn mandatory_locks() -> Vec<Lock> {
     let mut out = Vec::new();
     for l in list_locks().await {
@@ -437,15 +436,15 @@ async fn mandatory_locks() -> Vec<Lock> {
             continue;
         }
         if l.member_cap != 0 && linked_count(l.id).await >= l.member_cap {
-            continue; // سقف عضوگیری پر شده → دیگه اجبار نکن
+            continue; // Member cap reached → stop enforcing
         }
         out.push(l);
     }
     out
 }
 
-/// ربات باید ادمینِ آن چت (با دسترسی کامل) باشه تا بشه اون قفل رو اجباری کرد —
-/// وگرنه getChatMember روی کاربرهای دیگه هم جواب نمی‌ده.
+/// Bot must be chat admin (with full access) to enforce mandatory lock —
+/// otherwise getChatMember fails for other users.
 async fn bot_has_full_access(api: &Bot, chat_id: ChatId) -> bool {
     let Ok(me) = api.get_me().await else {
         return false;
@@ -465,9 +464,9 @@ async fn bot_has_full_access(api: &Bot, chat_id: ChatId) -> bool {
 
 pub enum ToggleModeResult {
     Ok,
-    /// این قفل شناسه‌ی چت قابل‌شناسایی نداره (مثلاً لینک اینستاگرام) — هرگز اجباری نمی‌شه.
+    /// Lock lacks identifiable chat ID (e.g. Instagram link) — cannot be mandatory.
     NoChatId,
-    /// ربات هنوز ادمینِ آن کانال/گروه نیست.
+    /// Bot is not admin in the channel/group.
     BotNotAdmin,
     NotFound,
 }
@@ -501,8 +500,8 @@ pub async fn toggle_lock_mode(api: &Bot, id: i64) -> ToggleModeResult {
     ToggleModeResult::Ok
 }
 
-/// وضعیت عضویت کاربر در یک قفل مشخص را کش می‌کند و شمارنده‌های «قبلاً عضو بود» /
-/// «از طریق لینک عضو شد» را به‌روز نگه می‌دارد.
+/// Caches user membership status for a lock and updates "already joined" /
+/// "joined via link" counters.
 pub async fn cache_status(lock_id: i64, user_id: i64, joined: bool) {
     let Ok(mut c) = conn().await else { return };
     let ttl = if joined {
@@ -575,7 +574,7 @@ async fn check_lock_membership(api: &Bot, lock: &Lock, user_id: i64, force: bool
         .build();
     let joined = match api.get_chat_member(&params).await {
         Ok(resp) => is_member_status(&resp.result),
-        Err(_) => true, // نبود اطلاعات نباید کاربر را ناحق قفل کند
+        Err(_) => true, // Missing info should not lock out user
     };
     cache_status(lock.id, user_id, joined).await;
     joined
@@ -597,19 +596,19 @@ async fn is_joined_inner(api: &Bot, user_id: i64, force: bool) -> bool {
     true
 }
 
-/// چک تمام قفل‌های اجباریِ قابل‌شناسایی (با کش). اگر سوییچ کلی خاموش باشه یا هیچ
-/// قفل اجباری‌ای نباشه، همیشه true.
+/// Checks all identifiable mandatory locks (cached). Always true if master toggle is off
+/// or no mandatory locks exist.
 pub async fn is_joined(api: &Bot, user_id: i64) -> bool {
     is_joined_inner(api, user_id, false).await
 }
 
-/// مثل `is_joined` ولی کش را دور می‌زنه و مستقیم از تلگرام تازه می‌پرسه —
-/// برای دکمه‌ی «عضو شدم» که نباید قربانی کشِ ۵ دقیقه‌ای `NOT_JOINED_TTL_SECS` بشه.
+/// Like `is_joined` but bypasses cache and queries Telegram directly —
+/// for "I joined" button so it is not delayed by `NOT_JOINED_TTL_SECS`.
 pub async fn is_joined_live(api: &Bot, user_id: i64) -> bool {
     is_joined_inner(api, user_id, true).await
 }
 
-/// آپدیت `chat_member` را به قفلی که چتش منطبقه نسبت می‌ده (ممکنه با چند قفل مطابق باشه).
+/// Maps `chat_member` update to matching lock (may match multiple locks).
 pub async fn on_chat_member_update(chat: &Chat, new_member: &ChatMember) {
     let joined = is_member_status(new_member);
     let user_id = chat_member_user_id(new_member);
@@ -627,7 +626,7 @@ pub async fn on_chat_member_update(chat: &Chat, new_member: &ChatMember) {
     }
 }
 
-/// روشن/خاموش بودن قفل اجباری (سوییچ کلی ادمین، مستقل از تک‌تک قفل‌ها).
+/// Global mandatory lock toggle switch (independent of individual locks).
 pub async fn is_enabled() -> bool {
     let Ok(mut c) = conn().await else {
         return false;
@@ -686,7 +685,7 @@ fn menu_keyboard(enabled: bool) -> InlineKeyboardMarkup {
         .build()
 }
 
-/// نمایش/رفرش زیرمنوی «قفل اجباری» در پنل ادمین
+/// Displays or refreshes "Force join" submenu in admin panel.
 pub async fn open_menu(api: &Bot, chat_id: i64, message_id: i32) {
     let enabled = is_enabled().await;
     let _ = edit_text_np(
@@ -741,13 +740,13 @@ fn locks_list_view(locks: &[Lock]) -> (String, InlineKeyboardMarkup) {
     )
 }
 
-/// نمایش صفحه‌ی «مشاهده و تنظیم قفل» — لیست قفل‌های تنظیم‌شده (ویرایش پیام موجود).
+/// Renders "View locks" page (edits existing message).
 pub async fn open_locks_list(api: &Bot, chat_id: i64, message_id: i32) {
     let (text, kb) = locks_list_view(&list_locks().await);
     edit_text_np(api, chat_id, message_id, &text, Some(kb)).await;
 }
 
-/// همون لیست قفل‌ها، به‌صورت پیام جدید — برای نمایش «درجا» بعد از افزودن قفل.
+/// Same locks list as a new message — for immediate display after adding lock.
 pub async fn send_locks_list(api: &Bot, chat_id: i64) {
     let (text, kb) = locks_list_view(&list_locks().await);
     let params = SendMessageParams::builder()
@@ -759,7 +758,7 @@ pub async fn send_locks_list(api: &Bot, chat_id: i64) {
     let _ = api.send_message(&params).await;
 }
 
-/// متن + کیبورد پنل «⚙️ مدیریت قفل». اگر قفل نبود، None.
+/// Text and keyboard for "⚙️ Manage lock" panel. Returns None if lock not found.
 async fn build_manage(
     lock_id: i64,
     database: &Option<PostgresDatabase>,
@@ -827,7 +826,7 @@ async fn build_manage(
         lock.member_cap.to_string()
     };
 
-    // چیدمان RTL: [value, label] → مقدار سمت چپ، برچسب «>» سمت راست (مطابق تصویر).
+    // RTL layout: [value, label] → value on left, label on right.
     let name_cb = format!("{FJ_NAME_PREFIX}{lock_id}");
     let mode_cb = format!("{FJ_MODE_PREFIX}{lock_id}");
     let time_cb = format!("{FJ_TIME_PREFIX}{lock_id}");
@@ -866,7 +865,7 @@ async fn build_manage(
     Some((text, kb))
 }
 
-/// نمایش پنل مدیریت قفل با ویرایش پیام موجود.
+/// Displays lock management panel by editing existing message.
 pub async fn open_manage(
     api: &Bot,
     chat_id: i64,
@@ -892,7 +891,7 @@ pub async fn open_manage(
     }
 }
 
-/// پنل مدیریت قفل به‌صورت پیام جدید (بعد از ورودی متنی ادمین — UX بهتر).
+/// Lock management panel as a new message (after admin text input).
 pub async fn send_manage(
     api: &Bot,
     chat_id: i64,
@@ -910,7 +909,7 @@ pub async fn send_manage(
     }
 }
 
-/// نمایش «⚙️ مدیریت قفل» یک قفل مشخص — منوی حذف (تایید).
+/// Displays delete confirmation menu for a lock.
 pub async fn open_delete_confirm(api: &Bot, chat_id: i64, message_id: i32, lock_id: i64) {
     let name = get_lock(lock_id)
         .await
@@ -938,8 +937,8 @@ pub async fn open_delete_confirm(api: &Bot, chat_id: i64, message_id: i32, lock_
     .await;
 }
 
-/// شروع ویزارد ویرایش یک فیلد قفل (نام/زمان/عضو/رزرو): پیام پنل را به پرامپت ورودی
-/// تبدیل می‌کند و منتظر پیام متنی بعدی می‌مونه.
+/// Starts field edit wizard (name/time/member/reserve): turns panel message into input prompt
+/// and awaits next text message.
 pub async fn prompt_field(
     api: &Bot,
     chat_id: i64,
@@ -970,7 +969,7 @@ pub async fn prompt_field(
     edit_text_np(api, chat_id, message_id, &t(prompt_key), Some(kb)).await;
 }
 
-/// ورودی متنی ویزارد ویرایش فیلد را ذخیره و پنل مدیریت را دوباره نشون می‌ده.
+/// Saves field edit wizard text input and re-displays management panel.
 pub async fn handle_field_message(
     api: &Bot,
     chat_id: i64,
@@ -995,16 +994,16 @@ pub async fn handle_field_message(
         _ => false,
     };
     if !ok {
-        // ورودی نامعتبر (عدد لازم بود) — بمون تو ویزارد و خطا بده.
+        // Invalid input (number required) — stay in wizard and show error.
         send_text_np(api, chat_id, &t("force_join.invalid_number")).await;
         return;
     }
     flow_manager.clear(user_id);
-    // پنل به‌روزشده رو به‌صورت پیام جدید زیر پیام کاربر بفرست.
+    // Send updated panel as new message under user message.
     send_manage(api, chat_id, lock_id, database).await;
 }
 
-/// دکمه‌ی «افزودن قفل جدید»: راهنمای فرمت لینک را نشون میده و منتظر پیام بعدی می‌مونه.
+/// "Add new lock" button: shows link format instructions and awaits next message.
 pub async fn prompt_add_new(
     api: &Bot,
     chat_id: i64,
@@ -1034,7 +1033,7 @@ fn is_private_tme_link(text: &str) -> bool {
     text.contains("t.me/+") || text.contains("t.me/joinchat/")
 }
 
-/// وقتی ادمین در حالت AwaitingForceJoinLink پیام متنی می‌فرسته.
+/// Called when admin sends text message in AwaitingForceJoinLink state.
 pub async fn handle_link_message(
     api: &Bot,
     chat_id: i64,
@@ -1058,7 +1057,7 @@ pub async fn handle_link_message(
     }
 }
 
-/// وقتی ادمین در حالت AwaitingForceJoinPrivateInfo یوزرنیم/آیدی عددی/فوروارد می‌فرسته.
+/// Called when admin sends username/numeric ID/forwarded message in AwaitingForceJoinPrivateInfo state.
 pub async fn handle_private_info_message(
     api: &Bot,
     chat_id: i64,
@@ -1100,7 +1099,7 @@ pub async fn handle_private_info_message(
         None
     };
 
-    let Some(identifier) = identifier else { return }; // نامفهوم بود؛ همچنان منتظر می‌مونیم
+    let Some(identifier) = identifier else { return }; // Unrecognized input; remain waiting
 
     add_lock(api, link, Some(&identifier)).await;
     flow_manager.clear(user_id);
@@ -1126,8 +1125,8 @@ fn url_button(text: &str, url: &str) -> InlineKeyboardButton {
     }
 }
 
-/// پیام قفل: همه‌ی قفل‌ها (اجباری + اختیاری) به‌صورت دکمه‌ی لینک نشون داده می‌شن.
-/// لینک رزرو (اگه باشه) در همون ردیف کنار لینک اصلی می‌آد.
+/// Lock message: all locks (mandatory + optional) rendered as link buttons.
+/// Reserve link (if present) rendered in same row next to main link.
 pub async fn send_lock_message(api: &Bot, chat_id: i64) {
     let locks = list_locks().await;
     let mut rows: Vec<Vec<InlineKeyboardButton>> = locks

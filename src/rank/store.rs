@@ -2,10 +2,10 @@ use tokio_postgres::Client;
 
 use super::types::Rank;
 
-/// اطلاعات مقام کاربر از DB
+/// User rank details from DB.
 pub struct UserRankRow {
     pub rank: Rank,
-    /// Unix timestamp — None یعنی نامحدود
+    /// Unix timestamp (`None` means permanent).
     pub expires_at: Option<i64>,
 }
 

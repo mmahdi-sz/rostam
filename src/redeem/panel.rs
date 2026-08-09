@@ -1,4 +1,4 @@
-//! پنل گرافیکی ساخت کد هدیه (ادمین): انتخاب مقام/مدت/تعداد با دکمه‌ها.
+//! Gift code generation UI panel (admin): options for rank, duration, and usage count.
 
 use frankenstein::types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup};
 
@@ -15,7 +15,7 @@ pub const CB_GC_USES: &str = "gc:u:"; // gc:u:{uses}
 pub const CB_GC_GO: &str = "gc:go";
 pub const CB_GC_NOP: &str = "gc:nop";
 
-// چیدمان‌ها
+// Layout options
 const RANKS: &[Rank] = &[Rank::Sepahbod, Rank::Esfandyar, Rank::Sohrab, Rank::Rostam];
 const DAYS: &[i32] = &[15, 31, 45, 60];
 
@@ -41,7 +41,7 @@ fn btn(text: String, cb: String, style: Option<ButtonStyle>) -> InlineKeyboardBu
     }
 }
 
-/// دکمه‌ی انتخابی: انتخاب‌شده → سبز (Success)
+/// Choice button: selected -> green (`Success`).
 fn choice(text: String, cb: String, selected: bool) -> InlineKeyboardButton {
     btn(
         text,
@@ -58,7 +58,7 @@ fn header(text: &str) -> InlineKeyboardButton {
     plain(text.to_string(), CB_GC_NOP)
 }
 
-/// متن بالای پنل با خلاصه‌ی انتخاب فعلی
+/// Panel text header with summary of current selection.
 pub fn panel_text(sel: &GenSelection) -> String {
     let rank_name = sel.rank.display_name();
     to_fa_digits(&tf(
@@ -71,11 +71,11 @@ pub fn panel_text(sel: &GenSelection) -> String {
     ))
 }
 
-/// کیبورد پنل بر اساس انتخاب فعلی
+/// Builds panel inline keyboard based on current selection.
 pub fn build_keyboard(sel: &GenSelection) -> InlineKeyboardMarkup {
     let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
 
-    // ── مقام (۲×۲) ──
+    // ── Rank (2x2) ──
     rows.push(vec![header(&t("redeem.panel_rank_header"))]);
     for pair in RANKS.chunks(2) {
         let row: Vec<InlineKeyboardButton> = pair
@@ -91,7 +91,7 @@ pub fn build_keyboard(sel: &GenSelection) -> InlineKeyboardMarkup {
         rows.push(row);
     }
 
-    // ── مدت (۲×۲) ──
+    // ── Duration (2x2) ──
     rows.push(vec![header(&t("redeem.panel_duration_header"))]);
     for pair in DAYS.chunks(2) {
         let row: Vec<InlineKeyboardButton> = pair
@@ -107,7 +107,7 @@ pub fn build_keyboard(sel: &GenSelection) -> InlineKeyboardMarkup {
         rows.push(row);
     }
 
-    // ── تعداد مصرف (۲ ردیف × ۵ ستون: ۱..۱۰) ──
+    // ── Max uses (2 rows x 5 cols: 1..10) ──
     rows.push(vec![header(&t("redeem.panel_uses_header"))]);
     for chunk in (1..=10).collect::<Vec<i32>>().chunks(5) {
         let row: Vec<InlineKeyboardButton> = chunk
@@ -123,7 +123,7 @@ pub fn build_keyboard(sel: &GenSelection) -> InlineKeyboardMarkup {
         rows.push(row);
     }
 
-    // ── تایید + برگشت ──
+    // ── Confirm + Back ──
     rows.push(vec![btn(
         t("redeem.panel_create_btn"),
         CB_GC_GO.to_string(),

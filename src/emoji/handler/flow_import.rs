@@ -65,7 +65,7 @@ pub(super) async fn handle_import_file(
             }
         },
         Err(e) => {
-            // خطای getFile آدرس درخواست (شامل توکن) را در Display خود دارد.
+            // getFile error includes request URL (with token) in its Display output.
             eprintln!(
                 "[emoji_msg trace={trace_id} event=import_get_file_failed] err={}",
                 crate::log::redact(&e.to_string())

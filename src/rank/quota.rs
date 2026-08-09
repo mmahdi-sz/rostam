@@ -1,6 +1,6 @@
 use tokio_postgres::Client;
 
-/// نوع quota
+/// Quota kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum QuotaKind {
@@ -58,7 +58,7 @@ fn now_epoch() -> i64 {
         .unwrap_or(0)
 }
 
-/// شروع روز جاری ساعت ۰۰:۰۰ به وقت تهران (UTC+3:30 = 12600 ثانیه)
+/// Start of today at 00:00 Tehran time (UTC+3:30 = 12600 seconds).
 fn today_start_tehran() -> i64 {
     const TEHRAN_OFFSET: i64 = 3 * 3600 + 30 * 60;
     let now = now_epoch();
@@ -67,8 +67,7 @@ fn today_start_tehran() -> i64 {
     day_start_local - TEHRAN_OFFSET
 }
 
-/// شروع دوره ماهانه جاری بر اساس first_upload_at
-/// هر ۳۰ روز یک دوره — آخرین مضرب ۳۰ روز از first_upload_at که قبل از now باشه
+/// Start of monthly window based on `first_upload_at` (30-day cycles).
 fn monthly_window_start(first_upload_at: i64) -> i64 {
     let now = now_epoch();
     let elapsed = now - first_upload_at;
@@ -76,7 +75,7 @@ fn monthly_window_start(first_upload_at: i64) -> i64 {
     first_upload_at + cycles * 30 * 86_400
 }
 
-/// مصرف ترافیک روزانه (bytes)
+/// Daily traffic usage (bytes).
 pub async fn get_daily_traffic(
     client: &Client,
     user_id: i64,
@@ -92,7 +91,7 @@ pub async fn get_daily_traffic(
     Ok(row.map(|r| r.get::<_, i64>(0)).unwrap_or(0))
 }
 
-/// مصرف ترافیک ماهانه (bytes) — نیاز به first_upload_at داره
+/// Monthly traffic usage (bytes).
 pub async fn get_monthly_traffic(
     client: &Client,
     user_id: i64,
@@ -109,7 +108,7 @@ pub async fn get_monthly_traffic(
     Ok(row.map(|r| r.get::<_, i64>(0)).unwrap_or(0))
 }
 
-/// خواندن first_upload_at کاربر از stats_users (None اگه هنوز آپلودی نکرده)
+/// Get `first_upload_at` from `stats_users`.
 pub async fn get_first_upload_at(client: &Client, user_id: i64) -> Option<i64> {
     client
         .query_opt(
@@ -122,8 +121,7 @@ pub async fn get_first_upload_at(client: &Client, user_id: i64) -> Option<i64> {
         .and_then(|r| r.get::<_, Option<i64>>(0))
 }
 
-/// ثبت ترافیک آپلود موفق — daily + monthly با هم
-/// first_upload_at: اولین آپلود موفق کاربر (همین آپلود اگه اولیه)
+/// Add upload traffic (both daily and monthly).
 pub async fn add_traffic(
     client: &Client,
     user_id: i64,
@@ -168,7 +166,7 @@ pub async fn add_traffic(
     Ok(())
 }
 
-/// مصرف فعلی برای quota‌های غیرترافیکی (weekly/monthly با window ثابت)
+/// Current usage for non-traffic quotas.
 pub async fn get_usage(
     client: &Client,
     user_id: i64,
@@ -186,7 +184,7 @@ pub async fn get_usage(
     Ok(row.map(|r| r.get::<_, i64>(0)).unwrap_or(0))
 }
 
-/// افزایش مصرف برای quota‌های غیرترافیکی
+/// Increment usage for non-traffic quotas.
 pub async fn add_usage(
     client: &Client,
     user_id: i64,
@@ -219,24 +217,13 @@ pub async fn add_usage(
     Ok(())
 }
 
-/// آیا `amount` در `limit` جا می‌شود؟
-///
-/// این گارد سمت Rust **لازم** است و redundant نیست: در `reserve_usage`،
-/// `DO UPDATE ... WHERE` فقط شاخه‌ی تعارض را می‌بندد. برای اولین ردیفِ کاربر
-/// (بدون تعارض) `INSERT` بی‌قید اجرا می‌شود، پس اگر همین‌جا جلوی
-/// `amount > limit` را نگیریم، اولین درخواستِ بزرگ‌تر از سهمیه رزرو می‌شود.
-/// مقدار منفی هم رد می‌شود تا یک باگ کست به refund مجانی تبدیل نشود.
+/// Checks if `amount` fits within `limit`. Rejects negative amounts.
 fn fits(amount: i64, limit: i64) -> bool {
     amount >= 0 && amount <= limit
 }
 
-/// رزرو اتمیک سهمیه: اگر مصرف فعلی + amount از limit بگذرد، هیچ چیز تغییر نمی‌کند.
-/// روی همان پنجره‌ی کشویی `add_usage` کار می‌کند (پنجره منقضی → ریست).
-/// `Ok(None)` یعنی جا نبود؛ `Ok(Some(used_after))` یعنی رزرو شد.
-///
-/// چرا یک statement: `client` اینجا `Arc<Client>` است و `transaction()` به
-/// `&mut self` نیاز دارد، پس تراکنش وجود ندارد. بررسی سقف و افزایش شمارنده باید
-/// در همان یک statement باشد تا پنجره‌ی رقابت سمت برنامه صفر شود.
+/// Atomically reserves usage if `current + amount <= limit`.
+/// Returns `Ok(None)` if quota exceeded, or `Ok(Some(used_after))` if reserved.
 pub async fn reserve_usage(
     client: &Client,
     user_id: i64,
@@ -251,9 +238,6 @@ pub async fn reserve_usage(
     let now = now_epoch();
     let window_start = now - window_secs;
 
-    // `WHERE` همان دو `CASE` بالا را تکرار می‌کند، چون سقف روی مقدار
-    // «بعد از rollover» اعمال می‌شود؛ بدون `CASE` کاربری که پنجره‌اش
-    // منقضی شده با مصرف هفته‌ی قبل بلاک می‌شد.
     let row = client
         .query_opt(
             "INSERT INTO user_quotas (user_id, quota_type, used, window_start)
@@ -286,15 +270,10 @@ pub async fn reserve_usage(
         )
         .await?;
 
-    // `RETURNING` وقتی `WHERE` رد شود هیچ ردیفی نمی‌دهد — پس `query_opt`،
-    // نه `query_one` (که صفر ردیف را `Err` می‌کند و سهمیه‌ی پرشده را
-    // خطای دیتابیس گزارش می‌داد).
     Ok(row.map(|r| r.get::<_, i64>(0)))
 }
 
-/// برگرداندن سهمیه‌ی رزروشده (کار شکست خورد). هرگز زیر صفر نمی‌رود.
-/// اگر پنجره در این فاصله عوض شده باشد، ردیف دست‌نخورده می‌ماند — درست است،
-/// چون آن بدهی با ریست پنجره از بین رفته.
+/// Refund reserved quota (e.g. task failure). Clamped at 0.
 pub async fn refund_usage(
     client: &Client,
     user_id: i64,
@@ -304,8 +283,6 @@ pub async fn refund_usage(
 ) -> Result<(), tokio_postgres::Error> {
     let window_start = now_epoch() - window_secs;
 
-    // کلامپ صفر اختیاری نیست: بدون آن دو بار refund مصرف را منفی می‌کند و
-    // سهمیه‌ی کاربر بی‌نهایت می‌شود.
     client
         .execute(
             "UPDATE user_quotas
@@ -326,7 +303,7 @@ pub mod tests {
     fn test_fits_boundaries() {
         assert!(fits(0, 0));
         assert!(!fits(1, 0));
-        assert!(fits(5, 5)); // مرز دقیق باید پاس شود (<= نه <)
+        assert!(fits(5, 5));
         assert!(!fits(6, 5));
     }
 

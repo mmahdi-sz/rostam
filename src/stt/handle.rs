@@ -29,9 +29,7 @@ static ACTIVE_STT_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
 // ponytail: thin shim — existing log_trace() calls below keep working with correct domain.
 fn log_trace(trace_id: u64, event: &str, details: &str) {
     crate::log::emit("stt", trace_id, event, details);
-}
-
-// action قابل‌گرپ برای آمار: big/fast + fa/en + پسوند denoise.
+} // Action string for stats: big/fast + fa/en + optional _dn suffix.
 fn stt_action(config: &SttConfig) -> String {
     let model = match config.model_size {
         SttModelSize::Large => "big",
@@ -120,7 +118,7 @@ pub async fn handle_stt_callback(
                 _ => unreachable!(),
             };
 
-            // paywall — مدل دقیق فقط سهراب به بالا
+            // Paywall — Accurate model requires Sohrab rank or higher
             if size == SttModelSize::Large {
                 if let Some(db) = database.as_ref() {
                     let user_rank = rank::effective_rank(db.client(), user_id).await;
@@ -167,9 +165,6 @@ pub async fn handle_stt_callback(
                 &format!("user_id={user_id} lang={lang:?} size={size:?} denoise={denoise}"),
             );
 
-            // label_key() برمی‌گرداند کلید i18n را، نه متن؛ بدون t() کاربر خود
-            // کلید («stt.language.en_big») را می‌دید. برچسب پرانتز دارد، پس
-            // پیش از رفتن داخل قالب MarkdownV2 اسکیپ می‌شود.
             let model_label = crate::i18n::md_escape(&t(config.label_key()));
             let text = apply_premium_to_md(&tf("stt.ready_title", &[("model", &model_label)]));
             let params = EditMessageTextParams::builder()
@@ -191,7 +186,7 @@ pub async fn handle_stt_callback(
                 _ => return false,
             };
 
-            // paywall — فعال کردن denoise فقط سهراب به بالا
+            // Paywall — Denoise requires Sohrab rank or higher
             if !config.denoise {
                 if let Some(db) = database.as_ref() {
                     let user_rank = rank::effective_rank(db.client(), user_id).await;
@@ -446,8 +441,7 @@ pub async fn handle_stt_audio(
     let audio_duration = wav_duration(wav_str).unwrap_or(0.0);
     let duration_secs = audio_duration.ceil() as u64;
 
-    // 3. رزرو سهمیه — بعد از دونستن طول فایل. پنجره‌ی کوتاه‌تر اول؛ اگر هفتگی رد
-    // شد روزانه پس داده می‌شود.
+    // Quota reservation
     let (daily_kind, weekly_kind) = match config.model_size {
         SttModelSize::Large => (QuotaKind::SttAccurateDaily, QuotaKind::SttAccurateWeekly),
         SttModelSize::Small => (QuotaKind::SttFastDaily, QuotaKind::SttFastWeekly),
@@ -487,14 +481,8 @@ pub async fn handle_stt_audio(
         if let Some(daily_limit) = daily_limit_opt {
             let weekly_limit = weekly_limit_opt.unwrap_or(u64::MAX);
 
-            // ponytail: حداقل یک ثانیه — خواندن هدر WAV که شکست بخورد duration
-            // صفر می‌شود و رزرو صفر همیشه جا می‌شود، یعنی کار مجانی روی سهمیه‌ی
-            // تمام‌شده.
             reserve_secs = duration_secs.max(1) as i64;
 
-            // پیام رد سه حالت دارد (روزانه تمام / هفتگی تمام / فایل بلندتر از
-            // باقی‌مانده). رزرو فقط می‌گوید «جا نشد»، پس مصرف را تنها روی مسیر
-            // رد می‌خوانیم.
             macro_rules! deny {
                 ($event:expr) => {{
                     let d_used = get_usage(db.client(), user_id, daily_kind, 86400)
@@ -532,7 +520,6 @@ pub async fn handle_stt_audio(
                 }};
             }
 
-            // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
             macro_rules! db_fail {
                 ($e:expr) => {{
                     remove_active_stt_job(user_id);
@@ -568,8 +555,6 @@ pub async fn handle_stt_audio(
                 Err(e) => db_fail!(e),
             }
 
-            // `weekly_limit` می‌تواند `u64::MAX` باشد (نامحدود)؛ کست به i64 آن را
-            // منفی می‌کند، پس روی سقف i64 کلامپ می‌شود.
             let weekly_limit_i64 = weekly_limit.min(i64::MAX as u64) as i64;
             match reserve_usage(
                 db.client(),
@@ -603,7 +588,6 @@ pub async fn handle_stt_audio(
         }
     }
 
-    // برگرداندن هر دو پنجره وقتی کار به نتیجه نرسید.
     macro_rules! refund {
         ($why:expr) => {
             if reserved {
@@ -628,12 +612,22 @@ pub async fn handle_stt_audio(
 
         let wav_in = wav_str.to_string();
         let wav_out = denoised_str.to_string();
-        match tokio::task::spawn_blocking(move || {
+        // DeepFilterNet inference is CPU-heavy — reserve cores like every other engine.
+        let dn_cores = crate::moebius::cpu::acquire_cpu(user_id, trace_id).await;
+        log_trace(
+            trace_id,
+            "stt_denoise_cpu_acquired",
+            &format!("cores={dn_cores:?}"),
+        );
+        let dn_pin = dn_cores.clone();
+        let dn_res = tokio::task::spawn_blocking(move || {
+            crate::moebius::cpu::pin_current_thread(&dn_pin, trace_id);
             deepfilter::denoise(&wav_in, &wav_out).map_err(|e| e.to_string())
         })
         .await
-        .unwrap_or_else(|e| Err(e.to_string()))
-        {
+        .unwrap_or_else(|e| Err(e.to_string()));
+        crate::moebius::cpu::release_cpu(dn_cores, trace_id).await;
+        match dn_res {
             Ok(s) => {
                 log_trace(trace_id, "stt_denoised", &format!("elapsed={s:.1}s"));
                 s
@@ -692,19 +686,40 @@ pub async fn handle_stt_audio(
         }
     });
 
-    // 4. Transcribe — CPU-heavy blocking, run on thread pool
+    // 4. Transcribe — CPU-heavy blocking. Reserve cores through the broker first,
+    // or a transcription competes with every other job on the box.
     let audio_source = if config.denoise {
         denoised_str.to_string()
     } else {
         wav_str.to_string()
     };
     let config_clone = config.clone();
-    let (text, processing_secs) = match tokio::task::spawn_blocking(move || {
+    let cores = crate::moebius::cpu::acquire_cpu(user_id, trace_id).await;
+    log_trace(trace_id, "stt_cpu_acquired", &format!("cores={cores:?}"));
+
+    // The broker can block up to 120s — the user may have cancelled while queued.
+    if cancel_flag.load(Ordering::Relaxed) {
+        crate::moebius::cpu::release_cpu(cores, trace_id).await;
+        timer_running.store(false, Ordering::Relaxed);
+        let _ = timer_handle.await;
+        log_trace(trace_id, "stt_cancelled_before_transcribe", "");
+        remove_active_stt_job(user_id);
+        clean_up(&work_dir);
+        refund!("cancelled_before_transcribe");
+        return;
+    }
+
+    let cores_pin = cores.clone();
+    let transcribed = tokio::task::spawn_blocking(move || {
+        // Pin from inside the blocking task; threads Vosk spawns inherit it.
+        crate::moebius::cpu::pin_current_thread(&cores_pin, trace_id);
         vosk::transcribe(&config_clone, &audio_source).map_err(|e| e.to_string())
     })
     .await
-    .unwrap_or_else(|e| Err(e.to_string()))
-    {
+    .unwrap_or_else(|e| Err(e.to_string()));
+    // Also trims: Vosk just dropped a 97–205 MB model.
+    crate::moebius::cpu::release_cpu(cores, trace_id).await;
+    let (text, processing_secs) = match transcribed {
         Ok(r) => r,
         Err(e) => {
             // Stop the timer
@@ -794,16 +809,13 @@ pub async fn handle_stt_audio(
         .with_label_values(&[config.model_size.as_str(), "success"])
         .inc();
 
-    // سهمیه هنگام رزرو کسر شد؛ بدهکاری دومی اینجا نیست.
-
     clean_up(&work_dir);
 
-    // فلو با همان مدل مسلح می‌ماند تا کاربر بلافاصله ویس بعدی را بفرستد؛
-    // dispatch دیگر بعد از کار فلو را پاک نمی‌کند.
+    // Flow stays armed with the same model so user can immediately send next voice message.
     send_stt_ready_prompt(api, chat_id, config).await;
 }
 
-/// یادآوری «آماده‌ام، ویس بعدی را بفرست» با همان مدل انتخاب‌شده.
+/// Prompt "Ready, send next audio message" with the same selected model.
 pub async fn send_stt_ready_prompt(api: &Bot, chat_id: i64, config: &SttConfig) {
     let model_label = crate::i18n::md_escape(&t(config.label_key()));
     let text = apply_premium_to_md(&tf("stt.ready_again", &[("model", &model_label)]));

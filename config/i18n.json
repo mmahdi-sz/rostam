@@ -726,7 +726,23 @@
           "upscale": "افزایش کیفیت تصویر",
           "separation": "جداسازی موزیک",
           "gwm": "حذف واترمارک",
-          "youtube": "یوتیوب"
+          "youtube": "یوتیوب",
+          "nobg": "حذف پس‌زمینه",
+          "deoldify": "رنگی‌سازی عکس",
+          "tts": "متن به صدا",
+          "spotify": "اسپاتیفای",
+          "soundcloud": "ساندکلاود",
+          "musicset": "آلبوم/پلی‌لیست",
+          "pdfcompress": "فشرده‌سازی PDF",
+          "surge_dl": "دانلود لینک مستقیم",
+          "emoji": "ایموجی پنل",
+          "ip_lookup": "استعلام IP",
+          "paywall": "پی‌وال",
+          "rank": "رنک و خرید",
+          "referral": "زیرمجموعه‌گیری",
+          "cpu": "صف پردازش (CPU)",
+          "cookie": "کوکی پول",
+          "broadcast": "پیام همگانی"
         },
         "more": {
           "youtube": "یوتیوب (کیفیت/کنسل)",
@@ -734,6 +750,26 @@
           "cookie": "کوکی پول",
           "paywall": "پی‌وال و پلن‌ها",
           "cpu": "صف پردازش (CPU)"
+        },
+        "hub_title": "📊 داشبورد آمار\n",
+        "overview_users": "\n👥 کاربران: {total}\n🆕 جدید — 1d: {new_1d}  |  7d: {new_7d}  |  30d: {new_30d}\n",
+        "overview_active": "📈 فعال — روزانه: {dau}  |  هفتگی: {wau}\n🏆 پرمصرف‌ترین (7d): {top_name} ({top_count})\n",
+        "alerts_title": "\n━━ هشدارها ━━\n",
+        "alerts_none": "✅ همه‌چیز سالم است.\n",
+        "alert_rate": "⚠️ {name}: نرخ موفقیت {rate}% (موفق {ok} / ناموفق {fail})\n",
+        "alert_errors": "🔴 {count} خطا در ۲۴ ساعت گذشته\n",
+        "feat_ok": "✅ موفق — 1d: {ok_1d}  |  7d: {ok_7d}  |  30d: {ok_30d}\n❌ ناموفق (30d): {fail_30d}  |  نرخ موفقیت: {rate}\n",
+        "feat_time": "⏱ زمان پردازش (30d): {t_30d}  |  میانگین: {avg}\n",
+        "nav": {
+          "overview": "نمای کلی",
+          "users": "کاربران",
+          "youtube": "یوتیوب",
+          "ai": "هوش مصنوعی",
+          "music": "موزیک",
+          "files": "فایل‌ها",
+          "money": "مالی و پلن",
+          "system": "سیستم",
+          "errors": "خطاها"
         }
       },
       "db_missing": "دیتابیس متصل نیست.",
@@ -784,7 +820,6 @@
       "paywall_feature": "این قابلیت برای رتبه شما در دسترس نیست\nبرای دسترسی به <b>{feature}</b>، به مقام <b>{min_rank}</b> یا بالاتر ارتقا دهید",
       "paywall_limit": "این درخواست از محدودیت رتبه شما بیشتر است\nحداکثر مجاز برای رتبه شما: <b>{limit}</b>\nبرای محدودیت بیشتر، به مقام <b>{min_rank}</b> یا بالاتر ارتقا دهید",
       "paywall_button": "مشاهده پلن‌ها",
-      "guide": "📜 <b>راهنمای اشتراک رستم</b>\nرستم دو بخش جدا دارد تا انتخاب برایت شفاف باشد:\n۱. <b>رتبه‌های دانلود</b> (سرعت، کیفیت، سقف دانلود و ترافیک)\n۲. <b>پلن‌های هوش مصنوعی</b> (رونویسی، جداسازی موزیک، حذف نویز، افزایش کیفیت تصویر)\n\n⚔️ <b>دلاور (پیش‌فرض)</b>\n<blockquote expandable>✅ مناسب استفاده روزمره\n⬇️ ترافیک: <b>۵ گیگابایت روزانه</b> | <b>۱۵ گیگابایت ماهانه</b>\n📱 کیفیت دانلود یوتیوب: تا <b>۴۸۰p</b>\n🔇 حذف نویز: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۶ دقیقه روزانه</b> | <b>۲۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پنج</b> عدد برای 2x | <b>سه</b> عدد برای 3x | <b>دو</b> عدد برای 4x</blockquote>\n\n🎖 <b>سپهبد</b>\n<blockquote expandable>✅ مناسب کاربران نیمه‌حرفه‌ای\n⬇️ ترافیک: <b>۵ گیگابایت روزانه</b> | <b>۶۰ گیگابایت ماهانه</b>\n🔥 کیفیت دانلود یوتیوب: تا <b>۱۰۸۰p</b>\n📚 پلی‌لیست/کانال یوتیوب: فقط <b>۱۰ ویدیوی اول</b>\n🧾 ارسال زیرنویس به‌صورت فایل جداگانه: ✅\n📎 چسباندن زیرنویس به ویدیو: ✅\n🔇 حذف نویز: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۶ دقیقه روزانه</b> | <b>۲۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پنج</b> عدد برای 2x | <b>سه</b> عدد برای 3x | <b>دو</b> عدد برای 4x\n💰 مبلغ اشتراک: <b>۱۵۰ هزار تومان / ماه</b></blockquote>\n\n🏆 <b>اسفندیار</b>\n<blockquote expandable>✅ مناسب دانلودهای سنگین و حرفه‌ای\n⬇️ ترافیک: <b>۴۰ گیگابایت روزانه</b> | <b>۴۰۰ گیگابایت ماهانه</b>\n🚀 کیفیت دانلود یوتیوب: تا <b>4K (بدون محدودیت کیفیت)</b>\n📚 پلی‌لیست/کانال یوتیوب: <b>بدون محدودیت</b>\n🧾 ارسال زیرنویس به‌صورت فایل جداگانه: ✅\n📎 چسباندن زیرنویس به ویدیو: ✅\n🔥 حک‌کردن زیرنویس روی ویدیو: ✅\n🔇 حذف نویز: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۶ دقیقه روزانه</b> | <b>۲۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پنج</b> عدد برای 2x | <b>سه</b> عدد برای 3x | <b>دو</b> عدد برای 4x\n💰 مبلغ اشتراک: <b>۲۵۰ هزار تومان / ماه</b></blockquote>\n\n🧠 <b>سهراب (اقتصادی)</b>\n<blockquote expandable>✅ مناسب استفاده منظم از ابزارهای هوش مصنوعی\n🔇 حذف نویز: <b>۲ ساعت روزانه</b> | <b>۱۰ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳ ساعت روزانه</b> | <b>۱۵ ساعت هفتگی</b>\n🎙 رونویسی دقیق: <b>۱ ساعت روزانه</b> | <b>۵ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۲۰ دقیقه روزانه</b> | <b>۹۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پنجاه</b> عدد برای 2x | <b>سی</b> عدد برای 3x | <b>بیست</b> عدد برای 4x\n💰 مبلغ اشتراک: <b>۲۰۰ هزار تومان / ماه</b></blockquote>\n\n👑 <b>رستم (حرفه‌ای)</b>\n<blockquote expandable>🏆 <b>تمام قابلیت‌های مقام اسفندیار</b>\n🔇 حذف نویز: <b>۱۰ ساعت روزانه</b> | <b>۹۹ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ ساعت روزانه</b> | <b>۱۵۰ ساعت هفتگی</b>\n🎙 رونویسی دقیق: <b>۱۰ ساعت روزانه</b> | <b>۵۰ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۲۰۰ دقیقه روزانه</b> | <b>۹۹۹ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پانصد</b> عدد برای 2x | <b>سیصد</b> عدد برای 3x | <b>دویست</b> عدد برای 4x\n✨ دسترسی ویژه به <b>جدیدترین مدل‌های جمنای</b>\n💰 مبلغ اشتراک: <b>۴۰۰ هزار تومان / ماه</b></blockquote>\n\n🕛 <b>زمان ریست سهمیه‌ها</b>\n⏰ ترافیک روزانه: ساعت <b>۰۰:۰۰</b>\n📅 چرخه ماهانه: هر <b>۳۰ روز</b> از زمان اولین دانلود\n♻️ محدودیت‌های هوش مصنوعی: بر اساس <b>بازه روزانه/هفتگی</b> هر سرویس\n\n🛒 <b>برای خرید و ارتقا</b>\n@mmahdi_sz",
       "duration_minutes": "{mins} دقیقه",
       "duration_hours": "{hours} ساعت",
       "duration_hours_minutes": "{hours} ساعت و {mins} دقیقه",
@@ -800,7 +835,6 @@
       "expiry_unlimited": "نامحدود",
       "shop_title": "🛡 <b>انتخاب رنک اشتراک</b>\nیک رنک را انتخاب کنید تا جزئیات قیمت و امکانات آن را ببینید:",
       "shop_recommended_label": "🏆 {rank} (پیشنهادی)",
-      "view_guide": "دیدن قابلیت رنک‌ها",
       "buy_rank_from_admin": "خرید مقام از ادمین",
       "buy_prefilled_text": "درود وقتتون بخیر \nبرای خرید {rank} اومدم \nشماره کارت لطف کنید",
       "back_to_shop": "برگشت به منو رنک ها",
@@ -811,11 +845,11 @@
       "detail_activate_note": "⚡ با فعال‌سازی این رنک، بلافاصله تمام قابلیت‌ها و دسترسی‌های ویژه برای شما فعال خواهد شد!",
       "detail_free_rank": "⚔️ <b>رنک دلاور — رایگان</b>\nاین رنک پیش‌فرض همه کاربران است و نیازی به پرداخت ندارد.",
       "features": {
-        "dalavar": "✅ مناسب استفاده روزمره\n⬇️ ترافیک: <b>۵ گیگابایت روزانه</b> | <b>۱۵ گیگابایت ماهانه</b>\n📱 کیفیت دانلود یوتیوب: تا <b>۴۸۰p</b>\n🔇 حذف نویز: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۶ دقیقه روزانه</b> | <b>۲۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>۵</b> عدد برای 2x | <b>۳</b> عدد برای 3x | <b>۲</b> عدد برای 4x\n✂️ حذف پس‌زمینه (هفتگی): <b>۳</b> | 🎨 رنگی‌کردن عکس: <b>۳</b>\n🗣️ تبدیل متن به صدا: <b>۳۰ دقیقه هفتگی</b>",
-        "sepahbod": "✅ مناسب کاربران نیمه‌حرفه‌ای\n⬇️ ترافیک: <b>۵ گیگابایت روزانه</b> | <b>۶۰ گیگابایت ماهانه</b>\n🔥 کیفیت دانلود یوتیوب: تا <b>۱۰۸۰p</b>\n📚 پلی‌لیست/کانال یوتیوب: فقط <b>۱۰ ویدیوی اول</b>\n🧾 ارسال زیرنویس به‌صورت فایل جداگانه: ✅\n📎 چسباندن زیرنویس به ویدیو: ✅\n🔇 حذف نویز: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۶ دقیقه روزانه</b> | <b>۲۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>۵</b> عدد برای 2x | <b>۳</b> عدد برای 3x | <b>۲</b> عدد برای 4x\n✂️ حذف پس‌زمینه (هفتگی): <b>۳</b> | 🎨 رنگی‌کردن عکس: <b>۳</b>\n🗣️ تبدیل متن به صدا: <b>۳۰ دقیقه هفتگی</b>",
-        "esfandyar": "✅ مناسب دانلودهای سنگین و حرفه‌ای\n⬇️ ترافیک: <b>۴۰ گیگابایت روزانه</b> | <b>۴۰۰ گیگابایت ماهانه</b>\n🚀 کیفیت دانلود یوتیوب: تا <b>4K (بدون محدودیت کیفیت)</b>\n📚 پلی‌لیست/کانال یوتیوب: <b>بدون محدودیت</b>\n🧾 ارسال زیرنویس به‌صورت فایل جداگانه: ✅\n📎 چسباندن زیرنویس به ویدیو: ✅\n🔥 حک‌کردن زیرنویس روی ویدیو: ✅\n🔇 حذف نویز: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۶ دقیقه روزانه</b> | <b>۲۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پنج</b> عدد برای 2x | <b>سه</b> عدد برای 3x | <b>دو</b> عدد برای 4x\n✂️ حذف پس‌زمینه (هفتگی): <b>۳</b> | 🎨 رنگی‌کردن عکس: <b>۳</b>\n🗣️ تبدیل متن به صدا: <b>۳۰ دقیقه هفتگی</b>",
-        "sohrab": "✅ مناسب استفاده منظم از ابزارهای هوش مصنوعی\n🔇 حذف نویز: <b>۲ ساعت روزانه</b> | <b>۱۰ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳ ساعت روزانه</b> | <b>۱۵ ساعت هفتگی</b>\n🎙 رونویسی دقیق: <b>۱ ساعت روزانه</b> | <b>۵ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۲۰ دقیقه روزانه</b> | <b>۹۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پنجاه</b> عدد برای 2x | <b>سی</b> عدد برای 3x | <b>بیست</b> عدد برای 4x\n✂️ حذف پس‌زمینه (هفتگی): <b>۳۰</b> | 🎨 رنگی‌کردن عکس: <b>۱۵</b>\n🗣️ تبدیل متن به صدا: <b>۱۰۰ دقیقه هفتگی</b>",
-        "rostam": "🏆 <b>تمام قابلیت‌های مقام اسفندیار</b>\n🔇 حذف نویز: <b>۱۰ ساعت روزانه</b> | <b>۹۹ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ ساعت روزانه</b> | <b>۱۵۰ ساعت هفتگی</b>\n🎙 رونویسی دقیق: <b>۱۰ ساعت روزانه</b> | <b>۵۰ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۲۰۰ دقیقه روزانه</b> | <b>۹۹۹ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>پانصد</b> عدد برای 2x | <b>سیصد</b> عدد برای 3x | <b>دویست</b> عدد برای 4x\n✂️ حذف پس‌زمینه (هفتگی): <b>۱۵۰</b> | 🎨 رنگی‌کردن عکس: <b>۱۰۰</b>\n🗣️ تبدیل متن به صدا: <b>۶۰۰ دقیقه هفتگی</b>"
+        "dalavar": "✅ مناسب استفاده روزمره\n⬇️ ترافیک: <b>۵ گیگابایت روزانه</b> | <b>۱۵ گیگابایت ماهانه</b>\n📱 کیفیت دانلود یوتیوب: تا <b>۴۸۰p</b>\n🔇 حذف نویز: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۶ دقیقه روزانه</b> | <b>۲۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>۵</b> عدد برای 2x | <b>۳</b> عدد برای 3x | <b>۲</b> عدد برای 4x\n✂️ حذف پس‌زمینه (هفتگی): <b>۳</b> | 🎨 رنگی‌کردن عکس: <b>۳</b>\n🗣️ تبدیل متن به صدا: <b>۳۰ دقیقه هفتگی</b>\n🎧 تک‌آهنگ اسپاتیفای و ساندکلاود (۳۲۰kbps با کاور و تگ): <b>✅ بدون محدودیت</b>\n💽 آلبوم و پلی‌لیست اسپاتیفای/ساندکلاود: <b>❌ غیرفعال</b>\n🗜 دریافت کل آلبوم در یک فایل ۷z: <b>❌</b>\n⚙️ زمان پردازش (CPU) فشرده‌سازی فایل: <b>۱۰ دقیقه روزانه</b> | <b>۱۰۰ دقیقه ماهانه</b>",
+        "sepahbod": "✅ مناسب کاربران نیمه‌حرفه‌ای\n⬇️ ترافیک: <b>۵ گیگابایت روزانه</b> | <b>۶۰ گیگابایت ماهانه</b>\n🔥 کیفیت دانلود یوتیوب: تا <b>۱۰۸۰p</b>\n📚 پلی‌لیست/کانال یوتیوب: فقط <b>۱۰ ویدیوی اول</b>\n🧾 ارسال زیرنویس به‌صورت فایل جداگانه: ✅\n📎 چسباندن زیرنویس به ویدیو: ✅\n🔇 حذف نویز: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۶ دقیقه روزانه</b> | <b>۲۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>۵</b> عدد برای 2x | <b>۳</b> عدد برای 3x | <b>۲</b> عدد برای 4x\n✂️ حذف پس‌زمینه (هفتگی): <b>۳</b> | 🎨 رنگی‌کردن عکس: <b>۳</b>\n🗣️ تبدیل متن به صدا: <b>۳۰ دقیقه هفتگی</b>\n🎧 تک‌آهنگ اسپاتیفای و ساندکلاود (۳۲۰kbps با کاور و تگ): <b>✅ بدون محدودیت</b>\n💽 آلبوم و پلی‌لیست اسپاتیفای/ساندکلاود: <b>تا ۲۰ آهنگ</b>\n🗜 دریافت کل آلبوم در یک فایل ۷z: <b>❌</b>\n⚙️ زمان پردازش (CPU) فشرده‌سازی فایل: <b>۳۰ دقیقه روزانه</b> | <b>۴۰۰ دقیقه ماهانه</b>",
+        "esfandyar": "✅ مناسب دانلودهای سنگین و حرفه‌ای\n⬇️ ترافیک: <b>۴۰ گیگابایت روزانه</b> | <b>۴۰۰ گیگابایت ماهانه</b>\n🚀 کیفیت دانلود یوتیوب: تا <b>4K (بدون محدودیت کیفیت)</b>\n📚 پلی‌لیست/کانال یوتیوب: <b>بدون محدودیت</b>\n🧾 ارسال زیرنویس به‌صورت فایل جداگانه: ✅\n📎 چسباندن زیرنویس به ویدیو: ✅\n🔥 حک‌کردن زیرنویس روی ویدیو: ✅\n🔇 حذف نویز: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ دقیقه روزانه</b> | <b>۲ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۶ دقیقه روزانه</b> | <b>۲۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>۵</b> عدد برای 2x | <b>۳</b> عدد برای 3x | <b>۲</b> عدد برای 4x\n✂️ حذف پس‌زمینه (هفتگی): <b>۳</b> | 🎨 رنگی‌کردن عکس: <b>۳</b>\n🗣️ تبدیل متن به صدا: <b>۳۰ دقیقه هفتگی</b>\n🎧 تک‌آهنگ اسپاتیفای و ساندکلاود (۳۲۰kbps با کاور و تگ): <b>✅ بدون محدودیت</b>\n💽 آلبوم و پلی‌لیست اسپاتیفای/ساندکلاود: <b>بدون محدودیت</b>\n🗜 دریافت کل آلبوم در یک فایل ۷z: <b>✅</b>\n⚙️ زمان پردازش (CPU) فشرده‌سازی فایل: <b>۲۰۰ دقیقه روزانه</b> | <b>۳۰۰۰ دقیقه ماهانه</b>",
+        "sohrab": "✅ مناسب استفاده منظم از ابزارهای هوش مصنوعی\n🔇 حذف نویز: <b>۲ ساعت روزانه</b> | <b>۱۰ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳ ساعت روزانه</b> | <b>۱۵ ساعت هفتگی</b>\n🎙 رونویسی دقیق: <b>۱ ساعت روزانه</b> | <b>۵ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۲۰ دقیقه روزانه</b> | <b>۹۰ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>۵۰</b> عدد برای 2x | <b>۳۰</b> عدد برای 3x | <b>۲۰</b> عدد برای 4x\n✂️ حذف پس‌زمینه (هفتگی): <b>۳۰</b> | 🎨 رنگی‌کردن عکس: <b>۱۵</b>\n🗣️ تبدیل متن به صدا: <b>۱۰۰ دقیقه هفتگی</b>\n🎧 تک‌آهنگ اسپاتیفای و ساندکلاود (۳۲۰kbps با کاور و تگ): <b>✅ بدون محدودیت</b>\n💽 آلبوم و پلی‌لیست اسپاتیفای/ساندکلاود: <b>❌ غیرفعال</b>\n🗜 دریافت کل آلبوم در یک فایل ۷z: <b>❌</b>\n⚙️ زمان پردازش (CPU) فشرده‌سازی فایل: <b>۱۰ دقیقه روزانه</b> | <b>۱۰۰ دقیقه ماهانه</b>",
+        "rostam": "🏆 <b>تمام قابلیت‌های مقام اسفندیار</b>\n🔇 حذف نویز: <b>۱۰ ساعت روزانه</b> | <b>۹۹ ساعت هفتگی</b>\n🎙 رونویسی سریع: <b>۳۰ ساعت روزانه</b> | <b>۱۵۰ ساعت هفتگی</b>\n🎙 رونویسی دقیق: <b>۱۰ ساعت روزانه</b> | <b>۵۰ ساعت هفتگی</b>\n🎵 جداسازی موزیک: <b>۲۰۰ دقیقه روزانه</b> | <b>۹۹۹ دقیقه هفتگی</b>\n🖼 افزایش کیفیت تصویر (هفتگی): <b>۵۰۰</b> عدد برای 2x | <b>۳۰۰</b> عدد برای 3x | <b>۲۰۰</b> عدد برای 4x\n✂️ حذف پس‌زمینه (هفتگی): <b>۱۵۰</b> | 🎨 رنگی‌کردن عکس: <b>۱۰۰</b>\n🗣️ تبدیل متن به صدا: <b>۶۰۰ دقیقه هفتگی</b>\n✨ دسترسی ویژه به <b>جدیدترین مدل‌های جمنای</b>\n🎧 تک‌آهنگ اسپاتیفای و ساندکلاود (۳۲۰kbps با کاور و تگ): <b>✅ بدون محدودیت</b>\n💽 آلبوم و پلی‌لیست اسپاتیفای/ساندکلاود: <b>بدون محدودیت</b>\n🗜 دریافت کل آلبوم در یک فایل ۷z: <b>✅</b>\n⚙️ زمان پردازش (CPU) فشرده‌سازی فایل: <b>۲۰۰ دقیقه روزانه</b> | <b>۳۰۰۰ دقیقه ماهانه</b>"
       }
     },
     "commands": {
@@ -940,7 +974,9 @@
         "send_failed": "خطا در ارسال فایل خروجی."
       },
       "max_level_notice": "حداکثر فشرده سازی فرمت {fmt} مقدار {max} است",
-      "password_need_text": "⚠️ لطفا متن بفرست \\(رمز فایل\\)\\."
+      "password_need_text": "⚠️ لطفا متن بفرست \\(رمز فایل\\)\\.",
+      "downloading": "📥 *در حال دریافت فایل {idx} از {total}\\.\\.\\.*\n⏱ *زمان سپری‌شده:* {elapsed}",
+      "processing_eta": "🗜 *در حال فشرده‌سازی\\.\\.\\.*\n\n{bar}  {percent}%\n⏱ *زمان سپری‌شده:* {elapsed}\n⏳ *زمان باقی‌مانده:* {eta}"
     },
     "pdfcompress": {
       "mode_prompt": "چطوری می‌خوای PDF‌ت رو کوچیک کنیم؟",
@@ -1860,7 +1896,23 @@
           "upscale": "Image Upscaling",
           "separation": "Vocal Separation",
           "gwm": "Watermark Removal",
-          "youtube": "YouTube"
+          "youtube": "YouTube",
+          "nobg": "Background Removal",
+          "deoldify": "Photo Colorization",
+          "tts": "Text to Speech",
+          "spotify": "Spotify",
+          "soundcloud": "SoundCloud",
+          "musicset": "Album/Playlist",
+          "pdfcompress": "PDF Compression",
+          "surge_dl": "Direct Link Download",
+          "emoji": "Emoji Panel",
+          "ip_lookup": "IP Lookup",
+          "paywall": "Paywall",
+          "rank": "Ranks & Purchases",
+          "referral": "Referrals",
+          "cpu": "Processing Queue (CPU)",
+          "cookie": "Cookie Pool",
+          "broadcast": "Broadcast"
         },
         "more": {
           "youtube": "YouTube (quality/cancel)",
@@ -1868,6 +1920,26 @@
           "cookie": "Cookie Pool",
           "paywall": "Paywall and Plans",
           "cpu": "Processing Queue (CPU)"
+        },
+        "hub_title": "📊 Stats Dashboard\n",
+        "overview_users": "\n👥 Users: {total}\n🆕 New — 1d: {new_1d}  |  7d: {new_7d}  |  30d: {new_30d}\n",
+        "overview_active": "📈 Active — daily: {dau}  |  weekly: {wau}\n🏆 Top feature (7d): {top_name} ({top_count})\n",
+        "alerts_title": "\n━━ Alerts ━━\n",
+        "alerts_none": "✅ Everything healthy.\n",
+        "alert_rate": "⚠️ {name}: success rate {rate}% (ok {ok} / failed {fail})\n",
+        "alert_errors": "🔴 {count} errors in the last 24h\n",
+        "feat_ok": "✅ Success — 1d: {ok_1d}  |  7d: {ok_7d}  |  30d: {ok_30d}\n❌ Failed (30d): {fail_30d}  |  Success rate: {rate}\n",
+        "feat_time": "⏱ Processing time (30d): {t_30d}  |  avg: {avg}\n",
+        "nav": {
+          "overview": "Overview",
+          "users": "Users",
+          "youtube": "YouTube",
+          "ai": "AI",
+          "music": "Music",
+          "files": "Files",
+          "money": "Money & Plans",
+          "system": "System",
+          "errors": "Errors"
         }
       },
       "db_missing": "Database not connected.",
@@ -1945,7 +2017,6 @@
       "paywall_feature": "This feature is not available for your rank\nTo access <b>{feature}</b>, upgrade to <b>{min_rank}</b> or higher",
       "paywall_limit": "This request exceeds your rank's limit\nMaximum allowed for your rank: <b>{limit}</b>\nFor higher limits, upgrade to <b>{min_rank}</b> or higher",
       "paywall_button": "View Plans",
-      "guide": "📜 <b>Rostam Subscription Guide</b>\nRostam has two separate sections for clarity:\n1. <b>Download Ranks</b> (speed, quality, download and traffic limits)\n2. <b>AI Plans</b> (transcription, vocal separation, noise removal, image upscaling)\n\n⚔️ <b>Dalavar (default)</b>\n<blockquote expandable>✅ Suitable for everyday use\n⬇️ Traffic: <b>5 GB daily</b> | <b>15 GB monthly</b>\n📱 YouTube download quality: up to <b>480p</b>\n🔇 Noise removal: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎙 Fast transcription: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎵 Vocal separation: <b>6 min daily</b> | <b>20 min weekly</b>\n🖼 Image upscaling (weekly): <b>five</b> for 2x | <b>three</b> for 3x | <b>two</b> for 4x</blockquote>\n\n🎖 <b>Sepahbod</b>\n<blockquote expandable>✅ Suitable for semi-professional users\n⬇️ Traffic: <b>5 GB daily</b> | <b>60 GB monthly</b>\n🔥 YouTube download quality: up to <b>1080p</b>\n🧾 Send subtitle as separate file: ✅\n📎 Attach subtitle to video: ✅\n🔇 Noise removal: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎙 Fast transcription: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎵 Vocal separation: <b>6 min daily</b> | <b>20 min weekly</b>\n🖼 Image upscaling (weekly): <b>five</b> for 2x | <b>three</b> for 3x | <b>two</b> for 4x\n💰 Subscription: <b>150,000 Toman / month</b></blockquote>\n\n🏆 <b>Esfandyar</b>\n<blockquote expandable>✅ Suitable for heavy and professional downloads\n⬇️ Traffic: <b>40 GB daily</b> | <b>400 GB monthly</b>\n🚀 YouTube download quality: up to <b>4K (unlimited)</b>\n🧾 Send subtitle as separate file: ✅\n📎 Attach subtitle to video: ✅\n🔇 Noise removal: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎙 Fast transcription: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎵 Vocal separation: <b>6 min daily</b> | <b>20 min weekly</b>\n🖼 Image upscaling (weekly): <b>five</b> for 2x | <b>three</b> for 3x | <b>two</b> for 4x\n💰 Subscription: <b>250,000 Toman / month</b></blockquote>\n\n🧠 <b>Sohrab (Economy)</b>\n<blockquote expandable>✅ Suitable for regular AI tool usage\n🔇 Noise removal: <b>2 hours daily</b> | <b>10 hours weekly</b>\n🎙 Fast transcription: <b>3 hours daily</b> | <b>15 hours weekly</b>\n🎙 Accurate transcription: <b>1 hour daily</b> | <b>5 hours weekly</b>\n🎵 Vocal separation: <b>20 min daily</b> | <b>90 min weekly</b>\n🖼 Image upscaling (weekly): <b>fifty</b> for 2x | <b>thirty</b> for 3x | <b>twenty</b> for 4x\n💰 Subscription: <b>200,000 Toman / month</b></blockquote>\n\n👑 <b>Rostam (Professional)</b>\n<blockquote expandable>🏆 <b>All Esfandyar features</b>\n🔇 Noise removal: <b>10 hours daily</b> | <b>99 hours weekly</b>\n🎙 Fast transcription: <b>30 hours daily</b> | <b>150 hours weekly</b>\n🎙 Accurate transcription: <b>10 hours daily</b> | <b>50 hours weekly</b>\n🎵 Vocal separation: <b>200 min daily</b> | <b>999 min weekly</b>\n🖼 Image upscaling (weekly): <b>five hundred</b> for 2x | <b>three hundred</b> for 3x | <b>two hundred</b> for 4x\n✨ Exclusive access to <b>latest Gemini models</b>\n💰 Subscription: <b>400,000 Toman / month</b></blockquote>\n\n🕛 <b>Quota Reset Times</b>\n⏰ Daily traffic: at <b>00:00</b>\n📅 Monthly cycle: every <b>30 days</b> from first download\n♻️ AI limits: based on each service's <b>daily/weekly window</b>\n\n🛒 <b>To purchase and upgrade</b>\n@mmahdi_sz",
       "duration_minutes": "{mins} min",
       "duration_hours": "{hours} hr",
       "duration_hours_minutes": "{hours} hr {mins} min",
@@ -1961,7 +2032,6 @@
       "unit_mib": "{n} MB",
       "shop_title": "🛡 <b>Select Subscription Rank</b>\nSelect a rank to view its details and pricing:",
       "shop_recommended_label": "🏆 {rank} (Recommended)",
-      "view_guide": "View Rank Features",
       "buy_rank_from_admin": "Buy Rank from Admin",
       "buy_prefilled_text": "Hello, good day!\nI would like to purchase the {rank} rank.\nPlease provide your card details.",
       "back_to_shop": "Back to Ranks Menu",
@@ -1972,11 +2042,11 @@
       "detail_activate_note": "⚡ Upon activation, all special features and permissions will be unlocked immediately!",
       "detail_free_rank": "⚔️ <b>Dalavar Rank — Free</b>\nThis is the default rank for all users and requires no purchase.",
       "features": {
-        "dalavar": "✅ Suitable for everyday use\n⬇️ Traffic: 5 GB daily | 15 GB monthly\n📱 YouTube download quality: up to 480p\n🔇 Noise removal: 30 min daily | 2 hours weekly\n🎙 Fast transcription: 30 min daily | 2 hours weekly\n🎵 Vocal separation: 6 min daily | 20 min weekly\n✂️ Remove BG (weekly): <b>3</b> | 🎨 Colorize: <b>3</b>\n🗣️ Text to Speech: <b>30 mins weekly</b>",
-        "sepahbod": "✅ Suitable for semi-professional users\n⬇️ Traffic: 5 GB daily | 60 GB monthly\n🔥 YouTube download quality: up to 1080p\n📚 Playlist limit: first 10 videos\n🧾 Separate subtitle file: ✅\n📎 Attach subtitle to video: ✅\n✂️ Remove BG (weekly): <b>3</b> | 🎨 Colorize: <b>3</b>\n🗣️ Text to Speech: <b>30 mins weekly</b>",
-        "esfandyar": "✅ Suitable for heavy and professional downloads\n⬇️ Traffic: 40 GB daily | 400 GB monthly\n🚀 YouTube download quality: up to 4K (Unlimited)\n📚 Playlist/Channel: Unlimited\n🧾 Separate subtitle: ✅\n📎 Mux subtitle: ✅\n🔥 Hardcode subtitle: ✅\n✂️ Remove BG (weekly): <b>3</b> | 🎨 Colorize: <b>3</b>\n🗣️ Text to Speech: <b>30 mins weekly</b>",
-        "sohrab": "✅ Suitable for regular AI tools usage\n🔇 Noise removal: 2 hrs daily | 10 hrs weekly\n🎙 Fast transcription: 3 hrs daily | 15 hrs weekly\n🎙 Accurate transcription: 1 hr daily | 5 hrs weekly\n🎵 Vocal separation: 20 min daily | 90 min weekly\n✂️ Remove BG (weekly): <b>30</b> | 🎨 Colorize: <b>15</b>\n🗣️ Text to Speech: <b>100 mins weekly</b>",
-        "rostam": "🏆 All Esfandyar features included\n🔇 Noise removal: 10 hrs daily | 99 hrs weekly\n🎙 Fast transcription: 30 hrs daily | 150 hrs weekly\n🎙 Accurate transcription: 10 hrs daily | 50 hrs weekly\n🎵 Vocal separation: 200 min daily | 999 min weekly\n✂️ Remove BG (weekly): <b>150</b> | 🎨 Colorize: <b>100</b>\n🗣️ Text to Speech: <b>600 mins weekly</b>"
+        "dalavar": "✅ Suitable for everyday use\n⬇️ Traffic: <b>5 GB daily</b> | <b>15 GB monthly</b>\n📱 YouTube download quality: up to <b>480p</b>\n🔇 Noise removal: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎙 Fast transcription: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎵 Vocal separation: <b>6 min daily</b> | <b>20 min weekly</b>\n🖼 Image upscaling (weekly): <b>5</b> for 2x | <b>3</b> for 3x | <b>2</b> for 4x\n✂️ Background removal (weekly): <b>3</b> | 🎨 Photo colorization: <b>3</b>\n🗣️ Text to speech: <b>30 min weekly</b>\n🎧 Spotify &amp; SoundCloud single track (320 kbps, cover + tags): <b>✅ unlimited</b>\n💽 Spotify/SoundCloud album &amp; playlist: <b>❌ not available</b>\n🗜 Whole album as one 7z file: <b>❌</b>\n⚙️ File compression CPU time: <b>10 min daily</b> | <b>100 min monthly</b>",
+        "sepahbod": "✅ For semi-professional users\n⬇️ Traffic: <b>5 GB daily</b> | <b>60 GB monthly</b>\n🔥 YouTube download quality: up to <b>1080p</b>\n📚 YouTube playlist/channel: <b>first 10 videos only</b>\n🧾 Subtitles as a separate file: ✅\n📎 Subtitles attached to the video: ✅\n🔇 Noise removal: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎙 Fast transcription: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎵 Vocal separation: <b>6 min daily</b> | <b>20 min weekly</b>\n🖼 Image upscaling (weekly): <b>5</b> for 2x | <b>3</b> for 3x | <b>2</b> for 4x\n✂️ Background removal (weekly): <b>3</b> | 🎨 Photo colorization: <b>3</b>\n🗣️ Text to speech: <b>30 min weekly</b>\n🎧 Spotify &amp; SoundCloud single track (320 kbps, cover + tags): <b>✅ unlimited</b>\n💽 Spotify/SoundCloud album &amp; playlist: <b>up to 20 tracks</b>\n🗜 Whole album as one 7z file: <b>❌</b>\n⚙️ File compression CPU time: <b>30 min daily</b> | <b>400 min monthly</b>",
+        "esfandyar": "✅ For heavy, professional downloads\n⬇️ Traffic: <b>40 GB daily</b> | <b>400 GB monthly</b>\n🚀 YouTube download quality: up to <b>4K (no quality cap)</b>\n📚 YouTube playlist/channel: <b>unlimited</b>\n🧾 Subtitles as a separate file: ✅\n📎 Subtitles attached to the video: ✅\n🔥 Subtitles burned into the video: ✅\n🔇 Noise removal: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎙 Fast transcription: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎵 Vocal separation: <b>6 min daily</b> | <b>20 min weekly</b>\n🖼 Image upscaling (weekly): <b>5</b> for 2x | <b>3</b> for 3x | <b>2</b> for 4x\n✂️ Background removal (weekly): <b>3</b> | 🎨 Photo colorization: <b>3</b>\n🗣️ Text to speech: <b>30 min weekly</b>\n🎧 Spotify &amp; SoundCloud single track (320 kbps, cover + tags): <b>✅ unlimited</b>\n💽 Spotify/SoundCloud album &amp; playlist: <b>unlimited</b>\n🗜 Whole album as one 7z file: <b>✅</b>\n⚙️ File compression CPU time: <b>200 min daily</b> | <b>3000 min monthly</b>",
+        "sohrab": "✅ For regular use of the AI tools\n🔇 Noise removal: <b>2 hours daily</b> | <b>10 hours weekly</b>\n🎙 Fast transcription: <b>3 hours daily</b> | <b>15 hours weekly</b>\n🎙 Accurate transcription: <b>1 hour daily</b> | <b>5 hours weekly</b>\n🎵 Vocal separation: <b>20 min daily</b> | <b>90 min weekly</b>\n🖼 Image upscaling (weekly): <b>50</b> for 2x | <b>30</b> for 3x | <b>20</b> for 4x\n✂️ Background removal (weekly): <b>30</b> | 🎨 Photo colorization: <b>15</b>\n🗣️ Text to speech: <b>100 min weekly</b>\n🎧 Spotify &amp; SoundCloud single track (320 kbps, cover + tags): <b>✅ unlimited</b>\n💽 Spotify/SoundCloud album &amp; playlist: <b>❌ not available</b>\n🗜 Whole album as one 7z file: <b>❌</b>\n⚙️ File compression CPU time: <b>10 min daily</b> | <b>100 min monthly</b>",
+        "rostam": "🏆 <b>Every Esfandyar rank feature</b>\n🔇 Noise removal: <b>10 hours daily</b> | <b>99 hours weekly</b>\n🎙 Fast transcription: <b>30 hours daily</b> | <b>150 hours weekly</b>\n🎙 Accurate transcription: <b>10 hours daily</b> | <b>50 hours weekly</b>\n🎵 Vocal separation: <b>200 min daily</b> | <b>999 min weekly</b>\n🖼 Image upscaling (weekly): <b>500</b> for 2x | <b>300</b> for 3x | <b>200</b> for 4x\n✂️ Background removal (weekly): <b>150</b> | 🎨 Photo colorization: <b>100</b>\n🗣️ Text to speech: <b>600 min weekly</b>\n🎧 Spotify &amp; SoundCloud single track (320 kbps, cover + tags): <b>✅ unlimited</b>\n💽 Spotify/SoundCloud album &amp; playlist: <b>unlimited</b>\n🗜 Whole album as one 7z file: <b>✅</b>\n⚙️ File compression CPU time: <b>200 min daily</b> | <b>3000 min monthly</b>\n✨ Priority access to the <b>newest Gemini models</b>"
       }
     },
     "commands": {
@@ -2101,7 +2171,9 @@
         "send_failed": "Sending output file failed."
       },
       "max_level_notice": "Max compression for {fmt} is {max}",
-      "password_need_text": "⚠️ Please send text \\(the archive password\\)\\."
+      "password_need_text": "⚠️ Please send text \\(the archive password\\)\\.",
+      "downloading": "📥 *Downloading file {idx} of {total}\\.\\.\\.*\n⏱ *Elapsed:* {elapsed}",
+      "processing_eta": "🗜 *Compressing\\.\\.\\.*\n\n{bar}  {percent}%\n⏱ *Elapsed:* {elapsed}\n⏳ *Remaining:* {eta}"
     },
     "pdfcompress": {
       "mode_prompt": "How would you like to shrink your PDF?",
@@ -3021,7 +3093,23 @@
           "upscale": "Miglioramento Immagini",
           "separation": "Separazione Vocale",
           "gwm": "Rimozione Filigrana",
-          "youtube": "YouTube"
+          "youtube": "YouTube",
+          "nobg": "Rimozione Sfondo",
+          "deoldify": "Colorazione Foto",
+          "tts": "Da Testo a Voce",
+          "spotify": "Spotify",
+          "soundcloud": "SoundCloud",
+          "musicset": "Album/Playlist",
+          "pdfcompress": "Compressione PDF",
+          "surge_dl": "Download Link Diretto",
+          "emoji": "Pannello Emoji",
+          "ip_lookup": "Ricerca IP",
+          "paywall": "Paywall",
+          "rank": "Ranghi e Acquisti",
+          "referral": "Referral",
+          "cpu": "Coda Elaborazione (CPU)",
+          "cookie": "Cookie Pool",
+          "broadcast": "Messaggio Globale"
         },
         "more": {
           "youtube": "YouTube (qualità/annulla)",
@@ -3029,6 +3117,26 @@
           "cookie": "Cookie Pool",
           "paywall": "Paywall e Piani",
           "cpu": "Coda Elaborazione (CPU)"
+        },
+        "hub_title": "📊 Dashboard Statistiche\n",
+        "overview_users": "\n👥 Utenti: {total}\n🆕 Nuovi — 1d: {new_1d}  |  7d: {new_7d}  |  30d: {new_30d}\n",
+        "overview_active": "📈 Attivi — giornalieri: {dau}  |  settimanali: {wau}\n🏆 Feature più usata (7d): {top_name} ({top_count})\n",
+        "alerts_title": "\n━━ Avvisi ━━\n",
+        "alerts_none": "✅ Tutto regolare.\n",
+        "alert_rate": "⚠️ {name}: tasso di successo {rate}% (ok {ok} / falliti {fail})\n",
+        "alert_errors": "🔴 {count} errori nelle ultime 24h\n",
+        "feat_ok": "✅ Successi — 1d: {ok_1d}  |  7d: {ok_7d}  |  30d: {ok_30d}\n❌ Falliti (30d): {fail_30d}  |  Tasso di successo: {rate}\n",
+        "feat_time": "⏱ Tempo elaborazione (30d): {t_30d}  |  media: {avg}\n",
+        "nav": {
+          "overview": "Panoramica",
+          "users": "Utenti",
+          "youtube": "YouTube",
+          "ai": "IA",
+          "music": "Musica",
+          "files": "File",
+          "money": "Pagamenti e Piani",
+          "system": "Sistema",
+          "errors": "Errori"
         }
       },
       "db_missing": "Database non connesso.",
@@ -3080,7 +3188,6 @@
       "paywall_feature": "Questa funzione non è disponibile per il tuo rango\nPer accedere a <b>{feature}</b>, passa a <b>{min_rank}</b> o superiore",
       "paywall_limit": "Questa richiesta supera il limite del tuo rango\nMassimo consentito: <b>{limit}</b>\nPer limiti maggiori, passa a <b>{min_rank}</b> o superiore",
       "paywall_button": "Vedi Piani",
-      "guide": "📜 <b>Guida Abbonamento Rostam</b>\nRostam ha due sezioni separate:\n1. <b>Ranghi Download</b> (velocità, qualità, limiti download e traffico)\n2. <b>Piani AI</b> (trascrizione, separazione vocale, riduzione rumore, miglioramento immagini)\n\n⚔️ <b>Dalavar (predefinito)</b>\n<blockquote expandable>✅ Per uso quotidiano\n⬇️ Traffico: <b>5 GB giornalieri</b> | <b>15 GB mensili</b>\n📱 Qualità download YouTube: fino a <b>480p</b>\n🔇 Riduzione rumore: <b>30 min/giorno</b> | <b>2 ore/settimana</b>\n🎙 Trascrizione veloce: <b>30 min/giorno</b> | <b>2 ore/settimana</b>\n🎵 Separazione vocale: <b>6 min/giorno</b> | <b>20 min/settimana</b>\n🖼 Miglioramento immagini (sett.): <b>cinque</b> per 2x | <b>tre</b> per 3x | <b>due</b> per 4x</blockquote>\n\n🎖 <b>Sepahbod</b>\n<blockquote expandable>✅ Per utenti semi-professionali\n⬇️ Traffico: <b>5 GB giornalieri</b> | <b>60 GB mensili</b>\n🔥 Qualità download YouTube: fino a <b>1080p</b>\n🧾 Sottotitoli come file separato: ✅\n📎 Allegare sottotitoli al video: ✅\n🔇 Riduzione rumore: <b>30 min/giorno</b> | <b>2 ore/settimana</b>\n🎙 Trascrizione veloce: <b>30 min/giorno</b> | <b>2 ore/settimana</b>\n🎵 Separazione vocale: <b>6 min/giorno</b> | <b>20 min/settimana</b>\n🖼 Miglioramento immagini (sett.): <b>cinque</b> per 2x | <b>tre</b> per 3x | <b>due</b> per 4x\n💰 Abbonamento: <b>150.000 Toman / mese</b></blockquote>\n\n🏆 <b>Esfandyar</b>\n<blockquote expandable>✅ Per download intensivi e professionali\n⬇️ Traffico: <b>40 GB giornalieri</b> | <b>400 GB mensili</b>\n🚀 Qualità download YouTube: fino a <b>4K (illimitata)</b>\n🧾 Sottotitoli come file separato: ✅\n📎 Allegare sottotitoli al video: ✅\n🔇 Riduzione rumore: <b>30 min/giorno</b> | <b>2 ore/settimana</b>\n🎙 Trascrizione veloce: <b>30 min/giorno</b> | <b>2 ore/settimana</b>\n🎵 Separazione vocale: <b>6 min/giorno</b> | <b>20 min/settimana</b>\n🖼 Miglioramento immagini (sett.): <b>cinque</b> per 2x | <b>tre</b> per 3x | <b>due</b> per 4x\n💰 Abbonamento: <b>250.000 Toman / mese</b></blockquote>\n\n🧠 <b>Sohrab (Economico)</b>\n<blockquote expandable>✅ Per uso regolare degli strumenti AI\n🔇 Riduzione rumore: <b>2 ore/giorno</b> | <b>10 ore/settimana</b>\n🎙 Trascrizione veloce: <b>3 ore/giorno</b> | <b>15 ore/settimana</b>\n🎙 Trascrizione precisa: <b>1 ora/giorno</b> | <b>5 ore/settimana</b>\n🎵 Separazione vocale: <b>20 min/giorno</b> | <b>90 min/settimana</b>\n🖼 Miglioramento immagini (sett.): <b>cinquanta</b> per 2x | <b>trenta</b> per 3x | <b>venti</b> per 4x\n💰 Abbonamento: <b>200.000 Toman / mese</b></blockquote>\n\n👑 <b>Rostam (Professionale)</b>\n<blockquote expandable>🏆 <b>Tutte le funzioni Esfandyar</b>\n🔇 Riduzione rumore: <b>10 ore/giorno</b> | <b>99 ore/settimana</b>\n🎙 Trascrizione veloce: <b>30 ore/giorno</b> | <b>150 ore/settimana</b>\n🎙 Trascrizione precisa: <b>10 ore/giorno</b> | <b>50 ore/settimana</b>\n🎵 Separazione vocale: <b>200 min/giorno</b> | <b>999 min/settimana</b>\n🖼 Miglioramento immagini (sett.): <b>cinquecento</b> per 2x | <b>trecento</b> per 3x | <b>duecento</b> per 4x\n✨ Accesso esclusivo ai <b>modelli Gemini più recenti</b>\n💰 Abbonamento: <b>400.000 Toman / mese</b></blockquote>\n\n🕛 <b>Reset Quote</b>\n⏰ Traffico giornaliero: alle <b>00:00</b>\n📅 Ciclo mensile: ogni <b>30 giorni</b> dal primo download\n♻️ Limiti AI: basati sulla <b>finestra giornaliera/settimanale</b> di ogni servizio\n\n🛒 <b>Per acquistare e fare upgrade</b>\n@mmahdi_sz",
       "duration_minutes": "{mins} min",
       "duration_hours": "{hours} h",
       "duration_hours_minutes": "{hours} h {mins} min",
@@ -3096,7 +3203,6 @@
       "unit_mib": "{n} MB",
       "shop_title": "🛡 <b>Seleziona Grado di Abbonamento</b>\nSeleziona un grado per vederne dettagli e prezzi:",
       "shop_recommended_label": "🏆 {rank} (Consigliato)",
-      "view_guide": "Vedi Caratteristiche del Grado",
       "buy_rank_from_admin": "Acquista Grado dall'Admin",
       "buy_prefilled_text": "Ciao, buongiorno!\nVorrei acquistare il grado {rank}.\nPer favore fornisci i dettagli della carta.",
       "back_to_shop": "Torna al menu dei gradi",
@@ -3107,11 +3213,11 @@
       "detail_activate_note": "⚡ All'attivazione, tutte le funzionalità speciali saranno sbloccate immediatamente!",
       "detail_free_rank": "⚔️ <b>Grado Dalavar — Gratuito</b>\nQuesto è il grado predefinito per tutti gli utenti e non richiede acquisti.",
       "features": {
-        "dalavar": "✅ Adatto per l'uso quotidiano\n⬇️ Traffico: 5 GB al giorno | 15 GB al mese\n✂️ Rimuovi Sfondo (sett.): <b>3</b> | 🎨 Colora: <b>3</b>\n🗣️ Sintesi Vocale: <b>30 min settimanale</b>",
-        "sepahbod": "✅ Adatto per utenti semi-professionali\n⬇️ Traffico: 5 GB al giorno | 60 GB al mese\n🔥 Qualità YouTube: fino a 1080p\n✂️ Rimuovi Sfondo (sett.): <b>3</b> | 🎨 Colora: <b>3</b>\n🗣️ Sintesi Vocale: <b>30 min settimanale</b>",
-        "esfandyar": "✅ Adatto per download pesanti e professionali\n⬇️ Traffico: 40 GB al giorno | 400 GB al mese\n🚀 Qualità YouTube: fino a 4K\n✂️ Rimuovi Sfondo (sett.): <b>3</b> | 🎨 Colora: <b>3</b>\n🗣️ Sintesi Vocale: <b>30 min settimanale</b>",
-        "sohrab": "✅ Adatto per l'uso regolare degli strumenti IA\n✂️ Rimuovi Sfondo (sett.): <b>30</b> | 🎨 Colora: <b>15</b>\n🗣️ Sintesi Vocale: <b>100 min settimanale</b>",
-        "rostam": "🏆 Tutte le funzionalità di Esfandyar incluse\n✂️ Rimuovi Sfondo (sett.): <b>150</b> | 🎨 Colora: <b>100</b>\n🗣️ Sintesi Vocale: <b>600 min settimanale</b>"
+        "dalavar": "✅ Per uso quotidiano\n⬇️ Traffico: <b>5 GB al giorno</b> | <b>15 GB al mese</b>\n📱 Qualità download YouTube: fino a <b>480p</b>\n🔇 Riduzione rumore: <b>30 min al giorno</b> | <b>2 ore a settimana</b>\n🎙 Trascrizione veloce: <b>30 min al giorno</b> | <b>2 ore a settimana</b>\n🎵 Separazione vocale: <b>6 min al giorno</b> | <b>20 min a settimana</b>\n🖼 Miglioramento immagini (sett.): <b>5</b> per 2x | <b>3</b> per 3x | <b>2</b> per 4x\n✂️ Rimozione sfondo (sett.): <b>3</b> | 🎨 Colorazione foto: <b>3</b>\n🗣️ Sintesi vocale: <b>30 min a settimana</b>\n🎧 Brano singolo Spotify e SoundCloud (320 kbps, copertina + tag): <b>✅ senza limiti</b>\n💽 Album e playlist Spotify/SoundCloud: <b>❌ non disponibile</b>\n🗜 Intero album in un unico file 7z: <b>❌</b>\n⚙️ Tempo di elaborazione (CPU) per la compressione file: <b>10 min al giorno</b> | <b>100 min al mese</b>",
+        "sepahbod": "✅ Per utenti semi-professionali\n⬇️ Traffico: <b>5 GB al giorno</b> | <b>60 GB al mese</b>\n🔥 Qualità download YouTube: fino a <b>1080p</b>\n📚 Playlist/canale YouTube: solo i <b>primi 10 video</b>\n🧾 Sottotitoli come file separato: ✅\n📎 Sottotitoli allegati al video: ✅\n🔇 Riduzione rumore: <b>30 min al giorno</b> | <b>2 ore a settimana</b>\n🎙 Trascrizione veloce: <b>30 min al giorno</b> | <b>2 ore a settimana</b>\n🎵 Separazione vocale: <b>6 min al giorno</b> | <b>20 min a settimana</b>\n🖼 Miglioramento immagini (sett.): <b>5</b> per 2x | <b>3</b> per 3x | <b>2</b> per 4x\n✂️ Rimozione sfondo (sett.): <b>3</b> | 🎨 Colorazione foto: <b>3</b>\n🗣️ Sintesi vocale: <b>30 min a settimana</b>\n🎧 Brano singolo Spotify e SoundCloud (320 kbps, copertina + tag): <b>✅ senza limiti</b>\n💽 Album e playlist Spotify/SoundCloud: <b>fino a 20 brani</b>\n🗜 Intero album in un unico file 7z: <b>❌</b>\n⚙️ Tempo di elaborazione (CPU) per la compressione file: <b>30 min al giorno</b> | <b>400 min al mese</b>",
+        "esfandyar": "✅ Per download intensivi e professionali\n⬇️ Traffico: <b>40 GB al giorno</b> | <b>400 GB al mese</b>\n🚀 Qualità download YouTube: fino a <b>4K (senza limiti di qualità)</b>\n📚 Playlist/canale YouTube: <b>senza limiti</b>\n🧾 Sottotitoli come file separato: ✅\n📎 Sottotitoli allegati al video: ✅\n🔥 Sottotitoli impressi nel video: ✅\n🔇 Riduzione rumore: <b>30 min al giorno</b> | <b>2 ore a settimana</b>\n🎙 Trascrizione veloce: <b>30 min al giorno</b> | <b>2 ore a settimana</b>\n🎵 Separazione vocale: <b>6 min al giorno</b> | <b>20 min a settimana</b>\n🖼 Miglioramento immagini (sett.): <b>5</b> per 2x | <b>3</b> per 3x | <b>2</b> per 4x\n✂️ Rimozione sfondo (sett.): <b>3</b> | 🎨 Colorazione foto: <b>3</b>\n🗣️ Sintesi vocale: <b>30 min a settimana</b>\n🎧 Brano singolo Spotify e SoundCloud (320 kbps, copertina + tag): <b>✅ senza limiti</b>\n💽 Album e playlist Spotify/SoundCloud: <b>senza limiti</b>\n🗜 Intero album in un unico file 7z: <b>✅</b>\n⚙️ Tempo di elaborazione (CPU) per la compressione file: <b>200 min al giorno</b> | <b>3000 min al mese</b>",
+        "sohrab": "✅ Per uso regolare degli strumenti AI\n🔇 Riduzione rumore: <b>2 ore al giorno</b> | <b>10 ore a settimana</b>\n🎙 Trascrizione veloce: <b>3 ore al giorno</b> | <b>15 ore a settimana</b>\n🎙 Trascrizione precisa: <b>1 ora al giorno</b> | <b>5 ore a settimana</b>\n🎵 Separazione vocale: <b>20 min al giorno</b> | <b>90 min a settimana</b>\n🖼 Miglioramento immagini (sett.): <b>50</b> per 2x | <b>30</b> per 3x | <b>20</b> per 4x\n✂️ Rimozione sfondo (sett.): <b>30</b> | 🎨 Colorazione foto: <b>15</b>\n🗣️ Sintesi vocale: <b>100 min a settimana</b>\n🎧 Brano singolo Spotify e SoundCloud (320 kbps, copertina + tag): <b>✅ senza limiti</b>\n💽 Album e playlist Spotify/SoundCloud: <b>❌ non disponibile</b>\n🗜 Intero album in un unico file 7z: <b>❌</b>\n⚙️ Tempo di elaborazione (CPU) per la compressione file: <b>10 min al giorno</b> | <b>100 min al mese</b>",
+        "rostam": "🏆 <b>Tutte le funzioni del rango Esfandyar</b>\n🔇 Riduzione rumore: <b>10 ore al giorno</b> | <b>99 ore a settimana</b>\n🎙 Trascrizione veloce: <b>30 ore al giorno</b> | <b>150 ore a settimana</b>\n🎙 Trascrizione precisa: <b>10 ore al giorno</b> | <b>50 ore a settimana</b>\n🎵 Separazione vocale: <b>200 min al giorno</b> | <b>999 min a settimana</b>\n🖼 Miglioramento immagini (sett.): <b>500</b> per 2x | <b>300</b> per 3x | <b>200</b> per 4x\n✂️ Rimozione sfondo (sett.): <b>150</b> | 🎨 Colorazione foto: <b>100</b>\n🗣️ Sintesi vocale: <b>600 min a settimana</b>\n🎧 Brano singolo Spotify e SoundCloud (320 kbps, copertina + tag): <b>✅ senza limiti</b>\n💽 Album e playlist Spotify/SoundCloud: <b>senza limiti</b>\n🗜 Intero album in un unico file 7z: <b>✅</b>\n⚙️ Tempo di elaborazione (CPU) per la compressione file: <b>200 min al giorno</b> | <b>3000 min al mese</b>\n✨ Accesso privilegiato ai <b>modelli Gemini più recenti</b>"
       }
     },
     "commands": {
@@ -3236,7 +3342,9 @@
         "send_failed": "Invio del file di output fallito."
       },
       "max_level_notice": "La compressione massima per {fmt} è {max}",
-      "password_need_text": "⚠️ Invia del testo \\(la password dell'archivio\\)\\."
+      "password_need_text": "⚠️ Invia del testo \\(la password dell'archivio\\)\\.",
+      "downloading": "📥 *Download del file {idx} di {total}\\.\\.\\.*\n⏱ *Trascorso:* {elapsed}",
+      "processing_eta": "🗜 *Compressione in corso\\.\\.\\.*\n\n{bar}  {percent}%\n⏱ *Trascorso:* {elapsed}\n⏳ *Rimanente:* {eta}"
     },
     "pdfcompress": {
       "mode_prompt": "Come vuoi ridurre il tuo PDF?",
@@ -4157,7 +4265,23 @@
           "upscale": "Image Upscaling",
           "separation": "Vocal Separation",
           "gwm": "Watermark Removal",
-          "youtube": "YouTube"
+          "youtube": "YouTube",
+          "nobg": "Удаление фона",
+          "deoldify": "Раскрашивание фото",
+          "tts": "Текст в речь",
+          "spotify": "Spotify",
+          "soundcloud": "SoundCloud",
+          "musicset": "Альбом/Плейлист",
+          "pdfcompress": "Сжатие PDF",
+          "surge_dl": "Скачивание по ссылке",
+          "emoji": "Панель эмодзи",
+          "ip_lookup": "Поиск IP",
+          "paywall": "Пейвол",
+          "rank": "Ранги и покупки",
+          "referral": "Рефералы",
+          "cpu": "Очередь обработки (CPU)",
+          "cookie": "Cookie Pool",
+          "broadcast": "Рассылка"
         },
         "more": {
           "youtube": "YouTube (quality/cancel)",
@@ -4165,6 +4289,26 @@
           "cookie": "Cookie Pool",
           "paywall": "Paywall and Plans",
           "cpu": "Processing Queue (CPU)"
+        },
+        "hub_title": "📊 Панель статистики\n",
+        "overview_users": "\n👥 Пользователи: {total}\n🆕 Новые — 1d: {new_1d}  |  7d: {new_7d}  |  30d: {new_30d}\n",
+        "overview_active": "📈 Активные — за день: {dau}  |  за неделю: {wau}\n🏆 Топ функция (7d): {top_name} ({top_count})\n",
+        "alerts_title": "\n━━ Предупреждения ━━\n",
+        "alerts_none": "✅ Всё в порядке.\n",
+        "alert_rate": "⚠️ {name}: успешность {rate}% (успешно {ok} / ошибок {fail})\n",
+        "alert_errors": "🔴 {count} ошибок за последние 24ч\n",
+        "feat_ok": "✅ Успешно — 1d: {ok_1d}  |  7d: {ok_7d}  |  30d: {ok_30d}\n❌ Ошибки (30d): {fail_30d}  |  Успешность: {rate}\n",
+        "feat_time": "⏱ Время обработки (30d): {t_30d}  |  среднее: {avg}\n",
+        "nav": {
+          "overview": "Обзор",
+          "users": "Пользователи",
+          "youtube": "YouTube",
+          "ai": "ИИ",
+          "music": "Музыка",
+          "files": "Файлы",
+          "money": "Оплата и планы",
+          "system": "Система",
+          "errors": "Ошибки"
         }
       },
       "db_missing": "Database not connected.",
@@ -4215,7 +4359,6 @@
       "paywall_feature": "This feature is not available for your rank\nTo access <b>{feature}</b>, upgrade to <b>{min_rank}</b> or higher",
       "paywall_limit": "This request exceeds your rank's limit\nMaximum allowed for your rank: <b>{limit}</b>\nFor higher limits, upgrade to <b>{min_rank}</b> or higher",
       "paywall_button": "View Plans",
-      "guide": "📜 <b>Rostam Subscription Guide</b>\nRostam has two separate sections for clarity:\n1. <b>Download Ranks</b> (speed, quality, download and traffic limits)\n2. <b>AI Plans</b> (transcription, vocal separation, noise removal, image upscaling)\n\n⚔️ <b>Dalavar (default)</b>\n<blockquote expandable>✅ Suitable for everyday use\n⬇️ Traffic: <b>5 GB daily</b> | <b>15 GB monthly</b>\n📱 YouTube download quality: up to <b>480p</b>\n🔇 Noise removal: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎙 Fast transcription: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎵 Vocal separation: <b>6 min daily</b> | <b>20 min weekly</b>\n🖼 Image upscaling (weekly): <b>five</b> for 2x | <b>three</b> for 3x | <b>two</b> for 4x</blockquote>\n\n🎖 <b>Sepahbod</b>\n<blockquote expandable>✅ Suitable for semi-professional users\n⬇️ Traffic: <b>5 GB daily</b> | <b>60 GB monthly</b>\n🔥 YouTube download quality: up to <b>1080p</b>\n🧾 Send subtitle as separate file: ✅\n📎 Attach subtitle to video: ✅\n🔇 Noise removal: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎙 Fast transcription: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎵 Vocal separation: <b>6 min daily</b> | <b>20 min weekly</b>\n🖼 Image upscaling (weekly): <b>five</b> for 2x | <b>three</b> for 3x | <b>two</b> for 4x\n💰 Subscription: <b>150,000 Toman / month</b></blockquote>\n\n🏆 <b>Esfandyar</b>\n<blockquote expandable>✅ Suitable for heavy and professional downloads\n⬇️ Traffic: <b>40 GB daily</b> | <b>400 GB monthly</b>\n🚀 YouTube download quality: up to <b>4K (unlimited)</b>\n🧾 Send subtitle as separate file: ✅\n📎 Attach subtitle to video: ✅\n🔇 Noise removal: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎙 Fast transcription: <b>30 min daily</b> | <b>2 hours weekly</b>\n🎵 Vocal separation: <b>6 min daily</b> | <b>20 min weekly</b>\n🖼 Image upscaling (weekly): <b>five</b> for 2x | <b>three</b> for 3x | <b>two</b> for 4x\n💰 Subscription: <b>250,000 Toman / month</b></blockquote>\n\n🧠 <b>Sohrab (Economy)</b>\n<blockquote expandable>✅ Suitable for regular AI tool usage\n🔇 Noise removal: <b>2 hours daily</b> | <b>10 hours weekly</b>\n🎙 Fast transcription: <b>3 hours daily</b> | <b>15 hours weekly</b>\n🎙 Accurate transcription: <b>1 hour daily</b> | <b>5 hours weekly</b>\n🎵 Vocal separation: <b>20 min daily</b> | <b>90 min weekly</b>\n🖼 Image upscaling (weekly): <b>fifty</b> for 2x | <b>thirty</b> for 3x | <b>twenty</b> for 4x\n💰 Subscription: <b>200,000 Toman / month</b></blockquote>\n\n👑 <b>Rostam (Professional)</b>\n<blockquote expandable>🏆 <b>All Esfandyar features</b>\n🔇 Noise removal: <b>10 hours daily</b> | <b>99 hours weekly</b>\n🎙 Fast transcription: <b>30 hours daily</b> | <b>150 hours weekly</b>\n🎙 Accurate transcription: <b>10 hours daily</b> | <b>50 hours weekly</b>\n🎵 Vocal separation: <b>200 min daily</b> | <b>999 min weekly</b>\n🖼 Image upscaling (weekly): <b>five hundred</b> for 2x | <b>three hundred</b> for 3x | <b>two hundred</b> for 4x\n✨ Exclusive access to <b>latest Gemini models</b>\n💰 Subscription: <b>400,000 Toman / month</b></blockquote>\n\n🕛 <b>Quota Reset Times</b>\n⏰ Daily traffic: at <b>00:00</b>\n📅 Monthly cycle: every <b>30 days</b> from first download\n♻️ AI limits: based on each service's <b>daily/weekly window</b>\n\n🛒 <b>To purchase and upgrade</b>\n@mmahdi_sz",
       "duration_minutes": "{mins} min",
       "duration_hours": "{hours} hr",
       "duration_hours_minutes": "{hours} hr {mins} min",
@@ -4231,7 +4374,6 @@
       "expiry_unlimited": "Unlimited",
       "shop_title": "🛡 <b>Выберите уровень подписки</b>\nВыберите уровень, чтобы просмотреть подробности и цену:",
       "shop_recommended_label": "🏆 {rank} (Рекомендуемый)",
-      "view_guide": "Просмотреть возможности уровня",
       "buy_rank_from_admin": "Купить ранг у админа",
       "buy_prefilled_text": "Здравствуйте, добрый день!\nЯ хочу приобрести ранг {rank}.\nПожалуйста, укажите номер карты.",
       "back_to_shop": "Вернуться в меню уровней",
@@ -4242,11 +4384,11 @@
       "detail_activate_note": "⚡ После активации все функции сразу станут доступны!",
       "detail_free_rank": "⚔️ <b>Уровень Dalavar — Бесплатно</b>\nЭто базовый уровень по умолчанию для всех пользователей.",
       "features": {
-        "dalavar": "✅ Подходит для повседневного использования\n✂️ Удалить фон (неделя): <b>3</b> | 🎨 Раскрасить: <b>3</b>\n🗣️ Текст в речь: <b>30 мин/неделя</b>",
-        "sepahbod": "✅ Подходит для полупрофессионалов\n✂️ Удалить фон (неделя): <b>3</b> | 🎨 Раскрасить: <b>3</b>\n🗣️ Текст в речь: <b>30 мин/неделя</b>",
-        "esfandyar": "✅ Подходит для активных скачиваний\n✂️ Удалить фон (неделя): <b>3</b> | 🎨 Раскрасить: <b>3</b>\n🗣️ Текст в речь: <b>30 мин/неделя</b>",
-        "sohrab": "✅ Подходит для работы с ИИ\n✂️ Удалить фон (неделя): <b>30</b> | 🎨 Раскрасить: <b>15</b>\n🗣️ Текст в речь: <b>100 мин/неделя</b>",
-        "rostam": "🏆 Все возможности Esfandyar включены\n✂️ Удалить фон (неделя): <b>150</b> | 🎨 Раскрасить: <b>100</b>\n🗣️ Текст в речь: <b>600 мин/неделя</b>"
+        "dalavar": "✅ Для повседневного использования\n⬇️ Трафик: <b>5 ГБ в день</b> | <b>15 ГБ в месяц</b>\n📱 Качество загрузки YouTube: до <b>480p</b>\n🔇 Шумоподавление: <b>30 мин в день</b> | <b>2 часа в неделю</b>\n🎙 Быстрая расшифровка: <b>30 мин в день</b> | <b>2 часа в неделю</b>\n🎵 Разделение вокала: <b>6 мин в день</b> | <b>20 мин в неделю</b>\n🖼 Улучшение изображений (в неделю): <b>5</b> для 2x | <b>3</b> для 3x | <b>2</b> для 4x\n✂️ Удаление фона (в неделю): <b>3</b> | 🎨 Раскрашивание фото: <b>3</b>\n🗣️ Синтез речи: <b>30 мин в неделю</b>\n🎧 Отдельный трек Spotify и SoundCloud (320 кбит/с, обложка + теги): <b>✅ без ограничений</b>\n💽 Альбомы и плейлисты Spotify/SoundCloud: <b>❌ недоступно</b>\n🗜 Весь альбом одним файлом 7z: <b>❌</b>\n⚙️ Процессорное время (CPU) для сжатия файлов: <b>10 мин в день</b> | <b>100 мин в месяц</b>",
+        "sepahbod": "✅ Для полупрофессиональных пользователей\n⬇️ Трафик: <b>5 ГБ в день</b> | <b>60 ГБ в месяц</b>\n🔥 Качество загрузки YouTube: до <b>1080p</b>\n📚 Плейлист/канал YouTube: только <b>первые 10 видео</b>\n🧾 Субтитры отдельным файлом: ✅\n📎 Субтитры, вложенные в видео: ✅\n🔇 Шумоподавление: <b>30 мин в день</b> | <b>2 часа в неделю</b>\n🎙 Быстрая расшифровка: <b>30 мин в день</b> | <b>2 часа в неделю</b>\n🎵 Разделение вокала: <b>6 мин в день</b> | <b>20 мин в неделю</b>\n🖼 Улучшение изображений (в неделю): <b>5</b> для 2x | <b>3</b> для 3x | <b>2</b> для 4x\n✂️ Удаление фона (в неделю): <b>3</b> | 🎨 Раскрашивание фото: <b>3</b>\n🗣️ Синтез речи: <b>30 мин в неделю</b>\n🎧 Отдельный трек Spotify и SoundCloud (320 кбит/с, обложка + теги): <b>✅ без ограничений</b>\n💽 Альбомы и плейлисты Spotify/SoundCloud: <b>до 20 треков</b>\n🗜 Весь альбом одним файлом 7z: <b>❌</b>\n⚙️ Процессорное время (CPU) для сжатия файлов: <b>30 мин в день</b> | <b>400 мин в месяц</b>",
+        "esfandyar": "✅ Для тяжёлых и профессиональных загрузок\n⬇️ Трафик: <b>40 ГБ в день</b> | <b>400 ГБ в месяц</b>\n🚀 Качество загрузки YouTube: до <b>4K (без ограничений качества)</b>\n📚 Плейлист/канал YouTube: <b>без ограничений</b>\n🧾 Субтитры отдельным файлом: ✅\n📎 Субтитры, вложенные в видео: ✅\n🔥 Субтитры, впечатанные в видео: ✅\n🔇 Шумоподавление: <b>30 мин в день</b> | <b>2 часа в неделю</b>\n🎙 Быстрая расшифровка: <b>30 мин в день</b> | <b>2 часа в неделю</b>\n🎵 Разделение вокала: <b>6 мин в день</b> | <b>20 мин в неделю</b>\n🖼 Улучшение изображений (в неделю): <b>5</b> для 2x | <b>3</b> для 3x | <b>2</b> для 4x\n✂️ Удаление фона (в неделю): <b>3</b> | 🎨 Раскрашивание фото: <b>3</b>\n🗣️ Синтез речи: <b>30 мин в неделю</b>\n🎧 Отдельный трек Spotify и SoundCloud (320 кбит/с, обложка + теги): <b>✅ без ограничений</b>\n💽 Альбомы и плейлисты Spotify/SoundCloud: <b>без ограничений</b>\n🗜 Весь альбом одним файлом 7z: <b>✅</b>\n⚙️ Процессорное время (CPU) для сжатия файлов: <b>200 мин в день</b> | <b>3000 мин в месяц</b>",
+        "sohrab": "✅ Для регулярного использования AI-инструментов\n🔇 Шумоподавление: <b>2 часа в день</b> | <b>10 часов в неделю</b>\n🎙 Быстрая расшифровка: <b>3 часа в день</b> | <b>15 часов в неделю</b>\n🎙 Точная расшифровка: <b>1 час в день</b> | <b>5 часов в неделю</b>\n🎵 Разделение вокала: <b>20 мин в день</b> | <b>90 мин в неделю</b>\n🖼 Улучшение изображений (в неделю): <b>50</b> для 2x | <b>30</b> для 3x | <b>20</b> для 4x\n✂️ Удаление фона (в неделю): <b>30</b> | 🎨 Раскрашивание фото: <b>15</b>\n🗣️ Синтез речи: <b>100 мин в неделю</b>\n🎧 Отдельный трек Spotify и SoundCloud (320 кбит/с, обложка + теги): <b>✅ без ограничений</b>\n💽 Альбомы и плейлисты Spotify/SoundCloud: <b>❌ недоступно</b>\n🗜 Весь альбом одним файлом 7z: <b>❌</b>\n⚙️ Процессорное время (CPU) для сжатия файлов: <b>10 мин в день</b> | <b>100 мин в месяц</b>",
+        "rostam": "🏆 <b>Все возможности ранга Esfandyar</b>\n🔇 Шумоподавление: <b>10 часов в день</b> | <b>99 часов в неделю</b>\n🎙 Быстрая расшифровка: <b>30 часов в день</b> | <b>150 часов в неделю</b>\n🎙 Точная расшифровка: <b>10 часов в день</b> | <b>50 часов в неделю</b>\n🎵 Разделение вокала: <b>200 мин в день</b> | <b>999 мин в неделю</b>\n🖼 Улучшение изображений (в неделю): <b>500</b> для 2x | <b>300</b> для 3x | <b>200</b> для 4x\n✂️ Удаление фона (в неделю): <b>150</b> | 🎨 Раскрашивание фото: <b>100</b>\n🗣️ Синтез речи: <b>600 мин в неделю</b>\n🎧 Отдельный трек Spotify и SoundCloud (320 кбит/с, обложка + теги): <b>✅ без ограничений</b>\n💽 Альбомы и плейлисты Spotify/SoundCloud: <b>без ограничений</b>\n🗜 Весь альбом одним файлом 7z: <b>✅</b>\n⚙️ Процессорное время (CPU) для сжатия файлов: <b>200 мин в день</b> | <b>3000 мин в месяц</b>\n✨ Особый доступ к <b>новейшим моделям Gemini</b>"
       }
     },
     "commands": {
@@ -4371,7 +4513,9 @@
         "send_failed": "Ошибка отправки готового файла."
       },
       "max_level_notice": "Максимальное сжатие для {fmt} — {max}",
-      "password_need_text": "⚠️ Отправьте текст \\(пароль архива\\)\\."
+      "password_need_text": "⚠️ Отправьте текст \\(пароль архива\\)\\.",
+      "downloading": "📥 *Загрузка файла {idx} из {total}\\.\\.\\.*\n⏱ *Прошло:* {elapsed}",
+      "processing_eta": "🗜 *Сжатие\\.\\.\\.*\n\n{bar}  {percent}%\n⏱ *Прошло:* {elapsed}\n⏳ *Осталось:* {eta}"
     },
     "pdfcompress": {
       "mode_prompt": "How would you like to shrink your PDF?",

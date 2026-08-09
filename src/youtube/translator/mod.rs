@@ -1,22 +1,17 @@
-//! ترجمه‌ی زیرنویس SRT با مدل محلی NLLB از طریق CTranslate2 (کریت `ct2rs`).
-//!
-//! مدل به فرمت CTranslate2 در `files/models/nllb/` است و باید کنارش
-//! `tokenizer.json` داشته باشد (tokenizer داخل خود ct2rs بارگذاری می‌شود).
-//! مدل ~۶۲۲MB است، پس یک بار لود و با `OnceLock` کش می‌شود.
+//! SRT subtitle translation using local NLLB model via CTranslate2 (`ct2rs`).
 
 use std::path::Path;
 use std::sync::OnceLock;
 
 use ct2rs::{Config, Translator};
 
-/// نوع مترجم با tokenizer پیش‌فرض ct2rs (که `tokenizer.json` را می‌خواند).
+/// Translator type using ct2rs default tokenizer.
 type NllbTranslator = Translator<ct2rs::tokenizers::auto::Tokenizer>;
 
-/// مسیر پوشه‌ی مدل NLLB (نسبت به دایرکتوری کاری ربات، مثل بقیه‌ی مدل‌ها).
+/// Path to NLLB model directory.
 const MODEL_DIR: &str = "files/models/nllb";
 
-/// مترجم کش‌شده — لود مدل گران است، پس فقط بار اول ساخته می‌شود.
-/// `Translator` داخل ct2rs از نظر thread امن است (`Send + Sync`).
+/// Cached translator instance.
 static TRANSLATOR: OnceLock<Result<NllbTranslator, String>> = OnceLock::new();
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,7 +55,7 @@ pub fn format_srt(items: &[SrtItem]) -> String {
     out
 }
 
-/// نگاشت کد زبانِ زیرنویس (مثل `fa`) به کد NLLB (مثل `pes_Arab`).
+/// Maps ISO language code to NLLB target code (e.g., `fa` -> `pes_Arab`).
 pub fn map_language_code(tgt: &str) -> Option<&'static str> {
     match tgt {
         "fa" => Some("pes_Arab"),
@@ -77,7 +72,7 @@ pub fn map_language_code(tgt: &str) -> Option<&'static str> {
     }
 }
 
-/// مترجم کش‌شده را برمی‌گرداند (بار اول مدل را لود می‌کند).
+/// Returns cached NLLB translator instance.
 fn translator() -> Result<&'static NllbTranslator, String> {
     TRANSLATOR
         .get_or_init(|| {
@@ -94,21 +89,19 @@ fn translator() -> Result<&'static NllbTranslator, String> {
         .map_err(|e| e.clone())
 }
 
-/// دسته‌ای از متن‌ها را به `target_lang` (کد NLLB مثل `pes_Arab`) ترجمه می‌کند.
-/// بلوکینگ است (CPU-bound)، پس باید داخل `spawn_blocking` صدا زده شود.
+/// Translates batch of texts to target NLLB language code. Blocking (CPU-bound).
 fn translate_batch_blocking(texts: &[String], target_lang: &str) -> Result<Vec<String>, String> {
     if texts.is_empty() {
         return Ok(Vec::new());
     }
     let t = translator()?;
 
-    // زیرنویس‌های چندخطی: خط‌ها را با فاصله یکی می‌کنیم (مثل نسخه‌ی پایتونی).
+    // Join multi-line texts with spaces.
     let sources: Vec<String> = texts
         .iter()
         .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
         .collect();
 
-    // NLLB زبان مقصد را به‌صورت target-prefix می‌گیرد.
     let prefixes: Vec<Vec<String>> = sources
         .iter()
         .map(|_| vec![target_lang.to_string()])
@@ -124,15 +117,12 @@ fn translate_batch_blocking(texts: &[String], target_lang: &str) -> Result<Vec<S
         .collect())
 }
 
-/// توکن‌های ویژه‌ی NLLB را که گاهی در خروجی decode باقی می‌مانند حذف می‌کند
-/// (مثل `<unk>`, `</s>`, تگ زبان `pes_Arab`). tokenizer داخلی ct2rs در این نسخه
-/// special tokenها را skip نمی‌کند، پس دستی تمیز می‌کنیم.
+/// Strips NLLB special tokens and language tags from decoded text.
 fn clean_special_tokens(text: &str) -> String {
     let mut out = text.to_string();
     for tok in ["<unk>", "<s>", "</s>", "<pad>", "<mask>"] {
         out = out.replace(tok, "");
     }
-    // تگ‌های زبان NLLB به شکل xxx_Yyyy هستند (مثل pes_Arab, eng_Latn).
     out = out
         .split_whitespace()
         .filter(|w| !is_nllb_lang_tag(w))
@@ -141,7 +131,7 @@ fn clean_special_tokens(text: &str) -> String {
     out.trim().to_string()
 }
 
-/// آیا کلمه یک تگ زبان NLLB است (سه حرف کوچک + `_` + چهار حرف با حرف اول بزرگ).
+/// Returns true if word is an NLLB language tag.
 fn is_nllb_lang_tag(w: &str) -> bool {
     let bytes = w.as_bytes();
     bytes.len() == 8
@@ -151,11 +141,7 @@ fn is_nllb_lang_tag(w: &str) -> bool {
         && bytes[5..].iter().all(|c| c.is_ascii_lowercase())
 }
 
-/// یک فایل SRT انگلیسی را می‌خواند، متن‌ها را به `target_lang` (کد NLLB) ترجمه
-/// می‌کند، و با حفظ تایم‌کدها در `output_path` می‌نویسد.
-///
-/// `threads` نگه داشته شده برای سازگاری امضا؛ ct2rs تعداد thread را از Config
-/// می‌گیرد (فعلاً پیش‌فرض). کار CPU-bound داخل `spawn_blocking` اجرا می‌شود.
+/// Reads English SRT file, translates texts to NLLB target_lang, preserving timestamps.
 pub async fn translate_srt<F>(
     input_path: &Path,
     output_path: &Path,
@@ -267,12 +253,11 @@ mod tests {
             clean_special_tokens("متن عادی بدون توکن"),
             "متن عادی بدون توکن"
         );
-        // کلمه‌ی معمولی نباید اشتباهاً تگ زبان تشخیص داده شود.
+        // Regular words should not be misidentified as language tags.
         assert_eq!(clean_special_tokens("testing"), "testing");
     }
 
-    /// تست واقعیِ ترجمه با مدل NLLB. نیاز به files/models/nllb روی دیسک دارد و
-    /// کند است، پس ignored — با `cargo test real_translation -- --ignored` اجرا شود.
+    /// Real translation test with NLLB model. Requires `files/models/nllb`.
     #[tokio::test]
     #[ignore]
     async fn test_real_translation_en_to_fa() {
@@ -297,7 +282,7 @@ mod tests {
             items[0].timestamp, "00:00:01,000 --> 00:00:03,000",
             "timing preserved"
         );
-        // خروجی باید فارسی (غیر لاتین) و بدون توکن ویژه باشد و با انگلیسی فرق کند.
+        // Output must be non-Latin (Persian), without special tokens, differing from English input.
         assert!(
             items[0]
                 .text
@@ -312,7 +297,6 @@ mod tests {
             items[0].text
         );
         assert_ne!(items[0].text, "Hello, how are you?", "must be translated");
-        // خروجی باید فارسی (غیر لاتین) باشد و با انگلیسی ورودی فرق کند.
         assert!(
             items[0]
                 .text

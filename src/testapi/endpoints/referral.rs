@@ -1,12 +1,12 @@
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
-/// شناسه‌ی آزمایشی خرج امتیاز — بازه‌ی `-999xxx`، جدا از بقیه‌ی اندپوینت‌ها.
+/// Test user ID for spending points in `-999xxx` range.
 const SPEND_UID: i64 = -999_201;
 
 #[derive(Deserialize)]
 pub struct ReferralSpendReq {
-    /// تعداد دعوت تأییدشده‌ای که برای کاربر آزمایشی seed می‌شود.
+    /// Number of verified referrals seeded for test user.
     pub points: i32,
     pub tier: String,
 }
@@ -18,20 +18,16 @@ pub struct ReferralSpendResp {
     pub required_points: i32,
     pub remaining_points: i32,
     pub days_added: i32,
-    /// متن واقعیِ برگشتی از هندلر (i18n اعمال‌شده).
+    /// Real handler output message.
     pub message: String,
-    /// رتبه‌ای که واقعاً در `user_ranks` نشست — `null` یعنی ننشست.
+    /// Granted rank stored in `user_ranks` (`None` if unchanged).
     pub granted_rank: Option<String>,
     pub db: String,
 }
 
-/// خرج امتیاز زیرمجموعه‌گیری از **مسیر واقعی**: دعوت‌ها seed می‌شوند، بعد همان
-/// `rank::panel::process_claim` که دکمه‌ی پنل صدا می‌زند اجرا می‌شود (که خودش
-/// `plan_activation` + `record_activation` را با گارد موجودی می‌خواند)، بعد
-/// نتیجه از دیتابیس خوانده می‌شود. هیچ محاسبه‌ای اینجا تکرار نشده.
+/// Tests referral point spending via `rank::panel::process_claim`.
 pub async fn test_referral_spend(Json(req): Json<ReferralSpendReq>) -> Json<ReferralSpendResp> {
-    // `Rank::from_str` فقط حروف کوچک را می‌شناسد؛ سوئیت و ادمین «Esfandyar»
-    // می‌نویسند، پس اینجا نرمال می‌کنیم.
+    // Normalize tier string casing.
     let tier_key = req.tier.to_ascii_lowercase();
     let Some(&(required, tier_rank)) = crate::referral::TIERS
         .iter()
@@ -64,7 +60,7 @@ pub async fn test_referral_spend(Json(req): Json<ReferralSpendReq>) -> Json<Refe
     };
     let client = db.client();
 
-    // شروع تمیز، بعد seed دعوت‌ها با همان شکل ردیفی که sweep_confirm می‌سازد.
+    // Seed referrals following standard sweep structure.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -112,7 +108,7 @@ pub async fn test_referral_spend(Json(req): Json<ReferralSpendReq>) -> Json<Refe
     let _ = purge_spend(client, SPEND_UID).await;
 
     Json(ReferralSpendResp {
-        // موفقیت = رتبه واقعاً نشست و امتیاز واقعاً کسر شد.
+        // Success: rank stored and points deducted.
         ok: granted_rank.as_deref() == Some(tier_rank.as_str()) && spent == required as i64,
         tier: req.tier,
         required_points: required as i32,

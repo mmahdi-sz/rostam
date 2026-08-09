@@ -288,6 +288,30 @@ pub async fn send_long_text(api: &Bot, chat_id: i64, text: &str) -> crate::error
     Ok(())
 }
 
+/// Edit with `ParseMode::Html` — for text that carries its own HTML markup
+/// (expandable blockquotes in the admin errors page).
+pub async fn edit_text_html(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    text: &str,
+    reply_markup: Option<InlineKeyboardMarkup>,
+) -> crate::error::Result<()> {
+    let text_with_emojis = crate::i18n::apply_premium_to_html(text);
+    let builder = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(&text_with_emojis)
+        .parse_mode(ParseMode::Html);
+    let params = if let Some(kb) = reply_markup {
+        builder.reply_markup(kb).build()
+    } else {
+        builder.build()
+    };
+    api.edit_message_text(&params).await?;
+    Ok(())
+}
+
 pub async fn edit_text_md(
     api: &Bot,
     chat_id: i64,

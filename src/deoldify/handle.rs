@@ -20,7 +20,7 @@ use crate::rank;
 use crate::rank::quota::{QuotaKind, refund_usage, reserve_usage};
 use crate::stats;
 
-/// پرچم لغو هر کاربر تا دکمهٔ «انصراف» روی پیام وضعیت کاری کند.
+/// Cancel flag per user so the "Cancel" button on status message works.
 static ACTIVE_DEOLDIFY_JOBS: LazyLock<Mutex<std::collections::HashMap<i64, Arc<AtomicBool>>>> =
     LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 
@@ -101,9 +101,7 @@ pub async fn handle_deoldify_image(
         return;
     };
 
-    // سهمیه پیش از کار رزرو می‌شود، نه بعدش: دو تپ سریع قبلاً هر دو مصرف صفر
-    // می‌دیدند و هر دو اجرا می‌شدند. رزرو در یک statement است، پس پنجره‌ی
-    // رقابت سمت برنامه صفر است.
+    // Quota is reserved upfront before execution (single statement, zero race window).
     let mut reserved = false;
     if let Some(db) = &database {
         let user_rank = rank::effective_rank(db.client(), user_id).await;
@@ -139,7 +137,7 @@ pub async fn handle_deoldify_image(
                 return;
             }
             Err(e) => {
-                // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
+                // fail closed — notify user on DB error
                 log_ev!("deoldify", trace_id, "quota_reserve", "err" => format!("{e}"), "=>" => "fail");
                 crate::rank::paywall::quota_db_error(api, chat_id, "deoldify", &format!("{e}"))
                     .await;
@@ -149,7 +147,7 @@ pub async fn handle_deoldify_image(
         }
     }
 
-    // برگرداندن سهمیه‌ی رزروشده وقتی کار به نتیجه نرسید.
+    // Refund reserved quota on failure
     macro_rules! refund {
         ($why:expr) => {
             if reserved {
@@ -191,7 +189,7 @@ pub async fn handle_deoldify_image(
         }
     };
 
-    // پرچم لغو + تیکر زمان سپری‌شده روی همان پیام وضعیت.
+    // Cancel flag + elapsed time ticker on status message
     let cancel_flag = Arc::new(AtomicBool::new(false));
     if let Ok(mut jobs) = ACTIVE_DEOLDIFY_JOBS.lock() {
         jobs.insert(user_id, cancel_flag.clone());
@@ -230,7 +228,7 @@ pub async fn handle_deoldify_image(
     let input_path = PathBuf::from(format!("{work_dir}/input.jpg"));
     let output_path = PathBuf::from(format!("{work_dir}/output.jpg"));
 
-    // توقف تیکر + آزادکردن پرچم لغو در هر مسیر خروج.
+    // Stop ticker + release cancel flag on exit
     macro_rules! stop_timer {
         () => {{
             timer_running.store(false, Ordering::Relaxed);
@@ -270,7 +268,7 @@ pub async fn handle_deoldify_image(
     stop_timer!();
     let _ = timer_handle.await;
 
-    // کاربر وسط کار «انصراف» زده: نتیجه دور ریخته می‌شود و سهمیه برمی‌گردد.
+    // User clicked cancel mid-job: discard result and refund quota.
     if cancel_flag.load(Ordering::Relaxed) {
         log_ev!("deoldify", trace_id, "cancelled_mid_job", "user_id" => user_id);
         let _ = std::fs::remove_dir_all(&work_dir);
@@ -307,8 +305,7 @@ pub async fn handle_deoldify_image(
 
             match send_res {
                 Ok(_) => {
-                    // سهمیه هنگام رزرو کسر شد؛ بدهکاری دومی اینجا نیست،
-                    // وگرنه هر درخواست دو بار حساب می‌شد.
+                    // Quota was deducted during reservation; no secondary charge here
                     stats::record_event_user(user_id, "deoldify", "colorize", "ok", 1).await;
                     log_ev!("deoldify", trace_id, "done", "status" => "ok");
                 }
@@ -357,7 +354,7 @@ pub async fn handle_deoldify_image(
 
     let _ = std::fs::remove_dir_all(&work_dir);
 
-    // فلو دوباره مسلح می‌شود تا کاربر بی‌درنگ عکس بعدی را بفرستد.
+    // Re-arm flow so user can send next image immediately
     flow_manager.set(user_id, FlowState::AwaitingDeoldifyImage);
     let prompt = apply_premium_to_md(&t("deoldify.prompt"));
     let _ = api
@@ -384,7 +381,7 @@ pub async fn handle_deoldify_cancel(
     let trace_id = next_trace_id();
     log_ev!("deoldify", trace_id, "cancelled", "user_id" => user_id);
 
-    // کار در جریان هم لغو می‌شود، نه فقط فلو.
+    // Cancel active job as well as flow state
     if let Ok(mut jobs) = ACTIVE_DEOLDIFY_JOBS.lock() {
         if let Some(flag) = jobs.remove(&user_id) {
             flag.store(true, Ordering::Relaxed);

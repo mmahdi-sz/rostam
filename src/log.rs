@@ -262,7 +262,7 @@ mod tests {
         log_actor!("test", trace, &user, "rank" => "Dalavar", "clicked" => "upscale:model:x");
     }
 
-    // توکن ساختگی — هرگز توکن واقعی در تست نمی‌آید.
+    // Synthetic token — real token should never appear in tests.
     const FAKE_TOKEN: &str = "123456789:AAHfake_token_value_for_tests_only";
 
     #[test]
@@ -274,13 +274,13 @@ mod tests {
         let out = redact(&s);
         assert!(!out.contains(FAKE_TOKEN), "token survived: {out}");
         assert!(out.contains("/bot<redacted>"));
-        // مسیر بعد از توکن باید سالم بماند تا لاگ همچنان قابل دیباگ باشد.
+        // Path after token must remain intact for log debuggability.
         assert!(out.ends_with("/voice/file_1.oga)"));
     }
 
     #[test]
     fn redact_debug_shape() {
-        // شکل `{e:?}` که deoldify/feynobg لاگ می‌کنند.
+        // `{e:?}` shape logged by deoldify/feynobg.
         let s = format!(
             "reqwest::Error {{ kind: Request, url: \"https://api.telegram.org/bot{FAKE_TOKEN}/getFile\" }}"
         );
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn redact_without_token_does_not_allocate() {
-        // قرارداد کارایی: مسیر داغ (اکثر قریب به اتفاق خطوط لاگ) نباید تخصیص بدهد.
+        // Performance contract: hot path (vast majority of log lines) must not allocate.
         let s = "[yt trace=7 event=quota_check] used=2 limit=3 => pass";
         assert!(matches!(redact(s), std::borrow::Cow::Borrowed(_)));
         assert_eq!(redact(s), s);
@@ -340,8 +340,8 @@ mod tests {
             .await
             .expect_err("port 1 must refuse the connection");
         let raw = format!("{err}");
-        // اگر این assert روزی بشکند یعنی reqwest دیگر URL را به Display نمی‌چسباند
-        // و کل فرض این فیلتر باید بازبینی شود.
+        // If this assertion fails, reqwest no longer includes URL in Display
+        // and filter assumptions must be re-evaluated.
         assert!(raw.contains(E2E_TOKEN), "reqwest no longer leaks the url");
         assert!(!redact(&raw).contains(E2E_TOKEN));
 
@@ -357,7 +357,7 @@ mod tests {
         let client: &'static tokio_postgres::Client = Box::leak(Box::new(client));
         crate::stats::init(client);
 
-        // مسیر واقعی: همان تابعی که هر هندلر روی خطای غیرمنتظره صدا می‌زند.
+        // Real path: function invoked by handlers on unexpected error.
         crate::stats::record_error_global(FEATURE, &format!("download failed: {raw}")).await;
 
         let row = client

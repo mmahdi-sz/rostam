@@ -88,7 +88,7 @@ pub async fn init_database(
             if let Err(e) = database.save_snapshot(&cookie_pool.snapshot()).await {
                 eprintln!("failed to save cookie pool snapshot: {e}");
             }
-            // init stats با همین client
+            // init stats with client
             let client_ref: &'static tokio_postgres::Client =
                 unsafe { &*(database.client() as *const _) };
             stats::init(client_ref);
@@ -138,7 +138,7 @@ pub async fn init_emoji_cache(database_url: &str) {
     });
 }
 
-/// پاک‌سازی دوره‌ای کدهای هدیه‌ی منقضی‌شده (عمر کشویی ۷ روزه). هر ساعت اجرا می‌شود.
+/// Periodic cleanup of expired gift codes (7-day sliding ttl). Runs hourly.
 pub fn spawn_redeem_sweeper(database_url: &str) {
     let db_url = database_url.to_string();
     tokio::spawn(async move {
@@ -158,27 +158,6 @@ pub fn spawn_redeem_sweeper(database_url: &str) {
                     crate::stats::record_error_global("redeem_sweeper", &e.to_string()).await;
                 }
             }
-            tokio::time::sleep(Duration::from_secs(3600)).await;
-        }
-    });
-}
-
-/// تأیید دوره‌ای دعوت‌های در انتظار زیرمجموعه‌گیری: دعوت‌هایی که `PENDING_DAYS`
-/// روز از شروعشان گذشته را چک می‌کند و بر اساس عضویت هنوز-برقرار در قفل اجباری
-/// تأیید یا باطل می‌کند. هر ساعت اجرا می‌شود.
-pub fn spawn_referral_confirm_sweeper(database_url: &str, api: &Bot) {
-    let db_url = database_url.to_string();
-    let api = api.clone();
-    tokio::spawn(async move {
-        let Ok((client, conn)) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await
-        else {
-            eprintln!("[referral event=sweeper_connect_failed]");
-            crate::stats::record_error_global("referral_sweeper", "DB connect failed").await;
-            return;
-        };
-        tokio::spawn(conn);
-        loop {
-            crate::referral::sweep_confirm(&client, &api).await;
             tokio::time::sleep(Duration::from_secs(3600)).await;
         }
     });
@@ -403,10 +382,9 @@ pub fn spawn_cooldown_refresh(
 }
 
 pub fn spawn_i18n_watcher() {
-    // ponytail: نه spawn_blocking — این حلقه هرگز تمام نمی‌شود و
-    // `Runtime::drop` منتظر پایان تسک‌های blocking می‌ماند، پس پروسه بعد از
-    // drain کامل هنگ می‌کرد تا systemd با SIGKILL بکشدش (≈۹۰ ثانیه در هر
-    // restart/deploy). یک ترد OS جدا با پایان `main` خودش می‌میرد.
+    // Not spawn_blocking: thread loop never terminates and Runtime::drop waits
+    // for blocking tasks, hanging process on shutdown until SIGKILL (~90s).
+    // Dedicated OS thread dies when main exits.
     std::thread::spawn(|| {
         use notify::{EventKind, RecursiveMode, Watcher, recommended_watcher};
         use std::sync::mpsc;
@@ -450,7 +428,7 @@ pub async fn set_bot_commands(api: &Bot) {
         Err(e) => eprintln!("Failed to set chat menu button: {e}"),
     }
 
-    // ۱. ابتدا برای حالت پیش‌فرض (بدون language_code) ست می‌کنیم تا برای همه کاربران نمایش داده شود
+    // 1. Set default commands first (no language_code) to display for all users
     let default_cmds = vec![
         BotCommand {
             command: "start".to_string(),
@@ -485,7 +463,7 @@ pub async fn set_bot_commands(api: &Bot) {
         Err(e) => eprintln!("Failed to set default bot commands: {e}"),
     }
 
-    // ۲. ست کردن اختصاصی برای هر زبان
+    // 2. Set specific commands per language
     for lang in ["fa", "en", "it", "ru"] {
         let commands = LANG
             .scope(lang.to_owned(), async {

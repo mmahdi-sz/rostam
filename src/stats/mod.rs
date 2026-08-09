@@ -4,8 +4,9 @@ mod query;
 #[allow(unused_imports)]
 pub use query::{
     BroadcastCounts, FeatureStats, Periods, count_recent_errors, fmt_bytes, fmt_secs,
-    get_action_breakdown, get_active_users, get_broadcast_user_counts, get_broadcast_user_ids,
-    get_download_stats, get_feature_stats, get_recent_errors, get_user_stats,
+    get_action_breakdown_multi, get_active_users, get_broadcast_user_counts,
+    get_broadcast_user_ids, get_download_stats, get_feature_stats_multi, get_recent_errors,
+    get_user_stats,
 };
 
 use redis::aio::MultiplexedConnection;
@@ -171,8 +172,7 @@ pub async fn set_user_language(user_id: i64, lang: &str) {
 
 // ── record functions ──────────────────────────────────────────────────────────
 
-/// ثبت کاربر در stats. خروجی true یعنی این کاربر برای اولین بار دیده شده
-/// (برای گیت زدن attribution زیرمجموعه‌گیری استفاده می‌شود).
+/// Records user in stats. Returns `true` if first time seen (used to gate referral attribution).
 pub async fn record_user_global(user_id: i64, username: Option<&str>) -> bool {
     let Some(client) = db() else { return false };
     record_user(client, user_id, username).await
@@ -184,8 +184,7 @@ tokio::task_local! {
 }
 
 // ── generic feature event ───────────────────────────────────────────────────────
-// هر فیچر (stt/denoise/upscale/separation/gwm/asr/...) بدون تغییر امضاش با این تابع
-// آمار ثبت می‌کنه. amount = ثانیه‌ی صدا یا تعداد، بسته به فیچر.
+/// Records feature event metrics. `amount` represents duration in seconds or count depending on feature.
 pub async fn record_event_global(feature: &str, action: &str, status: &str, amount: i64) {
     crate::metrics::get()
         .requests_total
@@ -218,7 +217,7 @@ pub async fn record_event_global(feature: &str, action: &str, status: &str, amou
     }
 }
 
-// همون record_event_global ولی با user_id مشخص (وقتی در دسترسه).
+/// Same as `record_event_global` but with user_id.
 pub async fn record_event_user(
     user_id: i64,
     feature: &str,
@@ -258,7 +257,7 @@ pub async fn record_event_user(
 }
 
 // ── error log ───────────────────────────────────────────────────────────────────
-// خطاهای مهم فیچرها برای دکمه «خطاهای ۱ روز گذشته».
+/// Records feature errors.
 pub async fn record_error_global(feature: &str, message: impl std::fmt::Display) {
     crate::metrics::get()
         .errors_total
@@ -266,9 +265,6 @@ pub async fn record_error_global(feature: &str, message: impl std::fmt::Display)
         .inc();
 
     let Some(client) = db() else { return };
-    // پیام رو کوتاه نگه می‌داریم که جدول و پیام تلگرام منفجر نشه.
-    // ترتیب مهم است: اول redact، بعد truncate — وگرنه توکنی که روی مرز ۵۰۰
-    // کاراکتر بیفتد نیمه‌کاره در DB ذخیره می‌شود (و دیگر قابل پاک‌سازی نیست).
     let msg_str = message.to_string();
     let trimmed: String = crate::log::redact(&msg_str).chars().take(500).collect();
     let r = client
@@ -282,7 +278,7 @@ pub async fn record_error_global(feature: &str, message: impl std::fmt::Display)
     }
 }
 
-/// خروجی true یعنی ردیف تازه insert شد (کاربر قبلاً وجود نداشت).
+/// Returns `true` if newly inserted (user did not exist).
 pub async fn record_user(client: &Client, user_id: i64, username: Option<&str>) -> bool {
     let r = client
         .query_one(
@@ -300,6 +296,17 @@ pub async fn record_user(client: &Client, user_id: i64, username: Option<&str>) 
             false
         }
     }
+}
+
+/// Seen before? Gates referral attribution, which runs before `record_user`
+/// and before the language/force-join gates.
+pub async fn user_seen(user_id: i64) -> bool {
+    let Some(client) = db() else { return false };
+    client
+        .query_opt("SELECT 1 FROM stats_users WHERE user_id = $1", &[&user_id])
+        .await
+        .map(|r| r.is_some())
+        .unwrap_or(false)
 }
 
 pub async fn mark_user_blocked_global(user_id: i64) {
@@ -360,7 +367,7 @@ pub async fn record_upload_done(job_id: i64, user_id: i64, bytes_uploaded: i64) 
         return;
     }
 
-    // first_upload_at رو ست کن اگه هنوز نداره — و مقدار رو بگیر
+    // Set first_upload_at if not set and return value
     let now_epoch = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)

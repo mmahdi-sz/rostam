@@ -58,7 +58,7 @@ fn prompt_keyboard(msg_id: i32) -> InlineKeyboardMarkup {
 }
 
 fn mode_keyboard(msg_id: i32) -> InlineKeyboardMarkup {
-    // یک ستون، سه ردیف: کیفیت بالا (سبز) / سریع (آبی) / برگشت (قرمز).
+    // 1 col, 3 rows: High Quality (green) / Fast (blue) / Cancel (red).
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![btn_icon_success(
@@ -80,7 +80,7 @@ fn mode_keyboard(msg_id: i32) -> InlineKeyboardMarkup {
         .build()
 }
 
-/// Called when user presses AI Lab → جداسازی صدا.
+/// Called when user presses AI Lab -> Audio Separation.
 pub async fn enter_separation(
     api: &Bot,
     chat_id: i64,
@@ -110,7 +110,7 @@ pub async fn enter_separation(
     }
 }
 
-/// Called when user sends audio while in AwaitingSeparation state.
+/// Called when user sends audio while in `AwaitingSeparation` state.
 pub async fn handle_separation_audio(
     api: &Bot,
     message: &Message,
@@ -258,7 +258,7 @@ pub async fn handle_direct_separation(
     }
 }
 
-/// Handles all sep:* callbacks.
+/// Handles all `sep:*` callbacks.
 pub async fn handle_separation_callback(
     api: &Bot,
     cb_data: &str,
@@ -287,7 +287,7 @@ pub async fn handle_separation_callback(
         return;
     }
 
-    // sep:back:{msg_id} — برگشت به AI Lab از صفحه prompt
+    // sep:back:{msg_id} — back to AI Lab from prompt page
     if cb_data.starts_with("sep:back:") {
         flow_manager.clear(user_id);
         let r = edit_to_ai_lab(api, chat_id, message_id).await;
@@ -422,12 +422,9 @@ pub async fn handle_separation_callback(
         &format!("bytes={}", audio_bytes.len()),
     );
 
-    // Quota reservation — duration از ffprobe روی audio bytes
-    // رزرو پیش از کار: چک-سپس-کسر قبلاً دو درخواست هم‌زمان را هر دو می‌پذیرفت.
+    // Quota reservation
     let mut reserved = false;
     let mut reserve_secs: i64 = 0;
-    // مدت آهنگ بیرون از بلوک نگه داشته می‌شود: تخمین زمان باقی‌مانده و گزارش
-    // پایانی هر دو به آن نیاز دارند.
     let audio_duration_secs;
     {
         let tmp_probe = tmp_dir.join("probe_audio");
@@ -466,12 +463,8 @@ pub async fn handle_separation_callback(
             let daily_limit = user_rank.separation_daily_secs();
             let weekly_limit = user_rank.separation_weekly_secs();
 
-            // ponytail: حداقل یک ثانیه — ffprobe که شکست بخورد duration صفر
-            // می‌شود و رزرو صفر همیشه جا می‌شود، یعنی کار مجانی روی سهمیه‌ی
-            // تمام‌شده.
             reserve_secs = audio_duration_secs.max(1) as i64;
 
-            // پیام رد سه حالت دارد؛ مصرف فقط روی مسیر رد خوانده می‌شود.
             macro_rules! deny {
                 () => {{
                     let d_used = get_usage(db.client(), user_id, QuotaKind::SeparationDaily, 86400)
@@ -516,7 +509,6 @@ pub async fn handle_separation_callback(
                 }};
             }
 
-            // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
             macro_rules! db_fail {
                 ($e:expr) => {{
                     log_trace(trace_id, "quota_reserve", &format!("err={} => fail", $e));
@@ -639,7 +631,7 @@ pub async fn handle_separation_callback(
         },
     );
 
-    // Show initial message: "در حال پردازش" if server is free, "در صف" if busy.
+    // Show initial message.
     {
         let text = if server_free {
             t("separation.processing_queued")
@@ -671,7 +663,6 @@ pub async fn handle_separation_callback(
     let db_task = database.clone();
     let fm_task = flow_manager.clone();
     crate::app::spawn_user_task(async move {
-        // برگرداندن هر دو پنجره وقتی کار به نتیجه نرسید.
         macro_rules! refund {
             ($why:expr) => {
                 if reserved {
@@ -697,8 +688,6 @@ pub async fn handle_separation_callback(
             };
         }
 
-        // تیکر وضعیت: هر ۵ ثانیه زمان سپری‌شده و تخمین باقی‌مانده را به‌روز
-        // می‌کند. تخمین = ۳ برابر مدت آهنگ برای سریع و ۵ برابر برای کیفیت بالا.
         let api_status = api_task.clone();
         let cancel_status = cancel_task.clone();
         let eta_total = audio_duration_secs.saturating_mul(match mode {
@@ -760,9 +749,12 @@ pub async fn handle_separation_callback(
 
         // Abort orphan status-update task now that we have a result.
         status_task.abort();
+        // The whole track sat in RAM twice (read buffer + multipart copy); hand
+        // the pages back — separation talks to a remote service, so no broker
+        // release happens here to do it.
+        crate::moebius::cpu::trim_memory();
 
-        // فلو مستقیم اینجا تنظیم می‌شود، نه با کانال: کانال در ابتدای حلقه‌ی
-        // اصلی خالی می‌شود و مسلح‌کردن دوباره‌ی فلو را پاک می‌کرد.
+        // Clear flow directly here rather than via channel to avoid wiping re-armed state.
         fm_task.clear(user_id);
 
         if cancelled.load(Ordering::Relaxed) {
@@ -875,9 +867,7 @@ pub async fn handle_separation_callback(
                     Err(e) => log_trace(trace_id, "instrumental_wav_failed", &format!("err={e}")),
                 }
 
-                // سهمیه هنگام رزرو (بر پایه‌ی duration از ffprobe) کسر شد؛
-                // بدهکاری دومی اینجا نیست. اختلاف با duration سرویس در حد
-                // گرد‌کردن ثانیه است.
+                // Quota was already reserved via ffprobe duration; no second deduction needed.
 
                 crate::stats::record_event_user(
                     user_id,
@@ -892,8 +882,7 @@ pub async fn handle_separation_callback(
                     .with_label_values(&["success"])
                     .inc();
 
-                // گزارش پایانی + برگشت به فلو جداسازی (نه منوی هوش مصنوعی) تا
-                // کاربر بتواند بلافاصله آهنگ بعدی را بفرستد.
+                // Final report and reset flow to separation state for back-to-back audio requests.
                 let report = tf(
                     "separation.done_report",
                     &[
@@ -1135,7 +1124,7 @@ async fn download_file(api: &Bot, file_id: &str, trace_id: u64) -> crate::error:
     Ok(bytes)
 }
 
-/// mm:ss (یا hh:mm:ss) برای نمایش زمان سپری‌شده/باقی‌مانده.
+/// Formats seconds into mm:ss or hh:mm:ss.
 fn format_clock(secs: u64) -> String {
     let h = secs / 3600;
     let m = (secs % 3600) / 60;

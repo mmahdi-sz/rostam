@@ -29,9 +29,8 @@ use crate::rank::{self, quota::QuotaKind};
 
 const SEP_BASE: &str = "http://127.0.0.1:6589";
 
-/// پرچم لغو هر کاربر تا دکمهٔ «انصراف» روی پیام پیشرفت کاری کند.
-/// پرچم به `run_compress` هم می‌رود: پروسه‌ی 7z/rar کشته می‌شود، پس
-/// انصراف واقعاً CPU را آزاد می‌کند و فقط خروجی را دور نمی‌ریزد.
+/// Cancel flag per user so the "Cancel" button on progress message works.
+/// Kills 7z/rar process to free CPU instead of discarding output.
 static ACTIVE_FC_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -66,7 +65,7 @@ fn options_keyboard(config: &CompressConfig) -> InlineKeyboardMarkup {
     } else {
         btn_icon_plain("RAR", "fc:fmt:rar", "rar_logo")
     };
-    // آیکون اختصاصی zstd هنوز ست نشده — نام آیکون بعداً پر می‌شود.
+    // zstd icon not set yet — icon name will be filled later
     let zstd_btn = if config.fmt == CompressFmt::Zstd {
         btn_icon_success("ZSTD", "fc:fmt:zstd", "")
     } else {
@@ -108,8 +107,7 @@ fn options_keyboard(config: &CompressConfig) -> InlineKeyboardMarkup {
         btn_icon("\u{200B}", "fc:lvl:up", "next"),
     ]);
 
-    // Row 5: Password Encryption Toggle — فرمت‌هایی که رمز ندارند دکمه هم نمی‌گیرند،
-    // وگرنه کاربر رمز می‌دهد و آرشیو بی‌رمز تحویل می‌گیرد.
+    // Row 5: Password Encryption Toggle — Formats without password support do not get button.
     if config.fmt.supports_password() {
         let (pass_label, pass_btn) = if config.password.is_some() {
             (
@@ -191,8 +189,8 @@ fn options_keyboard(config: &CompressConfig) -> InlineKeyboardMarkup {
         ]);
     }
 
-    // Row 9: Solid Mode Toggle — «تک تک: مقاوم تر» آبی، «کل پوشه: سریع تر» سبز.
-    // tar.zst همیشه یک استریم پیوسته است، پس انتخابی برای ارائه وجود ندارد.
+    // Row 9: Solid Mode Toggle
+    // tar.zst is always a single stream, so solid mode is not selectable.
     if config.fmt.supports_solid() {
         let solid_btn = if config.solid {
             btn_icon_primary(&t("fc.solid_mode_solid"), "fc:toggle:solid", "pack_folder")
@@ -216,7 +214,7 @@ fn options_keyboard(config: &CompressConfig) -> InlineKeyboardMarkup {
         .build()
 }
 
-/// فقط دکمهٔ انصراف — برای مرحلهٔ گرفتن رمز.
+/// Cancel button only — for password prompt step.
 fn cancel_only_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![vec![btn_icon_danger(
@@ -227,7 +225,7 @@ fn cancel_only_keyboard() -> InlineKeyboardMarkup {
         .build()
 }
 
-/// انصراف روی پیام پیشرفت؛ کار در جریان را لغو می‌کند.
+/// Cancel button on progress message — cancels active job.
 fn job_cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![vec![btn_icon_danger(
@@ -274,7 +272,7 @@ pub async fn enter_filecompress(
 
 // ── Callback Handler ───────────────────────────────────────────────────────────
 
-/// پاسخ به callback؛ متن پر = توست گذرا روی صفحهٔ کاربر.
+/// Callback response; populated text = transient toast on user screen.
 async fn fc_answer(api: &Bot, cb_id: &str, text: Option<String>) {
     let b = frankenstein::methods::AnswerCallbackQueryParams::builder().callback_query_id(cb_id);
     let _ = match text {
@@ -296,7 +294,7 @@ pub async fn handle_fc_callback(
     let trace_id = next_trace_id();
     crate::log_ev!("filecompress", trace_id, "callback", "action" => action, "user_id" => user_id);
 
-    // پاسخ فوری برای همه، مگر مسیرهایی که خودشان توست/هشدار می‌فرستند.
+    // Instant ack for all callbacks except those with custom toast/alert
     if !matches!(action, "lvl:up" | "lvl:down" | "toggle:obfuscate") {
         fc_answer(api, cb_id, None).await;
     }
@@ -340,8 +338,7 @@ pub async fn handle_fc_callback(
                 _ => CompressConfig::default(),
             };
             config.fmt = fmt;
-            // تنظیماتی که فرمت جدید پشتیبانی نمی‌کند پاک می‌شوند، نه فقط پنهان:
-            // یک رمزِ جامانده در state آرشیو بی‌رمز تولید می‌کند بدون هیچ هشداری.
+            // Settings unsupported by new format are cleared, not just hidden
             if config.level > config.fmt.max_level() {
                 config.level = config.fmt.max_level();
             }
@@ -387,7 +384,7 @@ pub async fn handle_fc_callback(
             } else if action == "lvl:down" && config.level > 0 {
                 config.level -= 1;
             }
-            // روی حداکثر درجه، توست گذرا با نام فرمت و سقفش.
+            // On max level, show transient toast with format name and ceiling
             let toast = if config.level >= max_level {
                 Some(tf(
                     "fc.max_level_notice",
@@ -413,7 +410,7 @@ pub async fn handle_fc_callback(
                 FlowState::AwaitingCompressOptions { config } => config,
                 _ => return,
             };
-            // دکمه برای این فرمت نمایش داده نمی‌شود، اما پیام قدیمی هنوز کلیک‌پذیر است.
+            // Button hidden for this format, but old inline message is still clickable
             if !config.fmt.supports_password() {
                 return;
             }
@@ -641,7 +638,7 @@ pub async fn handle_fc_password_text(
     );
 }
 
-/// کاربر در مرحلهٔ رمز فایل فرستاده: بگو متن لازم است، با دکمهٔ انصراف.
+/// User sent file during password step: notify text is required, with cancel button.
 pub async fn send_password_need_text(api: &Bot, chat_id: i64) {
     let _ = api
         .send_message(
@@ -779,8 +776,7 @@ pub async fn handle_fc_file(
                 .build(),
         )
         .build();
-    // تأییدیه بیرون از مسیر حلقهٔ آپدیت‌ها می‌رود: فوروارد سریع چند فایل قبلاً
-    // برای هر فایل دو رفت‌وبرگشت تلگرام را سریالی صبر می‌کرد.
+    // Send ack asynchronously to prevent blocking Telegram update loop
     let api_ack = api.clone();
     crate::app::spawn_user_task(async move {
         let _ = api_ack.send_message(&reply_params).await;
@@ -916,10 +912,8 @@ async fn start_compression_task(
         crate::rank::types::Rank::Rostam => None,
     };
 
-    // اینجا واحد سهمیه ثانیه‌ی CPU است و مقدارش تا پایان کار معلوم نیست، پس
-    // مثل بقیه نمی‌شود مقدار واقعی را رزرو کرد. یک ثانیه رزرو می‌شود تا
-    // «چک + کسر» یک statement بماند (دقیقاً معادل `used >= limit` قبلی)، و
-    // بعد از کار با `add_usage` مابقی تسویه می‌شود.
+    // Quota unit is CPU seconds, unknown until job finishes. Reserve 1 second
+    // so check + debit remains atomic, then settle remainder with add_usage after completion.
     let mut reserved = false;
     for (kind, window, limit, label_key, event) in [
         (
@@ -962,7 +956,7 @@ async fn start_compression_task(
                 return;
             }
             Err(e) => {
-                // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
+                // fail closed — notify user on DB error
                 crate::log_ev!("filecompress", trace_id, "quota_reserve", "err" => format!("{e}"), "=>" => "fail");
                 if reserved {
                     let _ = rank::quota::refund_usage(
@@ -982,16 +976,14 @@ async fn start_compression_task(
         reserved = true;
     }
 
+    let progress = Arc::new(super::progress::JobProgress::new(files.len()));
+    progress.set_downloading(1);
+
     let progress_msg = match api
         .send_message(
             &SendMessageParams::builder()
                 .chat_id(chat_id)
-                .text(&apply_premium_to_md(
-                    &t("fc.processing")
-                        .replace("{bar}", "░░░░░░░░░░")
-                        .replace("{percent}", "0")
-                        .replace("{elapsed}", "00:00"),
-                ))
+                .text(&apply_premium_to_md(&render_progress(&progress, 0)))
                 .parse_mode(ParseMode::MarkdownV2)
                 .reply_markup(ReplyMarkup::InlineKeyboardMarkup(job_cancel_keyboard()))
                 .build(),
@@ -1002,7 +994,7 @@ async fn start_compression_task(
         Err(_) => prompt_msg_id,
     };
 
-    // پرچم لغو + تیکر زمان سپری‌شده روی همان پیام پیشرفت.
+    // Cancel flag + staged progress ticker on the status message
     let cancel_flag = Arc::new(AtomicBool::new(false));
     if let Ok(mut jobs) = ACTIVE_FC_JOBS.lock() {
         jobs.insert(user_id, cancel_flag.clone());
@@ -1010,21 +1002,25 @@ async fn start_compression_task(
     let timer_running = Arc::new(AtomicBool::new(true));
     let timer_flag = timer_running.clone();
     let timer_cancel = cancel_flag.clone();
+    let timer_progress = progress.clone();
     let api_timer = api.clone();
     let timer_handle = crate::app::spawn_user_task(async move {
         let started = std::time::Instant::now();
+        let mut last = String::new();
         while timer_flag.load(Ordering::Relaxed) && !timer_cancel.load(Ordering::Relaxed) {
             tokio::time::sleep(Duration::from_secs(3)).await;
             if !timer_flag.load(Ordering::Relaxed) || timer_cancel.load(Ordering::Relaxed) {
                 break;
             }
-            let secs = started.elapsed().as_secs();
-            let text = apply_premium_to_md(
-                &t("fc.processing")
-                    .replace("{bar}", "░░░░░░░░░░")
-                    .replace("{percent}", "0")
-                    .replace("{elapsed}", &format_clock(secs)),
-            );
+            let text = apply_premium_to_md(&render_progress(
+                &timer_progress,
+                started.elapsed().as_secs(),
+            ));
+            // Telegram rejects an edit that changes nothing; skip the round-trip.
+            if text == last {
+                continue;
+            }
+            last = text.clone();
             let params = EditMessageTextParams::builder()
                 .chat_id(chat_id)
                 .message_id(progress_msg)
@@ -1053,12 +1049,38 @@ async fn start_compression_task(
             cancel_flag,
             timer_running,
             timer_handle,
+            progress,
         )
         .await;
     });
 }
 
-// دسترسی‌های فقط-تست به کیبوردهای واقعی (testapi باید همان کد تولید را بخواند).
+/// Renders the status message for whichever stage is running. `elapsed` is the
+/// whole job's wall time; the ETA uses only the compression part of it.
+fn render_progress(progress: &super::progress::JobProgress, elapsed: u64) -> String {
+    use super::progress::{STAGE_DOWNLOAD, bar, eta_secs};
+    if progress.stage() == STAGE_DOWNLOAD {
+        return t("fc.downloading")
+            .replace("{idx}", &progress.file_idx().to_string())
+            .replace("{total}", &progress.file_total().to_string())
+            .replace("{elapsed}", &format_clock(elapsed));
+    }
+    let pct = progress.percent();
+    let compress_elapsed = elapsed.saturating_sub(progress.compress_offset());
+    match eta_secs(pct, compress_elapsed) {
+        Some(eta) => t("fc.processing_eta")
+            .replace("{bar}", &bar(pct))
+            .replace("{percent}", &pct.to_string())
+            .replace("{elapsed}", &format_clock(elapsed))
+            .replace("{eta}", &format_clock(eta)),
+        None => t("fc.processing")
+            .replace("{bar}", &bar(pct))
+            .replace("{percent}", &pct.to_string())
+            .replace("{elapsed}", &format_clock(elapsed)),
+    }
+}
+
+// Test-only access to real keyboards
 #[cfg(feature = "testapi")]
 pub fn options_keyboard_for_test(config: &CompressConfig) -> InlineKeyboardMarkup {
     options_keyboard(config)
@@ -1075,11 +1097,16 @@ pub fn job_cancel_keyboard_for_test() -> InlineKeyboardMarkup {
 }
 
 #[cfg(feature = "testapi")]
+pub fn render_progress_for_test(progress: &super::progress::JobProgress, elapsed: u64) -> String {
+    render_progress(progress, elapsed)
+}
+
+#[cfg(feature = "testapi")]
 pub fn format_clock_for_test(secs: u64) -> String {
     format_clock(secs)
 }
 
-/// mm:ss (یا hh:mm:ss) برای نمایش زمان سپری‌شده.
+/// mm:ss (or hh:mm:ss) for elapsed time display.
 fn format_clock(secs: u64) -> String {
     if secs >= 3600 {
         format!(
@@ -1107,8 +1134,10 @@ async fn run_filecompress_worker(
     cancel_flag: Arc<AtomicBool>,
     timer_running: Arc<AtomicBool>,
     timer_handle: tokio::task::JoinHandle<()>,
+    progress: Arc<super::progress::JobProgress>,
 ) {
-    // توقف تیکر + آزادکردن پرچم لغو در هر مسیر خروج.
+    let job_started = std::time::Instant::now();
+    // Stop ticker + release cancel flag on exit
     macro_rules! stop_timer {
         () => {{
             timer_running.store(false, Ordering::Relaxed);
@@ -1116,8 +1145,7 @@ async fn run_filecompress_worker(
         }};
     }
 
-    // ورود به این تابع فقط وقتی رخ می‌دهد که `database` موجود بوده و هر دو
-    // پنجره رزرو شده‌اند، پس `database.is_some()` همان پرچم reserved است.
+    // Called only when database is present and both windows are reserved
     macro_rules! refund {
         ($why:expr) => {
             if let Some(db) = database.as_ref() {
@@ -1158,6 +1186,7 @@ async fn run_filecompress_worker(
             return;
         }
         let local_path = work_dir.join(&entry.filename);
+        progress.set_downloading(idx + 1);
         crate::log_ev!("filecompress", trace_id, "downloading_file", "idx" => idx, "name" => &entry.filename);
         if let Err(e) = download_telegram_file(&api, &entry.file_id, &local_path).await {
             crate::log_ev!("filecompress", trace_id, "download_failed", "err" => format!("{e}"));
@@ -1167,6 +1196,8 @@ async fn run_filecompress_worker(
             let _ = send_text_with_back(&api, chat_id, &t("fc.error.download_failed")).await;
             return;
         }
+        let size = std::fs::metadata(&local_path).map(|m| m.len()).unwrap_or(0);
+        crate::log_ev!("filecompress", trace_id, "download_done", "idx" => idx, "bytes" => size, "=>" => "ok");
         local_input_paths.push(local_path);
     }
 
@@ -1181,6 +1212,8 @@ async fn run_filecompress_worker(
     let cores = acquire_cpu(user_id, trace_id).await;
     let timeout = Duration::from_secs(1800); // 30 minutes max
 
+    // Downloads and the broker queue are behind us; the ETA clock starts here.
+    progress.set_compressing(job_started.elapsed().as_secs());
     crate::log_ev!("filecompress", trace_id, "engine_start", "files" => local_input_paths.len());
     let compress_res = run_compress(
         &work_dir,
@@ -1190,6 +1223,7 @@ async fn run_filecompress_worker(
         &cores,
         trace_id,
         &cancel_flag,
+        &progress,
     )
     .await;
 
@@ -1197,7 +1231,7 @@ async fn run_filecompress_worker(
     stop_timer!();
     let _ = timer_handle.await;
 
-    // کاربر وسط کار «انصراف» زده: خروجی دور ریخته می‌شود و سهمیه برمی‌گردد.
+    // User clicked cancel mid-job: discard output and refund quota.
     if cancel_flag.load(Ordering::Relaxed) {
         crate::log_ev!("filecompress", trace_id, "cancelled_mid_job", "user_id" => user_id);
         refund!("cancelled");
@@ -1223,9 +1257,7 @@ async fn run_filecompress_worker(
         }
     };
 
-    // تسویه: هنگام رزرو ۱ ثانیه کسر شد، پس اینجا فقط مابقی افزوده می‌شود.
-    // این تنها هندلری است که `add_usage` در آن می‌ماند، چون واحد سهمیه
-    // (ثانیه‌ی CPU) پیش از پایان کار قابل اندازه‌گیری نیست.
+    // Settlement: 1 second deducted during reservation, settle remainder with add_usage.
     let cpu_secs_used = result.cpu_secs.ceil() as i64;
     let cpu_secs_delta = (cpu_secs_used - 1).max(0);
     if let Some(db) = database.as_ref() {
@@ -1318,8 +1350,7 @@ async fn run_filecompress_worker(
 
     std::fs::remove_dir_all(&work_dir).ok();
 
-    // فلو با همان تنظیمات دوباره مسلح می‌شود تا کاربر بی‌درنگ دستهٔ بعدی را
-    // بفرستد؛ نیازی به رفتن از اول منوی ابزارها نیست.
+    // Re-arm flow with same config so user can send next batch immediately
     let upload_text = apply_premium_to_md(&t("fc.upload_prompt").replace("{count}", "0"));
     let send_res = api
         .send_message(

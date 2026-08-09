@@ -85,7 +85,7 @@ async fn fetch_rdap(ip: &str) -> Option<Value> {
     get_json(&format!("https://rdap.org/ip/{ip}"), &[]).await
 }
 
-/// از یک entity آرایه vcardArray یک فیلد مشخص (email/tel/fn) رو استخراج می‌کنه.
+/// Extracts a specified field (email/tel/fn) from an entity's vcardArray.
 fn vcard_field(entity: &Value, field: &str) -> Option<String> {
     entity
         .get("vcardArray")
@@ -204,8 +204,8 @@ fn apply_ipinfo(report: &mut IpReport, v: &Value) {
     }
 }
 
-/// bgpview.io بایگانی شد (تعطیل شد نوامبر ۲۰۲۵) — ipctl.io جایگزین سازگارش شده:
-/// `/v1/ip/{ip}` برای ASN/prefix آی‌پی فعلی، `/v1/asn/{asn}` برای بقیه پیشوندهای همون ASN.
+/// bgpview.io archived (shutdown Nov 2025) — ipctl.io is compatible replacement:
+/// `/v1/ip/{ip}` for current IP's ASN/prefix, `/v1/asn/{asn}` for other prefixes of same ASN.
 async fn fetch_bgpview(ip: &str) -> Option<Value> {
     let ip_resp = get_json(&format!("https://api.ipctl.io/v1/ip/{ip}"), &[]).await?;
     let data = ip_resp.get("data")?.clone();

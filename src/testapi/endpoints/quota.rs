@@ -1,12 +1,4 @@
-//! اندپوینت تست لایه‌ی سهمیه — همان توابع واقعی `rank::quota` روی دیتابیس dev.
-//!
-//! هندلرهای upscale/denoise خودشان بدون فایل رسانه و ONNX قابل اجرا نیستند، اما
-//! چیزی که در plan 015 عوض شد دقیقاً همین گیت است: «چک + کسر» در یک statement.
-//! این اندپوینت آن مسیر را بدون بازنویسی صدا می‌زند (rule #2)، پس هم مسیر
-//! موفق و هم مسیر سهمیه‌تمام‌شده تست می‌شود.
-//!
-//! ponytail: بدون سیم‌کشی به هندلر کامل — نیاز به فایل واقعی تلگرام و مدل دارد؛
-//! اگر روزی یک fixture رسانه‌ای اضافه شد، همان هندلر را صدا بزنید.
+//! Quota layer test endpoint — invokes `rank::quota` functions on dev DB.
 
 use axum::Json;
 use axum::response::IntoResponse;
@@ -15,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use crate::rank::quota::{QuotaKind, get_usage, refund_usage, reserve_usage};
 
 fn parse_kind(s: &str) -> Option<QuotaKind> {
-    // ponytail: فقط انواعی که plan 015 لمس کرد؛ بقیه در صورت نیاز اضافه شود.
     Some(match s {
         "upscale_2x_weekly" => QuotaKind::Upscale2xWeekly,
         "upscale_3x_weekly" => QuotaKind::Upscale3xWeekly,
@@ -51,9 +42,9 @@ pub struct QuotaResp {
     pub ok: bool,
     pub action: String,
     pub kind: String,
-    /// در `reserve`: مصرف بعد از رزرو. `null` یعنی رد شد (سقف).
+    /// In `reserve`: usage after reservation. `None` means limit exceeded.
     pub used_after: Option<i64>,
-    /// در `get`/`refund`: مصرف فعلی.
+    /// In `get`/`refund`: current usage.
     pub used: Option<i64>,
     pub granted: bool,
     pub error: Option<String>,

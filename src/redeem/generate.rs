@@ -3,11 +3,11 @@ use rand::Rng;
 use crate::i18n::tf;
 use crate::rank::types::Rank;
 
-/// الفبای بدون حروف/ارقام مبهم (بدون 0/O/1/I)
+/// Alphabet without ambiguous characters (no 0/O/1/I).
 const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const CODE_LEN: usize = 8;
 
-/// کد تصادفی ۸ کاراکتری. فقط حروف بزرگ + ارقام → با payload استارت تلگرام سازگار است.
+/// Random 8-character code (uppercase letters + digits, compatible with Telegram start payload).
 pub fn random_code() -> String {
     let mut rng = rand::thread_rng();
     (0..CODE_LEN)
@@ -15,7 +15,7 @@ pub fn random_code() -> String {
         .collect()
 }
 
-/// مخفف مقام → Rank
+/// Abbreviation -> Rank.
 fn rank_from_abbrev(s: &str) -> Option<Rank> {
     match s.to_lowercase().as_str() {
         "da" => Some(Rank::Dalavar),
@@ -27,9 +27,9 @@ fn rank_from_abbrev(s: &str) -> Option<Rank> {
     }
 }
 
-/// پارس فلگ‌های ساخت کد: `30d es 1u` (به هر ترتیب).
-/// `<n>d` = روز، `<n>u` = تعداد مصرف (پیش‌فرض ۱)، بقیه = مخفف/نام مقام.
-/// خروجی: (مقام، روز، تعداد مصرف) یا پیام خطای فارسی.
+/// Parses code generation arguments: `30d es 1u` (any order).
+/// `<n>d` = days, `<n>u` = max uses (default 1), rest = rank abbrev/name.
+/// Returns: `(Rank, days, max_uses)` or error string.
 pub fn parse_gen_args(s: &str) -> Result<(Rank, i32, i32), String> {
     let mut rank: Option<Rank> = None;
     let mut days: Option<i32> = None;

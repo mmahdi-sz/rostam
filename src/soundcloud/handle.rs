@@ -106,9 +106,9 @@ pub async fn handle_soundcloud_url(
                     )
                     .await;
             }
-            // متن i18n خودش escape شده؛ باید با MarkdownV2 برود
+            // i18n text is already escaped; send via MarkdownV2
             let _ = crate::bot::send_text_md(&api, chat_id, &t(err_key)).await;
-            // re-arm: کاربر بدون منو گیر می‌کرد
+            // re-arm start menu so user isn't stuck
             let _ = crate::bot::send_start_menu(&api, chat_id).await;
         }
     };
@@ -125,7 +125,7 @@ pub async fn handle_soundcloud_url(
         Err(e) => {
             log_ev!("sc", trace_id, "fetch_metadata_fail", "err" => e.to_string());
             crate::stats::record_error_global("soundcloud", format!("fetch_meta: {e}")).await;
-            // DRM پیام مخصوص دارد، وگرنه کاربر لینکش را بی‌دلیل عوض می‌کند
+            // DRM has dedicated error key
             let key = if e.to_string().contains("DRM") {
                 "soundcloud.drm_protected"
             } else {

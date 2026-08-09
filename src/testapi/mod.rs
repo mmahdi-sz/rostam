@@ -77,6 +77,10 @@ pub async fn run() -> anyhow::Result<()> {
             post(endpoints::admin::test_admin_panel),
         )
         .route(
+            "/test/admin/stats_section",
+            post(endpoints::admin::test_admin_stats_section),
+        )
+        .route(
             "/test/admin/broadcast",
             post(endpoints::admin::test_admin_broadcast),
         )

@@ -172,10 +172,9 @@ CREATE TABLE IF NOT EXISTS referrals (
 CREATE INDEX IF NOT EXISTS referrals_referrer_idx
     ON referrals (referrer_id);
 
--- referral_pending = دعوت‌های در انتظار تأیید: کاربر با لینک استارت کرده ولی هنوز
--- ۲ روز از عضویتش در قفل اجباری نگذشته. sweep دوره‌ای (referral::sweep_confirm)
--- بعد از ۲ روز عضویت رو دوباره چک می‌کند: عضو بود → به referrals منتقل می‌شود؛
--- عضو نبود → حذف می‌شود (دعوت باطل).
+-- referral_pending = link payload stashed at /start, before the user joined the
+-- force-join channel. referral::confirm_on_join moves it into referrals the
+-- moment membership is confirmed. Rows for users who never join just sit here.
 CREATE TABLE IF NOT EXISTS referral_pending (
     referred_id BIGINT PRIMARY KEY,
     referrer_id BIGINT NOT NULL,

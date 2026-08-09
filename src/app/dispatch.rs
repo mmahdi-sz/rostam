@@ -4,13 +4,12 @@ use frankenstein::{
 };
 
 use crate::bot::{
-    CB_ADMIN_BROADCAST, CB_ADMIN_ERRORS, CB_ADMIN_FORCE_JOIN, CB_ADMIN_GEN_CODE, CB_ADMIN_PANEL,
-    CB_ADMIN_STATS, CB_ADMIN_STATS_MORE, CB_AI_DENOISE, CB_AI_DEOLDIFY, CB_AI_GWM, CB_AI_NOBG,
-    CB_AI_SEP, CB_AI_STT, CB_AI_TTS, CB_AI_UPSCALE, CB_BROADCAST_MODE_COPY,
-    CB_BROADCAST_MODE_FORWARD, CB_BROADCAST_SEND_ACTIVE, CB_BROADCAST_SEND_ALL,
-    CB_BROADCAST_TOGGLE_PIN, CB_DENOISE_CANCEL, CB_DEOLDIFY_CANCEL, CB_LANG_SET, CB_NOBG_CANCEL,
-    CB_START_AI_LAB, CB_START_EMOJI, CB_START_LEADERBOARD, CB_START_TOOLS, CB_START_YOUTUBE,
-    CB_TTS_CANCEL, CB_USER_PANEL,
+    CB_ADMIN_BROADCAST, CB_ADMIN_FORCE_JOIN, CB_ADMIN_GEN_CODE, CB_ADMIN_PANEL, CB_ADMIN_SECTION,
+    CB_ADMIN_STATS, CB_AI_DENOISE, CB_AI_DEOLDIFY, CB_AI_GWM, CB_AI_NOBG, CB_AI_SEP, CB_AI_STT,
+    CB_AI_TTS, CB_AI_UPSCALE, CB_BROADCAST_MODE_COPY, CB_BROADCAST_MODE_FORWARD,
+    CB_BROADCAST_SEND_ACTIVE, CB_BROADCAST_SEND_ALL, CB_BROADCAST_TOGGLE_PIN, CB_DENOISE_CANCEL,
+    CB_DEOLDIFY_CANCEL, CB_LANG_SET, CB_NOBG_CANCEL, CB_START_AI_LAB, CB_START_EMOJI,
+    CB_START_LEADERBOARD, CB_START_TOOLS, CB_START_YOUTUBE, CB_TTS_CANCEL, CB_USER_PANEL,
 };
 
 use crate::bot::{
@@ -64,7 +63,7 @@ pub async fn handle_update(
     state: &mut AppState,
     content: UpdateContent,
 ) -> crate::error::Result<()> {
-    // DEV_MODE: فقط ادمین می‌تونه استفاده کنه
+    // DEV_MODE: Admin-only access
     if config::dev_mode() {
         let admin = config::admin_user_id();
         let sender = match &content {
@@ -84,7 +83,7 @@ pub async fn handle_update(
         }
     }
 
-    // chat_member آپدیت قفل‌های عضویت — کش Redis قفل منطبق را تازه نگه می‌دارد.
+    // chat_member membership locks update — keep Redis cache fresh
     if let UpdateContent::ChatMember(cm) = &content {
         crate::force_join::on_chat_member_update(&cm.chat, &cm.new_chat_member).await;
         return Ok(());
@@ -92,11 +91,11 @@ pub async fn handle_update(
 
     let sender = match &content {
         UpdateContent::Message(m) => {
-            // بی‌خیال پیام‌های ارسال شده توسط ربات‌ها (از جمله خود ربات یا ربات‌های دیگر)
+            // Skip bot messages
             if m.from.as_ref().map_or(false, |u| u.is_bot) {
                 return Ok(());
             }
-            // بی‌خیال پیام‌های سرویسی تلگرام (مانند پین شدن پیام، عضویت/خروج کاربر و ...)
+            // Skip Telegram service messages
             if m.pinned_message.is_some()
                 || m.new_chat_members.is_some()
                 || m.left_chat_member.is_some()
@@ -147,9 +146,33 @@ pub async fn handle_update(
         }
     }
 
+    // Referral attribution must run before the language + force-join gates:
+    // a brand-new user gets the language picker and an early return, so the
+    // `?start=<referrer_id>` payload would be lost forever.
+    if let (Some(uid), Some(db)) = (sender, state.database.as_ref()) {
+        if let UpdateContent::Message(m) = &content {
+            if let Some(referrer_id) = m
+                .text
+                .as_deref()
+                .and_then(|t| t.strip_prefix("/start"))
+                .and_then(|rest| rest.trim().parse::<i64>().ok())
+            {
+                if referrer_id != uid && !stats::user_seen(uid).await {
+                    let trace_id = crate::log::next_trace_id();
+                    crate::referral::record_referral(db.client(), uid, referrer_id).await;
+                    log_trace(
+                        trace_id,
+                        "referral_attributed",
+                        &format!("referred_id={uid} referrer_id={referrer_id}"),
+                    );
+                }
+            }
+        }
+    }
+
     // ── language gate ────────────────────────────────────────────────────────
-    // callback "lang:set:xx" → ذخیره زبان، ack، ادامه عادی
-    // بقیه بدون زبان → منوی انتخاب زبان بفرست و برگرد
+    // callback "lang:set:xx" -> save language, ack, proceed
+    // without language -> send language picker and return
     if let Some(uid) = sender {
         let cb_data = if let UpdateContent::CallbackQuery(cq) = &content {
             cq.data.as_deref()
@@ -172,7 +195,7 @@ pub async fn handle_update(
             }
             stats::set_user_language(uid, lang).await;
             eprintln!("[dispatch event=lang_set] user_id={uid} lang={lang}");
-            // بعد از ذخیره زبان، منوی شروع رو نشون بده
+            // Show start menu after setting language
             let chat_id = match &content {
                 UpdateContent::CallbackQuery(cq) => cq
                     .message
@@ -192,9 +215,9 @@ pub async fn handle_update(
             return Ok(());
         }
 
-        // چک زبان فقط اگه DB وجود داشته باشه
+        // Language check only if DB exists
         if state.database.is_some() {
-            // redeem deep-link: gate رو bypass کن تا کد اول فعال بشه، بعد زبان انتخاب میشه
+            // redeem deep-link: bypass gate to activate code first, then select language
             let is_redeem = if let UpdateContent::Message(m) = &content {
                 m.text
                     .as_deref()
@@ -240,13 +263,13 @@ pub async fn handle_update(
                 .await;
         }
 
-        // بدون DB: مفهومی برای redeem وجود نداره (نیازمند DB است) → همیشه گیت بزن
+        // Without DB: no redeem concept (requires DB) -> always gate
         if !gate_force_join(state, &content, uid, is_check_btn).await? {
             return Ok(());
         }
     }
 
-    // بدون DB (یا update بدون sender): مستقیم dispatch با fa
+    // Without DB (or update without sender): direct dispatch with default lang
     match content {
         UpdateContent::Message(message) => handle_message(state, *message).await?,
         UpdateContent::CallbackQuery(callback_query) => {
@@ -257,10 +280,10 @@ pub async fn handle_update(
     Ok(())
 }
 
-/// قفل عضویت اجباری — بعد از زبان و کد فعال‌سازی اجرا می‌شه. `is_check_btn` یعنی
-/// کاربر روی دکمه‌ی سبز «عضو شدم» زده؛ در این حالت کش دور زده می‌شه (چک زنده) و
-/// پاسخ به‌صورت toast/alert روی همون callback داده می‌شه، نه پیام جدید.
-/// خروجی `Ok(true)` یعنی ادامه بده، `Ok(false)` یعنی همینجا برگرد.
+/// Force-join gate — runs after language and activation code check.
+/// `is_check_btn` means user clicked "Joined"; bypasses cache (live check)
+/// and answers via toast/alert on the callback query.
+/// Returns `Ok(true)` to proceed, `Ok(false)` to return early.
 async fn gate_force_join(
     state: &AppState,
     content: &UpdateContent,
@@ -307,6 +330,18 @@ async fn gate_force_join(
         return Ok(false);
     }
 
+    // Joined → confirm any pending referral right away (no-op when there is
+    // none: single PK-indexed statement).
+    if let Some(db) = state.database.as_ref() {
+        if crate::referral::confirm_on_join(db.client(), uid).await {
+            log_trace(
+                crate::log::next_trace_id(),
+                "referral_confirmed",
+                &format!("referred_id={uid}"),
+            );
+        }
+    }
+
     if is_check_btn {
         if let UpdateContent::CallbackQuery(cq) = content {
             let _ = state
@@ -348,12 +383,11 @@ async fn handle_message(
         log_actor!("dispatch", trace_id, u, "msg" => msg_text.chars().take(40).collect::<String>());
     }
 
-    // ثبت کاربر در stats. is_new_user برای گیت زدن attribution زیرمجموعه‌گیری لازم است
-    // (فقط کاربری که همین الان برای اولین‌بار دیده شده باید به یک referrer نسبت داده شود).
-    let mut is_new_user = false;
+    // Register user in stats. (Referral attribution already ran before the
+    // language gate — a brand-new user never reaches this point.)
     if let Some(uid) = user_id {
         let username = message.from.as_ref().and_then(|u| u.username.as_deref());
-        is_new_user = stats::record_user_global(uid, username).await;
+        stats::record_user_global(uid, username).await;
     }
 
     // Step 1: addemoji link detection
@@ -398,28 +432,15 @@ async fn handle_message(
                     database,
                 )
                 .await;
-            } else if let Ok(referrer_id) = payload.parse::<i64>() {
-                // زیرمجموعه‌گیری: فقط کاربر واقعاً تازه‌وارد و غیر از خودِ referrer نسبت داده می‌شود.
-                if is_new_user && referrer_id != uid {
-                    if let Some(db) = database {
-                        let trace_id = next_trace_id();
-                        crate::referral::record_referral(db.client(), uid, referrer_id).await;
-                        log_trace(
-                            trace_id,
-                            "referral_attributed",
-                            &format!("referred_id={uid} referrer_id={referrer_id}"),
-                        );
-                    }
-                }
-                send_start_menu(api, message.chat.id).await?;
             } else {
+                // Referral payload recorded earlier, before the language gate.
                 send_start_menu(api, message.chat.id).await?;
             }
             return Ok(());
         }
     }
 
-    // Step 3: «لغو عملیات» reply keyboard when Idle
+    // Step 3: "Cancel operation" reply keyboard when Idle
     if let (Some(uid), Some(text)) = (user_id, message.text.as_deref()) {
         if text.contains(&crate::i18n::t("emoji.cancel_button"))
             && matches!(flow_manager.get(uid), FlowState::Idle)
@@ -432,7 +453,7 @@ async fn handle_message(
     // Step 4: active flow dispatch
     if let Some(uid) = user_id {
         if !matches!(flow_manager.get(uid), FlowState::Idle) {
-            // ادمین آرگومان‌های ساخت کد را فرستاده (مثل `30d es 1u`)
+            // Admin sent code generation args (e.g. `30d es 1u`)
             if matches!(flow_manager.get(uid), FlowState::AwaitingRedeemGenArgs) {
                 if let Some(text) = message.text.as_deref() {
                     flow_manager.clear(uid);
@@ -451,7 +472,7 @@ async fn handle_message(
                 }
             }
 
-            // ادمین لینک قفل جدید را فرستاده
+            // Admin sent new lock link
             if matches!(flow_manager.get(uid), FlowState::AwaitingForceJoinLink) {
                 if let Some(text) = message.text.as_deref() {
                     let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
@@ -469,7 +490,7 @@ async fn handle_message(
                 }
             }
 
-            // ادمین یوزرنیم/آیدی عددی/فوروارد برای لینک خصوصی فرستاده
+            // Admin sent username/numeric ID/forward for private link
             if let FlowState::AwaitingForceJoinPrivateInfo { link } = flow_manager.get(uid) {
                 let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
                 if is_admin {
@@ -486,7 +507,7 @@ async fn handle_message(
                 return Ok(());
             }
 
-            // ادمین ورودی ویزارد ویرایش فیلد قفل (نام/زمان/عضو/رزرو) را فرستاده
+            // Admin sent input for lock field wizard (name/time/member/reserve)
             if let FlowState::AwaitingForceJoinField { lock_id, field, .. } = flow_manager.get(uid)
             {
                 if let Some(text) = message.text.as_deref() {
@@ -508,7 +529,7 @@ async fn handle_message(
                 }
             }
 
-            // ادمین بنر همگانی را فرستاده است (هر نوع پیام/مدیا/متن)
+            // Admin sent broadcast banner (any msg/media/text)
             if let FlowState::AwaitingBroadcastBanner { mode, pin } = flow_manager.get(uid) {
                 let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
                 if is_admin {
@@ -554,7 +575,7 @@ async fn handle_message(
                 return Ok(());
             }
 
-            // ادمین عدد سقف ارسال همگانی را فرستاده است (مثلاً 500)
+            // Admin sent broadcast limit count (e.g. 500)
             if let FlowState::AwaitingBroadcastTarget {
                 mode,
                 pin,
@@ -611,8 +632,7 @@ async fn handle_message(
                         let api2 = api.clone();
                         let chat_id2 = message.chat.id;
                         let db2 = database.clone();
-                        // فلو عمداً پاک نمی‌شود: کاربر بعد از نتیجه با همان مدل
-                        // می‌تواند ویس بعدی را بفرستد (لغو/بازگشت پاکش می‌کند).
+                        // Flow deliberately kept: user can send next voice with same model after result
                         // Spawn so the event loop stays free during STT (minutes-long operation)
                         super::spawn_user_task(async move {
                             handle_stt_audio(&api2, chat_id2, &fid, uid, &config, db2).await;
@@ -978,8 +998,7 @@ async fn handle_message(
                     .await;
                     return Ok(());
                 }
-                // هر چیز غیرمتنی در مرحلهٔ رمز: راهنمای «متن بفرست»، نه سقوط
-                // به مسیر گرفتن فایل.
+                // Non-text input during password step: prompt text required
                 let trace_id = next_trace_id();
                 log_trace(
                     trace_id,
@@ -1075,7 +1094,7 @@ async fn handle_message(
             }
             return Ok(());
         }
-        // ساخت کد هدیه (فقط ادمین): /re 30d es 1u یا /re
+        // Generate gift code (admin only): /re 30d es 1u or /re
         if cmd == "/re" || text.starts_with("/re ") {
             let is_admin = config::admin_user_id()
                 .map(|id| Some(id) == user_id)
@@ -1824,8 +1843,7 @@ async fn handle_callback(
             "cb_filecompress_action",
             &format!("user_id={cb_user_id} chat_id={cb_chat_id} action={cb_data}"),
         );
-        // پاسخ callback داخل خود هندلر داده می‌شود: مسیر «حداکثر درجه»
-        // باید توست متنی بفرستد و تلگرام هر query را فقط یک بار می‌پذیرد.
+        // Callback response handled inside function
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             crate::filecompress::handle_fc_callback(
                 api,
@@ -2458,7 +2476,7 @@ async fn handle_callback(
             "tts_job_cancel",
             &format!("user_id={cb_user_id} signalled={signalled}"),
         );
-        // متن توست از i18n می‌آید؛ خودِ پیام پیشرفت را هندلر اصلی پاک می‌کند.
+        // Toast text from i18n; progress message cleared by main handler
         let _ = api
             .answer_callback_query(
                 &AnswerCallbackQueryParams::builder()
@@ -2570,7 +2588,8 @@ async fn handle_callback(
         return Ok(());
     }
 
-    if cb_data == CB_ADMIN_STATS && is_admin {
+    // Stats hub + every section page share one arm: `admin:stats` = overview.
+    if (cb_data == CB_ADMIN_STATS || cb_data.starts_with(CB_ADMIN_SECTION)) && is_admin {
         let _ = api
             .answer_callback_query(
                 &AnswerCallbackQueryParams::builder()
@@ -2579,61 +2598,36 @@ async fn handle_callback(
             )
             .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            use crate::emoji::panel::btn_icon;
-            use crate::i18n::t;
-            let text = if let Some(db) = database {
-                crate::admin::render_stats(db.client()).await
-            } else {
-                crate::i18n::t("admin.db_missing")
+            let key = cb_data
+                .strip_prefix(CB_ADMIN_SECTION)
+                .unwrap_or(crate::admin::SEC_OVERVIEW);
+            let view = match database {
+                Some(db) => crate::admin::render_section(db.client(), key).await,
+                None => crate::admin::SectionView {
+                    text: crate::i18n::t("admin.db_missing"),
+                    html: false,
+                },
             };
-            let kb = frankenstein::types::InlineKeyboardMarkup::builder()
-                .inline_keyboard(vec![
-                    vec![btn_icon(
-                        &t("admin.stats_more_button"),
-                        CB_ADMIN_STATS_MORE,
-                        "stats",
-                    )],
-                    vec![btn_icon(
-                        &t("admin.errors_button"),
-                        CB_ADMIN_ERRORS,
-                        "warning",
-                    )],
-                    vec![btn_icon(&t("admin.back"), CB_ADMIN_PANEL, "back")],
-                ])
-                .build();
-            let _ =
-                crate::bot::edit_text(api, message.chat.id, message.message_id, &text, Some(kb))
-                    .await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == CB_ADMIN_STATS_MORE && is_admin {
-        let _ = api
-            .answer_callback_query(
-                &AnswerCallbackQueryParams::builder()
-                    .callback_query_id(callback_query.id.clone())
-                    .build(),
-            )
-            .await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            use crate::emoji::panel::btn_icon;
-            use crate::i18n::t;
-            let text = if let Some(db) = database {
-                crate::admin::render_stats_more(db.client()).await
+            let kb = crate::admin::stats_keyboard(key);
+            let _ = if view.html {
+                crate::bot::edit_text_html(
+                    api,
+                    message.chat.id,
+                    message.message_id,
+                    &view.text,
+                    Some(kb),
+                )
+                .await
             } else {
-                crate::i18n::t("admin.db_missing")
+                crate::bot::edit_text(
+                    api,
+                    message.chat.id,
+                    message.message_id,
+                    &view.text,
+                    Some(kb),
+                )
+                .await
             };
-            let kb = frankenstein::types::InlineKeyboardMarkup::builder()
-                .inline_keyboard(vec![vec![btn_icon(
-                    &t("admin.back"),
-                    CB_ADMIN_STATS,
-                    "back",
-                )]])
-                .build();
-            let _ =
-                crate::bot::edit_text(api, message.chat.id, message.message_id, &text, Some(kb))
-                    .await;
         }
         return Ok(());
     }
@@ -2786,7 +2780,7 @@ async fn handle_callback(
         return Ok(());
     }
 
-    // ویزاردهای ویرایش فیلد قفل: نام/زمان/عضو/رزرو → پرامپت ورودی متنی
+    // Lock field edit wizards: name/time/member/reserve -> text prompt
     {
         use crate::force_join::{
             FJ_MEMBER_PREFIX, FJ_NAME_PREFIX, FJ_RESERVE_PREFIX, FJ_TIME_PREFIX,
@@ -2893,12 +2887,18 @@ async fn handle_callback(
             )
             .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            crate::redeem::handle::open_panel(api, message.chat.id, cb_user_id as i64).await;
+            crate::redeem::handle::open_panel_edit(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+            )
+            .await;
         }
         return Ok(());
     }
 
-    // دکمه‌های پنل گرافیکی ساخت کد (gc:*) — فقط ادمین
+    // Code generation GUI buttons (gc:*) - admin only
     if cb_data.starts_with(crate::redeem::panel::CB_GC_PREFIX) && is_admin {
         let _ = api
             .answer_callback_query(
@@ -2918,44 +2918,6 @@ async fn handle_callback(
                     database,
                 )
                 .await;
-            }
-        }
-        return Ok(());
-    }
-
-    if cb_data == CB_ADMIN_ERRORS && is_admin {
-        let _ = api
-            .answer_callback_query(
-                &AnswerCallbackQueryParams::builder()
-                    .callback_query_id(callback_query.id.clone())
-                    .build(),
-            )
-            .await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            let text = if let Some(db) = database {
-                crate::admin::render_errors_1d(db.client()).await
-            } else {
-                crate::i18n::t("admin.db_missing")
-            };
-            // HTML چون blockquote جمع‌شو داره — پیام جدید می‌فرستیم تا پنل دست‌نخورده بمونه.
-            use crate::emoji::panel::btn_icon;
-            use crate::i18n::t;
-            use frankenstein::{ParseMode, methods::SendMessageParams};
-            let kb = frankenstein::types::InlineKeyboardMarkup::builder()
-                .inline_keyboard(vec![vec![btn_icon(
-                    &t("admin.back"),
-                    CB_ADMIN_PANEL,
-                    "back",
-                )]])
-                .build();
-            let params = SendMessageParams::builder()
-                .chat_id(message.chat.id)
-                .text(&text)
-                .parse_mode(ParseMode::Html)
-                .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(kb))
-                .build();
-            if let Err(e) = api.send_message(&params).await {
-                eprintln!("[admin event=errors_send_failed] err={e}");
             }
         }
         return Ok(());
@@ -2985,7 +2947,7 @@ async fn handle_callback(
         return Ok(());
     }
 
-    if cb_data == CB_BROADCAST_TOGGLE_PIN && is_admin {
+    if cb_data.starts_with(CB_BROADCAST_TOGGLE_PIN) && is_admin {
         let _ = api
             .answer_callback_query(
                 &AnswerCallbackQueryParams::builder()
@@ -2993,18 +2955,8 @@ async fn handle_callback(
                     .build(),
             )
             .await;
-        let (current_mode, current_pin) = match flow_manager.get(cb_user_id as i64) {
-            FlowState::AwaitingBroadcastBanner { mode, pin } => (mode, pin),
-            _ => (BroadcastMode::Copy, false),
-        };
-        let new_pin_state = !current_pin;
-        flow_manager.set(
-            cb_user_id as i64,
-            FlowState::AwaitingBroadcastBanner {
-                mode: current_mode,
-                pin: new_pin_state,
-            },
-        );
+        // New state rides in the callback data: `broadcast:toggle_pin:{0|1}`.
+        let new_pin_state = cb_data.ends_with(":1");
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
             let kb = crate::admin::broadcast::broadcast_menu_keyboard(new_pin_state);
             let _ = crate::bot::edit_text_md(
@@ -3019,7 +2971,10 @@ async fn handle_callback(
         return Ok(());
     }
 
-    if cb_data == CB_BROADCAST_MODE_COPY && is_admin {
+    if (cb_data.starts_with(CB_BROADCAST_MODE_COPY)
+        || cb_data.starts_with(CB_BROADCAST_MODE_FORWARD))
+        && is_admin
+    {
         let _ = api
             .answer_callback_query(
                 &AnswerCallbackQueryParams::builder()
@@ -3027,56 +2982,16 @@ async fn handle_callback(
                     .build(),
             )
             .await;
+        let mode = if cb_data.starts_with(CB_BROADCAST_MODE_FORWARD) {
+            BroadcastMode::Forward
+        } else {
+            BroadcastMode::Copy
+        };
+        let pin = cb_data.ends_with(":1");
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            let current_pin = match flow_manager.get(cb_user_id as i64) {
-                FlowState::AwaitingBroadcastBanner { pin, .. } => pin,
-                _ => false,
-            };
             flow_manager.set(
                 cb_user_id as i64,
-                FlowState::AwaitingBroadcastBanner {
-                    mode: BroadcastMode::Copy,
-                    pin: current_pin,
-                },
-            );
-            let kb = InlineKeyboardMarkup::builder()
-                .inline_keyboard(vec![vec![crate::emoji::panel::btn_icon(
-                    &t("admin.back"),
-                    CB_ADMIN_BROADCAST,
-                    "back",
-                )]])
-                .build();
-            let _ = crate::bot::edit_text_md(
-                api,
-                message.chat.id,
-                message.message_id,
-                &t("admin.broadcast.prompt_send_banner"),
-                Some(kb),
-            )
-            .await;
-        }
-        return Ok(());
-    }
-
-    if cb_data == CB_BROADCAST_MODE_FORWARD && is_admin {
-        let _ = api
-            .answer_callback_query(
-                &AnswerCallbackQueryParams::builder()
-                    .callback_query_id(callback_query.id.clone())
-                    .build(),
-            )
-            .await;
-        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            let current_pin = match flow_manager.get(cb_user_id as i64) {
-                FlowState::AwaitingBroadcastBanner { pin, .. } => pin,
-                _ => false,
-            };
-            flow_manager.set(
-                cb_user_id as i64,
-                FlowState::AwaitingBroadcastBanner {
-                    mode: BroadcastMode::Forward,
-                    pin: current_pin,
-                },
+                FlowState::AwaitingBroadcastBanner { mode, pin },
             );
             let kb = InlineKeyboardMarkup::builder()
                 .inline_keyboard(vec![vec![crate::emoji::panel::btn_icon(

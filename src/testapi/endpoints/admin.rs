@@ -28,6 +28,68 @@ pub async fn test_admin_panel(Json(req): Json<AdminPanelReq>) -> Json<AdminPanel
 }
 
 #[derive(Deserialize)]
+pub struct AdminStatsSectionReq {
+    /// Section key (`ov`, `users`, `yt`, `ai`, `music`, `files`, `money`, `sys`, `err`).
+    pub section: String,
+}
+
+#[derive(Serialize)]
+pub struct AdminStatsSectionResp {
+    pub ok: bool,
+    pub section: String,
+    pub known_section: bool,
+    pub db: bool,
+    pub html: bool,
+    pub rendered_text: String,
+    pub nav_labels: Vec<String>,
+    pub nav_callbacks: Vec<String>,
+    pub current_marked: bool,
+}
+
+/// Renders one stats page through the real `admin::render_section` + nav keyboard.
+/// Without a DB (or with an unknown key) it still returns the keyboard, so the
+/// failure path is observable.
+pub async fn test_admin_stats_section(
+    Json(req): Json<AdminStatsSectionReq>,
+) -> Json<AdminStatsSectionResp> {
+    let database = crate::testapi::state::db().await;
+    let known_section = crate::admin::section(&req.section).is_some();
+    let (rendered_text, html) = match &database {
+        Some(db) => {
+            let view = crate::admin::render_section(db.client(), &req.section).await;
+            (view.text, view.html)
+        }
+        None => (crate::i18n::t("admin.db_missing"), false),
+    };
+    let kb = crate::admin::stats_keyboard(&req.section);
+    let mut nav_labels = Vec::new();
+    let mut nav_callbacks = Vec::new();
+    let mut current_marked = false;
+    let want = format!("{}{}", crate::bot::constants::CB_ADMIN_SECTION, req.section);
+    for row in &kb.inline_keyboard {
+        for btn in row {
+            nav_labels.push(btn.text.clone());
+            let cb = btn.callback_data.clone().unwrap_or_default();
+            if cb == want {
+                current_marked = btn.style.is_some();
+            }
+            nav_callbacks.push(cb);
+        }
+    }
+    Json(AdminStatsSectionResp {
+        ok: true,
+        section: req.section,
+        known_section,
+        db: database.is_some(),
+        html,
+        rendered_text,
+        nav_labels,
+        nav_callbacks,
+        current_marked,
+    })
+}
+
+#[derive(Deserialize)]
 pub struct AdminBroadcastReq {
     pub mode: String,
     pub pin: bool,

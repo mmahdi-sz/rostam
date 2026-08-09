@@ -15,31 +15,27 @@ use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
 use crate::i18n::{t, tf};
 use crate::stats::{get_broadcast_user_ids, mark_user_blocked_global, record_event_global};
 
+/// Pin state travels in the callback data — the menu is stateless, so entering
+/// it no longer resets the toggle to off.
 pub fn broadcast_menu_keyboard(pin_enabled: bool) -> InlineKeyboardMarkup {
+    let flag = u8::from(pin_enabled);
+    let toggle_cb = format!("{CB_BROADCAST_TOGGLE_PIN}:{}", 1 - flag);
     let pin_btn = if pin_enabled {
-        btn_icon_success(
-            &t("admin.broadcast.btn_pin_on"),
-            CB_BROADCAST_TOGGLE_PIN,
-            "check",
-        )
+        btn_icon_success(&t("admin.broadcast.btn_pin_on"), &toggle_cb, "check")
     } else {
-        btn_icon_danger(
-            &t("admin.broadcast.btn_pin_off"),
-            CB_BROADCAST_TOGGLE_PIN,
-            "cross",
-        )
+        btn_icon_danger(&t("admin.broadcast.btn_pin_off"), &toggle_cb, "cross")
     };
 
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![
             vec![btn_icon(
                 &t("admin.broadcast.btn_mode_copy"),
-                CB_BROADCAST_MODE_COPY,
+                &format!("{CB_BROADCAST_MODE_COPY}:{flag}"),
                 "broadcast_logo",
             )],
             vec![btn_icon(
                 &t("admin.broadcast.btn_mode_forward"),
-                CB_BROADCAST_MODE_FORWARD,
+                &format!("{CB_BROADCAST_MODE_FORWARD}:{flag}"),
                 "forward_logo",
             )],
             vec![pin_btn],
@@ -156,7 +152,7 @@ pub fn spawn_broadcast_job(
 
         let total = user_ids.len();
 
-        // اطلاع به ادمین در یک پیام جدید شامل آمار و درصد پیشرفت
+        // Notify admin in new message with progress stats
         let initial_text = format_broadcast_status(mode, 0, total, 0);
         let mut status_msg_id: Option<i32> = None;
         let send_res = api
@@ -251,13 +247,13 @@ pub fn spawn_broadcast_job(
                 }
             }
 
-            // تأخیر ۶۷ میلی‌ثانیه‌ای برای رعایت سقف ۱۵ پیام در ثانیه
+            // 67ms delay for rate limit (~15 msgs/sec)
             tokio::time::sleep(std::time::Duration::from_millis(67)).await;
         }
 
         record_event_global("broadcast", "completed", "ok", success_count).await;
 
-        // ارسال پیام گزارش نهایی جداگانه به همراه دکمه برگشت به پنل ادمین
+        // Send final report with back button to admin panel
         let final_report =
             format_broadcast_completed_report(success_count, _blocked_count, total as i64);
         let kb = frankenstein::types::InlineKeyboardMarkup::builder()

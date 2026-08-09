@@ -10,8 +10,8 @@ pub use handle::{
 };
 pub use lists::spawn_refresher;
 
-/// دستی/شبکه‌محور: `cargo test ip_lookup_card_smoke -- --ignored --nocapture`
-/// کارت واقعی رو برای چند آی‌پی نمونه می‌سازه تا قبل از دیپلوی چشمی چک بشه.
+/// Manual/network test: `cargo test ip_lookup_card_smoke -- --ignored --nocapture`
+/// Builds a real report card for sample IPs to visually inspect before deployment.
 #[cfg(test)]
 mod smoke {
     use std::net::IpAddr;

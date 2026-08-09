@@ -1,11 +1,11 @@
-/// مقام‌های بات
+/// Bot ranks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rank {
-    Dalavar,   // دلاور — رایگان
-    Sepahbod,  // سپهبد
-    Esfandyar, // اسفندیار
-    Sohrab,    // سهراب
-    Rostam,    // رستم
+    Dalavar,   // Dalavar — Free
+    Sepahbod,  // Sepahbod
+    Esfandyar, // Esfandyar
+    Sohrab,    // Sohrab
+    Rostam,    // Rostam
 }
 
 impl Rank {
@@ -30,7 +30,7 @@ impl Rank {
         }
     }
 
-    /// وزن رتبه برای مقایسه‌ی ارتقا/تنزل (کد هدیه و زیرمجموعه‌گیری از این استفاده می‌کنند).
+    /// Rank weight for upgrade/downgrade calculation (used by gift code & referral).
     pub fn weight(&self) -> i64 {
         match self {
             Self::Dalavar => 0,
@@ -41,7 +41,7 @@ impl Rank {
         }
     }
 
-    /// حداقل رتبه لازم برای دانلود یه کیفیت خاص
+    /// Minimum rank required for a specific video resolution.
     pub fn min_for_quality(height: u32) -> Self {
         if height <= 500 {
             Self::Dalavar
@@ -52,7 +52,7 @@ impl Rank {
         }
     }
 
-    /// سقف حذف نویز روزانه (ثانیه)
+    /// Daily denoise quota (seconds).
     pub fn denoise_daily_secs(&self) -> u64 {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 30 * 60,
@@ -61,7 +61,7 @@ impl Rank {
         }
     }
 
-    /// سقف حذف نویز هفتگی (ثانیه)
+    /// Weekly denoise quota (seconds).
     pub fn denoise_weekly_secs(&self) -> u64 {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 2 * 3600,
@@ -70,7 +70,7 @@ impl Rank {
         }
     }
 
-    /// رتبه بعدی که سقف denoise بیشتری داره
+    /// Next rank with higher denoise quota.
     pub fn denoise_next_rank(&self) -> Option<Self> {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => Some(Self::Sohrab),
@@ -90,39 +90,39 @@ impl Rank {
         crate::i18n::t(key)
     }
 
-    /// محدودیت کیفیت YouTube (None = بدون محدودیت)
+    /// Max YouTube quality limit (`None` = unlimited).
     pub fn max_yt_quality(&self) -> Option<u32> {
         match self {
             Self::Dalavar => Some(500),
             Self::Sepahbod => Some(1150),
             Self::Esfandyar | Self::Rostam => None,
-            // AI-only plan — برای یوتیوب از دلاور ارث‌بری می‌کنه
+            // AI-only plan — inherits YouTube limit from Dalavar
             Self::Sohrab => Self::Dalavar.max_yt_quality(),
         }
     }
 
-    /// ترافیک روزانه (bytes)
+    /// Daily traffic quota (bytes).
     pub fn daily_traffic_bytes(&self) -> u64 {
         match self {
             Self::Dalavar | Self::Sepahbod => 5 * 1024 * 1024 * 1024,
             Self::Esfandyar | Self::Rostam => 40 * 1024 * 1024 * 1024,
-            // AI-only plan — برای ترافیک از دلاور ارث‌بری می‌کنه
+            // AI-only plan — inherits traffic limit from Dalavar
             Self::Sohrab => Self::Dalavar.daily_traffic_bytes(),
         }
     }
 
-    /// ترافیک ماهانه (bytes)
+    /// Monthly traffic quota (bytes).
     pub fn monthly_traffic_bytes(&self) -> u64 {
         match self {
             Self::Dalavar => 15 * 1024 * 1024 * 1024,
             Self::Sepahbod => 60 * 1024 * 1024 * 1024,
             Self::Esfandyar | Self::Rostam => 400 * 1024 * 1024 * 1024,
-            // AI-only plan — برای ترافیک از دلاور ارث‌بری می‌کنه
+            // AI-only plan — inherits traffic limit from Dalavar
             Self::Sohrab => Self::Dalavar.monthly_traffic_bytes(),
         }
     }
 
-    /// رتبه‌ی بعدی با ترافیک روزانه‌ی بیشتر (۵گ → ۴۰گ در اسفندیار)
+    /// Next rank with higher daily traffic.
     pub fn traffic_daily_next_rank(&self) -> Option<Self> {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Sohrab => Some(Self::Esfandyar),
@@ -130,7 +130,7 @@ impl Rank {
         }
     }
 
-    /// رتبه‌ی بعدی با ترافیک ماهانه‌ی بیشتر
+    /// Next rank with higher monthly traffic.
     pub fn traffic_monthly_next_rank(&self) -> Option<Self> {
         match self {
             Self::Dalavar | Self::Sohrab => Some(Self::Sepahbod),
@@ -139,48 +139,46 @@ impl Rank {
         }
     }
 
-    /// پلی‌لیست YouTube (None = نامحدود)
+    /// YouTube playlist item limit (`None` = unlimited).
     pub fn playlist_limit(&self) -> Option<u32> {
         match self {
-            Self::Dalavar | Self::Sohrab => Some(0), // ممنوع
+            Self::Dalavar | Self::Sohrab => Some(0), // Disallowed
             Self::Sepahbod => Some(10),
             Self::Esfandyar | Self::Rostam => None,
         }
     }
 
-    /// آلبوم/پلی‌لیست موسیقی اسپاتیفای و ساوندکلاد
-    /// (`Some(0)` = ممنوع، `None` = نامحدود)
+    /// Spotify/SoundCloud album/playlist limit (`Some(0)` = disallowed, `None` = unlimited).
     pub fn music_set_limit(&self) -> Option<u32> {
         match self {
-            Self::Dalavar | Self::Sohrab => Some(0), // ممنوع
+            Self::Dalavar | Self::Sohrab => Some(0), // Disallowed
             Self::Sepahbod => Some(20),
             Self::Esfandyar | Self::Rostam => None,
         }
     }
 
-    /// آرشیو 7z ست موسیقی — سپهبد فقط تکی‌تکی می‌گیرد
+    /// Archive 7z for music sets — Sepahbod gets individual tracks only.
     pub fn can_music_set_archive(&self) -> bool {
         matches!(self, Self::Esfandyar | Self::Rostam)
     }
 
-    /// زیرنویس فایل جداگانه
+    /// Separate subtitle file download.
     pub fn can_subtitle_file(&self) -> bool {
         matches!(self, Self::Sepahbod | Self::Esfandyar | Self::Rostam)
     }
 
-    /// چسباندن زیرنویس به ویدیو
+    /// Mux subtitle into video.
     pub fn can_subtitle_mux(&self) -> bool {
         matches!(self, Self::Sepahbod | Self::Esfandyar | Self::Rostam)
     }
 
-    /// حک زیرنویس روی ویدیو (hardcode)
+    /// Hardcode subtitle into video.
     #[allow(dead_code)]
     pub fn can_subtitle_hardcode(&self) -> bool {
         matches!(self, Self::Esfandyar | Self::Rostam)
     }
 
-    /// سقف افزایش کیفیت تصویر در هفته (تعداد عکس) بر اساس scale factor.
-    /// رستم = ۱۰ برابر سهراب. هرچی scale بزرگ‌تر، سقف کمتر (پردازش سنگین‌تر).
+    /// Weekly image upscale quota (image count) by scale factor.
     pub fn upscale_weekly_quota(&self, scale: u32) -> u32 {
         match scale {
             2 => match self {
@@ -193,7 +191,7 @@ impl Rank {
                 Self::Sohrab => 30,
                 Self::Rostam => 300,
             },
-            // x4 و هر چیز دیگه
+            // x4 and any other factor
             _ => match self {
                 Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 2,
                 Self::Sohrab => 20,
@@ -202,7 +200,7 @@ impl Rank {
         }
     }
 
-    /// رتبه‌ی بعدی با سقف upscale بیشتر
+    /// Next rank with higher upscale quota.
     pub fn upscale_next_rank(&self) -> Option<Self> {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => Some(Self::Sohrab),
@@ -211,7 +209,7 @@ impl Rank {
         }
     }
 
-    /// سقف هفتگی حذف پس‌زمینه تصویر بر اساس رنک
+    /// Weekly background removal quota by rank.
     pub fn nobg_weekly_quota(&self) -> u32 {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 3,
@@ -220,7 +218,7 @@ impl Rank {
         }
     }
 
-    /// رتبه‌ی بعدی با سقف nobg بیشتر
+    /// Next rank with higher background removal quota.
     pub fn nobg_next_rank(&self) -> Option<Self> {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => Some(Self::Sohrab),
@@ -229,7 +227,7 @@ impl Rank {
         }
     }
 
-    /// سقف هفتگی رنگی‌کردن عکس قدیمی بر اساس رنک
+    /// Weekly image colorization (DeOldify) quota.
     pub fn deoldify_weekly_quota(&self) -> u32 {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 3,
@@ -238,7 +236,7 @@ impl Rank {
         }
     }
 
-    /// سقف هفتگی تبدیل متن به صدا (Moss TTS) بر حسب ثانیه
+    /// Weekly text-to-speech (Moss TTS) quota in seconds.
     pub fn tts_weekly_secs(&self) -> u64 {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 30 * 60,
@@ -247,17 +245,17 @@ impl Rank {
         }
     }
 
-    /// denoise قبل از رونویسی — سهراب و رستم دیفالت فعال
+    /// Denoise enabled by default for STT.
     pub fn stt_denoise_default(&self) -> bool {
         matches!(self, Self::Sohrab | Self::Rostam)
     }
 
-    /// آیا کاربر مجاز به فعال کردن denoise در STT هست؟
+    /// Whether user is allowed to enable STT denoise.
     pub fn can_stt_denoise(&self) -> bool {
         matches!(self, Self::Sohrab | Self::Rostam)
     }
 
-    /// سقف جداسازی موزیک روزانه (ثانیه)
+    /// Daily audio separation quota (seconds).
     pub fn separation_daily_secs(&self) -> u64 {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 6 * 60,
@@ -266,7 +264,7 @@ impl Rank {
         }
     }
 
-    /// سقف جداسازی موزیک هفتگی (ثانیه)
+    /// Weekly audio separation quota (seconds).
     pub fn separation_weekly_secs(&self) -> u64 {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => 20 * 60,
@@ -275,7 +273,7 @@ impl Rank {
         }
     }
 
-    /// رتبه بعدی که سقف جداسازی بیشتری داره
+    /// Next rank with higher audio separation quota.
     pub fn separation_next_rank(&self) -> Option<Self> {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => Some(Self::Sohrab),
@@ -284,12 +282,12 @@ impl Rank {
         }
     }
 
-    /// مدل دقیق (Large) فقط سهراب و رستم
+    /// Accurate STT model (Large) allowed for Sohrab and Rostam.
     pub fn can_stt_accurate(&self) -> bool {
         matches!(self, Self::Sohrab | Self::Rostam)
     }
 
-    /// سقف رونویسی سریع روزانه (ثانیه) — None یعنی ممنوع
+    /// Daily fast transcription quota (seconds) — `None` means disallowed.
     pub fn stt_fast_daily_secs(&self) -> Option<u64> {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => Some(30 * 60),
@@ -298,7 +296,7 @@ impl Rank {
         }
     }
 
-    /// سقف رونویسی سریع هفتگی (ثانیه)
+    /// Weekly fast transcription quota (seconds).
     pub fn stt_fast_weekly_secs(&self) -> Option<u64> {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => Some(2 * 3600),
@@ -307,7 +305,7 @@ impl Rank {
         }
     }
 
-    /// سقف رونویسی دقیق روزانه (ثانیه) — None یعنی ممنوع
+    /// Daily accurate transcription quota (seconds) — `None` means disallowed.
     pub fn stt_accurate_daily_secs(&self) -> Option<u64> {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => None,
@@ -316,7 +314,7 @@ impl Rank {
         }
     }
 
-    /// سقف رونویسی دقیق هفتگی (ثانیه)
+    /// Weekly accurate transcription quota (seconds).
     pub fn stt_accurate_weekly_secs(&self) -> Option<u64> {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Esfandyar => None,
@@ -325,7 +323,7 @@ impl Rank {
         }
     }
 
-    /// سقف CPU-time فشرده‌سازی روزانه (ثانیه)
+    /// Daily compression CPU-time quota (seconds).
     pub fn compress_cpu_daily_secs(&self) -> u64 {
         match self {
             Self::Dalavar | Self::Sohrab => 10 * 60,
@@ -334,7 +332,7 @@ impl Rank {
         }
     }
 
-    /// سقف CPU-time فشرده‌سازی ماهانه (ثانیه)
+    /// Monthly compression CPU-time quota (seconds).
     pub fn compress_cpu_monthly_secs(&self) -> u64 {
         match self {
             Self::Dalavar | Self::Sohrab => 100 * 60,
@@ -343,7 +341,7 @@ impl Rank {
         }
     }
 
-    /// رتبه‌ی بعدی که سقف فشرده‌سازی بیشتری داره
+    /// Next rank with higher compression quota.
     #[allow(dead_code)]
     pub fn compress_next_rank(&self) -> Option<Self> {
         match self {
@@ -354,7 +352,7 @@ impl Rank {
     }
 }
 
-/// تقسیم صحیح گرد به بالا — مشترک بین کد هدیه و زیرمجموعه‌گیری برای تبدیل وزنی روزهای باقیمانده.
+/// Integer division rounded up. Shared between gift code and referral modules for weighted remaining day calculation.
 pub fn ceil_div(a: i64, b: i64) -> i64 {
     if b <= 0 {
         return 0;

@@ -3,6 +3,7 @@
 pub mod config;
 pub mod engine;
 pub mod handle;
+pub mod progress;
 
 pub use config::CompressConfig;
 #[cfg(feature = "testapi")]

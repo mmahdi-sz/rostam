@@ -32,7 +32,7 @@ pub fn md_escape(s: &str) -> String {
         .collect()
 }
 
-/// تبدیل ارقام انگلیسی به فارسی (شامل نقطه‌ی اعشار → ممیز فارسی).
+/// Converts English digits to Persian (including decimal point → Persian decimal separator).
 pub fn to_fa_digits(s: &str) -> String {
     s.chars()
         .map(|c| match c {

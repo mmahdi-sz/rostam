@@ -120,8 +120,7 @@ pub async fn fetch_spotify_set(
 
     let embed_url = format!("https://open.spotify.com/embed/{}/{set_id}", kind.as_str());
     let html = client.get(&embed_url).send().await?.text().await?;
-    // پلی‌لیست خصوصی/حذف‌شده صفحهٔ embed با status=404 می‌دهد؛ لینک `?pt=` هم
-    // بازش نمی‌کند، پس باید از خطای پارس جدا شود تا پیام کاربر درست باشد.
+    // Private/deleted playlist embed returns 404; ?pt= link won't open it either, so handle separately for proper error message.
     if embed_status(&html) == Some(404) {
         return Err(anyhow!(
             "spotify embed 404: {} '{set_id}' is private or deleted",

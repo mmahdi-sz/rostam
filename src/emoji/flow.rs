@@ -91,33 +91,32 @@ pub enum FlowState {
         original_filename: String,
         prompt_message_id: i32,
     },
-    /// ادمین دکمه‌ی ساخت کد را زده و منتظر آرگومان‌ها (مثل `30d es 1u`) هستیم
+    /// Admin clicked generate code button and awaiting arguments (e.g. `30d es 1u`)
     #[allow(dead_code)]
     AwaitingRedeemGenArgs,
-    /// ادمین دکمه‌ی «افزودن قفل جدید» را زده و منتظر لینک است
+    /// Admin clicked "Add New Lock" button and awaiting link
     AwaitingForceJoinLink,
-    /// لینک خصوصی ثبت شده؛ منتظر یوزرنیم/فوروارد/آیدی عددی چت هستیم
+    /// Private link registered; awaiting username/forward/numeric chat ID
     AwaitingForceJoinPrivateInfo {
         link: String,
     },
-    /// ویزارد ویرایش یک فیلد قفل (نام نمایشی/حد زمان/حد عضو/لینک رزرو).
-    /// `field` یکی از: `name` | `time` | `member` | `reserve`. نتیجه به‌صورت پیام جدید نشون داده می‌شه.
+    /// Wizard editing a lock field (name/time/member/reserve). `field` is one of: `name` | `time` | `member` | `reserve`.
     AwaitingForceJoinField {
         lock_id: i64,
         field: String,
     },
-    /// کاربر در حال انتخاب فرمت فشرده‌سازی است
+    /// User selecting compression format
     #[allow(dead_code)]
     AwaitingCompressFormatSelect,
-    /// فرمت انتخاب شده، کاربر تنظیمات را تغییر می‌دهد
+    /// Format selected; user configuring options
     AwaitingCompressOptions {
         config: crate::filecompress::CompressConfig,
     },
-    /// منتظر ورود رمز فایل هستیم
+    /// Awaiting file password input
     AwaitingCompressPassword {
         config: crate::filecompress::CompressConfig,
     },
-    /// منتظر دریافت فایل‌های ورودی فشرده‌سازی هستیم
+    /// Awaiting compression input files
     AwaitingCompressFiles {
         config: Box<crate::filecompress::CompressConfig>,
         files: Vec<CompressFileEntry>,

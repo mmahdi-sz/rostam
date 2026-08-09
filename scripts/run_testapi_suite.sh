@@ -135,12 +135,6 @@ RES_DETAIL=$(curl -s -X POST "$BASE_URL/test/router/callback" \
     -d '{"callback_data": "rank:select:esfandyar", "user_id": 12345, "username": "testuser"}')
 if [ "$(echo "$RES_DETAIL" | jq -r '.ok')" != "true" ]; then echo "Fail: rank:select:esfandyar callback"; exit 1; fi
 
-echo "Testing /test/router/callback (rank:guide)"
-RES_GUIDE=$(curl -s -X POST "$BASE_URL/test/router/callback" \
-    -H "Content-Type: application/json" \
-    -d '{"callback_data": "rank:guide", "user_id": 12345, "username": "testuser"}')
-if [ "$(echo "$RES_GUIDE" | jq -r '.ok')" != "true" ]; then echo "Fail: rank:guide callback"; exit 1; fi
-
 echo "✅ Router callback test passed!"
 
 echo ""
@@ -239,6 +233,18 @@ if [ "$(echo "$RES_NOBG" | jq -r '.ok')" != "true" ]; then echo "Fail: nobg proc
 echo "Testing /test/admin/panel"
 RES_ADM=$(curl -s -X POST "$BASE_URL/test/admin/panel" -H "Content-Type: application/json" -d '{"user_id": 12345}')
 if [ "$(echo "$RES_ADM" | jq -r '.ok')" != "true" ]; then echo "Fail: admin panel"; exit 1; fi
+
+echo "Testing /test/admin/stats_section"
+for SEC in ov users yt ai music files money sys err; do
+  RES_SEC=$(curl -s -X POST "$BASE_URL/test/admin/stats_section" -H "Content-Type: application/json" -d "{\"section\": \"$SEC\"}")
+  if [ "$(echo "$RES_SEC" | jq -r '.ok')" != "true" ]; then echo "Fail: admin stats_section $SEC"; exit 1; fi
+  if [ "$(echo "$RES_SEC" | jq -r '.known_section')" != "true" ]; then echo "Fail: admin stats_section unknown $SEC"; exit 1; fi
+  if [ "$(echo "$RES_SEC" | jq -r '.rendered_text | length')" = "0" ]; then echo "Fail: admin stats_section empty $SEC"; exit 1; fi
+done
+# failure path: unknown key falls back to the overview, keyboard still navigable
+RES_SEC_BAD=$(curl -s -X POST "$BASE_URL/test/admin/stats_section" -H "Content-Type: application/json" -d '{"section": "does_not_exist"}')
+if [ "$(echo "$RES_SEC_BAD" | jq -r '.known_section')" != "false" ]; then echo "Fail: admin stats_section bad key"; exit 1; fi
+if [ "$(echo "$RES_SEC_BAD" | jq -r '.nav_callbacks | length')" -lt 9 ]; then echo "Fail: admin stats_section nav missing"; exit 1; fi
 
 echo "Testing /test/admin/broadcast"
 RES_BC=$(curl -s -X POST "$BASE_URL/test/admin/broadcast" -H "Content-Type: application/json" -d '{"mode": "Copy", "pin": true, "target_count": 50}')
@@ -359,6 +365,20 @@ if [ "$(echo "$RES_FCU" | jq -r '.progress_keyboard[0][0].callback_data')" != "f
 if [ "$(echo "$RES_FCU" | jq -r '.ask_password_keyboard[0][0].callback_data')" != "fc:cancel" ]; then echo "Fail: ask-password cancel button missing"; exit 1; fi
 if [[ ! "$(echo "$RES_FCU" | jq -r '.progress_text')" == *"02:05"* ]]; then echo "Fail: progress elapsed not mm:ss"; exit 1; fi
 if [ -z "$(echo "$RES_FCU" | jq -r '.password_need_text')" ]; then echo "Fail: password_need_text missing"; exit 1; fi
+# Staged status message: downloading must not render the compressing text, and a
+# real percent must produce a remaining-time line (40% after 80s => 02:00 left).
+DL_TEXT=$(echo "$RES_FCU" | jq -r '.downloading_text')
+if [[ "$DL_TEXT" == *"{idx}"* || "$DL_TEXT" == *"{total}"* ]]; then echo "Fail: downloading placeholders unresolved"; exit 1; fi
+if [[ ! "$DL_TEXT" == *"2"* || ! "$DL_TEXT" == *"3"* ]]; then echo "Fail: downloading must show file 2 of 3. Got: $DL_TEXT"; exit 1; fi
+if [ "$(echo "$RES_FCU" | jq -r '.eta_shown')" != "true" ]; then echo "Fail: eta not computed at 40%"; exit 1; fi
+if [ "$(echo "$RES_FCU" | jq -r '.bar_at_40')" != "████░░░░░░" ]; then echo "Fail: bar at 40%. Got: $(echo "$RES_FCU" | jq -r '.bar_at_40')"; exit 1; fi
+ETA_TEXT=$(echo "$RES_FCU" | jq -r '.compress_text_with_eta')
+if [[ ! "$ETA_TEXT" == *"02:00"* ]]; then echo "Fail: remaining time missing. Got: $ETA_TEXT"; exit 1; fi
+if [[ ! "$ETA_TEXT" == *"████░░░░░░"* ]]; then echo "Fail: compress bar not filled at 40%"; exit 1; fi
+# Failure path: no percent yet => elapsed only, never a fabricated ETA.
+NOETA_TEXT=$(echo "$RES_FCU" | jq -r '.compress_text_no_eta')
+if [[ ! "$NOETA_TEXT" == *"░░░░░░░░░░"* ]]; then echo "Fail: empty bar expected before first percent"; exit 1; fi
+if [[ "$NOETA_TEXT" == *"{eta}"* ]]; then echo "Fail: eta placeholder leaked"; exit 1; fi
 
 RES_FCS=$(curl -s -X POST "$BASE_URL/test/compress/ux" -H "Content-Type: application/json" -d '{"fmt": "7z", "solid": true}')
 if [ "$(echo "$RES_FCS" | jq -r '.solid_button_color')" != "primary" ]; then

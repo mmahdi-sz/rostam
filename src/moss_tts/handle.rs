@@ -27,14 +27,12 @@ use crate::rank;
 use crate::rank::quota::{QuotaKind, get_usage, refund_usage, reserve_usage};
 use crate::stats;
 
-/// سقف طول متن ورودی؛ همان عددی که در `tts.enter_text_default` به کاربر
-/// وعده داده می‌شود — پیش از این هیچ‌جا اعمال نمی‌شد.
+/// Input text length cap; matches value promised in `tts.enter_text_default`.
 pub const TTS_MAX_CHARS: usize = 500;
 
 pub const CB_TTS_JOB_CANCEL: &str = "tts:jobcancel";
 
-/// پرچم لغو هر کاربر برای کارِ در جریان؛ به موتور هم پاس می‌شود تا
-/// حلقهٔ تولید بشکند و CPU آزاد شود، نه اینکه خروجی دور ریخته شود.
+/// Per-user active job cancellation flag; passed to engine to interrupt generation loop and release CPU.
 static ACTIVE_TTS_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -55,7 +53,7 @@ pub fn tts_cancel_keyboard() -> InlineKeyboardMarkup {
         .build()
 }
 
-/// انصراف روی پیام پیشرفت — کار در جریان را لغو می‌کند.
+/// Cancel button on progress message — cancels job in progress.
 fn tts_job_cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![vec![btn_icon_danger(
@@ -66,7 +64,7 @@ fn tts_job_cancel_keyboard() -> InlineKeyboardMarkup {
         .build()
 }
 
-/// از دکمهٔ «انصراف» روی پیام پیشرفت صدا زده می‌شود.
+/// Invoked from "Cancel" button on progress message.
 pub fn signal_tts_cancel(user_id: i64) -> bool {
     if let Ok(mut jobs) = ACTIVE_TTS_JOBS.lock() {
         if let Some(flag) = jobs.remove(&user_id) {
@@ -141,8 +139,7 @@ pub async fn handle_tts_text(
     let trace_id = next_trace_id();
     log_ev!("tts", trace_id, "generate", "user_id" => user_id, "chat_id" => chat_id);
 
-    // سقف ۵۰۰ کاراکتر تا اینجا فقط یک وعده در متن راهنما بود. بر کاراکتر
-    // شمرده می‌شود نه بایت، وگرنه متن فارسی نصف سقف واقعی رد می‌شد.
+    // Counted by character (not byte) so Persian text does not hit limit prematurely.
     let char_len = text_input.chars().count();
     if char_len > TTS_MAX_CHARS {
         log_ev!("tts", trace_id, "text_too_long", "len" => char_len, "max" => TTS_MAX_CHARS, "=>" => "blocked");
@@ -153,7 +150,7 @@ pub async fn handle_tts_text(
                 ("max", &TTS_MAX_CHARS.to_string()),
             ],
         ));
-        // فلو مسلح می‌ماند تا کاربر بی‌درنگ متن کوتاه‌تر بفرستد.
+        // Keep flow armed so user can immediately send shorter text.
         flow_manager.set(user_id, FlowState::AwaitingTtsText);
         let _ = api
             .send_message(
@@ -170,9 +167,7 @@ pub async fn handle_tts_text(
 
     let est_secs = std::cmp::max(1, (char_len as i64) / 12);
 
-    // رزرو پیش از کار بر پایه‌ی برآورد طول گفتار. سقف اینجا روی مقدارِ
-    // «بعد از افزودن» اعمال می‌شود، نه `used >= limit` قبلی — پس متنی که از
-    // باقی‌ماندهٔ سهمیه بلندتر باشد هم رد می‌شود.
+    // Reserve usage before work based on estimated speech duration. Cap check applies to projected usage.
     let mut reserved = false;
     if let Some(db) = &database {
         let user_rank = rank::effective_rank(db.client(), user_id).await;
@@ -208,7 +203,7 @@ pub async fn handle_tts_text(
                 return;
             }
             Err(e) => {
-                // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
+                // Fail closed — notify user on database error.
                 log_ev!("tts", trace_id, "quota_reserve", "err" => format!("{e}"), "=>" => "fail");
                 crate::rank::paywall::quota_db_error(api, chat_id, "tts", &format!("{e}")).await;
                 flow_manager.set(user_id, FlowState::Idle);
@@ -217,7 +212,7 @@ pub async fn handle_tts_text(
         }
     }
 
-    // برگرداندن سهمیه‌ی رزروشده وقتی کار به نتیجه نرسید.
+    // Refund reserved quota if job fails.
     macro_rules! refund {
         ($why:expr) => {
             if reserved {
@@ -318,7 +313,7 @@ pub async fn handle_tts_text(
         .build();
     let _ = api.delete_message(&del_params).await;
 
-    // کاربر وسط کار «انصراف» زده: سهمیه برمی‌گردد و فلو دوباره مسلح می‌شود.
+    // User clicked cancel mid-job: refund quota and re-arm flow.
     if cancel_flag.load(Ordering::Relaxed) {
         log_ev!("tts", trace_id, "cancelled_mid_job", "user_id" => user_id);
         refund!("cancelled");
@@ -392,7 +387,7 @@ pub async fn handle_tts_text(
             let _ = std::fs::remove_file(&voice_path);
 
             if send_ok {
-                // سهمیه هنگام رزرو کسر شد؛ بدهکاری دومی اینجا نیست.
+                // Quota deducted upon reservation; no double deduction.
                 stats::record_event_user(user_id, "tts", "generate", "ok", text_input.len() as i64)
                     .await;
                 log_ev!("tts", trace_id, "done", "status" => "ok");
@@ -474,7 +469,7 @@ pub async fn handle_tts_cancel(
     let _ = api.edit_message_text(&params).await;
 }
 
-// دسترسی‌های فقط-تست به همان کیبورد تولید.
+// Test-only accessors for production keyboard.
 #[cfg(feature = "testapi")]
 pub fn tts_job_cancel_keyboard_for_test() -> InlineKeyboardMarkup {
     tts_job_cancel_keyboard()

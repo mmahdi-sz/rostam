@@ -2,10 +2,10 @@ use tokio_postgres::Client;
 
 use crate::rank::types::Rank;
 
-/// عمر کشویی کد: ۷ روز از آخرین فعالیت (ساخت یا مصرف)
+/// Code TTL sliding window: 7 days from last activity (creation or redemption).
 pub const CODE_TTL_SECS: i64 = 7 * 86_400;
 
-/// یک ردیف کد هدیه
+/// Redeem code record.
 pub struct RedeemCodeRow {
     pub rank: Rank,
     pub duration_days: i32,
@@ -13,7 +13,7 @@ pub struct RedeemCodeRow {
     pub max_uses: i32,
     #[allow(dead_code)]
     pub used_count: i32,
-    /// زمان انقضای رکورد کد (epoch). None یعنی بدون انقضا (کدهای قدیمی).
+    /// Expiration timestamp (`None` means permanent / legacy code).
     pub expires_at: Option<i64>,
 }
 
@@ -24,7 +24,7 @@ fn now_epoch() -> i64 {
         .unwrap_or(0)
 }
 
-/// ساخت کد جدید در DB (با عمر ۷ روزه)
+/// Creates new code in DB (with 7-day TTL).
 pub async fn create_code(
     client: &Client,
     code: &str,
@@ -51,7 +51,7 @@ pub async fn create_code(
     Ok(())
 }
 
-/// خواندن کد (None اگر وجود نداشت یا rank نامعتبر بود)
+/// Get code details (`None` if missing or invalid rank).
 pub async fn get_code(
     client: &Client,
     code: &str,
@@ -80,7 +80,7 @@ pub async fn get_code(
     }))
 }
 
-/// زمان مصرف کد توسط این کاربر (epoch)، اگر قبلاً مصرف کرده باشد
+/// Redemption timestamp for specified user.
 pub async fn get_user_redemption(
     client: &Client,
     code: &str,
@@ -95,7 +95,7 @@ pub async fn get_user_redemption(
     Ok(row.map(|r| r.get::<_, i64>(0)))
 }
 
-/// آخرین زمان مصرف کد (برای پیام «ظرفیت پر شد در تاریخ ...»)
+/// Latest redemption timestamp for code.
 pub async fn get_last_redemption(
     client: &Client,
     code: &str,
@@ -109,34 +109,27 @@ pub async fn get_last_redemption(
     Ok(row.and_then(|r| r.get::<_, Option<i64>>(0)))
 }
 
-/// نتیجه‌ی مصرف کد. سه حالت متمایز که پیام کاربر برای هرکدام فرق دارد.
+/// Code redemption outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RedeemOutcome {
-    /// ثبت شد و ظرفیت مصرف شد.
+    /// Redeemed successfully.
     Consumed,
-    /// این کاربر قبلاً همین کد را مصرف کرده بود.
+    /// Code already used by this user.
     AlreadyRedeemed,
-    /// ظرفیت کد پر بود؛ چیزی مصرف نشد.
+    /// Code max usage limit reached.
     Exhausted,
 }
 
-/// نگاشت شمارنده‌های خروجی CTE به نتیجه. جدا شده تا بدون دیتابیس تست‌پذیر باشد.
-///
-/// `consumed > 0` با این CTE همیشه `inserted > 0` را نتیجه می‌دهد (شرط
-/// `EXISTS (SELECT 1 FROM ins)` روی UPDATE)، پس حالت (0, 1) غیرممکن است.
+/// Maps CTE counts to `RedeemOutcome`.
 fn classify(inserted: i64, consumed: i64) -> RedeemOutcome {
     match (inserted, consumed) {
-        // ردیف مصرف از قبل بود ⇒ این کاربر تکراری است.
         (0, _) => RedeemOutcome::AlreadyRedeemed,
-        // ثبت شد ولی شمارنده بالا نرفت ⇒ ظرفیت پر بود.
         (_, 0) => RedeemOutcome::Exhausted,
         _ => RedeemOutcome::Consumed,
     }
 }
 
-/// مصرف اتمیک کد: در **یک** statement مصرف کاربر را ثبت می‌کند، شمارنده را فقط
-/// اگر آن ثبت واقعاً انجام شده و ظرفیت باقی باشد بالا می‌برد، و عمر کد را ۷ روز
-/// ریست می‌کند.
+/// Atomically redeems code for user.
 pub async fn mark_redeemed(
     client: &Client,
     code: &str,
@@ -144,9 +137,6 @@ pub async fn mark_redeemed(
 ) -> Result<RedeemOutcome, tokio_postgres::Error> {
     let now = now_epoch();
     let new_expiry = now + CODE_TTL_SECS;
-    // ترتیب مهم است: درج اول می‌آید چون PRIMARY KEY(code, user_id) تنها نقطه‌ی
-    // سریالایز شدن دو درخواست همزمان است؛ افزایش شمارنده به همان درج گره خورده.
-    // برعکس کردن این ترتیب، باگ «یک کاربر چند ظرفیت را می‌سوزاند» را برمی‌گرداند.
     let row = client
         .query_one(
             "WITH ins AS (
@@ -172,8 +162,6 @@ pub async fn mark_redeemed(
     let consumed: i64 = row.get(1);
 
     if inserted == 0 && consumed > 0 {
-        // با CTE بالا غیرممکن است؛ اگر دیده شد یعنی SQL دست خورده و مسیر پول
-        // دیگر اتمیک نیست. سکوت نمی‌کنیم.
         crate::stats::record_error_global(
             "redeem",
             format!("impossible redeem counts: inserted={inserted} consumed={consumed}"),
@@ -184,10 +172,6 @@ pub async fn mark_redeemed(
     let outcome = classify(inserted, consumed);
 
     if outcome == RedeemOutcome::Exhausted {
-        // درج انجام شد ولی ظرفیت نبود. ردیفی که همین درخواست ساخت باید برود،
-        // وگرنه کاربر برای همیشه از کدی که هرگز نگرفته محروم می‌ماند (اگر ادمین
-        // max_uses را بالا ببرد، «قبلاً مصرف کرده‌ای» می‌گیرد). این DELETE امن
-        // است چون ردیف (code, user_id) منحصر به همین درخواست است.
         if let Err(e) = client
             .execute(
                 "DELETE FROM redeem_redemptions WHERE code = $1 AND user_id = $2",
@@ -204,7 +188,7 @@ pub async fn mark_redeemed(
     Ok(outcome)
 }
 
-/// حذف یک کد و مصرف‌هایش (هنگام انقضای lazy)
+/// Deletes code and its redemptions (lazy expiration).
 pub async fn delete_code(client: &Client, code: &str) -> Result<(), tokio_postgres::Error> {
     client
         .execute("DELETE FROM redeem_redemptions WHERE code = $1", &[&code])
@@ -215,10 +199,9 @@ pub async fn delete_code(client: &Client, code: &str) -> Result<(), tokio_postgr
     Ok(())
 }
 
-/// پاک‌سازی دوره‌ای کدهای منقضی‌شده. تعداد کدهای حذف‌شده را برمی‌گرداند.
+/// Sweeps expired codes. Returns count of deleted codes.
 pub async fn sweep_expired(client: &Client) -> Result<u64, tokio_postgres::Error> {
     let now = now_epoch();
-    // اول مصرف‌های یتیم کدهای منقضی، بعد خود کدها
     client
         .execute(
             "DELETE FROM redeem_redemptions WHERE code IN
@@ -239,33 +222,28 @@ pub async fn sweep_expired(client: &Client) -> Result<u64, tokio_postgres::Error
 mod tests {
     use super::*;
 
-    /// سه حالت واقعی که CTE می‌تواند تولید کند. اگر روزی کسی ترتیب `ins`/`upd`
-    /// را عوض کرد یا شرط `EXISTS` را برداشت، این تست‌ها همان جایی‌اند که معنی
-    /// شمارنده‌ها را ثبت کرده‌اند.
+    /// Real CTE outcome scenarios. Preserves counter semantics if CTE logic
+    /// or `EXISTS` conditions are modified.
     #[test]
     fn classify_maps_the_three_cte_outcomes() {
-        // درج شد + شمارنده بالا رفت ⇒ کد واقعاً به این کاربر داده شد.
+        // Inserted + counter incremented => code granted to user.
         assert_eq!(classify(1, 1), RedeemOutcome::Consumed);
-        // درج نشد (PK خورد) ⇒ همین کاربر قبلاً گرفته بود؛ ظرفیت دست نخورده.
+        // Not inserted (PK clash) => code already claimed by user; capacity untouched.
         assert_eq!(classify(0, 0), RedeemOutcome::AlreadyRedeemed);
-        // درج شد ولی `used_count < max_uses` رد شد ⇒ ظرفیت پر بود.
+        // Inserted but `used_count < max_uses` check failed => capacity exhausted.
         assert_eq!(classify(1, 0), RedeemOutcome::Exhausted);
     }
 
-    /// حالت (0, 1) با این SQL غیرممکن است (UPDATE به `EXISTS (ins)` گره خورده).
-    /// اگر روزی رخ داد یعنی SQL دست خورده؛ ایمن‌ترین تفسیر «به این کاربر ندادیم»
-    /// است، نه «دادیم» — و `mark_redeemed` هم آن را به `record_error_global`
-    /// می‌فرستد.
+    /// The (0, 1) pair is impossible with current SQL (UPDATE is tied to `EXISTS (ins)`).
+    /// If it occurs, safest interpretation is "not granted" to prevent over-granting.
     #[test]
     fn classify_impossible_pair_never_grants() {
         assert_ne!(classify(0, 1), RedeemOutcome::Consumed);
     }
 
-    /// e2e روی دیتابیس dev و از مسیر واقعیِ production: یک `Arc<Client>` مشترک
-    /// (همان چیزی که `PostgresDatabase` نگه می‌دارد) و چند تسک همزمان.
-    /// چیزی که این تست می‌سنجد و تست واحد نمی‌تواند: ظرفیت ۳تایی زیر ۱۲ کلیک
-    /// همزمان دقیقاً ۳ بار داده می‌شود، و یک کاربر با دو کلیک همزمان دو ظرفیت
-    /// نمی‌سوزاند.
+    /// E2E test on dev database under production setup: shared `Arc<Client>` and concurrent tasks.
+    /// Verifies capacity 3 under 12 concurrent clicks yields exactly 3 grants,
+    /// and a single user's double-click burns only 1 use.
     ///
     /// `cargo test mark_redeemed_e2e -- --ignored --nocapture`
     #[tokio::test]
@@ -287,7 +265,7 @@ mod tests {
         });
         let client = Arc::new(client);
 
-        // ساخت کد آزمایشی با ظرفیت ۳ (اجرای مکرر تست باید تمیز شروع شود)
+        // Seed test code with capacity 3 (clean state on repeated test runs).
         let reset = |max_uses: i32| {
             let client = client.clone();
             async move {
@@ -311,7 +289,7 @@ mod tests {
             }
         };
 
-        // ۱) ۱۲ کاربر متفاوت، همزمان، روی ظرفیت ۳
+        // 1) 12 distinct users concurrently hitting capacity 3
         reset(3).await;
         let mut set = tokio::task::JoinSet::new();
         for i in 0..12i64 {
@@ -355,7 +333,7 @@ mod tests {
             "exhausted requests left rows behind; rollback did not run"
         );
 
-        // ۲) یک کاربر، دو کلیک همزمان، ظرفیت ۲: فقط یکی باید مصرف شود
+        // 2) Single user, 2 concurrent clicks, capacity 2: only 1 must be consumed
         reset(2).await;
         let mut set = tokio::task::JoinSet::new();
         for _ in 0..2 {
@@ -386,7 +364,7 @@ mod tests {
             .get(0);
         assert_eq!(used, 1, "double-tap incremented used_count twice");
 
-        // تمیزکاری
+        // Cleanup
         client
             .execute("DELETE FROM redeem_redemptions WHERE code = $1", &[&CODE])
             .await

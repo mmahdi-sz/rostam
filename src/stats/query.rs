@@ -1,4 +1,9 @@
+use std::collections::HashMap;
 use tokio_postgres::Client;
+
+/// `stats_events` features that are not user-facing tools — excluded from
+/// "top feature", which otherwise reports `paywall` (a block, not a use).
+pub const NON_FEATURE_EVENTS: &[&str] = &["paywall", "cpu", "cookie", "broadcast", "referral"];
 
 pub struct UserStats {
     pub total: i64,
@@ -104,74 +109,88 @@ pub async fn get_download_stats(client: &Client) -> Result<DownloadStats, tokio_
 
 // ── per-feature event stats ─────────────────────────────────────────────────────
 
-// چهار بازه‌ی استاندارد پنل آمار.
+/// Four standard periods for stats panel.
 pub struct Periods {
     pub d1: i64,
+    /// Kept for the users/downloads panels; feature blocks only print 1d/7d/30d.
+    #[allow(dead_code)]
     pub d3: i64,
     pub d7: i64,
     pub d30: i64,
 }
 
 pub struct FeatureStats {
-    pub ok: Periods,     // تعداد رویداد موفق
-    pub fail: Periods,   // تعداد رویداد ناموفق (هر چیزی جز ok: fail/timeout/...)
-    pub amount: Periods, // مجموع amount روی رویدادهای موفق (ثانیه یا تعداد، بسته به فیچر)
+    pub ok: Periods,     // Successful events
+    pub fail: Periods,   // Failed events (fail/timeout/etc.)
+    pub amount: Periods, // Total amount for successful events (seconds or count depending on feature)
 }
 
-// آمار یک فیچر از stats_events. feature مثل "stt" / "denoise" / "asr" ...
-pub async fn get_feature_stats(
+/// Per-feature stats from `stats_events`, batched into one round-trip.
+/// Features with no events are absent from the map.
+pub async fn get_feature_stats_multi(
     client: &Client,
-    feature: &str,
-) -> Result<FeatureStats, tokio_postgres::Error> {
-    let row = client.query_one(
-        "SELECT
-            COUNT(*) FILTER (WHERE status = 'ok' AND created_at >= NOW() - INTERVAL '1 day')   AS ok_1d,
-            COUNT(*) FILTER (WHERE status = 'ok' AND created_at >= NOW() - INTERVAL '3 days')  AS ok_3d,
-            COUNT(*) FILTER (WHERE status = 'ok' AND created_at >= NOW() - INTERVAL '7 days')  AS ok_7d,
-            COUNT(*) FILTER (WHERE status = 'ok' AND created_at >= NOW() - INTERVAL '30 days') AS ok_30d,
+    features: &[&str],
+) -> Result<HashMap<String, FeatureStats>, tokio_postgres::Error> {
+    let list: Vec<String> = features.iter().map(|f| (*f).to_string()).collect();
+    let rows = client.query(
+        "SELECT feature,
+            COUNT(*) FILTER (WHERE status = 'ok' AND created_at >= NOW() - INTERVAL '1 day')::BIGINT   AS ok_1d,
+            COUNT(*) FILTER (WHERE status = 'ok' AND created_at >= NOW() - INTERVAL '3 days')::BIGINT  AS ok_3d,
+            COUNT(*) FILTER (WHERE status = 'ok' AND created_at >= NOW() - INTERVAL '7 days')::BIGINT  AS ok_7d,
+            COUNT(*) FILTER (WHERE status = 'ok' AND created_at >= NOW() - INTERVAL '30 days')::BIGINT AS ok_30d,
 
-            COUNT(*) FILTER (WHERE status <> 'ok' AND created_at >= NOW() - INTERVAL '1 day')   AS fail_1d,
-            COUNT(*) FILTER (WHERE status <> 'ok' AND created_at >= NOW() - INTERVAL '3 days')  AS fail_3d,
-            COUNT(*) FILTER (WHERE status <> 'ok' AND created_at >= NOW() - INTERVAL '7 days')  AS fail_7d,
-            COUNT(*) FILTER (WHERE status <> 'ok' AND created_at >= NOW() - INTERVAL '30 days') AS fail_30d,
+            COUNT(*) FILTER (WHERE status <> 'ok' AND created_at >= NOW() - INTERVAL '1 day')::BIGINT   AS fail_1d,
+            COUNT(*) FILTER (WHERE status <> 'ok' AND created_at >= NOW() - INTERVAL '3 days')::BIGINT  AS fail_3d,
+            COUNT(*) FILTER (WHERE status <> 'ok' AND created_at >= NOW() - INTERVAL '7 days')::BIGINT  AS fail_7d,
+            COUNT(*) FILTER (WHERE status <> 'ok' AND created_at >= NOW() - INTERVAL '30 days')::BIGINT AS fail_30d,
 
             COALESCE(SUM(amount) FILTER (WHERE status = 'ok' AND created_at >= NOW() - INTERVAL '1 day'),   0)::BIGINT AS amt_1d,
             COALESCE(SUM(amount) FILTER (WHERE status = 'ok' AND created_at >= NOW() - INTERVAL '3 days'),  0)::BIGINT AS amt_3d,
             COALESCE(SUM(amount) FILTER (WHERE status = 'ok' AND created_at >= NOW() - INTERVAL '7 days'),  0)::BIGINT AS amt_7d,
             COALESCE(SUM(amount) FILTER (WHERE status = 'ok' AND created_at >= NOW() - INTERVAL '30 days'), 0)::BIGINT AS amt_30d
-         FROM stats_events WHERE feature = $1",
-        &[&feature],
+         FROM stats_events
+         WHERE feature = ANY($1) AND created_at >= NOW() - INTERVAL '30 days'
+         GROUP BY feature",
+        &[&list],
     ).await?;
 
-    Ok(FeatureStats {
-        ok: Periods {
-            d1: row.get(0),
-            d3: row.get(1),
-            d7: row.get(2),
-            d30: row.get(3),
-        },
-        fail: Periods {
-            d1: row.get(4),
-            d3: row.get(5),
-            d7: row.get(6),
-            d30: row.get(7),
-        },
-        amount: Periods {
-            d1: row.get(8),
-            d3: row.get(9),
-            d7: row.get(10),
-            d30: row.get(11),
-        },
-    })
+    Ok(rows
+        .iter()
+        .map(|r| {
+            (
+                r.get::<_, String>(0),
+                FeatureStats {
+                    ok: Periods {
+                        d1: r.get(1),
+                        d3: r.get(2),
+                        d7: r.get(3),
+                        d30: r.get(4),
+                    },
+                    fail: Periods {
+                        d1: r.get(5),
+                        d3: r.get(6),
+                        d7: r.get(7),
+                        d30: r.get(8),
+                    },
+                    amount: Periods {
+                        d1: r.get(9),
+                        d3: r.get(10),
+                        d7: r.get(11),
+                        d30: r.get(12),
+                    },
+                },
+            )
+        })
+        .collect())
 }
 
 // ── active users ────────────────────────────────────────────────────────────────
 
 pub struct ActiveUsers {
-    pub dau: i64,            // فعال در ۲۴ ساعت گذشته (last_seen)
-    pub wau: i64,            // فعال در ۷ روز گذشته
-    pub returning_1d: i64,   // کاربران غیرجدیدِ فعال امروز (first_seen > 1 روز پیش)
-    pub top_feature: String, // پرمصرف‌ترین فیچر AI در ۷ روز (raw key؛ خالی اگر نبود)
+    pub dau: i64,            // Active in past 24 hours (last_seen)
+    pub wau: i64,            // Active in past 7 days
+    pub returning_1d: i64,   // Returning active users today (first_seen > 1 day ago)
+    pub top_feature: String, // Top AI feature in 7 days (raw key, empty if none)
     pub top_feature_count: i64,
 }
 
@@ -188,15 +207,20 @@ pub async fn get_active_users(client: &Client) -> Result<ActiveUsers, tokio_post
         )
         .await?;
 
+    let excluded: Vec<String> = NON_FEATURE_EVENTS
+        .iter()
+        .map(|f| (*f).to_string())
+        .collect();
     let top = client
         .query_opt(
             "SELECT feature, COUNT(*)::BIGINT AS c
          FROM stats_events
          WHERE created_at >= NOW() - INTERVAL '7 days'
+           AND feature <> ALL($1)
          GROUP BY feature
          ORDER BY c DESC
          LIMIT 1",
-            &[],
+            &[&excluded],
         )
         .await?;
 
@@ -214,7 +238,7 @@ pub async fn get_active_users(client: &Client) -> Result<ActiveUsers, tokio_post
     })
 }
 
-// ── action/status breakdown (برای «آمار بیشتر») ──────────────────────────────────
+// ── action/status breakdown ──────────────────────────────────────────────────
 
 pub struct ActionCount {
     pub action: String,
@@ -224,46 +248,48 @@ pub struct ActionCount {
     pub d30: i64,
 }
 
-// تفکیک رویدادهای یک فیچر بر اساس (action, status) در ۳۰ روز اخیر، مرتب نزولی بر حسب ۳۰d.
-pub async fn get_action_breakdown(
+/// Breakdown by (action, status) over 30 days for many features, one round-trip.
+/// Rows are ordered descending by the 30-day count.
+pub async fn get_action_breakdown_multi(
     client: &Client,
-    feature: &str,
-) -> Result<Vec<ActionCount>, tokio_postgres::Error> {
+    features: &[&str],
+) -> Result<HashMap<String, Vec<ActionCount>>, tokio_postgres::Error> {
+    let list: Vec<String> = features.iter().map(|f| (*f).to_string()).collect();
     let rows = client
         .query(
-            "SELECT action, status,
+            "SELECT feature, action, status,
             COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '1 day')::BIGINT  AS d1,
             COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::BIGINT AS d7,
             COUNT(*)::BIGINT                                                        AS d30
          FROM stats_events
-         WHERE feature = $1 AND created_at >= NOW() - INTERVAL '30 days'
-         GROUP BY action, status
+         WHERE feature = ANY($1) AND created_at >= NOW() - INTERVAL '30 days'
+         GROUP BY feature, action, status
          ORDER BY d30 DESC",
-            &[&feature],
+            &[&list],
         )
         .await?;
 
-    Ok(rows
-        .iter()
-        .map(|r| ActionCount {
-            action: r.get(0),
-            status: r.get(1),
-            d1: r.get(2),
-            d7: r.get(3),
-            d30: r.get(4),
-        })
-        .collect())
+    let mut map: HashMap<String, Vec<ActionCount>> = HashMap::new();
+    for r in rows.iter() {
+        map.entry(r.get(0)).or_default().push(ActionCount {
+            action: r.get(1),
+            status: r.get(2),
+            d1: r.get(3),
+            d7: r.get(4),
+            d30: r.get(5),
+        });
+    }
+    Ok(map)
 }
 
 // ── error log ─────────────────────────────────────────────────────────────────
-
 pub struct ErrorRow {
     pub feature: String,
     pub message: String,
     pub minutes_ago: i64,
 }
 
-// آخرین خطاهای ۲۴ ساعت گذشته (جدیدترین اول).
+/// Recent errors in past 24 hours (newest first).
 pub async fn get_recent_errors(
     client: &Client,
     limit: i64,
@@ -290,7 +316,7 @@ pub async fn get_recent_errors(
         .collect())
 }
 
-// تعداد کل خطاهای ۲۴ ساعت گذشته (برای هدر).
+/// Total errors in past 24 hours.
 pub async fn count_recent_errors(client: &Client) -> Result<i64, tokio_postgres::Error> {
     let row = client.query_one(
         "SELECT COUNT(*)::BIGINT FROM stats_errors WHERE created_at >= NOW() - INTERVAL '1 day'",
@@ -363,10 +389,10 @@ pub async fn get_broadcast_user_ids(
     Ok(rows.iter().map(|r| r.get::<_, i64>(0)).collect())
 }
 
-// ثانیه → نمایش فارسی فشرده برای پنل آمار (مثل "۱۲ ساعت" / "۴۵ دقیقه").
+/// Formats seconds into compact string for stats panel (e.g. "12h 0m", "45m", "30s").
 pub fn fmt_secs(total: i64) -> String {
     if total <= 0 {
-        return "۰".to_string();
+        return "0".to_string();
     }
     let h = total / 3600;
     let m = (total % 3600) / 60;
@@ -395,8 +421,9 @@ mod tests {
 
     #[test]
     fn test_fmt_secs_zero_and_negative() {
-        assert_eq!(fmt_secs(0), "۰");
-        assert_eq!(fmt_secs(-5), "۰");
+        // Stats panel keeps English digits.
+        assert_eq!(fmt_secs(0), "0");
+        assert_eq!(fmt_secs(-5), "0");
     }
 
     #[test]

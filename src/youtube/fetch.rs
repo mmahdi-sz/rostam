@@ -112,7 +112,7 @@ pub async fn fetch_video_info(
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| FetchError::Other(format!("failed to parse yt-dlp json: {e}")))?;
 
-    // تشخیص: آیا playlist است یا video تک؟
+    // Detect whether playlist or single video.
     let is_playlist = json
         .get("_type")
         .and_then(|v| v.as_str())
@@ -210,8 +210,7 @@ pub async fn fetch_video_info(
         (None, Vec::new())
     };
 
-    // پلی‌لیست فرمت ندارد (flat-playlist)؛ فرمت‌های ویدیوی اول را به‌عنوان نماینده‌ی کل پلی‌لیست می‌گیریم
-    // (format id ها مثل itag استاندارد یوتیوب هستند و بین ویدیوهای پلی‌لیست معمولاً یکسان کار می‌کنند).
+    // Playlists lack formats in flat-playlist; fetch first video formats as representative.
     if is_playlist {
         if let Some(first) = playlist_items.first() {
             let video_url = format!("https://www.youtube.com/watch?v={}", first.id);
@@ -338,7 +337,7 @@ async fn fetch_playlist_items(
         ));
     }
 
-    // --dump-json روی یک پلی‌لیست، برای هر ویدیو یک خط JSON جدا چاپ می‌کند (NDJSON)، نه یک JSON واحد.
+    // --dump-json on a playlist prints NDJSON (one JSON object per line).
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut items = Vec::new();
     for line in stdout.lines() {

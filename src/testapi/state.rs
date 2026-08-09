@@ -7,15 +7,7 @@ pub fn clear_payloads() {
     CAPTURED_PAYLOADS.lock().unwrap().clear();
 }
 
-/// اتصال دیتابیس برای اندپوینت‌هایی که مسیر واقعی‌شان به DB می‌خورد (redeem و
-/// خرج امتیاز زیرمجموعه‌گیری). همان `PostgresDatabase::connect` مسیر
-/// production است، یک‌بار برای کل پروسه‌ی تست.
-///
-/// `None` یعنی وصل نشد؛ اندپوینت آن را عیناً به هندلر می‌دهد، پس شاخه‌ی
-/// «دیتابیس نداریم» هم از مسیر واقعی تست می‌شود، نه با mock.
-///
-/// ponytail: بدون pool و بدون retry — تست‌ها روی همین یک کلاینت مشترک اجرا
-/// می‌شوند، دقیقاً مثل خود بات.
+/// Database connection for endpoints requiring DB access. Returns `None` if unreachable.
 pub async fn db() -> &'static Option<crate::database::postgresql::PostgresDatabase> {
     static DB: tokio::sync::OnceCell<Option<crate::database::postgresql::PostgresDatabase>> =
         tokio::sync::OnceCell::const_new();

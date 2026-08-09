@@ -208,7 +208,7 @@ async fn handle_resolution_callback(
         return true;
     };
 
-    // rank check — live از db
+    // Check user rank via DB.
     if let (Some(uid), Some(db)) = (request.user_id, database.as_ref()) {
         let user_rank = rank::effective_rank(db.client(), uid).await;
         if let Some(max) = user_rank.max_yt_quality()
@@ -467,7 +467,6 @@ async fn handle_back_to_quality_callback(api: &Bot, cq: &CallbackQuery, data: &s
     let options: Vec<QualityOption> = QUALITY_OPTIONS
         .iter()
         .filter_map(|(height, label_key, icon_key)| {
-            // back-to-quality: max_quality نداریم، همون که اول نشون داده شد کافیه
             let codecs: Vec<super::types::VideoCodec> = CODEC_ORDER
                 .iter()
                 .copied()

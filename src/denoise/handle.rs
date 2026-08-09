@@ -256,13 +256,11 @@ pub async fn handle_denoise_audio(
     let audio_duration = wav_duration(wav_str).unwrap_or(0.0);
     let duration_secs = audio_duration.ceil() as u64;
 
-    // رزرو سهمیه پیش از کار (چک-سپس-کسر قبلاً دو درخواست هم‌زمان را هر دو
-    // می‌پذیرفت). پنجره‌ی کوتاه‌تر — روزانه — اول رزرو می‌شود؛ اگر هفتگی رد شد،
-    // روزانه پس داده می‌شود تا رد شدن یکی سهمیه‌ی دیگری را نخورد.
+    // Reserve quota upfront (check-then-deduct previously allowed dual race calls).
+    // Shorter window — daily — reserved first; if weekly fails, daily is refunded.
     //
-    // ponytail: حداقل یک ثانیه رزرو می‌شود. اگر خواندن هدر WAV شکست بخورد
-    // duration صفر می‌شود و رزرو صفر همیشه جا می‌شود — یعنی کار مجانی روی
-    // سهمیه‌ی تمام‌شده.
+    // Reserve at least 1s. If WAV header read fails, duration becomes 0 and 0 reservation
+    // would always pass, allowing free work on exhausted quota.
     let reserve_secs = duration_secs.max(1) as i64;
     let mut reserved = false;
     if let Some(db) = database.as_ref() {
@@ -270,7 +268,7 @@ pub async fn handle_denoise_audio(
         let daily_limit = user_rank.denoise_daily_secs();
         let weekly_limit = user_rank.denoise_weekly_secs();
 
-        // fail closed — تصمیم کاربر: در خطای دیتابیس کاربر مطلع شود.
+        // fail closed — notify user on DB error
         macro_rules! db_fail {
             ($e:expr) => {{
                 log_trace(
@@ -285,9 +283,8 @@ pub async fn handle_denoise_audio(
             }};
         }
 
-        // پیام رد سه حالت دارد (روزانه تمام / هفتگی تمام / فایل بلندتر از
-        // باقی‌مانده). رزرو فقط می‌گوید «جا نشد»، پس مصرف را همین‌جا — تنها روی
-        // مسیر رد — می‌خوانیم؛ مسیر موفق هیچ کوئری اضافه‌ای ندارد.
+        // Deny message has 3 reasons (daily quota / weekly quota / file exceeds remaining).
+        // Reservation only signals failure, so read usage here only on deny path.
         macro_rules! deny {
             ($event:expr) => {{
                 let d_used = get_usage(db.client(), user_id, QuotaKind::DenoiseDaily, 86400)
@@ -400,7 +397,7 @@ pub async fn handle_denoise_audio(
         }
     }
 
-    // برگرداندن هر دو پنجره وقتی کار به نتیجه نرسید.
+    // Refund both windows when job fails
     macro_rules! refund {
         ($why:expr) => {
             if reserved {
@@ -616,7 +613,7 @@ pub async fn handle_denoise_audio(
             .await;
     }
 
-    // 6. سهمیه هنگام رزرو کسر شد؛ بدهکاری دومی اینجا نیست.
+    // 6. Quota deducted during reservation; no secondary charge here
 
     // 7. Send report
     let duration_str = escape_md(&format!("{audio_duration:.1}"));

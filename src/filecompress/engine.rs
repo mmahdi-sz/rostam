@@ -39,6 +39,7 @@ pub async fn run_compress(
     cores: &[i32],
     trace_id: u64,
     cancel: &Arc<AtomicBool>,
+    progress: &Arc<super::progress::JobProgress>,
 ) -> Result<CompressResult, CompressError> {
     let input_total_bytes: u64 = input_files
         .iter()
@@ -56,7 +57,7 @@ pub async fn run_compress(
     let child = tokio::process::Command::new(&cmd_name)
         .args(&args)
         .current_dir(work_dir)
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| CompressError::SpawnFailed(e.to_string()))?;
@@ -68,7 +69,30 @@ pub async fn run_compress(
         }
     }
 
-    // stderr در پس‌زمینه خوانده می‌شود؛ با `wait()` تنها، پر شدن لوله قفل می‌کند.
+    // Percent comes from the archiver itself (7z `-bsp1`, rar's own ticker).
+    // tar/zstd print none, so `progress` stays at 0 and the ETA is suppressed.
+    let stdout_task = child.stdout.take().map(|mut pipe| {
+        let progress = progress.clone();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 4096];
+            let mut tail = String::new();
+            while let Ok(n) = pipe.read(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+                tail.push_str(&String::from_utf8_lossy(&buf[..n]));
+                if let Some(pct) = last_percent(&tail) {
+                    progress.set_percent(pct);
+                }
+                // Keep only the last line fragment; percent lines are \r-separated.
+                if let Some(cut) = tail.rfind(['\r', '\n']) {
+                    tail.drain(..cut + 1);
+                }
+            }
+        })
+    });
+
+    // Read stderr in background task; waiting on process alone locks if pipe fills.
     let stderr_task = child.stderr.take().map(|mut pipe| {
         tokio::spawn(async move {
             let mut buf = Vec::new();
@@ -78,8 +102,7 @@ pub async fn run_compress(
     });
 
     let t0 = Instant::now();
-    // انصراف کاربر باید پروسه را بکشد، نه اینکه CPU تا آخر بسوزد و بعد
-    // خروجی دور ریخته شود. هر ۵۰۰ms پرچم و مهلت کل چک می‌شوند.
+    // Kill process on user cancel; check flag and timeout every 500ms.
     let status_res = loop {
         match tokio::time::timeout(Duration::from_millis(500), child.wait()).await {
             Ok(res) => break Some(res),
@@ -104,6 +127,9 @@ pub async fn run_compress(
         Some(h) => h.await.unwrap_or_default(),
         None => Vec::new(),
     };
+    if let Some(h) = stdout_task {
+        h.abort();
+    }
 
     let rusage_after = get_children_cpu_time();
     let wall_elapsed = t0.elapsed();
@@ -179,6 +205,9 @@ fn build_command(
             let out_name = format!("{archive_base}.7z");
             args.push("a".to_string());
             args.push("-t7z".to_string());
+            // Percent to stdout, everything else quiet — feeds the progress bar.
+            args.push("-bsp1".to_string());
+            args.push("-bso0".to_string());
             args.push(format!("-mx={}", config.level.clamp(1, 9)));
             args.push(format!("-mmt={threads}"));
 
@@ -217,6 +246,8 @@ fn build_command(
             let out_name = format!("{archive_base}.zip");
             args.push("a".to_string());
             args.push("-tzip".to_string());
+            args.push("-bsp1".to_string());
+            args.push("-bso0".to_string());
             args.push(format!("-mx={}", config.level.clamp(1, 9)));
             args.push(format!("-mmt={threads}"));
 
@@ -269,13 +300,8 @@ fn build_command(
             ("rar".to_string(), args)
         }
         CompressFmt::Zstd => {
-            // zstd آرشیوساز نیست، فقط یک استریم را فشرده می‌کند؛ پس tar بسته‌بندی
-            // می‌کند و با `-I` خودش zstd را spawn می‌کند. نتیجه همان یک child است،
-            // بدون shell و بدون لولهٔ دستی، پس حلقهٔ cancel و `getrusage` بالا
-            // بدون تغییر کار می‌کنند.
-            // ponytail: بدون `--long`. windowLog بزرگ‌تر از ۲۷ موقع باز کردن به
-            // `--memory` نیاز دارد و کاربر با ابزار دیگر خطا می‌گیرد. لازم شد،
-            // همراه راهنمای باز کردن اضافه شود.
+            // zstd is not an archiver; tar packages and spawns zstd via `-I`.
+            // Uses a single child process, working seamlessly with cancel loop and `getrusage`.
             let out_name = format!("{archive_base}.tar.zst");
             args.push("-I".to_string());
             args.push(format!("zstd -{} -T{threads}", config.level.clamp(1, 19)));
@@ -331,6 +357,27 @@ fn collect_outputs(work_dir: &Path, archive_base: &str, config: &CompressConfig)
     files
 }
 
+/// Last `NN%` in an archiver's progress output. 7z writes `" 42% 3 + name"`,
+/// rar writes `" 42%"`, both `\r`-terminated, so only the tail matters.
+fn last_percent(s: &str) -> Option<u8> {
+    let bytes = s.as_bytes();
+    let mut found = None;
+    for (i, _) in s.match_indices('%') {
+        let mut start = i;
+        while start > 0 && bytes[start - 1].is_ascii_digit() {
+            start -= 1;
+        }
+        if start < i {
+            if let Ok(v) = s[start..i].parse::<u16>() {
+                if v <= 100 {
+                    found = Some(v as u8);
+                }
+            }
+        }
+    }
+    found
+}
+
 fn get_children_cpu_time() -> f64 {
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
     if unsafe { libc::getrusage(libc::RUSAGE_CHILDREN, &mut usage) } == 0 {
@@ -364,6 +411,17 @@ fn pin_pid_to_cores(pid: u32, cores: &[i32], trace_id: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_last_percent_reads_the_tail() {
+        // Verified against real output: 7z prints " 42% 3 + name", rar " 42%".
+        assert_eq!(last_percent(" 12% 1 + a.bin\r 42% 2 + b.bin\r"), Some(42));
+        assert_eq!(last_percent("  7%\r 90%\r100%\r"), Some(100));
+        assert_eq!(last_percent("no percent here"), None);
+        // tar/zstd print nothing parseable; a bare sign must not become 0%.
+        assert_eq!(last_percent("%"), None);
+        assert_eq!(last_percent("999%"), None);
+    }
 
     #[test]
     fn test_build_command_7z() {
@@ -410,8 +468,7 @@ mod tests {
 
     #[test]
     fn test_build_command_zstd() {
-        // ورودی چندتایی و رمز/پارت روشن: خروجی باید tar باشد و آرگومان رمز یا
-        // چندجلدی به هیچ شکل به فرمان نرود — zstd هیچ‌کدام را ندارد.
+        // Multiple inputs with password/split flags: output must be tar without password/part args (zstd supports neither).
         let cfg = CompressConfig {
             fmt: CompressFmt::Zstd,
             algo: CompressAlgo::Lzma2,

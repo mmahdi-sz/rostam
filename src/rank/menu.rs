@@ -12,7 +12,6 @@ use crate::emoji::panel::{btn_icon, btn_icon_success, btn_icon_url_success};
 use crate::i18n::{apply_premium_to_html, t, tf};
 
 pub const CB_RANK_SHOP: &str = "rank:shop";
-pub const CB_RANK_GUIDE: &str = "rank:guide";
 pub const CB_RANK_SELECT_PREFIX: &str = "rank:select:";
 
 fn fmt_number(num: u64) -> String {
@@ -112,7 +111,6 @@ pub fn build_shop_keyboard(selected: Rank, prices_cfg: &RankPricesConfig) -> Inl
             ],
             vec![esfandyar_btn],
             vec![btn_icon_url_success(&buy_label, &buy_url, "cart")],
-            vec![btn_icon(&t("rank.view_guide"), CB_RANK_GUIDE, "page")],
             vec![btn_icon(&t("start.back"), CB_USER_PANEL, "back")],
         ])
         .build()
@@ -180,43 +178,8 @@ pub async fn send_rank_detail(api: &Bot, chat_id: i64, message_id: Option<i32>, 
 }
 
 pub async fn send_rank_shop(api: &Bot, chat_id: i64, message_id: Option<i32>) {
-    // پیش‌فرض رنک اسفندیار را انتخاب و نمایش می‌دهد
+    // Defaults to selecting and showing Esfandyar rank.
     send_rank_detail(api, chat_id, message_id, Rank::Esfandyar).await;
-}
-
-pub async fn send_rank_guide(api: &Bot, chat_id: i64, message_id: Option<i32>) {
-    crate::stats::record_event_global("paywall", "menu", "ok", 0).await;
-    let kb = InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![
-            vec![btn_icon(&t("rank.back_to_shop"), CB_RANK_SHOP, "back")],
-            vec![btn_icon(&t("start.back"), CB_USER_PANEL, "back")],
-        ])
-        .build();
-
-    let text = apply_premium_to_html(&t("rank.guide"));
-
-    if let Some(msg_id) = message_id {
-        let params = EditMessageTextParams::builder()
-            .chat_id(chat_id)
-            .message_id(msg_id)
-            .text(&text)
-            .parse_mode(ParseMode::Html)
-            .reply_markup(kb.clone())
-            .build();
-        if api.edit_message_text(&params).await.is_ok() {
-            return;
-        }
-    }
-
-    let params = SendMessageParams::builder()
-        .chat_id(chat_id)
-        .text(&text)
-        .parse_mode(ParseMode::Html)
-        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(kb))
-        .build();
-    if let Err(e) = api.send_message(&params).await {
-        eprintln!("[rank event=menu_send_failed] chat_id={chat_id} err={e}");
-    }
 }
 
 pub async fn handle_rank_menu_callback(api: &Bot, cq: &CallbackQuery) {
@@ -231,8 +194,6 @@ pub async fn handle_rank_menu_callback(api: &Bot, cq: &CallbackQuery) {
 
     if cb == CB_RANK_SHOP || cb == crate::rank::paywall::CB_RANK_SHOW_MENU {
         send_rank_shop(api, chat_id, Some(msg_id)).await;
-    } else if cb == CB_RANK_GUIDE {
-        send_rank_guide(api, chat_id, Some(msg_id)).await;
     } else if let Some(rank_str) = cb.strip_prefix(CB_RANK_SELECT_PREFIX) {
         if let Some(rank) = Rank::from_str(rank_str) {
             send_rank_detail(api, chat_id, Some(msg_id), rank).await;

@@ -5,24 +5,12 @@ use frankenstein::{AsyncTelegramApi, client_reqwest::Bot, methods::GetFileParams
 use crate::log::next_trace_id;
 use crate::youtube::trace::log_trace;
 
-/// دانلود یک فایل تلگرام (با `file_id`) به مسیر مقصد `dest`.
-///
-/// این تابع مشترک جای ۶ کپیِ قبلیِ `download_file` در بخش‌های مختلف
-/// (stt/denoise/upscale/gwm/pdfcompress/…) را می‌گیرد. دو رفتار مهم:
-///
-/// 1. **حالت Local Bot API**: وقتی ربات با سرور محلی Bot API کار می‌کند،
-///    تلگرام به‌جای URL، مسیر مطلق فایل روی دیسک را برمی‌گرداند
-///    (با `/` شروع می‌شود). در این حالت مستقیم از دیسک کپی می‌کنیم — اما
-///    فقط اگر مسیر واقعاً داخل پوشه‌ی مجاز ذخیره‌سازی تلگرام باشد. این
-///    چک امنیتی جلوی خواندن فایل‌های دلخواه سیستم (path traversal) را
-///    می‌گیرد، به‌ویژه چون پروسه با کاربر root اجرا می‌شود.
-///
-/// 2. **حالت HTTP**: در غیر این صورت فایل را از طریق HTTP دانلود می‌کنیم.
-///    توکن و آدرس پایه از `config` خوانده می‌شوند (نه مستقیم از env) تا
-///    زنجیره‌ی `.env → /etc/default/abc → env` رعایت شود.
-///
-/// خطا از نوع `Send + Sync` است تا در همه‌ی فراخوان‌ها (از جمله داخل
-/// `tokio::spawn`) قابل استفاده باشد.
+/// Ceiling for one `getFile`. Generous — a 2 GB upload takes minutes for the
+/// local server to fetch — but bounded, so a stuck file fails instead of hanging.
+const GET_FILE_TIMEOUT_SECS: u64 = 600;
+
+/// Download a Telegram file (by `file_id`) to destination path `dest`.
+/// Handles both Local Bot API (local disk copy with path validation) and HTTP download.
 pub async fn download_telegram_file(
     api: &Bot,
     file_id: &str,
@@ -30,9 +18,15 @@ pub async fn download_telegram_file(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let dest = dest.as_ref();
 
-    let file_info = api
-        .get_file(&GetFileParams::builder().file_id(file_id).build())
-        .await?;
+    // In `--local` mode the Bot API server pulls the whole file from Telegram
+    // before answering getFile, and answers nothing until it does — an
+    // unbounded wait that used to park the caller behind a silent status message.
+    let file_info = tokio::time::timeout(
+        std::time::Duration::from_secs(GET_FILE_TIMEOUT_SECS),
+        api.get_file(&GetFileParams::builder().file_id(file_id).build()),
+    )
+    .await
+    .map_err(|_| format!("getFile timed out after {GET_FILE_TIMEOUT_SECS}s"))??;
     let file_path = file_info.result.file_path.ok_or("no file_path")?;
 
     let trace = next_trace_id();

@@ -1,6 +1,6 @@
 //! Audio denoising via DeepFilterNet, in-process through `crate::stt::deepfilter`.
 //!
-//! (قبلاً یک sidecar روی پورت 8765 بود؛ آن سرویس دیگر استفاده نمی‌شود.)
+//! (Previously a sidecar service on port 8765; no longer used.)
 //!
 //! Users send voice or audio files; the handler converts, denoises,
 //! and returns the cleaned audio. Accurate model is paywalled.

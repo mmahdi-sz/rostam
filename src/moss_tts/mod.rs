@@ -8,7 +8,7 @@ pub use handle::{
     CB_TTS_JOB_CANCEL, enter_tts, handle_tts_cancel, handle_tts_text, signal_tts_cancel,
 };
 
-// سقف کاراکتر داخل خودِ handle اعمال می‌شود؛ بیرون فقط testapi می‌خواندش.
+// Character cap enforced inside handle; exposed externally for testapi only.
 #[cfg(feature = "testapi")]
 pub use handle::TTS_MAX_CHARS;
 

@@ -12,9 +12,9 @@ use crate::rank::types::Rank;
 #[derive(Deserialize)]
 pub struct MsOfferReq {
     pub url: String,
-    /// رنک شبیه‌سازی‌شده: dalavar | sepahbod | esfandyar | sohrab | rostam
+    /// Simulated rank: dalavar | sepahbod | esfandyar | sohrab | rostam
     pub rank: Option<String>,
-    /// `true` = فهرست واقعی ترک‌ها هم از پلتفرم گرفته شود
+    /// `true` = fetch real track list from platform
     pub fetch: Option<bool>,
 }
 
@@ -78,7 +78,7 @@ pub async fn test_ms_offer(Json(req): Json<MsOfferReq>) -> Json<MsOfferResp> {
         None => (None, None),
     };
 
-    // مسیر خطا: لینک ست نیست
+    // Error path: URL is not a set
     let Some(source) = source else {
         return Json(MsOfferResp {
             ok: false,
@@ -99,7 +99,7 @@ pub async fn test_ms_offer(Json(req): Json<MsOfferReq>) -> Json<MsOfferResp> {
         });
     };
 
-    // مسیر paywall: دلاور/سهراب کلاً ممنوع
+    // Paywall path: Dalavar/Sohrab disallowed
     if limit == Some(0) {
         return Json(MsOfferResp {
             ok: false,

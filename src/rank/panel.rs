@@ -16,8 +16,8 @@ pub const CB_USER_PANEL_MORE: &str = "user:panel:more";
 pub const CB_REFERRAL: &str = "user:panel:referral";
 pub const CB_REFERRAL_CLAIM_PREFIX: &str = "user:panel:referral:claim:";
 
-// ── تبدیل epoch → شمسی، به‌وقت تهران ─────────────────────────────────────────
-// همون مسیر مطمئنی که force_join.rs استفاده می‌کند: chrono + gregorian_to_jalali.
+// ── Convert epoch → Jalali, Tehran time ───────────────────────────────────────
+// Uses chrono + gregorian_to_jalali.
 fn fmt_jalali(epoch: i64) -> String {
     use chrono::Datelike;
     use chrono_tz::Asia::Tehran;
@@ -56,7 +56,7 @@ fn fmt_expiry_line(expires_at: i64) -> String {
     }
 }
 
-// ── نوار پیشرفت ───────────────────────────────────────────────────────────────
+// ── Progress bar ──────────────────────────────────────────────────────────────
 fn bar(used: u64, limit: u64, allowed: bool) -> String {
     if !allowed {
         return "▓▓▓▓▓".to_string();
@@ -80,7 +80,7 @@ fn fmt_gib(bytes: u64) -> String {
     }
 }
 
-// ── ساخت متن پنل اصلی ────────────────────────────────────────────────────────
+// ── Build main panel text ─────────────────────────────────────────────────────
 async fn build_main_text(
     db: &crate::database::postgresql::PostgresDatabase,
     user_id: i64,
@@ -95,7 +95,7 @@ async fn build_main_text(
         None => t("rank.expiry_unlimited"),
     };
 
-    // ترافیک
+    // Traffic
     let daily_used = quota::get_daily_traffic(client, user_id).await.unwrap_or(0) as u64;
     let daily_limit = rank.daily_traffic_bytes();
     let daily_left = daily_limit.saturating_sub(daily_used);
@@ -161,8 +161,7 @@ fn back_keyboard() -> InlineKeyboardMarkup {
         .build()
 }
 
-/// پیام دائمی در چت (نه toast/alert) با دکمه‌های بازگشت — برای نتایجی که کاربر
-/// باید بتونه بعداً هم ببینه (مثل نتیجه‌ی فعال‌سازی رتبه با امتیاز).
+/// Persistent chat message with back buttons for permanent result viewing.
 async fn send_with_back(api: &Bot, chat_id: i64, text: &str) {
     let params = SendMessageParams::builder()
         .chat_id(chat_id)
@@ -175,7 +174,7 @@ async fn send_with_back(api: &Bot, chat_id: i64, text: &str) {
     }
 }
 
-// ── ساخت متن صفحه سهمیه‌های دیگر ─────────────────────────────────────────────
+// ── Build quota details page text ─────────────────────────────────────────────
 async fn build_more_text(
     db: &crate::database::postgresql::PostgresDatabase,
     user_id: i64,
@@ -186,7 +185,7 @@ async fn build_more_text(
     let week = 7 * 86400_i64;
     let day = 86400_i64;
 
-    // STT سریع
+    // Fast STT
     let stt_fast_d = quota::get_usage(client, user_id, quota::QuotaKind::SttFastDaily, day)
         .await
         .unwrap_or(0) as u64;
@@ -197,7 +196,7 @@ async fn build_more_text(
     let stt_fast_w_lim = rank.stt_fast_weekly_secs().unwrap_or(0);
     let stt_fast_allowed = rank.stt_fast_daily_secs().is_some();
 
-    // STT دقیق
+    // Accurate STT
     let stt_acc_d = quota::get_usage(client, user_id, quota::QuotaKind::SttAccurateDaily, day)
         .await
         .unwrap_or(0) as u64;
@@ -208,7 +207,7 @@ async fn build_more_text(
     let stt_acc_w_lim = rank.stt_accurate_weekly_secs().unwrap_or(0);
     let stt_acc_allowed = rank.stt_accurate_daily_secs().is_some();
 
-    // حذف نویز
+    // Denoise
     let dn_d = quota::get_usage(client, user_id, quota::QuotaKind::DenoiseDaily, day)
         .await
         .unwrap_or(0) as u64;
@@ -218,7 +217,7 @@ async fn build_more_text(
     let dn_d_lim = rank.denoise_daily_secs();
     let dn_w_lim = rank.denoise_weekly_secs();
 
-    // جداسازی
+    // Separation
     let sep_d = quota::get_usage(client, user_id, quota::QuotaKind::SeparationDaily, day)
         .await
         .unwrap_or(0) as u64;
@@ -228,7 +227,7 @@ async fn build_more_text(
     let sep_d_lim = rank.separation_daily_secs();
     let sep_w_lim = rank.separation_weekly_secs();
 
-    // افزایش کیفیت
+    // Upscale
     let up2 = quota::get_usage(client, user_id, quota::QuotaKind::Upscale2xWeekly, week)
         .await
         .unwrap_or(0) as u64;
@@ -320,7 +319,7 @@ async fn build_more_text(
     ))
 }
 
-// ── زیرمجموعه‌گیری ───────────────────────────────────────────────────────────
+// ── Referral ─────────────────────────────────────────────────────────────────
 
 fn referral_keyboard() -> InlineKeyboardMarkup {
     let tier_rows = crate::referral::TIERS.iter().map(|(threshold, rank)| {
@@ -402,7 +401,7 @@ pub async fn send_referral(
     }
 }
 
-// ── public API ───────────────────────────────────────────────────────────────
+// ── Public API ────────────────────────────────────────────────────────────────
 
 pub async fn send_user_panel(
     api: &Bot,
@@ -433,7 +432,7 @@ pub async fn send_user_panel(
     }
 }
 
-/// فعال‌سازی رتبه با امتیاز زیرمجموعه‌گیری. متن toast نتیجه را برمی‌گرداند.
+/// Activates rank using referral points; returns result text.
 pub(crate) async fn process_claim(
     database: &Option<PostgresDatabase>,
     user_id: i64,
@@ -489,8 +488,7 @@ pub(crate) async fn process_claim(
                 log_ev!("referral", trace_id, "rank_apply", "=>" => "fail", "err" => e);
                 return t("redeem.apply_error");
             }
-            // ترتیب عوض نشود: اول رتبه، بعد کسر امتیاز. برعکسش باگ آینه‌ای
-            // می‌سازد (امتیاز کسر شده، رتبه داده نشده).
+            // Maintain order: set rank first, then deduct points.
             match crate::referral::record_activation(
                 client,
                 user_id,
@@ -501,9 +499,7 @@ pub(crate) async fn process_claim(
             .await
             {
                 Ok(true) => log_ev!("referral", trace_id, "rank_apply", "=>" => "ok"),
-                // کلیک دوم همزمان (یا موجودی همین‌الان خرج‌شده): رتبه همان است
-                // که درخواست اول ست کرد، پس کاربر همان چیزی را گرفته که خواسته —
-                // یک‌بار. پیام موفقیت درست است؛ فقط در trace متمایز می‌شود.
+                // Concurrent second click: rank already applied by first request; logged separately in trace.
                 Ok(false) => log_ev!("referral", trace_id, "rank_apply", "=>" => "ok_no_debit"),
                 Err(e) => {
                     log_ev!("referral", trace_id, "rank_apply", "=>" => "debit_fail", "err" => e);
@@ -540,8 +536,7 @@ pub async fn handle_panel_callback(
         None
     };
 
-    // برای claim، ack خالیه (فقط اسپینر تلگرام رو متوقف می‌کنه) — نتیجه به‌صورت
-    // پیام دائمی توی چت فرستاده می‌شه که کاربر بتونه ثبتش رو ببینه/نگه داره.
+    // Empty ack for claim stops Telegram spinner; result sent as persistent message.
     let ack = AnswerCallbackQueryParams::builder()
         .callback_query_id(cq.id.clone())
         .build();

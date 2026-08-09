@@ -56,14 +56,14 @@ pub async fn test_filecompress(
     )
 }
 
-// ── UX surface (کیبورد/توست/تیکر) ───────────────────────────────────────────────
+// ── UX surface (keyboard/toast/ticker) ──────────────────────────────────────────
 
 #[derive(Deserialize)]
 pub struct FcUxReq {
     pub fmt: Option<String>,
     pub level: Option<u8>,
     pub solid: Option<bool>,
-    /// درجه‌ی درخواستی برای «+»؛ برای بازتولید توست حداکثر فشرده‌سازی.
+    /// Requested level bump for "+"; to reproduce max compression toast.
     pub bump_level: Option<bool>,
 }
 
@@ -72,7 +72,7 @@ pub struct FcButton {
     pub text: String,
     pub callback_data: String,
     pub custom_emoji_id: Option<String>,
-    /// رنگ دکمه: success (سبز) / primary (آبی) / danger (قرمز).
+    /// Button color style: success (green) / primary (blue) / danger (red).
     pub style: String,
 }
 
@@ -83,17 +83,16 @@ pub struct FcUxResp {
     pub level: u8,
     pub max_level: u8,
     pub solid: bool,
-    /// آیا فرمت انتخابی این دکمه‌ها را دارد؟ zstd هیچ‌کدام را ندارد و باید
-    /// از کیبورد حذف شده باشد، نه اینکه غیرفعال نمایش داده شود.
+    /// Whether current format has these buttons (e.g. zstd has none).
     pub has_password_button: bool,
     pub has_split_button: bool,
     pub has_solid_button: bool,
-    /// متن معرفی همان فرمت (welcome / welcome_7z / welcome_zstd) پس از i18n.
+    /// Format welcome text after i18n lookup.
     pub welcome_text: String,
-    /// دکمهٔ حالت فشرده‌سازی: باید در solid آبی و در حالت عادی سبز باشد.
+    /// Solid mode button: blue when solid, green in normal mode.
     pub solid_button: FcButton,
     pub solid_button_color: String,
-    /// توست حداکثر فشرده‌سازی (خالی اگر روی سقف نباشیم).
+    /// Max level toast notice (none if below limit).
     pub max_level_toast: Option<String>,
     pub options_keyboard: Vec<Vec<FcButton>>,
     pub ask_password_text: String,
@@ -101,6 +100,13 @@ pub struct FcUxResp {
     pub password_need_text: String,
     pub progress_text: String,
     pub progress_keyboard: Vec<Vec<FcButton>>,
+    /// Staged status message: the download stage must not claim to be compressing,
+    /// and the compress stage must show a real bar plus a remaining-time line.
+    pub downloading_text: String,
+    pub compress_text_no_eta: String,
+    pub compress_text_with_eta: String,
+    pub eta_shown: bool,
+    pub bar_at_40: String,
     pub cancelled_text: String,
     pub reenter_prompt: String,
 }
@@ -158,7 +164,7 @@ pub async fn test_filecompress_ux(
 
     let kbd = fc::options_keyboard_for_test(&config);
     let rows = dump(&kbd);
-    // ردیف حالت فشرده‌سازی: دکمهٔ دوم همان سوییچ رنگی است.
+    // Compression mode row: second button is color switch.
     let solid_button = rows
         .iter()
         .flatten()
@@ -193,6 +199,22 @@ pub async fn test_filecompress_ux(
         .replace("{percent}", "0")
         .replace("{elapsed}", &fc::format_clock_for_test(125));
 
+    // Three real renders through the production path: file 2 of 3 downloading,
+    // compression before the archiver reports a percent, and compression at 40%
+    // (80 s of compressing => 120 s left).
+    use crate::filecompress::progress::JobProgress;
+    let dl = JobProgress::new(3);
+    dl.set_downloading(2);
+    let downloading_text = fc::render_progress_for_test(&dl, 9);
+
+    let cz = JobProgress::new(1);
+    cz.set_compressing(20);
+    let compress_text_no_eta = fc::render_progress_for_test(&cz, 25);
+    cz.set_percent(40);
+    let compress_text_with_eta = fc::render_progress_for_test(&cz, 100);
+    let eta_shown = crate::filecompress::progress::eta_secs(40, 80).is_some();
+    let bar_at_40 = crate::filecompress::progress::bar(40);
+
     (
         axum::http::StatusCode::OK,
         Json(FcUxResp {
@@ -214,6 +236,11 @@ pub async fn test_filecompress_ux(
             password_need_text: crate::i18n::t("fc.password_need_text"),
             progress_text,
             progress_keyboard: dump(&fc::job_cancel_keyboard_for_test()),
+            downloading_text,
+            compress_text_no_eta,
+            compress_text_with_eta,
+            eta_shown,
+            bar_at_40,
             cancelled_text: crate::i18n::t("fc.cancelled"),
             reenter_prompt: crate::i18n::t("fc.upload_prompt").replace("{count}", "0"),
         }),

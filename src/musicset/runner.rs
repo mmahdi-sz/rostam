@@ -1,9 +1,6 @@
-//! اجرای صف دانلود یک آلبوم/پلی‌لیست.
+//! Album/playlist download queue execution.
 //!
-//! هر ترک از همان مسیر تک‌ترکی پلتفرم خودش رد می‌شود
-//! (`run_yt_dlp_audio` + `apply_id3_tags` برای اسپاتیفای،
-//! `download_soundcloud_audio` + `apply_soundcloud_id3_tags` برای ساوندکلاد)،
-//! پس هیچ منطق دانلود/تگ‌گذاری‌ای اینجا تکرار نشده.
+//! Each track uses its platform single-track pipeline, avoiding duplicated logic.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -27,7 +24,7 @@ use crate::musicset::{
     register_cancel, send_status,
 };
 
-/// پاک‌سازی پوشهٔ کار روی هر مسیر خروج، شامل panic.
+/// Work directory cleanup guard on any exit path.
 struct WorkDirGuard {
     dir: PathBuf,
     trace_id: u64,
@@ -52,7 +49,7 @@ fn mmss(d: Duration) -> String {
     format!("{:02}:{:02}", s / 60, s % 60)
 }
 
-/// نام خوانا از URL ساوندکلاد تا وقتی متادیتای واقعی برسد.
+/// Readable title from SoundCloud URL fallback.
 fn sc_slug(url: &str) -> String {
     let base = url
         .split(['?', '#'])
@@ -79,7 +76,7 @@ mod tests {
     }
 }
 
-/// یک ترک دانلود و تگ‌گذاری شده — آمادهٔ آپلود یا آرشیو.
+/// Downloaded and tagged track — ready for upload or archiving.
 struct Track {
     mp3: PathBuf,
     cover: Option<PathBuf>,
@@ -95,7 +92,7 @@ pub async fn run_set_job(
     trace_id: u64,
     pending: PendingSet,
     zip_mode: bool,
-    // همان پیام پرسش حالت آپلود؛ به‌جای پیام تازه ویرایش می‌شود.
+    // Edits mode selection message rather than creating a new one.
     status_msg_id: i32,
     database: Option<PostgresDatabase>,
 ) {
@@ -135,9 +132,9 @@ pub async fn run_set_job(
     )
     .await;
 
-    // ── تیکر زنده: هر ۳ ثانیه شمارنده و کلاک را به‌روز می‌کند ────────────────
+    // ── Live ticker: updates progress counter and clock every 3s ──
     let done_idx = Arc::new(AtomicUsize::new(0));
-    // نام ترک جاری؛ ticker فقط می‌خواندش، حلقهٔ اصلی قبل از هر دانلود می‌نویسد.
+    // Current track title written by main loop before download.
     let cur_name = Arc::new(Mutex::new(String::from("...")));
     let tick_stop = Arc::new(AtomicBool::new(false));
     let ticker = crate::app::spawn_user_task({
@@ -190,8 +187,7 @@ pub async fn run_set_job(
         }};
     }
 
-    // اسپاتیفای هستهٔ CPU را یک‌بار برای کل صف نگه می‌دارد؛ ساوندکلاد
-    // در `download_soundcloud_audio` هر ترک را خودش رزرو می‌کند.
+    // Spotify acquires CPU core for the entire queue; SoundCloud reserves per track.
     let cores = if pending.domain == "sp" {
         acquire_cpu(user_id, trace_id).await
     } else {
@@ -208,7 +204,7 @@ pub async fn run_set_job(
             break;
         }
         let stem = format!("t{:03}", idx + 1);
-        // اسپاتیفای نام را از قبل دارد؛ ساوندکلاد فقط URL، پس slug تا وقتی متادیتا برسد.
+        // Spotify has title in advance; SoundCloud falls back to slug until metadata arrives.
         {
             let guess = match &pending.items {
                 SetItems::Spotify(items) => {
@@ -257,7 +253,7 @@ pub async fn run_set_job(
             ready.push(track);
         } else {
             upload_track(&api, chat_id, user_id, trace_id, &track, &database).await;
-            // فایل رفت، جا باز کن — پلی‌لیست ۴۰۰ ترکی دیسک را پر می‌کند.
+            // Remove file after upload to free disk space.
             let _ = tokio::fs::remove_file(&track.mp3).await;
             if let Some(c) = &track.cover {
                 let _ = tokio::fs::remove_file(c).await;
@@ -278,7 +274,7 @@ pub async fn run_set_job(
         let _ = ticker.await;
         log_ev!("ms", trace_id, "job_cancelled", "=>" => "cancel", "done" => done_idx.load(Ordering::Relaxed));
         delete_status(&api, chat_id, status_msg_id).await;
-        // MarkdownV2 لازم است: متن i18n خودش escape شده
+        // Uses MarkdownV2 with pre-escaped i18n text.
         send_status(&api, chat_id, &t("musicset.cancelled")).await;
         let _ = crate::bot::send_start_menu(&api, chat_id).await;
         return;
@@ -331,7 +327,7 @@ pub async fn run_set_job(
         ],
     );
     send_status(&api, chat_id, &done_text).await;
-    // re-arm: ورودی این قابلیت فقط یک لینک است، پس منوی استارت همان prompt است.
+    // Re-arm start menu prompt.
     let _ = crate::bot::send_start_menu(&api, chat_id).await;
 }
 
@@ -348,7 +344,7 @@ async fn delete_status(api: &Bot, chat_id: i64, message_id: i32) {
     }
 }
 
-/// اسپاتیفای: متادیتا از embed/API، فایل از بهترین تطبیق یوتیوب.
+/// Spotify: metadata from embed/API, audio from best YouTube match.
 async fn fetch_spotify_track_file(
     job_dir: &std::path::Path,
     stem: &str,
@@ -483,7 +479,7 @@ async fn upload_track(
     }
 }
 
-/// 7z روی درجهٔ ۹ با split؛ هر پارت به‌عنوان document آپلود می‌شود.
+/// 7z level 9 with splitting; uploads each part as document.
 #[allow(clippy::too_many_arguments)]
 async fn archive_and_upload(
     api: &Bot,
@@ -511,6 +507,10 @@ async fn archive_and_upload(
     };
 
     log_ev!("ms", trace_id, "archive_enter", "files" => inputs.len());
+    // Music sets render their own per-track status line, so the archiver's
+    // percent goes nowhere — a throwaway sink keeps one engine signature.
+    let archive_progress =
+        std::sync::Arc::new(crate::filecompress::progress::JobProgress::default());
     let result = match run_compress(
         job_dir,
         &config,
@@ -519,6 +519,7 @@ async fn archive_and_upload(
         cores,
         trace_id,
         cancel,
+        &archive_progress,
     )
     .await
     {

@@ -46,7 +46,7 @@ impl CompressFmt {
         }
     }
 
-    /// سقف درجهٔ فشرده‌سازی هر فرمت. RAR تا ۵، zstd تا ۱۹ (بدون `--ultra`).
+    /// Max compression level per format. RAR up to 5, zstd up to 19 (without `--ultra`).
     pub fn max_level(&self) -> u8 {
         match self {
             Self::Rar => 5,
@@ -55,18 +55,17 @@ impl CompressFmt {
         }
     }
 
-    /// zstd رمزگذاری ندارد. دکمه‌اش باید پنهان بماند، وگرنه کاربر رمز می‌دهد و
-    /// آرشیو بی‌رمز می‌گیرد.
+    /// zstd does not support encryption.
     pub fn supports_password(&self) -> bool {
         !matches!(self, Self::Zstd)
     }
 
-    /// tar.zst همیشه یک استریم پیوسته است، پس solid انتخابی نیست.
+    /// tar.zst is always a single stream, so solid mode is not selectable.
     pub fn supports_solid(&self) -> bool {
         matches!(self, Self::SevenZ | Self::Rar)
     }
 
-    /// zstd معادل `-v` ندارد؛ تقسیم به پارت فقط با 7z/zip/rar.
+    /// zstd has no `-v` equivalent; splitting supported only on 7z/zip/rar.
     pub fn supports_split(&self) -> bool {
         !matches!(self, Self::Zstd)
     }
@@ -149,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_fmt_capabilities() {
-        // zstd: نه رمز، نه solid انتخابی، نه پارت — و سقف درجه ۱۹.
+        // zstd: no password, no solid option, no split — max level 19.
         assert!(!CompressFmt::Zstd.supports_password());
         assert!(!CompressFmt::Zstd.supports_solid());
         assert!(!CompressFmt::Zstd.supports_split());

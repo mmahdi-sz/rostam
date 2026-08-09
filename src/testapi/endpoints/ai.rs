@@ -201,11 +201,11 @@ pub async fn test_nobg_process(Json(req): Json<NobgReq>) -> Json<NobgResp> {
     })
 }
 
-// ── TTS UX surface (سقف کاراکتر / کیبورد لغو) ────────────────────────────────
+// ── TTS UX surface (character limit / cancel keyboard) ────────────────────────
 
 #[derive(Deserialize)]
 pub struct TtsUxReq {
-    /// طول متن ورودی به کاراکتر؛ برای بازتولید مسیر «متن بلند».
+    /// Input text length in characters; for testing the long text path.
     pub char_len: Option<usize>,
 }
 
@@ -221,9 +221,9 @@ pub struct TtsUxResp {
     pub ok: bool,
     pub max_chars: usize,
     pub char_len: usize,
-    /// آیا سقف رد شده و متن باید پس زده شود.
+    /// Whether limit was exceeded and text should be rejected.
     pub too_long: bool,
-    /// متن خطای سقف؛ فقط وقتی too_long باشد.
+    /// Limit error message text; only when too_long is true.
     pub too_long_text: Option<String>,
     pub progress_keyboard: Vec<Vec<TtsUxButton>>,
     pub ask_text_keyboard: Vec<Vec<TtsUxButton>>,
@@ -279,11 +279,11 @@ pub async fn test_tts_ux(Json(req): Json<TtsUxReq>) -> Json<TtsUxResp> {
     })
 }
 
-// ── STT ready surface (برچسب مدل + ایموجی پریمیوم) ───────────────────────────
+// ── STT ready surface (model label + premium emoji) ───────────────────────────
 
 #[derive(Deserialize)]
 pub struct SttReadyReq {
-    /// یکی از fa_big / fa_small / en_big / en_small
+    /// One of fa_big / fa_small / en_big / en_small
     pub model: Option<String>,
 }
 
@@ -291,12 +291,12 @@ pub struct SttReadyReq {
 pub struct SttReadyResp {
     pub ok: bool,
     pub model: String,
-    /// برچسب آدم‌خوان همان دکمهٔ اینلاین — نباید کلید i18n باشد.
+    /// Human-readable inline button label — not an i18n key.
     pub model_label: String,
-    /// متن نهایی پس از MarkdownV2 + جایگزینی ایموجی پریمیوم.
+    /// Final text after MarkdownV2 + premium emoji replacement.
     pub ready_title: String,
     pub ready_again: String,
-    /// تعداد ایموجی‌های پریمیوم رندرشده در متن.
+    /// Count of rendered premium emojis in text.
     pub premium_emoji_count: usize,
 }
 

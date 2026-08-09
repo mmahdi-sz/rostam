@@ -181,7 +181,7 @@ async fn handle_sub_toggle(
     };
     let trace_id = req.trace_id;
 
-    // rank check — زیرنویس فقط سپهبد به بالا
+    // Rank check: subtitle feature.
     if let (Some(uid), Some(db)) = (req.user_id, database.as_ref()) {
         let user_rank = rank::effective_rank(db.client(), uid).await;
         if !user_rank.can_subtitle_mux() {
@@ -262,7 +262,7 @@ async fn handle_sub_mode_toggle(
     };
     let trace_id = req.trace_id;
 
-    // rank check — فایل جداگانه فقط سپهبد به بالا
+    // Rank check: subtitle file feature.
     if new_mode == SubtitleMode::File
         && let (Some(uid), Some(db)) = (req.user_id, database.as_ref())
     {
@@ -287,7 +287,7 @@ async fn handle_sub_mode_toggle(
         }
     }
 
-    // rank check — هاردساب فقط اسفندیار به بالا
+    // Rank check: hardsub feature.
     if new_mode == SubtitleMode::Hardsub
         && let (Some(uid), Some(db)) = (req.user_id, database.as_ref())
     {
@@ -450,7 +450,7 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<
         ),
     );
 
-    // ── چک ترافیک (روزانه + ماهانه) قبل از شروع دانلود ──
+    // Check traffic quotas (daily + monthly) before starting download.
     if let (Some(uid), Some(db)) = (req.user_id, database.as_ref()) {
         let estimated = estimate_bytes(&req, &selection);
         let user_rank = rank::effective_rank(db.client(), uid).await;
@@ -557,8 +557,7 @@ fn now_epoch() -> i64 {
         .unwrap_or(0)
 }
 
-/// تخمین حجم فایل ویدیو از bitrate × duration (همسان با نمایش پنل — فقط ویدیو).
-/// اگه bitrate یا duration نبود → 0 (یعنی نامشخص، چک «فایل بزرگ» اعمال نمی‌شه).
+/// Estimate video size from bitrate * duration. Returns 0 if unknown.
 fn estimate_bytes(req: &YoutubeRequest, sel: &Selection) -> u64 {
     let Some(dur) = req.duration.filter(|&d| d > 0) else {
         return 0;
@@ -576,14 +575,13 @@ fn estimate_bytes(req: &YoutubeRequest, sel: &Selection) -> u64 {
     (kbps * 1000.0 / 8.0 * dur as f64) as u64
 }
 
-/// قالب‌بندی حجم به فارسی: «۵ گیگابایت» / «۷۵۰ مگابایت».
+/// Format traffic size to localized string.
 fn fmt_traffic_fa(bytes: u64) -> String {
     const GB: f64 = (1u64 << 30) as f64;
     const MB: f64 = (1u64 << 20) as f64;
     let b = bytes as f64;
     let (num, unit) = if b >= GB {
         let g = b / GB;
-        // عدد صحیح اگه گرد، وگرنه یک رقم اعشار
         if (g.round() - g).abs() < 0.05 {
             (
                 format!("{:.0}", g.round()),

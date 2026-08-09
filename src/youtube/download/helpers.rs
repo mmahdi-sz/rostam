@@ -481,17 +481,7 @@ pub async fn translate_subtitles(
     Ok(())
 }
 
-/// تضمین می‌کند که برای زبان‌های مقصدِ خواسته‌شده زیرنویس وجود دارد — مستقل از
-/// حالت تحویل (File یا Embedded). اگر کاربر زبانی (مثل fa) خواسته که یوتیوب
-/// نداشته، انگلیسی را جدا دانلود و به‌صورت محلی (NLLB) ترجمه می‌کند. خروجی
-/// فایل‌های `translated_<lang>.srt` در همان پوشه است. اگر زیرنویس مقصد از قبل
-/// موجود باشد یا زبان غیرقابل‌ترجمه باشد، عملاً no-op است.
-///
-/// این تابع «مرحله‌ی ترجمه» است؛ تقسیم به File/Embedded بعد از آن انجام می‌شود.
-///
-/// فقط زبان‌هایی که در `dir` (خروجیِ دانلود اصلی) واقعاً غایبند دوباره جستجو
-/// می‌شوند — در غیر این صورت هم فایل/ترک زیرنویس تکراری تولید می‌شود (دانلود
-/// اصلی هم‌زمان با این تابع همان زبان را با نام دیگری می‌نویسد).
+/// Ensures target subtitles exist by falling back to local translation (NLLB).
 pub async fn ensure_translated_subtitles(
     api: &Bot,
     cookie_spec: &str,
@@ -511,12 +501,9 @@ pub async fn ensure_translated_subtitles(
         .collect();
 
     if missing_translatable.is_empty() {
-        // هر زبان قابل‌ترجمه‌ی خواسته‌شده یا از یوتیوب گرفته شده یا اصلاً خواسته نشده.
         return;
     }
 
-    // انگلیسی فقط وقتی جدا دانلود می‌شود که دانلود اصلی آن را نگرفته باشد —
-    // وگرنه یک فایل/ترک انگلیسیِ تکراری تولید می‌شود.
     if !subtitle_file_exists_for_lang(dir, "en") {
         download_subtitles_separately(cookie_spec, webpage_url, dir, &[], trace_id).await;
     }
