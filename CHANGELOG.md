@@ -7,6 +7,51 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [2.4.0] - 2026-08-10
+
+### Added
+- **Advanced Video Compression (`studio_compress`)**: Added new inline button "فشرده‌سازی پیشرفته ویدیو" to the Photo & Video Magic Studio (`studio`) menu.
+- **Multi-Codec & Auto-Container Selection**: Interactive UI for selecting video codecs (`H.264`, `H.265`, `VP9`, `AV1`). Automatically outputs `.mp4` for H.264 and `.mkv` for H.265, VP9, and AV1.
+- **Dynamic Resolution & FPS Filtering**: Hides resolutions and FPS options higher than the source video's original properties.
+- **6-Tier Bitrate Controls**: Bitrate ratio selection across 2 rows (`1`, `3/4`, `2/4`, `1/4`, `1/6`, `1/8`) displaying calculated numeric bitrates in English (`XXXX kbps`).
+- **SVT-AV1 v4.1+ Integration**: SVT-AV1 preset set to `9` (`-preset 9`) for AV1 compression, using standalone BtbN static FFmpeg build with `libvmaf` support.
+- **VMAF Quality Scoring (`libvmaf`)**: Calculates VMAF score after compression via `compute_vmaf_score` using FFmpeg's `libvmaf` filter, appended to job completion captions with RTL formatting (`\u200e`).
+- **Localized Time Formatting (`format_eta_hms`)**: Formats elapsed time and ETA in human-readable localized units (`X ثانیه و Y دقیقه و Z ساعت`) across all 4 languages (`fa`, `en`, `it`, `ru`).
+- **Telegram Document (File) Delivery**: Compressed output is delivered as a Telegram Document via `send_document` to prevent server-side re-compression. Output filename formatted as `<original_stem>_<CODEC>.<ext>` (e.g., `video_AV1.mkv`).
+- **Redis Session Storage**: Compression session state stored in Redis under `studio_comp_session:{user_id}` with 1h TTL.
+- **Automatic Re-Arm & Flow Continuation**: Automatically sends a new prompt message and restores `FlowState::AwaitingStudioCompressVideo` upon job completion.
+- **TestAPI Endpoint `/test/studio/compress`**: Fully tested via `scripts/run_testapi_suite.sh` covering container selection, filtering, AV1 preset 9, VMAF scoring, and localized duration strings.
+- **CPU Concurrency Limit Enforcement**: Added `is_user_cpu_busy` guard checks across all AI and processing features to prevent users from queuing multiple concurrent CPU-intensive jobs, immediately returning an error feedback.
+- **Photo & Video Magic Studio (`studio_trim`)**: Top-level inline button "استودیو جادوی عکس و ویدئو" in `/start` menu leading to the media editing studio subsystem (`src/studio/`).
+- **Multi-Range Video Trimming & Editing**: Supports multi-segment timestamp cut inputs (`HH:MM:SS` & `MM:SS`) on single or multiple lines, Persian/Arabic-Indic digit normalization (`۰-۹` / `٠-٩` → `0-9`), and whitespace-tolerant dash separator.
+- **Video Trimming Enhancements**: Single outer live ticker with ETA display, clamped caption timestamps, cover art thumbnails via `ffmpeg -vframes 1`, and job completion summary message.
+- **«رنک رایگان» Button in the `/rank` Shop**: A blue glass (`ButtonStyle::Primary`) row sitting directly below «خرید از ادمین» with the `fire1` premium icon and callback `user:panel:referral`.
+- **`referral.banner` Restyled Like `/start`**: Three plain section titles (`🌐` downloader, `🧪` AI Lab, `🧰` toolbox) each followed by its own `<blockquote expandable>` body.
+- **Admin Stats Split into 9 Navigable Section Pages**: Overview, Users, YouTube, AI, Music, Files, Money & Plans, System, Errors — all rendered into the same message via `admin::render_section` + `admin::stats_keyboard`.
+
+### Changed
+- **Inline Glass Button Cleanliness**: Removed literal static emojis (`❌`, `🚀`, `✂️`) from button labels in `config/i18n.json` across all 4 languages to prevent duplicate emoji rendering alongside custom premium icons (`btn_icon_danger` / `btn_icon_success`).
+- **Admin Tree Navigates in One Message**: Errors page and gift-code panel edit in place (`bot::edit_text_html`, `redeem::handle::open_panel_edit`).
+- **Stats Queries Batched**: `get_feature_stats_multi` and `get_action_breakdown_multi` fetch every feature of a section in one round-trip.
+- **Rank Shop & i18n Translations**: Updated per-rank feature blurbs across all 4 languages to include CPU compression limits, Spotify/SoundCloud capabilities, and exact numerical caps.
+- **Referral Rule Simplified**: User point credited immediately upon force-join channel membership confirmation (`referral::confirm_on_join`).
+- **Unified HTTP Client Module**: Consolidated 5 separate redundant `reqwest::Client` instances across different subsystems into a shared, lazy-loaded `crate::http::client()` module to optimize resource usage.
+
+### Fixed
+- **Instant Subprocess Kill on Job Cancellation**: `stc:jobcancel` handler issues `child.kill()` and `child.wait()` on non-blocking `ffmpeg` subprocesses, releasing CPU broker affinity, freeing memory via `trim_memory()`, and re-arming the Studio menu (`send_studio_menu_new_msg`).
+- **CPU Broker Bypasses**: Resolved cases where tasks like `denoise` bypassed the CPU broker, ensuring proper CPU core reservation, thread pinning, and memory trimming via `release_cpu` instead of raw blocking spawns.
+- **`/start` Expandable Blockquotes**: Syntax fixed per `docs/markdownv2.md` (`**>` on first line, `>` on following lines, `||` on last line).
+- **`/start` Emojis & i18n Completeness**: Re-mapped missing emojis (`🎥`→`🎞️`, `🗣️`→`🎤`), completed Italian and Russian downloader sections, and added missing guide i18n keys across all 4 languages.
+- **File Compression Showed "Compressing 0%"**: Fixed status ticker stage rendering, parsed real percent from 7z/rar stdout, and calculated accurate ETA.
+- **`getFile` Hang Timeout**: Capped Telegram file downloads at 600s (`GET_FILE_TIMEOUT_SECS`) to prevent unbounded hangs.
+- **Memory & CPU Broker Improvements**: Added `MALLOC_ARENA_MAX=2` systemd drop-in and `moebius::cpu::trim_memory()` calls to lower idle RSS. Brokered Vosk STT and DeepFilterNet denoise under CPU Broker.
+- **Referral Attribution**: Credited referrals immediately upon channel join confirmation, preventing lost attributions for new users.
+
+### Removed
+- **Rank Guide Removed**: Removed unused and oversized `rank.guide` screen to stay within Telegram's UTF-16 message limits.
+
+---
+
 ## [2.4.0] - 2026-08-09
 
 ### Added

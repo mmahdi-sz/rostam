@@ -1108,9 +1108,14 @@ pub async fn handle_private_info_message(
 }
 
 fn url_button(text: &str, url: &str) -> InlineKeyboardButton {
+    let icon_id = t("emoji.panel.icons.telegram_logo");
     InlineKeyboardButton {
         text: text.to_string(),
-        icon_custom_emoji_id: None,
+        icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') {
+            None
+        } else {
+            Some(icon_id)
+        },
         callback_data: None,
         style: None,
         url: Some(url.to_string()),

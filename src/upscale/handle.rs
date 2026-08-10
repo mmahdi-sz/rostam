@@ -25,9 +25,6 @@ use crate::rank::{
 const UPSCALE_BIN: &str = "files/realesrgan/realesrgan-ncnn-vulkan";
 const MODEL_DIR: &str = "files/realesrgan/models";
 const SEP_BASE: &str = "http://127.0.0.1:6589";
-
-static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
-
 pub const CB_UPSCALE_CANCEL: &str = "upscale:cancel";
 pub const CB_UPSCALE_MODEL_PREFIX: &str = "upscale:model:";
 pub const CB_UPSCALE_ANIME_TOGGLE: &str = "upscale:anime_toggle";
@@ -70,7 +67,7 @@ pub fn cancel_upscale(user_id: i64) -> bool {
 // ── CPU broker ────────────────────────────────────────────────────────────────
 
 async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
-    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
+    let client = crate::http::client();
     let res = client
         .post(format!("{SEP_BASE}/cpu/acquire"))
         .form(&[
@@ -101,7 +98,7 @@ async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
     if cores.is_empty() {
         return;
     }
-    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
+    let client = crate::http::client();
     let body = serde_json::json!({ "cores": cores });
     let r = client
         .post(format!("{SEP_BASE}/cpu/release"))
@@ -362,9 +359,14 @@ pub async fn handle_upscale_image(
     model_name: String,
     database: Option<PostgresDatabase>,
 ) {
+    let api = &api;
+    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+        let _ = send_text(api, message.chat.id, &t("active_job_running")).await;
+        return;
+    }
+
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
-    let api = &api;
     log_actor_id!("upscale", trace_id, user_id, "clicked" => "photo/doc");
     log_ev!("upscale", trace_id, "image_received", "user_id" => user_id, "model" => model_name, "scale" => scale_factor);
 

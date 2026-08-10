@@ -72,6 +72,10 @@ pub static EMOJI_MAP: &[(&str, &str)] = &[
     ("⚡", "speed_fast"),
     ("🔬", "model_large"),
     ("🎵", "music_note"),
+    // Platform logos: 🎵/🔊 are already taken by generic audio icons, so the
+    // social-network pages use these coloured circles as their carriers.
+    ("🟢", "spotify_logo"),
+    ("🟠", "soundcloud_logo"),
     ("🔇", "mute"),
     ("🖼️", "frame"),
     ("🖼", "frame"),

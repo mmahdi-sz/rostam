@@ -15,5 +15,5 @@ mod pending;
 
 pub use addemoji::{extract_addemoji_pack_name, handle_addemoji_link};
 pub use callback::handle_emoji_callback;
-pub use cmd::open_emoji_panel;
+pub use cmd::handle_emoji_command;
 pub use flow_dispatch::handle_emoji_flow_message;

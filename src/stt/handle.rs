@@ -333,6 +333,11 @@ pub async fn handle_stt_audio(
     config: &SttConfig,
     database: Option<PostgresDatabase>,
 ) {
+    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+        let _ = crate::bot::send_text_md(api, chat_id, &crate::i18n::t("active_job_running")).await;
+        return;
+    }
+
     let trace_id = next_trace_id();
     log_actor_id!("stt", trace_id, user_id, "clicked" => "audio/voice");
     log_trace(

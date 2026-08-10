@@ -8,8 +8,9 @@ use crate::bot::{
     CB_ADMIN_STATS, CB_AI_DENOISE, CB_AI_DEOLDIFY, CB_AI_GWM, CB_AI_NOBG, CB_AI_SEP, CB_AI_STT,
     CB_AI_TTS, CB_AI_UPSCALE, CB_BROADCAST_MODE_COPY, CB_BROADCAST_MODE_FORWARD,
     CB_BROADCAST_SEND_ACTIVE, CB_BROADCAST_SEND_ALL, CB_BROADCAST_TOGGLE_PIN, CB_DENOISE_CANCEL,
-    CB_DEOLDIFY_CANCEL, CB_LANG_SET, CB_NOBG_CANCEL, CB_START_AI_LAB, CB_START_EMOJI,
-    CB_START_LEADERBOARD, CB_START_TOOLS, CB_START_YOUTUBE, CB_TTS_CANCEL, CB_USER_PANEL,
+    CB_DEOLDIFY_CANCEL, CB_LANG_SET, CB_NOBG_CANCEL, CB_START_AI_LAB,
+    CB_START_GUIDE, CB_START_GUIDE_PLATFORM, CB_START_LEADERBOARD, CB_START_STUDIO, CB_START_TOOLS, CB_TTS_CANCEL,
+    CB_USER_PANEL,
 };
 
 use crate::bot::{
@@ -50,12 +51,7 @@ use crate::upscale::{
 };
 use crate::youtube::trace::log_trace;
 use crate::youtube::{extract_youtube_urls, handle_youtube_url};
-use frankenstein::{
-    methods::SendMessageParams,
-    types::{
-        ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, ReplyMarkup,
-    },
-};
+use frankenstein::types::InlineKeyboardMarkup;
 
 use super::state::AppState;
 
@@ -1036,6 +1032,44 @@ async fn handle_message(
                         .await;
                         return Ok(());
                     }
+                    if trimmed == t("fc.cancel_button")
+                        || trimmed.contains(&t("emoji.cancel_button"))
+                        || trimmed == "انصراف"
+                        || trimmed == "لغو"
+                    {
+                        let config = match flow_manager.get(uid) {
+                            FlowState::AwaitingCompressFiles { config, .. } => *config,
+                            FlowState::AwaitingCompressOptions { config } => config,
+                            _ => crate::filecompress::CompressConfig::default(),
+                        };
+                        flow_manager.set(
+                            uid,
+                            FlowState::AwaitingCompressOptions {
+                                config: config.clone(),
+                            },
+                        );
+                        let remove_params = frankenstein::methods::SendMessageParams::builder()
+                            .chat_id(message.chat.id)
+                            .text("\u{200B}")
+                            .reply_markup(frankenstein::types::ReplyMarkup::ReplyKeyboardRemove(
+                                frankenstein::types::ReplyKeyboardRemove::builder()
+                                    .remove_keyboard(true)
+                                    .build(),
+                            ))
+                            .build();
+                        if let Ok(res) = api.send_message(&remove_params).await {
+                            let _ = api
+                                .delete_message(
+                                    &frankenstein::methods::DeleteMessageParams::builder()
+                                        .chat_id(message.chat.id)
+                                        .message_id(res.result.message_id)
+                                        .build(),
+                                )
+                                .await;
+                        }
+                        crate::filecompress::send_options_menu(api, message.chat.id, &config).await;
+                        return Ok(());
+                    }
                 }
 
                 if message.document.is_some()
@@ -1054,6 +1088,62 @@ async fn handle_message(
                     );
                     crate::filecompress::handle_fc_file(api, &message, uid, flow_manager, database)
                         .await;
+                    return Ok(());
+                }
+            }
+
+            if matches!(flow_manager.get(uid), FlowState::AwaitingStudioTrimVideo) {
+                if message.video.is_some() || message.document.is_some() {
+                    let trace_id = next_trace_id();
+                    log_ev!("studio_trim", trace_id, "video_dispatched", "user_id" => uid);
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    let mut fm = flow_manager.clone();
+                    flow_manager.clear(uid);
+                    super::spawn_user_task(async move {
+                        crate::studio::trim::handle_video_upload(&api2, &msg2, uid, &mut fm).await;
+                    });
+                    return Ok(());
+                }
+            }
+
+            if matches!(flow_manager.get(uid), FlowState::AwaitingStudioCompressVideo) {
+                if message.video.is_some() {
+                    let trace_id = next_trace_id();
+                    log_ev!("studio_compress", trace_id, "video_dispatched", "user_id" => uid);
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    let fm = flow_manager.clone();
+                    flow_manager.clear(uid);
+                    super::spawn_user_task(async move {
+                        crate::studio::compress::handle_video_upload(&api2, msg2, uid, trace_id, &fm).await;
+                    });
+                    return Ok(());
+                }
+            }
+
+            if let FlowState::AwaitingStudioTrimRanges { file_id, filename, duration_secs } = flow_manager.get(uid) {
+                if message.text.is_some() {
+                    let trace_id = next_trace_id();
+                    log_ev!("studio_trim", trace_id, "ranges_dispatched", "user_id" => uid);
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    let fm = flow_manager.clone();
+                    let db2 = database.clone();
+                    flow_manager.clear(uid);
+                    super::spawn_user_task(async move {
+                        crate::studio::trim::handle_ranges_input(
+                            &api2,
+                            &msg2,
+                            uid,
+                            &file_id,
+                            &filename,
+                            duration_secs,
+                            &fm,
+                            db2,
+                        )
+                        .await;
+                    });
                     return Ok(());
                 }
             }
@@ -1091,6 +1181,22 @@ async fn handle_message(
         if let Some(rest) = text.strip_prefix("/ip ") {
             if let Some(uid) = user_id {
                 handle_ip_command(api, message.chat.id, uid, rest.trim()).await;
+            }
+            return Ok(());
+        }
+        // Custom emoji pack panel (admin only, hidden from every user-facing menu).
+        if cmd == "/emoji" {
+            let trace = next_trace_id();
+            let is_admin = config::admin_user_id()
+                .map(|id| Some(id) == user_id)
+                .unwrap_or(false);
+            log_trace(
+                trace,
+                "cmd_emoji",
+                &format!("user_id={user_id:?} is_admin={is_admin}"),
+            );
+            if is_admin {
+                emoji_handler::handle_emoji_command(api, &message, flow_manager, database).await;
             }
             return Ok(());
         }
@@ -1369,6 +1475,23 @@ async fn handle_callback(
         return Ok(());
     }
 
+    if cb_data.starts_with("studio") || cb_data.starts_with("stc:") || cb_data == CB_START_STUDIO {
+        if let Some(msg) = answer_and_get_msg!() {
+            if crate::studio::handle_callback(
+                api,
+                msg.chat.id,
+                msg.message_id,
+                cb_user_id as i64,
+                cb_data,
+                flow_manager,
+            )
+            .await
+            {
+                return Ok(());
+            }
+        }
+    }
+
     if crate::youtube::handle_quality_callback(api, &callback_query, database).await {
         return Ok(());
     }
@@ -1449,11 +1572,11 @@ async fn handle_callback(
         return Ok(());
     }
 
-    if cb_data == CB_START_EMOJI {
+    if cb_data == CB_START_GUIDE {
         let trace_id = next_trace_id();
         log_trace(
             trace_id,
-            "cb_start_emoji",
+            "cb_start_guide",
             &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
         );
         let _ = api
@@ -1464,24 +1587,19 @@ async fn handle_callback(
             )
             .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            emoji_handler::open_emoji_panel(
-                api,
-                message.chat.id,
-                callback_query.from.id as i64,
-                flow_manager,
-                database,
-            )
-            .await;
+            let r =
+                crate::bot::keyboards::edit_to_guide(api, message.chat.id, message.message_id).await;
+            log_trace(trace_id, "cb_start_guide_done", &format!("ok={}", r.is_ok()));
         }
         return Ok(());
     }
 
-    if cb_data == CB_START_YOUTUBE {
+    if let Some(platform) = cb_data.strip_prefix(CB_START_GUIDE_PLATFORM) {
         let trace_id = next_trace_id();
         log_trace(
             trace_id,
-            "cb_start_youtube",
-            &format!("user_id={cb_user_id} chat_id={cb_chat_id}"),
+            "cb_start_guide_platform",
+            &format!("user_id={cb_user_id} chat_id={cb_chat_id} platform={platform}"),
         );
         let _ = api
             .answer_callback_query(
@@ -1490,41 +1608,21 @@ async fn handle_callback(
                     .build(),
             )
             .await;
+        if !crate::bot::keyboards::GUIDE_PLATFORMS.contains(&platform) {
+            log_trace(trace_id, "cb_start_guide_platform", "=> fail err=unknown");
+            return Ok(());
+        }
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            let icon_id = t("emoji.panel.icons.back");
-            let back_btn = InlineKeyboardButton {
-                text: t("start.back"),
-                icon_custom_emoji_id: if icon_id.is_empty() || icon_id.starts_with('!') {
-                    None
-                } else {
-                    Some(icon_id)
-                },
-                callback_data: Some(CB_START_PANEL.to_string()),
-                style: Some(ButtonStyle::Primary),
-                url: None,
-                login_url: None,
-                web_app: None,
-                switch_inline_query: None,
-                switch_inline_query_current_chat: None,
-                switch_inline_query_chosen_chat: None,
-                copy_text: None,
-                callback_game: None,
-                pay: None,
-            };
-            let keyboard = InlineKeyboardMarkup::builder()
-                .inline_keyboard(vec![vec![back_btn]])
-                .build();
-            let no_preview = LinkPreviewOptions::builder().is_disabled(true).build();
-            let params = SendMessageParams::builder()
-                .chat_id(message.chat.id)
-                .text(t("start.youtube_info"))
-                .link_preview_options(no_preview)
-                .reply_markup(ReplyMarkup::InlineKeyboardMarkup(keyboard))
-                .build();
-            let r = api.send_message(&params).await;
+            let r = crate::bot::keyboards::edit_to_guide_platform(
+                api,
+                message.chat.id,
+                message.message_id,
+                platform,
+            )
+            .await;
             log_trace(
                 trace_id,
-                "cb_start_youtube_sent",
+                "cb_start_guide_platform_done",
                 &format!("ok={}", r.is_ok()),
             );
         }

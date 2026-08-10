@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use frankenstein::{
@@ -9,8 +9,8 @@ use frankenstein::{
     client_reqwest::Bot,
     methods::{DeleteMessageParams, EditMessageTextParams, SendDocumentParams, SendMessageParams},
     types::{
-        InlineKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardMarkup, ReplyMarkup,
-        ReplyParameters,
+        ButtonStyle, InlineKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardMarkup,
+        ReplyMarkup, ReplyParameters,
     },
 };
 
@@ -237,10 +237,19 @@ fn job_cancel_keyboard() -> InlineKeyboardMarkup {
 }
 
 fn done_reply_keyboard() -> ReplyKeyboardMarkup {
+    let confirm_icon = t("emoji.panel.icons.confirm");
+    let cancel_icon = t("emoji.panel.icons.cancel");
     ReplyKeyboardMarkup::builder()
         .keyboard(vec![vec![
             KeyboardButton::builder()
                 .text(t("fc.done_upload_button"))
+                .style(ButtonStyle::Success)
+                .icon_custom_emoji_id(confirm_icon)
+                .build(),
+            KeyboardButton::builder()
+                .text(t("fc.cancel_button"))
+                .style(ButtonStyle::Danger)
+                .icon_custom_emoji_id(cancel_icon)
                 .build(),
         ]])
         .resize_keyboard(true)
@@ -588,6 +597,22 @@ async fn show_options_menu(api: &Bot, chat_id: i64, message_id: i32, config: &Co
     }
 }
 
+pub async fn send_options_menu(api: &Bot, chat_id: i64, config: &CompressConfig) {
+    let key = match config.fmt {
+        CompressFmt::SevenZ => "fc.welcome_7z",
+        CompressFmt::Zstd => "fc.welcome_zstd",
+        _ => "fc.welcome",
+    };
+    let text = apply_premium_to_md(&t(key));
+    let params = SendMessageParams::builder()
+        .chat_id(chat_id)
+        .text(&text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(options_keyboard(config)))
+        .build();
+    let _ = api.send_message(&params).await;
+}
+
 // ── Text Handler for Password ─────────────────────────────────────────────────
 
 pub async fn handle_fc_password_text(
@@ -877,6 +902,11 @@ async fn start_compression_task(
     database: &Option<PostgresDatabase>,
     flow_manager: &FlowManager,
 ) {
+    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+        let _ = crate::bot::send_text_md(api, chat_id, &t("active_job_running")).await;
+        return;
+    }
+
     // Remove reply keyboard first
     let remove_kb = frankenstein::types::ReplyKeyboardRemove::builder()
         .remove_keyboard(true)
@@ -1374,10 +1404,9 @@ async fn run_filecompress_worker(
     }
 }
 
-static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
-    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
+    let client = crate::http::client();
     let res = client
         .post(format!("{SEP_BASE}/cpu/acquire"))
         .form(&[
@@ -1408,7 +1437,7 @@ async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
     if cores.is_empty() {
         return;
     }
-    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
+    let client = crate::http::client();
     let body = serde_json::json!({ "cores": cores });
     let r = client
         .post(format!("{SEP_BASE}/cpu/release"))

@@ -1,9 +1,20 @@
-pub const CB_START_EMOJI: &str = "start:emoji";
-pub const CB_START_YOUTUBE: &str = "start:youtube";
+pub const CB_START_GUIDE: &str = "start:guide";
+/// Prefix — one platform guide page: `start:guide:{yt|sp|sc}`.
+pub const CB_START_GUIDE_PLATFORM: &str = "start:guide:";
 pub const CB_START_PANEL: &str = "start:panel";
 pub const CB_START_AI_LAB: &str = "start:ai_lab";
 pub const CB_START_TOOLS: &str = "start:tools";
 pub const CB_START_LEADERBOARD: &str = "start:leaderboard";
+pub const CB_START_STUDIO: &str = "start:studio";
+pub const CB_STUDIO_PANEL: &str = "studio:panel";
+pub const CB_STUDIO_TRIM: &str = "studio:trim";
+pub const CB_STUDIO_TRIM_START: &str = "studio_trim:start";
+pub const CB_STUDIO_TRIM_CANCEL: &str = "studio_trim:cancel";
+pub const CB_STUDIO_TRIM_JOBCANCEL: &str = "studio_trim:jobcancel";
+pub const CB_STUDIO_COMPRESS: &str = "studio:compress";
+pub const CB_STUDIO_COMPRESS_CANCEL: &str = "stc:cancel";
+pub const CB_STUDIO_COMPRESS_JOBCANCEL: &str = "stc:jobcancel";
+pub const CB_STUDIO_COMPRESS_START: &str = "stc:start";
 
 pub const CB_USER_PANEL: &str = "user:panel";
 pub const CB_AI_DENOISE: &str = "ai:denoise";

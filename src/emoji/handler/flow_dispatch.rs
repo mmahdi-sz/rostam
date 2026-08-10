@@ -172,7 +172,10 @@ pub async fn handle_emoji_flow_message(
         | FlowState::AwaitingCompressFormatSelect
         | FlowState::AwaitingCompressOptions { .. }
         | FlowState::AwaitingCompressPassword { .. }
-        | FlowState::AwaitingCompressFiles { .. } => {
+        | FlowState::AwaitingCompressFiles { .. }
+        | FlowState::AwaitingStudioTrimVideo
+        | FlowState::AwaitingStudioTrimRanges { .. }
+        | FlowState::AwaitingStudioCompressVideo => {
             eprintln!("[emoji_msg trace={trace_id} event=skip] — handled in main");
             false
         }
@@ -216,5 +219,8 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingCompressOptions { .. } => "AwaitingCompressOptions",
         FlowState::AwaitingCompressPassword { .. } => "AwaitingCompressPassword",
         FlowState::AwaitingCompressFiles { .. } => "AwaitingCompressFiles",
+        FlowState::AwaitingStudioTrimVideo => "AwaitingStudioTrimVideo",
+        FlowState::AwaitingStudioTrimRanges { .. } => "AwaitingStudioTrimRanges",
+        FlowState::AwaitingStudioCompressVideo => "AwaitingStudioCompressVideo",
     }
 }

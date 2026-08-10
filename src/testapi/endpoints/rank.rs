@@ -125,6 +125,124 @@ pub async fn test_paywall(Json(payload): Json<Value>) -> axum::response::Respons
     .into_response()
 }
 
+/// Free-rank button in the /rank shop + the referral banner it opens.
+/// `lang` picks the language root; `label_key` can be overridden to exercise the
+/// missing-i18n-key failure path.
+pub async fn test_free_rank(Json(payload): Json<Value>) -> axum::response::Response {
+    let lang = payload
+        .get("lang")
+        .and_then(|v| v.as_str())
+        .unwrap_or("fa")
+        .to_string();
+    let label_key = payload
+        .get("label_key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("rank.free_rank_button")
+        .to_string();
+    let user_id = payload
+        .get("user_id")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(12345);
+
+    let i18n_keys = Arc::new(Mutex::new(Vec::new()));
+    let i = i18n_keys.clone();
+
+    let (keyboard, label, banner) = crate::i18n::LANG
+        .scope(lang.clone(), async move {
+            RESOLVED_I18N_KEYS
+                .scope(i, async move {
+                    let prices = crate::rank::prices::get();
+                    let kb = crate::rank::menu::build_shop_keyboard(Rank::Dalavar, &prices);
+                    let label = crate::i18n::t(&label_key);
+                    let banner = crate::i18n::apply_premium_to_html(&crate::i18n::tf(
+                        "referral.banner",
+                        &[("username", "rostam_bot"), ("user_id", &user_id.to_string())],
+                    ));
+                    (kb, label, banner)
+                })
+                .await
+        })
+        .await;
+
+    let rows = serde_json::to_value(&keyboard.inline_keyboard).unwrap_or(json!([]));
+    // Locate the free-rank row by its callback data.
+    let free_btn = keyboard
+        .inline_keyboard
+        .iter()
+        .flatten()
+        .position(|b| b.callback_data.as_deref() == Some(crate::rank::panel::CB_REFERRAL));
+    let buy_row = keyboard
+        .inline_keyboard
+        .iter()
+        .position(|r| r.iter().any(|b| b.url.is_some()));
+    let free_row = keyboard.inline_keyboard.iter().position(|r| {
+        r.iter()
+            .any(|b| b.callback_data.as_deref() == Some(crate::rank::panel::CB_REFERRAL))
+    });
+    let btn = free_row.and_then(|idx| keyboard.inline_keyboard[idx].first());
+
+    let mut errors: Vec<String> = Vec::new();
+    if free_btn.is_none() {
+        errors.push("free rank button missing from shop keyboard".into());
+    }
+    if let (Some(b), Some(f)) = (buy_row, free_row) {
+        if f != b + 1 {
+            errors.push(format!("free rank row {f} is not directly below buy row {b}"));
+        }
+    }
+    if let Some(b) = btn {
+        if label.starts_with('!') {
+            errors.push(format!("unresolved i18n key on label: {label}"));
+        }
+        if b.text.contains("tg-emoji") || b.text.contains("tg://emoji") {
+            errors.push("button label carries a premium emoji tag".into());
+        }
+        if b.icon_custom_emoji_id.is_none() {
+            errors.push("free rank button has no icon_custom_emoji_id".into());
+        }
+        if format!("{:?}", b.style).contains("Primary") {
+        } else {
+            errors.push(format!("style is not Primary: {:?}", b.style));
+        }
+    }
+    let expandable = banner.matches("<blockquote expandable>").count();
+    if expandable != 3 {
+        errors.push(format!("banner has {expandable} expandable quotes, want 3"));
+    }
+    let want_glyphs = if lang == "fa" { ('╣', '╝') } else { ('╠', '╚') };
+    if !banner.contains(want_glyphs.0) || !banner.contains(want_glyphs.1) {
+        errors.push(format!("banner missing {want_glyphs:?} tree glyphs for {lang}"));
+    }
+    let banner_len = banner.encode_utf16().count();
+    if banner_len > 4096 {
+        errors.push(format!("banner is {banner_len} UTF-16 units, over the 4096 cap"));
+    }
+
+    Json(json!({
+        "ok": errors.is_empty(),
+        "lang": lang,
+        "free_rank_button": btn.map(|b| json!({
+            "label": b.text,
+            "callback_data": b.callback_data,
+            "style": format!("{:?}", b.style),
+            "icon_custom_emoji_id": b.icon_custom_emoji_id,
+        })),
+        "buy_row_index": buy_row,
+        "free_row_index": free_row,
+        "inline_keyboard": rows,
+        "banner": {
+            "parse_mode": "HTML",
+            "rendered_text": banner,
+            "expandable_quotes": expandable,
+            "custom_emoji_spans": banner.matches("<tg-emoji emoji-id=").count(),
+            "utf16_len": banner_len,
+        },
+        "resolved_i18n_keys": i18n_keys.lock().unwrap().clone(),
+        "errors": errors,
+    }))
+    .into_response()
+}
+
 pub async fn test_rank_panel(Json(payload): Json<Value>) -> axum::response::Response {
     let user_id = payload
         .get("user_id")

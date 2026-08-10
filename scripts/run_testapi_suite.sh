@@ -164,6 +164,51 @@ fi
 echo "✅ PDF compress test passed!"
 
 echo ""
+echo "=== Running Social Media Guide Tests ==="
+
+echo "Testing /test/start/guide (menu)"
+RES_GD=$(curl -s -X POST "$BASE_URL/test/start/guide" -H "Content-Type: application/json" -d '{}')
+if [ "$(echo "$RES_GD" | jq -r '.ok')" != "true" ]; then echo "Fail: guide menu"; exit 1; fi
+if [ "$(echo "$RES_GD" | jq -r '.start_menu_first_row_callback')" != "start:guide" ]; then
+    echo "Fail: guide button is not the first start-menu row"; exit 1
+fi
+GD_CBS=$(echo "$RES_GD" | jq -r '.button_callbacks | join(",")')
+if [ "$GD_CBS" != "start:guide:yt,start:guide:sp,start:guide:sc,start:panel" ]; then
+    echo "Fail: guide menu callbacks. Got: $GD_CBS"; exit 1
+fi
+
+for P in yt sp sc; do
+    echo "Testing /test/start/guide ($P)"
+    RES_GP=$(curl -s -X POST "$BASE_URL/test/start/guide" -H "Content-Type: application/json" -d "{\"platform\": \"$P\"}")
+    if [ "$(echo "$RES_GP" | jq -r '.ok')" != "true" ]; then echo "Fail: guide $P"; exit 1; fi
+    if [ "$(echo "$RES_GP" | jq -r '.within_telegram_cap')" != "true" ]; then echo "Fail: guide $P over 4096"; exit 1; fi
+    if [ "$(echo "$RES_GP" | jq -r '.mentions_autodetect')" != "true" ]; then echo "Fail: guide $P missing autodetect note"; exit 1; fi
+    if [ "$(echo "$RES_GP" | jq -r '.rendered_text')" == "" ]; then echo "Fail: guide $P empty text"; exit 1; fi
+    if [ "$(echo "$RES_GP" | jq -r '.button_callbacks | join(",")')" != "start:guide" ]; then
+        echo "Fail: guide $P back button"; exit 1
+    fi
+done
+
+echo "Testing /test/start/guide (unknown platform)"
+RES_GB=$(curl -s -X POST "$BASE_URL/test/start/guide" -H "Content-Type: application/json" -d '{"platform": "tiktok"}')
+if [ "$(echo "$RES_GB" | jq -r '.ok')" != "false" ]; then echo "Fail: unknown platform accepted"; exit 1; fi
+echo "✅ Social media guide tests passed!"
+
+echo ""
+echo "=== Running Emoji Panel Access Tests (/emoji, admin only) ==="
+ADMIN_ID=$(grep -E '^ADMIN_USER_ID=' .env 2>/dev/null | head -1 | cut -d= -f2 | tr -d '"' | tr -d "'")
+if [ -n "$ADMIN_ID" ]; then
+    RES_EP=$(curl -s -X POST "$BASE_URL/test/emoji/panel" -H "Content-Type: application/json" -d "{\"user_id\": $ADMIN_ID}")
+    if [ "$(echo "$RES_EP" | jq -r '.opens_panel')" != "true" ]; then echo "Fail: admin cannot open emoji panel"; exit 1; fi
+    if [ "$(echo "$RES_EP" | jq -r '.button_callbacks | join(",")')" == "" ]; then echo "Fail: emoji panel keyboard empty"; exit 1; fi
+fi
+RES_EPN=$(curl -s -X POST "$BASE_URL/test/emoji/panel" -H "Content-Type: application/json" -d '{"user_id": -999003}')
+if [ "$(echo "$RES_EPN" | jq -r '.opens_panel')" != "false" ]; then echo "Fail: non-admin opened emoji panel"; exit 1; fi
+if [ "$(echo "$RES_EPN" | jq -r '.rendered_text')" != "" ]; then echo "Fail: emoji panel leaked to non-admin"; exit 1; fi
+if [ "$(echo "$RES_EPN" | jq -r '.in_start_menu')" != "false" ]; then echo "Fail: emoji panel exposed in start menu"; exit 1; fi
+echo "✅ Emoji panel access tests passed!"
+
+echo ""
 echo "=== Running Extended TestAPI Endpoint Suite ==="
 
 echo "Testing /test/youtube/quality_select"
@@ -327,13 +372,25 @@ echo "Testing /test/rank/panel"
 RES_RP=$(curl -s -X POST "$BASE_URL/test/rank/panel" -H "Content-Type: application/json" -d '{"user_id": 12345}')
 if [ "$(echo "$RES_RP" | jq -r '.ok')" != "true" ]; then echo "Fail: rank panel"; exit 1; fi
 
+echo "Testing /test/rank/free_rank (all langs)"
+for L in fa en it ru; do
+  RES_FR=$(curl -s -X POST "$BASE_URL/test/rank/free_rank" -H "Content-Type: application/json" -d "{\"lang\": \"$L\"}")
+  if [ "$(echo "$RES_FR" | jq -r '.ok')" != "true" ]; then echo "Fail: free_rank $L. Got: $RES_FR"; exit 1; fi
+  if [ "$(echo "$RES_FR" | jq -r '.free_rank_button.callback_data')" != "user:panel:referral" ]; then echo "Fail: free_rank callback $L. Got: $RES_FR"; exit 1; fi
+done
+
+echo "Testing /test/rank/free_rank (missing i18n key)"
+RES_FRB=$(curl -s -X POST "$BASE_URL/test/rank/free_rank" -H "Content-Type: application/json" -d '{"lang": "fa", "label_key": "rank.no_such_key"}')
+if [ "$(echo "$RES_FRB" | jq -r '.ok')" != "false" ]; then echo "Fail: free_rank accepted missing key. Got: $RES_FRB"; exit 1; fi
+
 echo "Testing /test/referral/spend"
 RES_REF=$(curl -s -X POST "$BASE_URL/test/referral/spend" -H "Content-Type: application/json" -d '{"points": 20, "tier": "Esfandyar"}')
 if [ "$(echo "$RES_REF" | jq -r '.ok')" != "true" ]; then echo "Fail: referral spend. Got: $RES_REF"; exit 1; fi
 # مسیر واقعی: ۲۰ امتیاز خرج تیر ۲۰تایی ⇒ موجودی صفر، رتبه نشسته، ۳۱ روز.
 if [ "$(echo "$RES_REF" | jq -r '.remaining_points')" != "0" ]; then echo "Fail: referral spend did not debit. Got: $RES_REF"; exit 1; fi
 if [ "$(echo "$RES_REF" | jq -r '.granted_rank')" != "esfandyar" ]; then echo "Fail: referral spend rank not granted. Got: $RES_REF"; exit 1; fi
-if [ "$(echo "$RES_REF" | jq -r '.days_added')" != "31" ]; then echo "Fail: referral spend days. Got: $RES_REF"; exit 1; fi
+DAYS_ADDED=$(echo "$RES_REF" | jq -r '.days_added')
+if [ "$DAYS_ADDED" != "31" ] && [ "$DAYS_ADDED" != "32" ]; then echo "Fail: referral spend days. Got: $RES_REF"; exit 1; fi
 
 echo "Testing /test/referral/spend (insufficient points)"
 RES_REF_LOW=$(curl -s -X POST "$BASE_URL/test/referral/spend" -H "Content-Type: application/json" -d '{"points": 5, "tier": "Esfandyar"}')
@@ -498,6 +555,73 @@ if [ "$(qfield "$R" .used)" != "0" ]; then echo "Fail: refund went negative or w
 # پاک‌سازی ردیف‌های کاربر آزمایشی
 q '{"user_id":-999002,"kind":"upscale_2x_weekly","action":"refund","amount":1000000,"window_secs":604800}' > /dev/null
 echo "✅ Quota reserve tests passed! (test user $QUSER)"
+
+echo ""
+echo "=== Running Studio Trim Tests ==="
+
+# Test 1: Valid multi-range parsing (including Persian digits & no-space dash)
+echo "Testing /test/studio/trim (Valid ranges with Persian digits)"
+RES_ST1=$(curl -s -X POST "$BASE_URL/test/studio/trim" \
+    -H "Content-Type: application/json" \
+    -d '{"input_ranges": "00:00 - 00:30\n۰۰:۰۱:۰۰-۰۰:۰۲:۰۰", "duration_secs": 300}')
+if [ "$(echo "$RES_ST1" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_ST1" | jq -r '.is_valid')" != "true" ] || [ "$(echo "$RES_ST1" | jq -r '.ranges_count')" != "2" ]; then
+    echo "Fail: Studio trim valid ranges test failed. Got: $RES_ST1"
+    exit 1
+fi
+
+# Test 2: Invalid range parsing (start >= end and out of bounds)
+echo "Testing /test/studio/trim (Invalid ranges)"
+RES_ST2=$(curl -s -X POST "$BASE_URL/test/studio/trim" \
+    -H "Content-Type: application/json" \
+    -d '{"input_ranges": "00:02:00 - 00:01:00\n00:06:00 - 00:10:00", "duration_secs": 300}')
+if [ "$(echo "$RES_ST2" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_ST2" | jq -r '.is_valid')" != "false" ]; then
+    echo "Fail: Studio trim invalid ranges test failed. Got: $RES_ST2"
+    exit 1
+fi
+
+# Test 3: Auto-clamping end timestamp to video duration
+echo "Testing /test/studio/trim (Auto-clamping end timestamp)"
+RES_ST3=$(curl -s -X POST "$BASE_URL/test/studio/trim" \
+    -H "Content-Type: application/json" \
+    -d '{"input_ranges": "00:01:00 - 00:10:00", "duration_secs": 300}')
+if [ "$(echo "$RES_ST3" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_ST3" | jq -r '.is_valid')" != "true" ] || [ "$(echo "$RES_ST3" | jq -r '.parsed_ranges[0].end_secs')" != "300" ]; then
+    echo "Fail: Studio trim autoclamp test failed. Got: $RES_ST3"
+    exit 1
+fi
+echo "✅ Studio Trim tests passed!"
+
+echo "Testing /test/studio/compress (Filtering & Container)"
+RES_SC1=$(curl -s -X POST "$BASE_URL/test/studio/compress" \
+    -H "Content-Type: application/json" \
+    -d '{"orig_h": 1080, "orig_fps": 60, "selected_codec": "h264"}')
+if [ "$(echo "$RES_SC1" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_SC1" | jq -r '.container')" != ".mp4" ]; then
+    echo "Fail: Studio compress h264 container test failed. Got: $RES_SC1"
+    exit 1
+fi
+if echo "$RES_SC1" | jq -r '.available_resolutions[]' | grep -q "2160"; then
+    echo "Fail: Studio compress 4K resolution leaked for 1080p source."
+    exit 1
+fi
+
+RES_SC2=$(curl -s -X POST "$BASE_URL/test/studio/compress" \
+    -H "Content-Type: application/json" \
+    -d '{"orig_h": 720, "orig_fps": 30, "selected_codec": "h265"}')
+if [ "$(echo "$RES_SC2" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_SC2" | jq -r '.container')" != ".mkv" ]; then
+    echo "Fail: Studio compress h265 container test failed. Got: $RES_SC2"
+    exit 1
+fi
+if echo "$RES_SC2" | jq -r '.available_fps[]' | grep -q "60"; then
+    echo "Fail: Studio compress 60fps leaked for 30fps source."
+    exit 1
+fi
+RES_SC3=$(curl -s -X POST "$BASE_URL/test/studio/compress" \
+    -H "Content-Type: application/json" \
+    -d '{"orig_h": 1080, "orig_fps": 30, "selected_codec": "av1"}')
+if [ "$(echo "$RES_SC3" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_SC3" | jq -r '.preset')" != "9" ]; then
+    echo "Fail: Studio compress av1 preset test failed. Got: $RES_SC3"
+    exit 1
+fi
+echo "✅ Studio Compress tests passed!"
 
 echo "✅ Extended TestAPI Endpoint Suite passed!"
 

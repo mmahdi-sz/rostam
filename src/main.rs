@@ -38,6 +38,7 @@ mod admin;
 mod app;
 mod bot;
 mod config;
+pub mod http;
 mod cookie_pool;
 mod database;
 mod denoise;
@@ -63,6 +64,7 @@ mod spotify;
 mod stats;
 mod stt;
 mod surge_dl;
+mod studio;
 mod upscale;
 mod youtube;
 

@@ -53,7 +53,7 @@ pub(super) async fn refresh_once() {
 }
 
 async fn build_lists() -> CachedLists {
-    let client = reqwest::Client::new();
+    let client = crate::http::client();
     let timeout = Duration::from_secs(30);
 
     let aws = fetch_aws_ranges(&client, timeout).await.unwrap_or_default();

@@ -96,16 +96,21 @@ pub fn start_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup {
     let icon = AI_ICONS[idx];
     let mut rows = vec![
         vec![btn_icon_success(
+            &t("start.guide_button"),
+            CB_START_GUIDE,
+            "guide",
+        )],
+        vec![btn_icon_primary(
             &t("start.ai_lab_button"),
             CB_START_AI_LAB,
             icon,
         )],
-        vec![btn_icon_danger(
-            &t("start.youtube_button"),
-            CB_START_YOUTUBE,
+        vec![btn_icon(&t("start.tools_button"), CB_START_TOOLS, "wrench")],
+        vec![btn_icon(
+            &t("start.studio_button"),
+            CB_START_STUDIO,
             "clapper",
         )],
-        vec![btn_icon(&t("start.tools_button"), CB_START_TOOLS, "wrench")],
         vec![btn_icon(
             &t("start.leaderboard_button"),
             CB_START_LEADERBOARD,
@@ -206,6 +211,81 @@ pub async fn send_ai_lab(api: &Bot, chat_id: i64) -> crate::error::Result<()> {
         ))
         .build();
     api.send_message(&params).await?;
+    Ok(())
+}
+
+/// Platform keys for the social-network guide pages.
+pub const GUIDE_PLATFORMS: [&str; 3] = ["yt", "sp", "sc"];
+
+fn guide_platform_icon(platform: &str) -> &'static str {
+    match platform {
+        "sp" => "spotify_logo",
+        "sc" => "soundcloud_logo",
+        _ => "clapper",
+    }
+}
+
+pub fn guide_keyboard() -> InlineKeyboardMarkup {
+    let mut rows: Vec<Vec<frankenstein::types::InlineKeyboardButton>> = GUIDE_PLATFORMS
+        .iter()
+        .map(|p| {
+            vec![btn_icon(
+                &t(&format!("start.guide_{p}_button")),
+                &format!("{CB_START_GUIDE_PLATFORM}{p}"),
+                guide_platform_icon(p),
+            )]
+        })
+        .collect();
+    rows.push(vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")]);
+    InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
+}
+
+pub fn guide_platform_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![btn_icon(
+            &t("start.back"),
+            CB_START_GUIDE,
+            "back",
+        )]])
+        .build()
+}
+
+/// Rendered body of one platform guide page: usage + how to copy the link + auto-detect note.
+pub fn guide_platform_text(platform: &str) -> String {
+    apply_premium_to_md(&format!(
+        "{}\n\n{}",
+        t(&format!("start.guide_{platform}_text")),
+        t("start.guide_autodetect")
+    ))
+}
+
+pub async fn edit_to_guide(api: &Bot, chat_id: i64, message_id: i32) -> crate::error::Result<()> {
+    let text = apply_premium_to_md(&t("start.guide_title"));
+    let params = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(&text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(guide_keyboard())
+        .build();
+    api.edit_message_text(&params).await?;
+    Ok(())
+}
+
+pub async fn edit_to_guide_platform(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    platform: &str,
+) -> crate::error::Result<()> {
+    let params = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(guide_platform_text(platform))
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(guide_platform_keyboard())
+        .build();
+    api.edit_message_text(&params).await?;
     Ok(())
 }
 

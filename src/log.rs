@@ -334,7 +334,7 @@ mod tests {
 
         // Port 1 is closed to simulate connection failure locally.
         let url = format!("http://127.0.0.1:1/file/bot{E2E_TOKEN}/probe.oga");
-        let err = reqwest::Client::new()
+        let err = crate::http::client()
             .get(&url)
             .send()
             .await

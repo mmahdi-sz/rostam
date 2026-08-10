@@ -868,7 +868,7 @@ fn extract_content_disposition_filename(header: &str) -> Option<String> {
 async fn probe_url(url: &str) -> (String, Option<u64>) {
     let fallback = filename_from_url(url);
     // User-Agent prevents 403 error page size from being misreported as file size.
-    let resp = match reqwest::Client::new()
+    let resp = match crate::http::client()
         .head(url)
         .header(reqwest::header::USER_AGENT, "Mozilla/5.0")
         .timeout(Duration::from_secs(10))
@@ -1127,12 +1127,9 @@ fn sanitize_rename(typed: &str) -> Option<String> {
         })
 }
 
-use std::sync::OnceLock;
-
-static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
-    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
+    let client = crate::http::client();
     let res = client
         .post("http://127.0.0.1:6589/cpu/acquire")
         .form(&[
@@ -1163,7 +1160,7 @@ async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
     if cores.is_empty() {
         return;
     }
-    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
+    let client = crate::http::client();
     let body = serde_json::json!({ "cores": cores });
     let r = client
         .post("http://127.0.0.1:6589/cpu/release")

@@ -45,6 +45,7 @@ NOTIFY_CHANNEL = "cpu:notify"
 RESERVED_KEY = "cpu:reserved"
 QUEUE_KEY = "cpu:queue"
 OVERLOADED_KEY = "cpu:overloaded"
+MAX_CORES_PER_USER = 4
 
 log = logging.getLogger("separation")
 
@@ -172,13 +173,31 @@ async def _try_acquire_now(user_id: int) -> Optional[List[int]]:
     now_ts = time.time()
     await _purge_stale(now_ts)
 
+    reserved_all = await r.hgetall(RESERVED_KEY)
+    user_held_cores = 0
+    reserved_cores = set()
+    for k, v in reserved_all.items():
+        reserved_cores.add(int(k))
+        try:
+            uid_str, _ = v.split(":", 1)
+            if int(uid_str) == user_id:
+                user_held_cores += 1
+        except (ValueError, AttributeError):
+            pass
+
+    if user_held_cores >= MAX_CORES_PER_USER:
+        return None
+
     count = await available_cores()
     if count == 0:
         return None
 
-    reserved_cores = set(int(k) for k in (await r.hgetall(RESERVED_KEY)).keys())
-    candidates = await pick_cores(count * 2)
-    free = [c for c in candidates if c not in reserved_cores][:count]
+    allowed_count = min(count, MAX_CORES_PER_USER - user_held_cores)
+    if allowed_count <= 0:
+        return None
+
+    candidates = await pick_cores(allowed_count * 2)
+    free = [c for c in candidates if c not in reserved_cores][:allowed_count]
 
     if not free:
         return None
@@ -260,3 +279,18 @@ async def queue_position(ticket_id: str) -> int:
         except Exception:
             pass
     return 0
+
+
+async def get_user_cores(user_id: int) -> int:
+    """Return the number of cores currently reserved by user_id."""
+    r = await get_redis()
+    reserved_all = await r.hgetall(RESERVED_KEY)
+    user_held_cores = 0
+    for v in reserved_all.values():
+        try:
+            uid_str, _ = v.split(":", 1)
+            if int(uid_str) == user_id:
+                user_held_cores += 1
+        except (ValueError, AttributeError):
+            pass
+    return user_held_cores

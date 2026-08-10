@@ -131,6 +131,11 @@ pub async fn handle_denoise_audio(
     user_id: i64,
     database: &Option<PostgresDatabase>,
 ) {
+    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+        let _ = send_text(api, message.chat.id, &t("active_job_running")).await;
+        return;
+    }
+
     // Flow state is cleared by the dispatcher before spawning this task.
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
@@ -481,15 +486,21 @@ pub async fn handle_denoise_audio(
         None
     };
 
+    let cores = crate::moebius::cpu::acquire_cpu(user_id, trace_id).await;
+    let cores_clone = cores.clone();
+
     let denoise_res = {
         let wav_in = wav_str.to_string();
         let wav_out = denoised_str.to_string();
         tokio::task::spawn_blocking(move || {
+            crate::moebius::cpu::pin_current_thread(&cores_clone, trace_id);
             deepfilter::denoise(&wav_in, &wav_out).map_err(|e| e.to_string())
         })
         .await
         .unwrap_or_else(|e| Err(format!("denoise task panicked: {e}")))
     };
+
+    crate::moebius::cpu::release_cpu(cores, trace_id).await;
 
     if let Some(ticker) = progress_ticker {
         ticker.abort();

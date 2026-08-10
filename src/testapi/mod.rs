@@ -19,6 +19,10 @@ pub async fn run() -> anyhow::Result<()> {
         .route("/test/rank/paywall", post(endpoints::rank::test_paywall))
         .route("/test/rank/panel", post(endpoints::rank::test_rank_panel))
         .route(
+            "/test/rank/free_rank",
+            post(endpoints::rank::test_free_rank),
+        )
+        .route(
             "/test/emoji/premium_render",
             post(endpoints::emoji::test_premium_render),
         )
@@ -58,6 +62,14 @@ pub async fn run() -> anyhow::Result<()> {
             "/test/separation/submit",
             post(endpoints::ai::test_separation_submit),
         )
+        .route(
+            "/test/emoji/panel",
+            post(endpoints::emoji::test_emoji_panel),
+        )
+        .route(
+            "/test/start/guide",
+            post(endpoints::guide::test_start_guide),
+        )
         .route("/test/quota", post(endpoints::quota::test_quota))
         .route("/test/gwm/detect", post(endpoints::ai::test_gwm_detect))
         .route(
@@ -83,6 +95,14 @@ pub async fn run() -> anyhow::Result<()> {
         .route(
             "/test/admin/broadcast",
             post(endpoints::admin::test_admin_broadcast),
+        )
+        .route(
+            "/test/studio/trim",
+            post(endpoints::studio::test_studio_trim),
+        )
+        .route(
+            "/test/studio/compress",
+            post(endpoints::studio::test_studio_compress),
         )
         .route(
             "/test/surge/validate_url",

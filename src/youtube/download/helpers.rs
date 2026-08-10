@@ -1158,7 +1158,7 @@ pub async fn download_subtitles_separately(
 const SEP_BASE: &str = "http://127.0.0.1:6589";
 
 async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
-    let client = reqwest::Client::new();
+    let client = crate::http::client();
     let res = client
         .post(format!("{SEP_BASE}/cpu/acquire"))
         .form(&[
@@ -1189,7 +1189,7 @@ async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
     if cores.is_empty() {
         return;
     }
-    let client = reqwest::Client::new();
+    let client = crate::http::client();
     let body = serde_json::json!({ "cores": cores });
     let r = client
         .post(format!("{SEP_BASE}/cpu/release"))

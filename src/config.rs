@@ -169,6 +169,32 @@ pub fn deno_path() -> String {
     config_value("DENO_PATH").unwrap_or_else(|| "deno".to_string())
 }
 
+/// Path to ffmpeg binary (defaults to local `files/bin/ffmpeg` if present, else `ffmpeg`).
+pub fn ffmpeg_path() -> std::path::PathBuf {
+    if let Some(path) = config_value("FFMPEG_PATH") {
+        return std::path::PathBuf::from(path);
+    }
+    let local = std::path::PathBuf::from("files/bin/ffmpeg");
+    if local.exists() {
+        local
+    } else {
+        std::path::PathBuf::from("ffmpeg")
+    }
+}
+
+/// Path to ffprobe binary (defaults to local `files/bin/ffprobe` if present, else `ffprobe`).
+pub fn ffprobe_path() -> std::path::PathBuf {
+    if let Some(path) = config_value("FFPROBE_PATH") {
+        return std::path::PathBuf::from(path);
+    }
+    let local = std::path::PathBuf::from("files/bin/ffprobe");
+    if local.exists() {
+        local
+    } else {
+        std::path::PathBuf::from("ffprobe")
+    }
+}
+
 /// OS user the cookie-refresher spawns Firefox as (via `sudo -u <user>`). When
 /// unset, Firefox is spawned directly as the bot's own user instead of via sudo.
 pub fn cookie_refresh_os_user() -> Option<String> {

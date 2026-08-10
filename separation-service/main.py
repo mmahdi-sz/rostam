@@ -15,7 +15,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from cpu_monitor import start_monitor, available_cores, pick_cores
-from cpu_broker import start_broker, acquire, release, is_overloaded, get_redis, RESERVED_KEY, QUEUE_KEY
+from cpu_broker import start_broker, acquire, release, is_overloaded, get_redis, RESERVED_KEY, QUEUE_KEY, get_user_cores
 
 logging.basicConfig(
     level=logging.INFO,
@@ -148,6 +148,12 @@ async def cpu_status():
         "overloaded": overloaded,
         "queue_length": queue_len,
     }
+
+
+@app.get("/cpu/user_cores")
+async def cpu_user_cores(user_id: int):
+    held = await get_user_cores(user_id)
+    return {"user_id": user_id, "held_cores": held, "is_busy": held >= 4}
 
 
 @app.post("/separate")

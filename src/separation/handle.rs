@@ -341,6 +341,11 @@ pub async fn handle_separation_callback(
         }
     };
 
+    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+        let _ = send_text_with_ai_back(api, chat_id, &t("active_job_running")).await;
+        return;
+    }
+
     // Clear flow — processing starts.
     flow_manager.clear(user_id);
 

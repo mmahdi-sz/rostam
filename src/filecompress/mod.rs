@@ -10,5 +10,6 @@ pub use config::CompressConfig;
 pub use config::CompressFmt;
 pub use handle::{
     CB_FC_PREFIX, CB_TOOLS_FILECOMPRESS, enter_filecompress, handle_fc_callback,
-    handle_fc_done_text, handle_fc_file, handle_fc_password_text, send_password_need_text,
+    handle_fc_done_text, handle_fc_file, handle_fc_password_text, send_options_menu,
+    send_password_need_text,
 };

@@ -43,7 +43,7 @@ pub fn apply_premium_to_html(text: &str) -> String {
         for (emoji_str, icon_key) in EMOJI_MAP {
             if rest.starts_with(emoji_str) {
                 let icon_id = t(&format!("emoji.panel.icons.{icon_key}"));
-                if !icon_id.is_empty() {
+                if !icon_id.is_empty() && !icon_id.starts_with('!') {
                     result.push_str(&format!(
                         "<tg-emoji emoji-id=\"{icon_id}\">{emoji_str}</tg-emoji>"
                     ));
@@ -64,7 +64,7 @@ fn random_fire_id() -> Option<String> {
     use rand::Rng;
     let ids: Vec<String> = (1..=4)
         .map(|i| t(&format!("emoji.panel.icons.fire{i}")))
-        .filter(|s| !s.is_empty())
+        .filter(|s| !s.is_empty() && !s.starts_with('!'))
         .collect();
     if ids.is_empty() {
         return None;
@@ -95,7 +95,7 @@ pub fn apply_premium_to_md(text: &str) -> String {
         for (emoji_str, icon_key) in EMOJI_MAP {
             if rest.starts_with(emoji_str) {
                 let icon_id = t(&format!("emoji.panel.icons.{icon_key}"));
-                if !icon_id.is_empty() {
+                if !icon_id.is_empty() && !icon_id.starts_with('!') {
                     result.push_str(&format!("![{emoji_str}](tg://emoji?id={icon_id})"));
                     rest = &rest[emoji_str.len()..];
                     continue 'outer;

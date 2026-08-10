@@ -203,6 +203,15 @@ if [ ! -x files/runtime/deep-filter ]; then
   else warn "deep-filter binary unavailable — STT denoise will degrade"; fi
 else ok "deep-filter binary present — skipping"; fi
 
+if [ ! -x files/bin/ffmpeg ]; then
+  say "downloading BtbN FFmpeg static build (latest SVT-AV1 v4+)..."
+  mkdir -p files/bin
+  fetch "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz" "$TMP/ffmpeg.tar.xz"
+  tar -xJ --wildcards --strip-components=2 -C files/bin -f "$TMP/ffmpeg.tar.xz" "*/bin/ffmpeg" "*/bin/ffprobe"
+  chmod +x files/bin/ffmpeg files/bin/ffprobe
+  ok "BtbN FFmpeg binary (SVT-AV1 v4+)"
+else ok "BtbN FFmpeg binary present — skipping"; fi
+
 if [ ! -x files/realesrgan/realesrgan-ncnn-vulkan ]; then
   say "downloading Real-ESRGAN…"
   fetch "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip" "$TMP/resrgan.zip"

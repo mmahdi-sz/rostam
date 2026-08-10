@@ -122,6 +122,13 @@ pub enum FlowState {
         files: Vec<CompressFileEntry>,
         prompt_msg_id: i32,
     },
+    AwaitingStudioTrimVideo,
+    AwaitingStudioTrimRanges {
+        file_id: String,
+        filename: String,
+        duration_secs: u64,
+    },
+    AwaitingStudioCompressVideo,
 }
 
 #[derive(Debug, Clone)]

@@ -8,7 +8,7 @@ use frankenstein::{
 use super::prices::RankPricesConfig;
 use super::types::Rank;
 use crate::bot::CB_USER_PANEL;
-use crate::emoji::panel::{btn_icon, btn_icon_success, btn_icon_url_success};
+use crate::emoji::panel::{btn_icon, btn_icon_primary, btn_icon_success, btn_icon_url_success};
 use crate::i18n::{apply_premium_to_html, t, tf};
 
 pub const CB_RANK_SHOP: &str = "rank:shop";
@@ -111,6 +111,12 @@ pub fn build_shop_keyboard(selected: Rank, prices_cfg: &RankPricesConfig) -> Inl
             ],
             vec![esfandyar_btn],
             vec![btn_icon_url_success(&buy_label, &buy_url, "cart")],
+            // Free path to a higher rank: opens the same referral menu as /ref.
+            vec![btn_icon_primary(
+                &t("rank.free_rank_button"),
+                crate::rank::panel::CB_REFERRAL,
+                "fire1",
+            )],
             vec![btn_icon(&t("start.back"), CB_USER_PANEL, "back")],
         ])
         .build()

@@ -136,6 +136,11 @@ pub async fn handle_tts_text(
     flow_manager: &FlowManager,
     database: Option<PostgresDatabase>,
 ) {
+    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+        let _ = crate::bot::send_text(api, chat_id, &t("active_job_running")).await;
+        return;
+    }
+
     let trace_id = next_trace_id();
     log_ev!("tts", trace_id, "generate", "user_id" => user_id, "chat_id" => chat_id);
 

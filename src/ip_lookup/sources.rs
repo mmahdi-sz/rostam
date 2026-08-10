@@ -58,7 +58,7 @@ async fn get_json(url: &str, headers: &[(&str, &str)]) -> Option<Value> {
         eprintln!("[ip_lookup] SSRF block: rejected url={url}");
         return None;
     }
-    let client = reqwest::Client::new();
+    let client = crate::http::client();
     let mut req = client
         .get(url)
         .timeout(TIMEOUT)

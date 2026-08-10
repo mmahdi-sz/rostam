@@ -6,6 +6,7 @@ target/
 git-server/
 cookie_profiles_cache/
 
+files/bin/
 files/models/
 models/
 files/realesrgan/

@@ -4,15 +4,13 @@
 //! care whether the caller runs a subprocess or, as here, pins its own
 //! blocking-task thread before running ONNX inference on it.
 
-use std::sync::OnceLock;
-use std::time::Duration;
 
-static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+use std::time::Duration;
 
 const SEP_BASE: &str = "http://127.0.0.1:6589";
 
 pub async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
-    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
+    let client = crate::http::client();
     let res = client
         .post(format!("{SEP_BASE}/cpu/acquire"))
         .form(&[
@@ -39,6 +37,26 @@ pub async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
     }
 }
 
+pub async fn is_user_cpu_busy(user_id: i64) -> bool {
+    let client = crate::http::client();
+    let res = client
+        .get(format!("{SEP_BASE}/cpu/user_cores"))
+        .query(&[("user_id", user_id)])
+        .timeout(Duration::from_secs(2))
+        .send()
+        .await;
+    match res {
+        Ok(r) => {
+            let json: serde_json::Value = r.json().await.unwrap_or_default();
+            json.get("is_busy").and_then(|v| v.as_bool()).unwrap_or(false)
+        }
+        Err(e) => {
+            eprintln!("[gwm] is_user_cpu_busy err={e}");
+            false
+        }
+    }
+}
+
 /// Hands freed heap pages back to the kernel. glibc parks them in per-thread
 /// arenas instead, so after one big job (Vosk model, whole-file buffer) RSS
 /// stays at the high-water mark through hours of idle. Only walks the free
@@ -56,7 +74,7 @@ pub async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
     if cores.is_empty() {
         return;
     }
-    let client = HTTP_CLIENT.get_or_init(reqwest::Client::new);
+    let client = crate::http::client();
     let body = serde_json::json!({ "cores": cores });
     let r = client
         .post(format!("{SEP_BASE}/cpu/release"))

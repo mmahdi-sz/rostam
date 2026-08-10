@@ -81,6 +81,11 @@ pub async fn handle_nobg_image(
     flow_manager: &FlowManager,
     database: Option<PostgresDatabase>,
 ) {
+    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+        let _ = crate::bot::send_text(api, message.chat.id, &t("active_job_running")).await;
+        return;
+    }
+
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
     log_actor_id!("feynobg", trace_id, user_id, "clicked" => "send_nobg_image");
