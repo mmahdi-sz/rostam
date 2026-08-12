@@ -51,6 +51,8 @@ const F_FILES: &[Feat] = &[
     feat("surge_dl", "admin.stats.names.surge_dl", false),
     feat("emoji", "admin.stats.names.emoji", false),
     feat("ip_lookup", "admin.stats.names.ip_lookup", false),
+    feat("studio_trim", "admin.stats.names.studio_trim", false),
+    feat("studio_compress", "admin.stats.names.studio_compress", false),
 ];
 
 const F_MONEY: &[Feat] = &[

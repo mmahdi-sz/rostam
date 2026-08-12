@@ -9,7 +9,7 @@ use frankenstein::{
     client_reqwest::Bot,
     methods::{DeleteMessageParams, EditMessageTextParams, SendDocumentParams, SendMessageParams},
     types::{
-        ButtonStyle, InlineKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardMarkup,
+        InlineKeyboardMarkup, Message,
         ReplyMarkup, ReplyParameters,
     },
 };
@@ -236,24 +236,12 @@ fn job_cancel_keyboard() -> InlineKeyboardMarkup {
         .build()
 }
 
-fn done_reply_keyboard() -> ReplyKeyboardMarkup {
-    let confirm_icon = t("emoji.panel.icons.confirm");
-    let cancel_icon = t("emoji.panel.icons.cancel");
-    ReplyKeyboardMarkup::builder()
-        .keyboard(vec![vec![
-            KeyboardButton::builder()
-                .text(t("fc.done_upload_button"))
-                .style(ButtonStyle::Success)
-                .icon_custom_emoji_id(confirm_icon)
-                .build(),
-            KeyboardButton::builder()
-                .text(t("fc.cancel_button"))
-                .style(ButtonStyle::Danger)
-                .icon_custom_emoji_id(cancel_icon)
-                .build(),
+fn done_inline_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![vec![
+            btn_icon_success(&t("fc.done_upload_button"), "fc:done", "confirm"),
+            btn_icon_danger(&t("fc.cancel_button"), CB_FC_CANCEL, "cancel"),
         ]])
-        .resize_keyboard(true)
-        .one_time_keyboard(true)
         .build()
 }
 
@@ -298,7 +286,7 @@ pub async fn handle_fc_callback(
     flow_manager: &FlowManager,
     action: &str,
     cb_id: &str,
-    _database: &Option<PostgresDatabase>,
+    database: &Option<PostgresDatabase>,
 ) {
     let trace_id = next_trace_id();
     crate::log_ev!("filecompress", trace_id, "callback", "action" => action, "user_id" => user_id);
@@ -329,6 +317,38 @@ pub async fn handle_fc_callback(
             .parse_mode(ParseMode::MarkdownV2)
             .build();
         let _ = api.edit_message_text(&params).await;
+        return;
+    }
+
+    if action == "done" {
+        let (config, files, prompt_msg_id) = match flow_manager.get(user_id) {
+            FlowState::AwaitingCompressFiles {
+                config,
+                files,
+                prompt_msg_id,
+            } => (*config, files, prompt_msg_id),
+            _ => return,
+        };
+
+        flow_manager.clear(user_id);
+
+        if files.is_empty() {
+            let _ = send_text_with_back(api, chat_id, &t("fc.error.no_files")).await;
+            return;
+        }
+
+        start_compression_task(
+            api,
+            chat_id,
+            prompt_msg_id,
+            user_id,
+            config,
+            files,
+            trace_id,
+            database,
+            flow_manager,
+        )
+        .await;
         return;
     }
 
@@ -556,7 +576,7 @@ pub async fn handle_fc_callback(
                             .chat_id(chat_id)
                             .text(&upload_text)
                             .parse_mode(ParseMode::MarkdownV2)
-                            .reply_markup(ReplyMarkup::ReplyKeyboardMarkup(done_reply_keyboard()))
+                            .reply_markup(ReplyMarkup::InlineKeyboardMarkup(done_inline_keyboard()))
                             .build(),
                     )
                     .await;
@@ -591,9 +611,11 @@ async fn show_options_menu(api: &Bot, chat_id: i64, message_id: i32, config: &Co
         .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(options_keyboard(config))
         .build();
-    let r = api.edit_message_text(&params).await;
-    if let Err(ref e) = r {
-        crate::log_ev!("filecompress", 0, "show_options_menu_err", "err" => format!("{e:?}"));
+    if let Err(ref e) = api.edit_message_text(&params).await {
+        let desc = format!("{e:?}");
+        if !desc.contains("message is not modified") {
+            crate::log_ev!("filecompress", 0, "show_options_menu_err", "err" => desc);
+        }
     }
 }
 
@@ -644,7 +666,7 @@ pub async fn handle_fc_password_text(
                 .chat_id(chat_id)
                 .text(&upload_text)
                 .parse_mode(ParseMode::MarkdownV2)
-                .reply_markup(ReplyMarkup::ReplyKeyboardMarkup(done_reply_keyboard()))
+                .reply_markup(ReplyMarkup::InlineKeyboardMarkup(done_inline_keyboard()))
                 .build(),
         )
         .await;
@@ -753,7 +775,7 @@ pub async fn handle_fc_file(
                         .chat_id(chat_id)
                         .text(&upload_text)
                         .parse_mode(ParseMode::MarkdownV2)
-                        .reply_markup(ReplyMarkup::ReplyKeyboardMarkup(done_reply_keyboard()))
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(done_inline_keyboard()))
                         .build(),
                 )
                 .await;
@@ -795,6 +817,7 @@ pub async fn handle_fc_file(
         .chat_id(chat_id)
         .text(&reply_text)
         .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(done_inline_keyboard()))
         .reply_parameters(
             ReplyParameters::builder()
                 .message_id(message.message_id)
@@ -1196,16 +1219,47 @@ async fn run_filecompress_worker(
         };
     }
 
+    // Re-arm: send the file-compress prompt so user isn't stranded.
+    macro_rules! re_arm_flow {
+        () => {{
+            let upload_text =
+                apply_premium_to_md(&t("fc.upload_prompt").replace("{count}", "0"));
+            let send_res = api
+                .send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(&upload_text)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(done_inline_keyboard()))
+                        .build(),
+                )
+                .await;
+            if let Ok(m) = send_res {
+                flow_manager.set(
+                    user_id,
+                    FlowState::AwaitingCompressFiles {
+                        config: Box::new(config.clone()),
+                        files: Vec::new(),
+                        prompt_msg_id: m.result.message_id,
+                    },
+                );
+            }
+        }};
+    }
+
     let work_dir = std::env::temp_dir().join(format!("filecompress_{trace_id}"));
     if let Err(e) = std::fs::create_dir_all(&work_dir) {
         crate::log_ev!("filecompress", trace_id, "mkdir_failed", "err" => format!("{e}"));
         stop_timer!();
         refund!("mkdir_failed");
         let _ = send_text_with_back(&api, chat_id, &t("fc.error.compress_failed")).await;
+        re_arm_flow!();
         return;
     }
 
     let mut local_input_paths = Vec::new();
+    let stats_job_id = crate::stats::record_download_start(user_id, "filecompress").await;
+    let mut total_dl_bytes = 0u64;
 
     for (idx, entry) in files.iter().enumerate() {
         if cancel_flag.load(Ordering::Relaxed) {
@@ -1217,19 +1271,35 @@ async fn run_filecompress_worker(
         }
         let local_path = work_dir.join(&entry.filename);
         progress.set_downloading(idx + 1);
-        crate::log_ev!("filecompress", trace_id, "downloading_file", "idx" => idx, "name" => &entry.filename);
-        if let Err(e) = download_telegram_file(&api, &entry.file_id, &local_path).await {
-            crate::log_ev!("filecompress", trace_id, "download_failed", "err" => format!("{e}"));
-            stop_timer!();
-            refund!("download_failed");
-            std::fs::remove_dir_all(&work_dir).ok();
-            let _ = send_text_with_back(&api, chat_id, &t("fc.error.download_failed")).await;
-            return;
-        }
+        let dl_res = match download_telegram_file(&api, &entry.file_id, &local_path).await {
+            Ok(res) => res,
+            Err(e) => {
+                crate::log_ev!("filecompress", trace_id, "download_failed", "err" => format!("{e}"));
+                stop_timer!();
+                refund!("download_failed");
+                std::fs::remove_dir_all(&work_dir).ok();
+                let _ = send_text_with_back(&api, chat_id, &t("fc.error.download_failed")).await;
+                re_arm_flow!();
+                return;
+            }
+        };
+        total_dl_bytes += dl_res.bytes;
         let size = std::fs::metadata(&local_path).map(|m| m.len()).unwrap_or(0);
-        crate::log_ev!("filecompress", trace_id, "download_done", "idx" => idx, "bytes" => size, "=>" => "ok");
+        crate::log_ev!("filecompress", trace_id, "download_done", "idx" => idx, "bytes" => size, "speed" => dl_res.speed_human(), "=>" => "ok");
         local_input_paths.push(local_path);
     }
+
+    if let Some(jid) = stats_job_id {
+        crate::stats::record_download_done(
+            jid,
+            total_dl_bytes as i64,
+            None,
+            None,
+            None,
+        )
+        .await;
+    }
+
 
     if cancel_flag.load(Ordering::Relaxed) {
         crate::log_ev!("filecompress", trace_id, "cancelled_before_engine", "user_id" => user_id);
@@ -1276,6 +1346,7 @@ async fn run_filecompress_worker(
             refund!("timeout");
             std::fs::remove_dir_all(&work_dir).ok();
             let _ = send_text_with_back(&api, chat_id, &t("fc.error.timeout")).await;
+            re_arm_flow!();
             return;
         }
         Err(e) => {
@@ -1283,6 +1354,7 @@ async fn run_filecompress_worker(
             refund!("compress_failed");
             std::fs::remove_dir_all(&work_dir).ok();
             let _ = send_text_with_back(&api, chat_id, &t("fc.error.compress_failed")).await;
+            re_arm_flow!();
             return;
         }
     };
@@ -1326,33 +1398,41 @@ async fn run_filecompress_worker(
         0.0
     };
 
-    let caption = apply_premium_to_md(&format!(
-        "{}\n\n{}",
-        t("fc.result_caption"),
-        t("fc.result_report")
-            .replace("{before}", &escape_md(&input_fmt))
-            .replace("{after}", &escape_md(&output_fmt))
-            .replace("{percent}", &escape_md(&format!("{reduction_pct:.1}")))
-            .replace(
-                "{cpu_time}",
-                &escape_md(&format!("{:.1}s", result.cpu_secs))
-            )
-    ));
+    let raw_report = tf(
+        "fc.result_report",
+        &[
+            ("before", &escape_md(&input_fmt)),
+            ("after", &escape_md(&output_fmt)),
+            ("percent", &escape_md(&format!("{reduction_pct:.1}"))),
+            ("cpu_time", &escape_md(&format!("{:.1}s", result.cpu_secs))),
+        ],
+    );
 
     let part_count = result.output_paths.len();
 
     for (idx, path) in result.output_paths.iter().enumerate() {
-        let part_caption = if part_count > 1 {
-            format!(
-                "{}\n{}",
-                caption,
-                t("fc.result_part_caption")
-                    .replace("{part}", &(idx + 1).to_string())
-                    .replace("{total}", &part_count.to_string())
-            )
+        let out_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        if out_bytes == 0 || out_bytes > 2000 * 1024 * 1024 {
+            crate::log_ev!("filecompress", trace_id, "output_oversized_or_missing", "bytes" => out_bytes);
+            let _ = send_text_with_back(&api, chat_id, &t("fc.error.send_failed")).await;
+            break;
+        }
+
+        let raw_caption_text = if part_count > 1 {
+            let part_label = tf(
+                "fc.result_part_caption",
+                &[
+                    ("part", &(idx + 1).to_string()),
+                    ("total", &part_count.to_string()),
+                ],
+            );
+            format!("{}\n\n{}\n{}", t("fc.result_caption"), raw_report, part_label)
         } else {
-            caption.clone()
+            format!("{}\n\n{}", t("fc.result_caption"), raw_report)
         };
+
+        let part_caption = apply_premium_to_md(&raw_caption_text);
+        let up_start = std::time::Instant::now();
 
         let params = SendDocumentParams::builder()
             .chat_id(chat_id)
@@ -1361,11 +1441,39 @@ async fn run_filecompress_worker(
             .parse_mode(ParseMode::MarkdownV2)
             .build();
 
-        if let Err(e) = api.send_document(&params).await {
+        use crate::bot::send_file_with_upload_ticker;
+        if let Err(e) = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            &api,
+            "sendDocument",
+            &params,
+            std::path::Path::new(path),
+            chat_id,
+            progress_msg_id,
+            "transfer.stage.sending_document",
+            None,
+        ).await {
             crate::log_ev!("filecompress", trace_id, "send_failed", "err" => format!("{e}"));
             let _ = send_text_with_back(&api, chat_id, &t("fc.error.send_failed")).await;
             break;
         }
+
+        let up_elapsed = up_start.elapsed();
+        let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+            out_bytes as f64 / up_elapsed.as_secs_f64()
+        } else {
+            0.0
+        };
+        if let Some(jid) = stats_job_id {
+            crate::stats::record_upload_done(
+                jid,
+                user_id,
+                out_bytes as i64,
+                Some(up_speed as i64),
+                Some(part_count as i32),
+            )
+            .await;
+        }
+
     }
 
     // Delete progress message
@@ -1388,7 +1496,7 @@ async fn run_filecompress_worker(
                 .chat_id(chat_id)
                 .text(&upload_text)
                 .parse_mode(ParseMode::MarkdownV2)
-                .reply_markup(ReplyMarkup::ReplyKeyboardMarkup(done_reply_keyboard()))
+                .reply_markup(ReplyMarkup::InlineKeyboardMarkup(done_inline_keyboard()))
                 .build(),
         )
         .await;
@@ -1407,30 +1515,38 @@ async fn run_filecompress_worker(
 
 async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
     let client = crate::http::client();
-    let res = client
-        .post(format!("{SEP_BASE}/cpu/acquire"))
-        .form(&[
-            ("user_id", user_id.to_string()),
-            ("is_vip", "false".to_string()),
-        ])
-        .timeout(Duration::from_secs(120))
-        .send()
-        .await;
-    match res {
-        Ok(r) => {
-            let json: serde_json::Value = r.json().await.unwrap_or_default();
-            let cores: Vec<i32> = json
-                .get("cores")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
-            crate::log_ev!("filecompress", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
-            cores
-        }
-        Err(e) => {
-            crate::log_ev!("filecompress", trace_id, "cpu_acquire_failed", "err" => format!("{e}"));
-            vec![]
+    for attempt in 0..3u8 {
+        let res = client
+            .post(format!("{SEP_BASE}/cpu/acquire"))
+            .form(&[
+                ("user_id", user_id.to_string()),
+                ("is_vip", "false".to_string()),
+            ])
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await;
+        match res {
+            Ok(r) => {
+                let json: serde_json::Value = r.json().await.unwrap_or_default();
+                let cores: Vec<i32> = json
+                    .get("cores")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    .unwrap_or_default();
+                crate::log_ev!("filecompress", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
+                return cores;
+            }
+            Err(e) => {
+                if attempt < 2 {
+                    crate::log_ev!("filecompress", trace_id, "cpu_acquire_retry", "attempt" => (attempt + 1), "err" => format!("{e}"));
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                } else {
+                    crate::log_ev!("filecompress", trace_id, "cpu_acquire_failed", "err" => format!("{e}"));
+                    return vec![];
+                }
+            }
         }
     }
+    vec![]
 }
 
 async fn release_cpu(cores: Vec<i32>, trace_id: u64) {

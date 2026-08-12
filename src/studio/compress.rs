@@ -141,9 +141,6 @@ pub fn build_compress_keyboard(session: &CompressSession) -> InlineKeyboardMarku
     rows.push(codec_row);
 
     // Section 2: Resolution (Filtered by <= orig_h)
-    // Row 1: 2160, 1440
-    // Row 2: 1080, 720
-    // Row 3: 480, 360, 240, 144
     let res_matrix: &[&[(u32, &str)]] = &[
         &[(2160, "2160p (4K)"), (1440, "1440p (2K)")],
         &[(1080, "1080p (fullHD)"), (720, "720p (HD)")],
@@ -169,8 +166,6 @@ pub fn build_compress_keyboard(session: &CompressSession) -> InlineKeyboardMarku
     }
 
     // Section 3: FPS (Filtered by <= orig_fps)
-    // Row 1: 60, 45, 30, 24
-    // Row 2: 20, 15, 13
     let fps_matrix: &[&[u32]] = &[
         &[60, 45, 30, 24],
         &[20, 15, 13],
@@ -196,8 +191,6 @@ pub fn build_compress_keyboard(session: &CompressSession) -> InlineKeyboardMarku
     }
 
     // Section 4: Bitrate Ratio (Calculated kbps)
-    // Row 1: 100, 75, 50 (1, 3/4, 2/4)
-    // Row 2: 25, 16, 12  (1/4, 1/6, 1/8)
     let br_matrix: &[&[u32]] = &[
         &[100, 75, 50],
         &[25, 16, 12],
@@ -374,15 +367,39 @@ pub async fn handle_video_upload(
 ) {
     let chat_id = msg.chat.id;
 
-    let Some(video) = msg.video.as_ref() else {
+    if !super::is_video_message_metadata(&msg) {
+        log_ev!("studio_compress", trace_id, "not_a_video_metadata", "=>" => "fail");
+        let _ = crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.not_a_video")).await;
+        return;
+    }
+
+    let (file_id, raw_filename, orig_size_bytes) = if let Some(v) = msg.video.as_ref() {
+        (
+            v.file_id.clone(),
+            v.file_name.as_deref().unwrap_or("video.mp4").to_string(),
+            v.file_size.unwrap_or(0),
+        )
+    } else if let Some(d) = msg.document.as_ref() {
+        (
+            d.file_id.clone(),
+            d.file_name.as_deref().unwrap_or("video.mp4").to_string(),
+            d.file_size.unwrap_or(0),
+        )
+    } else {
+        log_ev!("studio_compress", trace_id, "invalid_video_msg", "=>" => "fail");
+        let _ = crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.not_a_video")).await;
         return;
     };
 
     log_actor_id!("studio_compress", trace_id, user_id, "uploaded" => "video");
-    let file_id_prefix = if video.file_id.len() >= 6 { &video.file_id[..6] } else { &video.file_id };
+    let file_id_prefix = if file_id.len() >= 6 { &file_id[..6] } else { &file_id };
     log_ev!("studio_compress", trace_id, "video_received", "user_id" => user_id, "file_id" => file_id_prefix);
 
-    let status_text = apply_premium_to_md(&t("studio.compress.status_downloading"));
+    let status_raw = tf(
+        "studio.compress.status_downloading",
+        &[("elapsed", &md_escape("0s")), ("detail", "")],
+    );
+    let status_text = apply_premium_to_md(&status_raw);
     let status_msg = match api
         .send_message(
             &SendMessageParams::builder()
@@ -408,14 +425,27 @@ pub async fn handle_video_upload(
     }
     let _guard = TempDirGuard::new(work_dir.clone());
 
-    let raw_filename = video.file_name.as_deref().unwrap_or("video.mp4");
-    let local_file = work_dir.join(raw_filename);
+    let local_file = work_dir.join(&raw_filename);
 
-    if let Err(e) = crate::bot::files::download_telegram_file(api, &video.file_id, &local_file).await {
+    let dl_stop_flag = super::pipeline::spawn_download_ticker(
+        api.clone(),
+        chat_id,
+        status_msg.result.message_id,
+        local_file.clone(),
+        orig_size_bytes,
+        "studio.compress",
+        None,
+    );
+
+    let dl_res = crate::bot::files::download_telegram_file(api, &file_id, &local_file).await;
+    dl_stop_flag.store(true, Ordering::Relaxed);
+
+    if let Err(e) = dl_res {
         log_ev!("studio_compress", trace_id, "download_failed", "=>" => format!("fail err={e}"));
         let _ = crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.download_failed")).await;
         return;
     }
+
 
     let meta = match run_ffprobe(&local_file) {
         Ok(m) => m,
@@ -445,18 +475,26 @@ pub async fn handle_video_upload(
         .find(|&f| f <= orig_fps)
         .unwrap_or(orig_fps);
 
+    let initial_codec = match meta.codec.to_lowercase().as_str() {
+        "av1" | "svtav1" | "libsvtav1" => "av1",
+        "h265" | "hevc" | "libx265" => "h265",
+        "vp9" | "libvpx-vp9" => "vp9",
+        _ => "h264",
+    }
+    .to_string();
+
     let session = CompressSession {
-        file_id: video.file_id.clone(),
+        file_id: file_id.clone(),
         filename: raw_filename.to_string(),
         orig_w,
         orig_h,
         orig_fps,
         orig_bitrate,
         orig_codec: meta.codec.clone(),
-        orig_size_bytes: video.file_size.unwrap_or(0),
+        orig_size_bytes,
         duration_secs,
 
-        codec: "h264".to_string(),
+        codec: initial_codec,
         res_h: initial_res_h,
         fps: initial_fps,
         br_ratio: 100,
@@ -618,14 +656,30 @@ pub async fn start_compression_job(
 
         let input_file = work_dir.join(&session.filename);
         let download_start = Instant::now();
+        let stats_job_id = crate::stats::record_download_start(user_id, "studio_compress").await;
 
-        if let Err(e) = crate::bot::files::download_telegram_file(&api, &session.file_id, &input_file).await {
-            log_ev!("studio_compress", trace_id, "download_failed", "=>" => format!("fail err={e}"));
-            remove_active_job(user_id);
-            let _ = crate::bot::send_text_md(&api, chat_id, &t("studio.compress.error.download_failed")).await;
-            return;
+        let dl_result = match crate::bot::files::download_telegram_file(&api, &session.file_id, &input_file).await {
+            Ok(res) => res,
+            Err(e) => {
+                log_ev!("studio_compress", trace_id, "download_failed", "=>" => format!("fail err={e}"));
+                remove_active_job(user_id);
+                let _ = crate::bot::send_text_md(&api, chat_id, &t("studio.compress.error.download_failed")).await;
+                return;
+            }
+        };
+
+        if let Some(jid) = stats_job_id {
+            crate::stats::record_download_done(
+                jid,
+                dl_result.bytes as i64,
+                None,
+                None,
+                Some(dl_result.speed_bps() as i64),
+            )
+            .await;
         }
         let download_secs = download_start.elapsed().as_secs();
+
 
         if cancel_flag.load(Ordering::Relaxed) {
             remove_active_job(user_id);
@@ -759,8 +813,11 @@ pub async fn start_compression_job(
                 &threads_arg_inner,
                 "-c:a",
                 "copy",
-            ])
-            .stdout(std::process::Stdio::piped())
+            ]);
+            if output_path.extension().and_then(|e| e.to_str()).unwrap_or("") == "mp4" {
+                cmd.args(["-movflags", "+faststart"]);
+            }
+            cmd.stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .arg(&output_path);
 
@@ -879,7 +936,20 @@ pub async fn start_compression_job(
             .parse_mode(ParseMode::MarkdownV2)
             .build();
 
-        let send_res = api.send_document(&send_params).await;
+        let out_bytes = std::fs::metadata(&output_file).map(|m| m.len()).unwrap_or(0);
+        let up_start = std::time::Instant::now();
+
+        use crate::bot::send_file_with_upload_ticker;
+        let send_res = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            &api,
+            "sendDocument",
+            &send_params,
+            &output_file,
+            chat_id,
+            message_id,
+            "transfer.stage.sending_document",
+            None,
+        ).await;
         remove_active_job(user_id);
         clear_session(user_id).await;
 
@@ -888,6 +958,24 @@ pub async fn start_compression_job(
             let _ = crate::bot::send_text_md(&api, chat_id, &t("studio.compress.error.compress_failed")).await;
             return;
         }
+
+        let up_elapsed = up_start.elapsed();
+        let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+            out_bytes as f64 / up_elapsed.as_secs_f64()
+        } else {
+            0.0
+        };
+        if let Some(jid) = stats_job_id {
+            crate::stats::record_upload_done(
+                jid,
+                user_id,
+                out_bytes as i64,
+                Some(up_speed as i64),
+                Some(1),
+            )
+            .await;
+        }
+
 
         // Delete status message
         let _ = api
@@ -966,5 +1054,28 @@ mod tests {
         assert_eq!(format_eta_hms(45), "45 ثانیه");
         assert_eq!(format_eta_hms(970), "16 دقیقه و 10 ثانیه");
         assert_eq!(format_eta_hms(3912), "1 ساعت و 5 دقیقه و 12 ثانیه");
+    }
+
+    #[test]
+    fn test_status_downloading_no_raw_braces() {
+        // Reproduces the MarkdownV2 parse error: "Character '{' is reserved"
+        // that fires in handle_video_upload when the first send_message call fails.
+        let status_raw = crate::i18n::tf(
+            "studio.compress.status_downloading",
+            &[("elapsed", &crate::i18n::md_escape("0s")), ("detail", "")],
+        );
+        let status_text = crate::i18n::apply_premium_to_md(&status_raw);
+        println!("status_text = {:?}", status_text);
+        assert!(
+            !status_text.contains('{') && !status_text.contains('}'),
+            "MarkdownV2 status text still has raw braces: {:?}",
+            status_text
+        );
+
+        // Also test via start_compression_job path: t() without tf() leaves placeholders
+        let bad_text = crate::i18n::apply_premium_to_md(&crate::i18n::t("studio.compress.status_downloading"));
+        println!("bad_text (t without tf) = {:?}", bad_text);
+        let has_braces = bad_text.contains('{') || bad_text.contains('}');
+        println!("Has unescaped braces (start_compression_job bug): {}", has_braces);
     }
 }

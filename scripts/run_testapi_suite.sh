@@ -623,8 +623,32 @@ if [ "$(echo "$RES_SC3" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_SC3" | jq
 fi
 echo "✅ Studio Compress tests passed!"
 
+echo "Testing /test/transfer/meter (fetching + uploading)"
+RES_TR_M=$(curl -s -X POST "$BASE_URL/test/transfer/meter" -H "Content-Type: application/json" \
+    -d '{"total_bytes": 104857600, "lang": "en", "stage": "fetching", "chunks": [{"bytes": 50000000, "after_ms": 100}]}')
+if [ "$(echo "$RES_TR_M" | jq -r '.is_complete')" != "false" ]; then echo "Fail: meter is_complete"; exit 1; fi
+if [ "$(echo "$RES_TR_M" | jq -r '.bytes_done')" != "50000000" ]; then echo "Fail: meter bytes_done"; exit 1; fi
+if [ "$(echo "$RES_TR_M" | jq -r '.text_len_utf16 < 4096')" != "true" ]; then echo "Fail: meter text_len"; exit 1; fi
+
+RES_TR_M2=$(curl -s -X POST "$BASE_URL/test/transfer/meter" -H "Content-Type: application/json" \
+    -d '{"total_bytes": 0, "lang": "fa", "stage": "done", "chunks": [{"bytes": 100000, "after_ms": 100}]}')
+if [ "$(echo "$RES_TR_M2" | jq -r '.speed')" == "—" ]; then echo "Fail: meter speed should not be unknown after chunk"; exit 1; fi
+if [ "$(echo "$RES_TR_M2" | jq -r '.eta')" != "—" ]; then echo "Fail: meter eta should be unknown when total is 0"; exit 1; fi
+if [ "$(echo "$RES_TR_M2" | jq -r '.percent')" != "null" ]; then echo "Fail: meter percent should be null when total is 0"; exit 1; fi
+
+echo "Testing /test/transfer/upload (success)"
+RES_TR_UP=$(curl -s -X POST "$BASE_URL/test/transfer/upload" -H "Content-Type: application/json" -d '{"cancel_after_chunk": false}')
+if [ "$(echo "$RES_TR_UP" | jq -r '.bytes_counted')" != "4194304" ]; then echo "Fail: upload bytes_counted: $RES_TR_UP"; exit 1; fi
+if [ "$(echo "$RES_TR_UP" | jq -r '.final_stage')" != "Done" ]; then echo "Fail: upload final_stage: $RES_TR_UP"; exit 1; fi
+if [ "$(echo "$RES_TR_UP" | jq -r '.speed_bps > 0')" != "true" ]; then echo "Fail: upload speed_bps: $RES_TR_UP"; exit 1; fi
+
+echo "Testing /test/transfer/upload (cancel)"
+RES_TR_UPC=$(curl -s -X POST "$BASE_URL/test/transfer/upload" -H "Content-Type: application/json" -d '{"cancel_after_chunk": true}')
+if [ "$(echo "$RES_TR_UPC" | jq -r '.bytes_counted < 4194304')" != "true" ]; then echo "Fail: upload canceled bytes: $RES_TR_UPC"; exit 1; fi
+
+echo "✅ Transfer tests passed!"
+
 echo "✅ Extended TestAPI Endpoint Suite passed!"
 
 echo ""
 echo "All tests passed successfully."
-

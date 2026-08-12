@@ -39,6 +39,7 @@ pub struct StudioTrimResp {
     pub prompt_keyboard: Vec<Vec<ButtonDto>>,
     pub info_template: String,
     pub status_job_ticker: String,
+    pub not_a_video_err_sample: String,
     pub errors: Vec<String>,
 }
 
@@ -158,6 +159,8 @@ pub async fn test_studio_trim(
     );
     let status_job_ticker = apply_premium_to_md(&raw_ticker);
 
+    let not_a_video_err_sample = apply_premium_to_md(&t("studio.trim.error.not_a_video"));
+
     (
         axum::http::StatusCode::OK,
         Json(StudioTrimResp {
@@ -169,6 +172,7 @@ pub async fn test_studio_trim(
             prompt_keyboard,
             info_template,
             status_job_ticker,
+            not_a_video_err_sample,
             errors: err_strings,
         }),
     )
@@ -205,6 +209,7 @@ pub struct StudioCompressResp {
     pub status_job_ticker: String,
     pub status_job_ticker_eta: String,
     pub job_done_sample: String,
+    pub not_a_video_err_sample: String,
 }
 
 pub async fn test_studio_compress(
@@ -287,6 +292,8 @@ pub async fn test_studio_compress(
         ],
     ));
 
+    let not_a_video_err_sample = apply_premium_to_md(&t("studio.compress.error.not_a_video"));
+
     (
         axum::http::StatusCode::OK,
         Json(StudioCompressResp {
@@ -306,6 +313,7 @@ pub async fn test_studio_compress(
             status_job_ticker,
             status_job_ticker_eta,
             job_done_sample,
+            not_a_video_err_sample,
         }),
     )
 }

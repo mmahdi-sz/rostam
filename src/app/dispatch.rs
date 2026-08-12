@@ -1108,7 +1108,7 @@ async fn handle_message(
             }
 
             if matches!(flow_manager.get(uid), FlowState::AwaitingStudioCompressVideo) {
-                if message.video.is_some() {
+                if message.video.is_some() || message.document.is_some() {
                     let trace_id = next_trace_id();
                     log_ev!("studio_compress", trace_id, "video_dispatched", "user_id" => uid);
                     let api2 = api.clone();
@@ -1795,6 +1795,22 @@ async fn handle_callback(
                     .build(),
             )
             .await;
+        return Ok(());
+    }
+
+    if cb_data == "pdf:jobcancel" {
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Ok(jobs) = crate::pdfcompress::ACTIVE_PDF_JOBS.lock() {
+            if let Some(cancel) = jobs.get(&(cb_user_id as i64)) {
+                cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
         return Ok(());
     }
 

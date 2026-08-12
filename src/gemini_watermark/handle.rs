@@ -7,9 +7,9 @@ use frankenstein::{
     types::{ButtonStyle, InlineKeyboardButton, InlineKeyboardMarkup, Message},
 };
 
-use crate::bot::{edit_to_ai_lab, send_text, send_text_with_back};
+use crate::bot::{edit_to_ai_lab, send_text_with_back};
 use crate::emoji::{FlowManager, FlowState};
-use crate::i18n::t;
+use crate::i18n::{apply_premium_to_md, t};
 use crate::log::next_trace_id;
 
 pub const CB_GWM_CANCEL: &str = "gwm:cancel";
@@ -103,7 +103,19 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
     log_ev!("gwm", trace_id, "file_info", "raw" => format!("file_id={file_id} ext={ext}"));
 
     // Flow state is cleared by the dispatcher before spawning this task.
-    let _ = send_text(api, chat_id, &t("gemini_wm.processing")).await;
+    let status_msg_id = match api
+        .send_message(
+            &frankenstein::methods::SendMessageParams::builder()
+                .chat_id(chat_id)
+                .text(&apply_premium_to_md(&t("gemini_wm.processing")))
+                .parse_mode(frankenstein::ParseMode::MarkdownV2)
+                .build(),
+        )
+        .await
+    {
+        Ok(m) => m.result.message_id,
+        Err(_) => 0,
+    };
 
     // Download image.
     log_ev!("gwm", trace_id, "download_start", "raw" => format!("file_id={file_id}"));
@@ -122,16 +134,33 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
             return;
         }
     };
-    if let Err(e) = download_file(api, &file_id, path_str, trace_id).await {
-        log_ev!("gwm", trace_id, "download_failed", "raw" => format!("err={e}"));
-        crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
-        crate::stats::record_error_global("gwm", &format!("download failed: {e}")).await;
-        let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.download_failed")).await;
-        std::fs::remove_dir_all(&work_dir).ok();
-        return;
+    let stats_job_id = crate::stats::record_download_start(user_id, "gwm").await;
+
+    let dl_result = match download_file(api, &file_id, path_str, trace_id).await {
+        Ok(res) => res,
+        Err(e) => {
+            log_ev!("gwm", trace_id, "download_failed", "raw" => format!("err={e}"));
+            crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
+            crate::stats::record_error_global("gwm", &format!("download failed: {e}")).await;
+            let _ = send_text_with_back(api, chat_id, &t("gemini_wm.error.download_failed")).await;
+            std::fs::remove_dir_all(&work_dir).ok();
+            return;
+        }
+    };
+
+    if let Some(jid) = stats_job_id {
+        crate::stats::record_download_done(
+            jid,
+            dl_result.bytes as i64,
+            None,
+            None,
+            Some(dl_result.speed_bps() as i64),
+        )
+        .await;
     }
+
     let file_size = std::fs::metadata(&input_path).map(|m| m.len()).unwrap_or(0);
-    log_ev!("gwm", trace_id, "download_done", "raw" => format!("size={file_size}"));
+    log_ev!("gwm", trace_id, "download_done", "raw" => format!("size={file_size} speed={}", dl_result.speed_human()));
 
     let image_bytes = match std::fs::read(&input_path) {
         Ok(b) => b,
@@ -195,8 +224,39 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
         .document(PathBuf::from(&out_path))
         .caption(&caption)
         .build();
-    match api.send_document(&p).await {
+
+    let up_start = std::time::Instant::now();
+    let out_bytes = result_bytes.len() as u64;
+
+    use crate::bot::send_file_with_upload_ticker;
+    match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        api,
+        "sendDocument",
+        &p,
+        std::path::Path::new(&out_path),
+        chat_id,
+        status_msg_id,
+        "transfer.stage.sending_document",
+        None,
+    ).await {
         Ok(_) => {
+            let up_elapsed = up_start.elapsed();
+            let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+                out_bytes as f64 / up_elapsed.as_secs_f64()
+            } else {
+                0.0
+            };
+            if let Some(jid) = stats_job_id {
+                crate::stats::record_upload_done(
+                    jid,
+                    user_id,
+                    out_bytes as i64,
+                    Some(up_speed as i64),
+                    Some(1),
+                )
+                .await;
+            }
+
             log_ev!("gwm", trace_id, "result_sent");
             crate::stats::record_event_user(user_id, "gwm", "", "ok", 1).await;
             crate::metrics::get()
@@ -204,6 +264,7 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
                 .with_label_values(&["success"])
                 .inc();
         }
+
         Err(e) => {
             log_ev!("gwm", trace_id, "result_send_failed", "raw" => format!("err={e}"));
             crate::stats::record_event_user(user_id, "gwm", "", "fail", 0).await;
@@ -243,7 +304,8 @@ async fn download_file(
     file_id: &str,
     dest: &str,
     trace_id: u64,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<crate::bot::TransferResult, Box<dyn std::error::Error + Send + Sync>> {
     log_ev!("gwm", trace_id, "download_start", "raw" => format!("file_id={file_id}"));
     crate::bot::download_telegram_file(api, file_id, dest).await
 }
+

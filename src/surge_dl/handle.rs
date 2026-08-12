@@ -551,7 +551,8 @@ async fn run_surge_download(
     rename_to: Option<String>,
     trace_id: u64,
 ) {
-    let stats_job_id = crate::stats::record_download_start(user_id).await;
+    let stats_job_id = crate::stats::record_download_start(user_id, "surge_dl").await;
+
     let _active_dl_guard = crate::metrics::ActiveDownloadGuard::new();
     let _duration_guard = crate::metrics::RequestDurationGuard::new("surge_dl");
     let job_nonce = rand::random::<u32>();
@@ -658,9 +659,9 @@ async fn run_surge_download(
     };
     let upload_start = std::time::Instant::now();
     let result = if detail.downloaded <= MAX_PART_BYTES {
-        send_single_file(&api, chat_id, &file_path).await
+        send_single_file(&api, chat_id, message_id, &file_path).await
     } else {
-        send_split_file(&api, chat_id, &file_path, user_id, trace_id).await
+        send_split_file(&api, chat_id, message_id, &file_path, user_id, trace_id).await
     };
     let upload_elapsed = upload_start.elapsed();
 
@@ -678,9 +679,22 @@ async fn run_surge_download(
             )
             .await;
             if let Some(jid) = stats_job_id {
-                crate::stats::record_upload_done(jid, user_id, detail.downloaded as i64).await;
+                let up_speed = if upload_elapsed.as_secs_f64() > 0.0 {
+                    detail.downloaded as f64 / upload_elapsed.as_secs_f64()
+                } else {
+                    0.0
+                };
+                crate::stats::record_upload_done(
+                    jid,
+                    user_id,
+                    detail.downloaded as i64,
+                    Some(up_speed as i64),
+                    Some(1),
+                )
+                .await;
                 log_ev!("surge_dl", trace_id, "traffic_added", "bytes" => detail.downloaded);
             }
+
             crate::stats::record_event_user(
                 user_id,
                 "surge_dl",
@@ -702,19 +716,31 @@ async fn run_surge_download(
 async fn send_single_file(
     api: &Bot,
     chat_id: i64,
+    message_id: i32,
     path: &Path,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let params = SendDocumentParams::builder()
         .chat_id(chat_id)
         .document(path.to_path_buf())
         .build();
-    api.send_document(&params).await?;
+    use crate::bot::send_file_with_upload_ticker;
+    send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        api,
+        "sendDocument",
+        &params,
+        path,
+        chat_id,
+        message_id,
+        "transfer.stage.sending_document",
+        None,
+    ).await?;
     Ok(())
 }
 
 async fn send_split_file(
     api: &Bot,
     chat_id: i64,
+    message_id: i32,
     path: &Path,
     user_id: i64,
     trace_id: u64,
@@ -747,6 +773,7 @@ async fn send_split_file(
     log_ev!("surge_dl", trace_id, "rar_done", "parts" => parts.len());
 
     let total = parts.len();
+    use crate::bot::send_file_with_upload_ticker;
     for (i, part) in parts.iter().enumerate() {
         let caption = tf(
             "surge.sending_part",
@@ -761,7 +788,16 @@ async fn send_split_file(
         if !caption_entities.is_empty() {
             params.caption_entities = Some(caption_entities);
         }
-        api.send_document(&params).await?;
+        send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            api,
+            "sendDocument",
+            &params,
+            part,
+            chat_id,
+            message_id,
+            "transfer.stage.sending_document",
+            None,
+        ).await?;
         log_ev!("surge_dl", trace_id, "part_sent", "n" => i + 1, "total" => total);
     }
 

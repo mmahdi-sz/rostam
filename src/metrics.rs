@@ -17,6 +17,9 @@ pub struct Metrics {
     pub pdf_compress_total: IntCounterVec,
     pub separation_requests_total: IntCounterVec,
     pub gwm_requests_total: IntCounterVec,
+    pub transfer_bytes_total: IntCounterVec,
+    pub transfer_speed_histogram: HistogramVec,
+    pub transfer_files_total: IntCounterVec,
 }
 
 static METRICS: OnceLock<Metrics> = OnceLock::new();
@@ -73,8 +76,27 @@ pub fn init() {
             &["status"]
         )
         .expect("metric registration failed"),
+        transfer_bytes_total: register_int_counter_vec!(
+            "bot_transfer_bytes_total",
+            "Total bytes transferred by direction (download/upload) and feature",
+            &["direction", "feature"]
+        )
+        .expect("metric registration failed"),
+        transfer_speed_histogram: register_histogram_vec!(
+            "bot_transfer_speed_bytes_per_second",
+            "Transfer speed in bytes per second by direction and feature",
+            &["direction", "feature"]
+        )
+        .expect("metric registration failed"),
+        transfer_files_total: register_int_counter_vec!(
+            "bot_transfer_files_total",
+            "Total files transferred by direction and feature",
+            &["direction", "feature"]
+        )
+        .expect("metric registration failed"),
     });
 }
+
 
 pub fn get() -> &'static Metrics {
     init();

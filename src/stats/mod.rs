@@ -319,19 +319,19 @@ pub async fn mark_user_blocked_global(user_id: i64) {
         .await;
 }
 
-pub async fn record_download_start(user_id: i64) -> Option<i64> {
+pub async fn record_download_start(user_id: i64, feature: &str) -> Option<i64> {
     let client = db()?;
     let row = client
         .query_opt(
-            "INSERT INTO stats_downloads (user_id) VALUES ($1) RETURNING id",
-            &[&user_id],
+            "INSERT INTO stats_downloads (user_id, feature) VALUES ($1, $2) RETURNING id",
+            &[&user_id, &feature],
         )
         .await;
     match row {
         Ok(Some(r)) => Some(r.get(0)),
         Ok(None) => None,
         Err(e) => {
-            eprintln!("[stats event=record_download_start_failed] user_id={user_id} err={e}");
+            eprintln!("[stats event=record_download_start_failed] user_id={user_id} feature={feature} err={e}");
             None
         }
     }
@@ -342,24 +342,31 @@ pub async fn record_download_done(
     bytes_downloaded: i64,
     duration: Option<i32>,
     bitrate: Option<i64>,
+    speed_bps: Option<i64>,
 ) {
     let Some(client) = db() else { return };
     let r = client.execute(
-        "UPDATE stats_downloads SET bytes_downloaded = $1, duration = $2, bitrate = $3 WHERE id = $4",
-        &[&bytes_downloaded, &duration, &bitrate, &job_id],
+        "UPDATE stats_downloads SET bytes_downloaded = $1, duration = $2, bitrate = $3, download_speed_bps = $5 WHERE id = $4",
+        &[&bytes_downloaded, &duration, &bitrate, &job_id, &speed_bps],
     ).await;
     if let Err(e) = r {
         eprintln!("[stats event=record_download_done_failed] job_id={job_id} err={e}");
     }
 }
 
-pub async fn record_upload_done(job_id: i64, user_id: i64, bytes_uploaded: i64) {
+pub async fn record_upload_done(
+    job_id: i64,
+    user_id: i64,
+    bytes_uploaded: i64,
+    speed_bps: Option<i64>,
+    file_count: Option<i32>,
+) {
     let Some(client) = db() else { return };
 
     let r = client
         .execute(
-            "UPDATE stats_downloads SET upload_ok = TRUE, bytes_uploaded = $1 WHERE id = $2",
-            &[&bytes_uploaded, &job_id],
+            "UPDATE stats_downloads SET upload_ok = TRUE, bytes_uploaded = $1, upload_speed_bps = $3, file_count = COALESCE($4, file_count) WHERE id = $2",
+            &[&bytes_uploaded, &job_id, &speed_bps, &file_count],
         )
         .await;
     if let Err(e) = r {
@@ -391,3 +398,4 @@ pub async fn record_upload_done(job_id: i64, user_id: i64, bytes_uploaded: i64) 
         eprintln!("[stats event=add_traffic_failed] user_id={user_id} err={e}");
     }
 }
+

@@ -142,6 +142,14 @@ pub async fn run() -> anyhow::Result<()> {
             "/test/sc/cancel",
             post(endpoints::soundcloud::test_soundcloud_cancel),
         )
+        .route(
+            "/test/transfer/meter",
+            post(endpoints::transfer::test_transfer_meter),
+        )
+        .route(
+            "/test/transfer/upload",
+            post(endpoints::transfer::test_transfer_upload),
+        )
         // Catch-all for outgoing frankenstein calls
         .route(
             "/bot{token}/{method}",

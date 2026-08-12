@@ -14,7 +14,7 @@ use tokio::sync::Mutex;
 use crate::bot::send_text;
 use crate::cookie_pool::{CookiePool, CookieSource, save_snapshot};
 use crate::database::postgresql::PostgresDatabase;
-use crate::i18n::{t, tf};
+use crate::i18n::t;
 
 use super::fetch::fetch_video_info;
 use super::format::{build_caption, build_description_blockquotes};
@@ -243,7 +243,8 @@ pub async fn handle_youtube_url(
                     .caption(&caption)
                     .parse_mode(ParseMode::MarkdownV2)
                     .build();
-                if let Err(error) = api.send_photo(&params).await {
+                use crate::bot::AsyncTelegramApiMetered;
+                if let Err(error) = api.send_photo_metered(&params).await {
                     eprintln!("send_photo failed: {error}");
                     log_trace(trace_id, "send_photo_failed", &error.to_string());
                     // Fallback to text message with caption so user flow isn't interrupted
@@ -254,15 +255,7 @@ pub async fn handle_youtube_url(
                         .build();
                     if let Err(err2) = api.send_message(&fallback_params).await {
                         eprintln!("fallback send_message failed: {err2}");
-                        let _ = send_text(
-                            api,
-                            chat_id,
-                            &tf(
-                                "youtube.send_photo_failed",
-                                &[("error", &error.to_string())],
-                            ),
-                        )
-                        .await;
+                        let _ = send_text(api, chat_id, &t("youtube.send_photo_failed")).await;
                         anyhow::bail!("fallback send_message failed: {err2}");
                     }
                 }
@@ -302,12 +295,7 @@ pub async fn handle_youtube_url(
                 if let Err(error) = prompt_res {
                     eprintln!("send quality prompt failed: {error}");
                     log_trace(trace_id, "quality_prompt_failed", &error);
-                    let _ = send_text(
-                        api,
-                        chat_id,
-                        &tf("youtube.quality.send_failed", &[("error", &error)]),
-                    )
-                    .await;
+                    let _ = send_text(api, chat_id, &t("youtube.quality.send_failed")).await;
                     anyhow::bail!("quality prompt failed: {error}");
                 }
                 return Ok(());
@@ -359,14 +347,10 @@ pub async fn handle_youtube_url(
                     .await;
                 eprintln!("yt-dlp failed for {url}: {msg}");
                 log_trace(trace_id, "fetch_failed", &msg);
-                let _ = send_text(
-                    api,
-                    chat_id,
-                    &tf("youtube.fetch_failed", &[("error", &msg)]),
-                )
-                .await;
+                let _ = send_text(api, chat_id, &t("cookie.youtube_unavailable")).await;
                 anyhow::bail!("yt-dlp failed: {msg}");
             }
         }
     }
 }
+

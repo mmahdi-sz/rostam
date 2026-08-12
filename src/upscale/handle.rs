@@ -508,20 +508,37 @@ pub async fn handle_upscale_image(
         return;
     };
 
-    let dl_result = download_file(api, file_id, input_str_slice).await;
-    if let Err(e) = dl_result.map_err(|e| e.to_string()) {
-        log_ev!("upscale", trace_id, "download_failed", "=>" => format!("fail err={e}"));
-        done_flag.store(true, Ordering::Relaxed);
-        unregister_upscale(user_id);
-        release_cpu(cores, trace_id).await;
-        crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "fail", 0)
-            .await;
-        crate::stats::record_error_global("upscale", &format!("download failed: {e}")).await;
-        edit_or_send(api, chat_id, status_msg_id, &t("upscale.download_failed")).await;
-        clean_up(&work_dir);
-        refund!("download_failed");
-        return;
+    let stats_job_id = crate::stats::record_download_start(user_id, "upscale").await;
+
+    let dl_result = match download_file(api, file_id, input_str_slice).await {
+        Ok(res) => res,
+        Err(e) => {
+            let e_str = e.to_string();
+            log_ev!("upscale", trace_id, "download_failed", "=>" => format!("fail err={e_str}"));
+            done_flag.store(true, Ordering::Relaxed);
+            unregister_upscale(user_id);
+            release_cpu(cores, trace_id).await;
+            crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "fail", 0)
+                .await;
+            crate::stats::record_error_global("upscale", &format!("download failed: {e_str}")).await;
+            edit_or_send(api, chat_id, status_msg_id, &t("upscale.download_failed")).await;
+            clean_up(&work_dir);
+            refund!("download_failed");
+            return;
+        }
+    };
+
+    if let Some(jid) = stats_job_id {
+        crate::stats::record_download_done(
+            jid,
+            dl_result.bytes as i64,
+            None,
+            None,
+            Some(dl_result.speed_bps() as i64),
+        )
+        .await;
     }
+
 
     // ── run realesrgan ────────────────────────────────────────────────────────
     let input_str = input_str_slice.to_string();
@@ -601,18 +618,6 @@ pub async fn handle_upscale_image(
         }
     };
 
-    // ── delete status, send result ────────────────────────────────────────────
-    if let Some(smid) = status_msg_id {
-        let _ = api
-            .delete_message(
-                &frankenstein::methods::DeleteMessageParams::builder()
-                    .chat_id(chat_id)
-                    .message_id(smid)
-                    .build(),
-            )
-            .await;
-    }
-
     let scale_str = escape_md(&format!("{scale_factor}x"));
     let processing_str = escape_md(&format!("{processing_secs:.1}"));
     let full_caption = apply_premium_to_md(&format!(
@@ -624,15 +629,24 @@ pub async fn handle_upscale_image(
         ),
     ));
 
-    if is_doc || orig_ext != "jpg" {
+    let out_bytes = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+    let up_start = std::time::Instant::now();
+
+    use crate::bot::send_file_with_upload_ticker;
+    let smid = status_msg_id.unwrap_or(0);
+
+    let upload_success = if is_doc || orig_ext != "jpg" {
         let params = SendDocumentParams::builder()
             .chat_id(chat_id)
             .document(PathBuf::from(output_str_slice))
             .caption(&full_caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = api.send_document(&params).await;
-        log_ev!("upscale", trace_id, "send_doc", "=>" => if r.is_ok() { "ok" } else { "fail" });
+        let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            api, "sendDocument", &params, &output_path, chat_id, smid, "transfer.stage.sending_document", None
+        ).await;
+        log_ev!("upscale", trace_id, "send_document", "=>" => if r.is_ok() { "ok" } else { "fail" });
+        r.is_ok()
     } else {
         let params = SendPhotoParams::builder()
             .chat_id(chat_id)
@@ -640,8 +654,40 @@ pub async fn handle_upscale_image(
             .caption(&full_caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = api.send_photo(&params).await;
+        let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            api, "sendPhoto", &params, &output_path, chat_id, smid, "transfer.stage.sending_photo", None
+        ).await;
         log_ev!("upscale", trace_id, "send_photo", "=>" => if r.is_ok() { "ok" } else { "fail" });
+        r.is_ok()
+    };
+
+    if let Some(smid) = status_msg_id {
+        let _ = api
+            .delete_message(
+                &frankenstein::methods::DeleteMessageParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(smid)
+                    .build(),
+            )
+            .await;
+    }
+    if upload_success {
+        let up_elapsed = up_start.elapsed();
+        let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+            out_bytes as f64 / up_elapsed.as_secs_f64()
+        } else {
+            0.0
+        };
+        if let Some(jid) = stats_job_id {
+            crate::stats::record_upload_done(
+                jid,
+                user_id,
+                out_bytes as i64,
+                Some(up_speed as i64),
+                Some(1),
+            )
+            .await;
+        }
     }
 
     // Quota was already reserved; no second deduction needed.
@@ -650,6 +696,7 @@ pub async fn handle_upscale_image(
 
     clean_up(&work_dir);
     log_ev!("upscale", trace_id, "done");
+
 }
 
 // ── small helpers ─────────────────────────────────────────────────────────────

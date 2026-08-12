@@ -320,7 +320,8 @@ pub async fn send_subtitle_files(
             }))
             .caption(caption)
             .build();
-        match api.send_document(&params).await {
+        use crate::bot::AsyncTelegramApiMetered;
+        match api.send_document_metered(&params).await {
             Ok(_) => {
                 sent += 1;
                 log_trace(
@@ -928,7 +929,7 @@ pub async fn process_subtitle_pipeline(
                         api,
                         chat_id,
                         msg_id,
-                        crate::i18n::tf("youtube.download.hardsub_failed", &[("error", &e)]),
+                        crate::i18n::t("youtube.download.hardsub_failed"),
                     )
                     .await;
                     SubtitlePipelineResult::None

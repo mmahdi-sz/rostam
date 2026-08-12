@@ -67,6 +67,124 @@ pub fn cancel_active_job(user_id: i64) -> bool {
     false
 }
 
+/// Spawns a background task that periodically updates `status_msg_id` with live download stats
+/// (elapsed time, downloaded size, total size, percentage, speed, and ETA) until `stop_flag` is set.
+pub fn spawn_download_ticker(
+    api: frankenstein::client_reqwest::Bot,
+    chat_id: i64,
+    status_msg_id: i32,
+    dest_path: PathBuf,
+    total_bytes: u64,
+    domain_prefix: &'static str,
+    cancel_flag: Option<Arc<AtomicBool>>,
+) -> Arc<AtomicBool> {
+    use frankenstein::{AsyncTelegramApi, ParseMode, methods::EditMessageTextParams};
+    use std::time::{Duration, Instant};
+    use crate::i18n::{apply_premium_to_md, md_escape, tf};
+    use crate::studio::compress::format_eta_hms;
+
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let stop_inner = stop_flag.clone();
+    let start_time = Instant::now();
+
+    crate::app::spawn_user_task(async move {
+        let mut last_rendered = String::new();
+
+        while !stop_inner.load(Ordering::Relaxed) {
+            if let Some(cf) = &cancel_flag {
+                if cf.load(Ordering::Relaxed) {
+                    break;
+                }
+            }
+
+            let elapsed_secs = start_time.elapsed().as_secs();
+            let downloaded_bytes = std::fs::metadata(&dest_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
+
+            let speed_bps = if elapsed_secs > 0 {
+                downloaded_bytes as f64 / elapsed_secs as f64
+            } else {
+                0.0
+            };
+
+            let speed_str = if speed_bps >= 1_000_000.0 {
+                format!("{:.1} MB/s", speed_bps / 1_000_000.0)
+            } else if speed_bps >= 1_000.0 {
+                format!("{:.0} KB/s", speed_bps / 1_000.0)
+            } else {
+                format!("{:.0} B/s", speed_bps)
+            };
+
+            let detail_key = format!("{domain_prefix}.status_downloading_detail");
+            let main_key = format!("{domain_prefix}.status_downloading");
+
+            let detail_param = if downloaded_bytes > 0 && total_bytes > 0 {
+                let dl_mb = format!("{:.1}", downloaded_bytes as f64 / 1_048_576.0);
+                let total_mb = format!("{:.1}", total_bytes as f64 / 1_048_576.0);
+                let pct = (downloaded_bytes * 100 / total_bytes).min(100);
+
+                let eta_secs = if speed_bps > 0.0 && total_bytes > downloaded_bytes {
+                    ((total_bytes - downloaded_bytes) as f64 / speed_bps) as u64
+                } else {
+                    0
+                };
+                let eta_str = format_eta_hms(eta_secs);
+
+                tf(
+                    &detail_key,
+                    &[
+                        ("dl_mb", &md_escape(&dl_mb)),
+                        ("total_mb", &md_escape(&total_mb)),
+                        ("pct", &pct.to_string()),
+                        ("speed", &md_escape(&speed_str)),
+                        ("eta", &md_escape(&eta_str)),
+                    ],
+                )
+            } else if speed_bps > 0.0 {
+                let dl_mb = format!("{:.1}", downloaded_bytes as f64 / 1_048_576.0);
+                let speed_esc = md_escape(&speed_str);
+                format!("\n📥 *دانلودشده:* `{dl_mb} مگابایت`\n🚀 *سرعت:* `{speed_esc}`")
+            } else {
+                String::new()
+            };
+
+            let elapsed_str = format!("{elapsed_secs}s");
+            let text_key = format!("{downloaded_bytes}:{elapsed_secs}");
+
+            if text_key != last_rendered {
+                last_rendered = text_key;
+                let raw_ticker = tf(
+                    &main_key,
+                    &[
+                        ("elapsed", &md_escape(&elapsed_str)),
+                        ("detail", &detail_param),
+                    ],
+                );
+                let text = apply_premium_to_md(&raw_ticker);
+
+                let builder = EditMessageTextParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(status_msg_id)
+                    .text(&text)
+                    .parse_mode(ParseMode::MarkdownV2);
+
+                let params = if domain_prefix == "studio.trim" {
+                    builder.reply_markup(crate::studio::trim::job_cancel_keyboard()).build()
+                } else {
+                    builder.build()
+                };
+
+                let _ = api.edit_message_text(&params).await;
+            }
+
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    });
+
+    stop_flag
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

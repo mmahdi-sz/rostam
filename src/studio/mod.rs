@@ -33,7 +33,7 @@ pub fn studio_keyboard() -> InlineKeyboardMarkup {
             vec![btn_icon(
                 &t("studio.compress_button"),
                 CB_STUDIO_COMPRESS,
-                "movie",
+                "adobe_pr_animasion",
             )],
             vec![btn_icon_primary(
                 &t("start.back"),
@@ -172,3 +172,164 @@ pub async fn handle_callback(
         false
     }
 }
+
+/// Validates whether an incoming Telegram update message represents a video file
+/// based purely on available metadata (`message.video` or `message.document` mime_type/file_name)
+/// without executing `getFile` or downloading any content.
+pub fn is_video_message_metadata(msg: &frankenstein::types::Message) -> bool {
+    if msg.video.is_some() || msg.animation.is_some() || msg.video_note.is_some() {
+        return true;
+    }
+    if let Some(doc) = &msg.document {
+        if let Some(mime) = &doc.mime_type {
+            let mime_lower = mime.to_lowercase();
+            if mime_lower.starts_with("video/")
+                || mime_lower == "application/octet-stream"
+                || mime_lower == "binary/octet-stream"
+                || mime_lower == "application/x-matroska"
+                || mime_lower == "application/x-flash-video"
+                || mime_lower == "application/mxf"
+                || mime_lower == "application/vnd.rn-realmedia"
+            {
+                return true;
+            }
+        }
+        if let Some(name) = &doc.file_name {
+            let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
+            if matches!(
+                ext.as_str(),
+                "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv" | "m4v" | "3gp" | "3g2"
+                | "ts" | "mts" | "m2ts" | "vob" | "ogv" | "qt" | "f4v" | "asf" | "rm" | "rmvb"
+                | "mpg" | "mpeg" | "mpe" | "mpv" | "divx" | "xvid" | "m2v" | "264" | "h264"
+                | "265" | "h265" | "hevc" | "av1"
+            ) {
+                return true;
+            }
+        }
+        if let Some(mime) = &doc.mime_type {
+            let mime_lower = mime.to_lowercase();
+            if mime_lower.starts_with("image/")
+                || mime_lower.starts_with("audio/")
+                || mime_lower.starts_with("text/")
+                || mime_lower == "application/pdf"
+                || mime_lower == "application/zip"
+                || mime_lower == "application/x-rar-compressed"
+                || mime_lower == "application/x-7z-compressed"
+            {
+                return false;
+            }
+        }
+        if let Some(name) = &doc.file_name {
+            let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
+            if matches!(
+                ext.as_str(),
+                "pdf" | "zip" | "rar" | "7z" | "txt" | "jpg" | "jpeg" | "png" | "gif" | "webp"
+                | "mp3" | "wav" | "flac" | "m4a" | "ogg" | "opus" | "aac"
+            ) {
+                return false;
+            }
+        }
+        return true;
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use frankenstein::types::Message;
+
+    fn make_test_msg() -> Message {
+        serde_json::from_str::<Message>(
+            r#"{
+                "message_id": 1,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"}
+            }"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_is_video_message_metadata() {
+        let msg = make_test_msg();
+        assert!(!is_video_message_metadata(&msg));
+
+        // Test video message
+        let video_msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 1,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "video": {
+                    "file_id": "v1",
+                    "file_unique_id": "u1",
+                    "width": 1920,
+                    "height": 1080,
+                    "duration": 60,
+                    "file_name": "clip.mp4",
+                    "mime_type": "video/mp4",
+                    "file_size": 1000
+                }
+            }"#,
+        )
+        .unwrap();
+        assert!(is_video_message_metadata(&video_msg));
+
+        // Test video document via mime_type
+        let doc_mime_msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 2,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d1",
+                    "file_unique_id": "ud1",
+                    "file_name": "file.bin",
+                    "mime_type": "video/x-matroska",
+                    "file_size": 2000
+                }
+            }"#,
+        )
+        .unwrap();
+        assert!(is_video_message_metadata(&doc_mime_msg));
+
+        // Test video document via file extension
+        let doc_ext_msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 3,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d2",
+                    "file_unique_id": "ud2",
+                    "file_name": "sample.mkv",
+                    "mime_type": "application/octet-stream",
+                    "file_size": 2000
+                }
+            }"#,
+        )
+        .unwrap();
+        assert!(is_video_message_metadata(&doc_ext_msg));
+
+        // Test non-video document (PDF)
+        let pdf_msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 4,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d3",
+                    "file_unique_id": "ud3",
+                    "file_name": "paper.pdf",
+                    "mime_type": "application/pdf",
+                    "file_size": 500
+                }
+            }"#,
+        )
+        .unwrap();
+        assert!(!is_video_message_metadata(&pdf_msg));
+    }
+}
+
+

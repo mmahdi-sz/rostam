@@ -228,20 +228,51 @@ pub async fn handle_soundcloud_url(
         send_audio_params.thumbnail = Some(FileUpload::InputFile(InputFile { path: cover_path }));
     }
 
-    let upload_res = api.send_audio(&send_audio_params).await;
+    let file_size = tokio::fs::metadata(&target_mp3)
+        .await
+        .map(|m| m.len() as i64)
+        .unwrap_or(0);
+    let up_start = std::time::Instant::now();
+    let stats_job_id = crate::stats::record_download_start(user_id, "soundcloud").await;
+
+    use crate::bot::send_file_with_upload_ticker;
+    let upload_res = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        api,
+        "sendAudio",
+        &send_audio_params,
+        &target_mp3,
+        chat_id,
+        status_msg_id,
+        "transfer.stage.sending_audio",
+        None,
+    ).await;
 
     match upload_res {
         Ok(_) => {
             log_ev!("sc", trace_id, "upload_ok", "=>" => "ok");
 
-            let file_size = tokio::fs::metadata(&target_mp3)
-                .await
-                .map(|m| m.len() as i64)
-                .unwrap_or(0);
+            let up_elapsed = up_start.elapsed();
+            let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+                file_size as f64 / up_elapsed.as_secs_f64()
+            } else {
+                0.0
+            };
+
+            if let Some(jid) = stats_job_id {
+                crate::stats::record_upload_done(
+                    jid,
+                    user_id,
+                    file_size,
+                    Some(up_speed as i64),
+                    Some(1),
+                )
+                .await;
+            }
 
             // Record stats & quota
             crate::stats::record_event_user(user_id, "soundcloud", "download", "ok", 1).await;
             crate::stats::record_event_global("soundcloud", "download", "ok", 1).await;
+
 
             if let Some(db) = database {
                 if let Some(first_up) =

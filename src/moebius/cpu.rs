@@ -11,30 +11,38 @@ const SEP_BASE: &str = "http://127.0.0.1:6589";
 
 pub async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
     let client = crate::http::client();
-    let res = client
-        .post(format!("{SEP_BASE}/cpu/acquire"))
-        .form(&[
-            ("user_id", user_id.to_string()),
-            ("is_vip", "false".to_string()),
-        ])
-        .timeout(Duration::from_secs(120))
-        .send()
-        .await;
-    match res {
-        Ok(r) => {
-            let json: serde_json::Value = r.json().await.unwrap_or_default();
-            let cores: Vec<i32> = json
-                .get("cores")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
-            log_ev!("gwm", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
-            cores
-        }
-        Err(e) => {
-            log_ev!("gwm", trace_id, "cpu_acquire_failed", "=>" => format!("fail err={e}"));
-            vec![]
+    for attempt in 0..3u8 {
+        let res = client
+            .post(format!("{SEP_BASE}/cpu/acquire"))
+            .form(&[
+                ("user_id", user_id.to_string()),
+                ("is_vip", "false".to_string()),
+            ])
+            .timeout(Duration::from_secs(120))
+            .send()
+            .await;
+        match res {
+            Ok(r) => {
+                let json: serde_json::Value = r.json().await.unwrap_or_default();
+                let cores: Vec<i32> = json
+                    .get("cores")
+                    .and_then(|v| serde_json::from_value(v.clone()).ok())
+                    .unwrap_or_default();
+                log_ev!("gwm", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
+                return cores;
+            }
+            Err(e) => {
+                if attempt < 2 {
+                    log_ev!("gwm", trace_id, "cpu_acquire_retry", "attempt" => (attempt + 1), "err" => format!("{e}"));
+                    tokio::time::sleep(Duration::from_secs(3)).await;
+                } else {
+                    log_ev!("gwm", trace_id, "cpu_acquire_failed", "=>" => format!("fail err={e}"));
+                    return vec![];
+                }
+            }
         }
     }
+    vec![]
 }
 
 pub async fn is_user_cpu_busy(user_id: i64) -> bool {

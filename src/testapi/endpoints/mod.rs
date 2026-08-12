@@ -16,3 +16,4 @@ pub mod spotify;
 pub mod studio;
 pub mod surge;
 pub mod youtube;
+pub mod transfer;

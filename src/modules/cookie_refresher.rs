@@ -350,9 +350,13 @@ fn refresh_cache(source_dir: &str, cache_dir: &str, profile_name: &str) {
     for name in ["cookies.sqlite", "cookies.sqlite-wal", "cookies.sqlite-shm"] {
         let src = std::path::Path::new(source_dir).join(name);
         if !src.exists() {
-            println!(
-                "[cookie_refresh profile={p} event=cache_copy] file={name} ok=false err=src_not_found"
-            );
+            // -wal and -shm are ephemeral SQLite sidecar files; absence is normal
+            // after Firefox closes. Only warn for the primary cookies.sqlite.
+            if name == "cookies.sqlite" {
+                println!(
+                    "[cookie_refresh profile={p} event=cache_copy] file={name} ok=false err=src_not_found"
+                );
+            }
             continue;
         }
         let dst = std::path::Path::new(cache_dir).join(name);

@@ -468,7 +468,17 @@ async fn upload_track(
         }));
     }
 
-    match api.send_audio(&params).await {
+    use crate::bot::send_file_with_upload_ticker;
+    match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        api,
+        "sendAudio",
+        &params,
+        &track.mp3,
+        chat_id,
+        0,
+        "transfer.stage.sending_audio",
+        None,
+    ).await {
         Ok(_) => {
             add_traffic(database, user_id, &track.mp3).await;
         }
@@ -547,7 +557,17 @@ async fn archive_and_upload(
             .caption(apply_premium_to_md(&caption))
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        if let Err(e) = api.send_document(&params).await {
+        use crate::bot::send_file_with_upload_ticker;
+        if let Err(e) = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            api,
+            "sendDocument",
+            &params,
+            path,
+            chat_id,
+            0,
+            "transfer.stage.sending_document",
+            None,
+        ).await {
             log_ev!("ms", trace_id, "part_upload_fail", "err" => e.to_string());
             crate::stats::record_error_global("musicset", format!("upload_part: {e}")).await;
             return false;

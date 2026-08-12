@@ -224,17 +224,35 @@ pub async fn handle_denoise_audio(
         return;
     };
 
+    let stats_job_id = crate::stats::record_download_start(user_id, "denoise").await;
+
     // 1. Download
-    if let Err(e) = download_file(api, file_id, input_str).await {
-        log_trace(trace_id, "denoise_download_failed", &format!("err={e}"));
-        crate::stats::record_event_user(user_id, "denoise", "", "fail", 0).await;
-        crate::stats::record_error_global("denoise", &format!("download failed: {e}")).await;
-        let _ = send_text_with_back(api, chat_id, &t("denoise.download_failed")).await;
-        clean_up(&work_dir);
-        return;
+    let dl_result = match download_file(api, file_id, input_str).await {
+        Ok(res) => res,
+        Err(e) => {
+            log_trace(trace_id, "denoise_download_failed", &format!("err={e}"));
+            crate::stats::record_event_user(user_id, "denoise", "", "fail", 0).await;
+            crate::stats::record_error_global("denoise", &format!("download failed: {e}")).await;
+            let _ = send_text_with_back(api, chat_id, &t("denoise.download_failed")).await;
+            clean_up(&work_dir);
+            return;
+        }
+    };
+
+    if let Some(jid) = stats_job_id {
+        crate::stats::record_download_done(
+            jid,
+            dl_result.bytes as i64,
+            None,
+            None,
+            Some(dl_result.speed_bps() as i64),
+        )
+        .await;
     }
+
     let file_size = std::fs::metadata(input_str).map(|m| m.len()).unwrap_or(0);
-    log_trace(trace_id, "denoise_downloaded", &format!("size={file_size}"));
+    log_trace(trace_id, "denoise_downloaded", &format!("size={file_size} speed={}", dl_result.speed_human()));
+
 
     // 2. Convert to 48kHz mono 16-bit PCM WAV (DeepFilterNet optimal sample rate)
     // Blocking (std::process::Command) — run on the blocking thread pool.
@@ -584,15 +602,23 @@ pub async fn handle_denoise_audio(
 
     let caption = apply_premium_to_md(&t("denoise.result_caption"));
 
-    if is_voice {
+    let out_bytes = std::fs::metadata(output_str).map(|m| m.len()).unwrap_or(0);
+    let up_start = std::time::Instant::now();
+
+    use crate::bot::send_file_with_upload_ticker;
+    let smid = status_msg_id.unwrap_or(0);
+    let upload_success = if is_voice {
         let params = SendVoiceParams::builder()
             .chat_id(chat_id)
             .voice(PathBuf::from(output_str))
             .caption(&caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = api.send_voice(&params).await;
+        let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            api, "sendVoice", &params, std::path::Path::new(output_str), chat_id, smid, "transfer.stage.sending_audio", None
+        ).await;
         log_trace(trace_id, "denoise_voice_sent", &format!("ok={}", r.is_ok()));
+        r.is_ok()
     } else if is_video {
         let params = SendVideoParams::builder()
             .chat_id(chat_id)
@@ -600,8 +626,11 @@ pub async fn handle_denoise_audio(
             .caption(&caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = api.send_video(&params).await;
+        let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            api, "sendVideo", &params, std::path::Path::new(output_str), chat_id, smid, "transfer.stage.sending_video", None
+        ).await;
         log_trace(trace_id, "denoise_video_sent", &format!("ok={}", r.is_ok()));
+        r.is_ok()
     } else {
         let params = SendAudioParams::builder()
             .chat_id(chat_id)
@@ -609,9 +638,32 @@ pub async fn handle_denoise_audio(
             .caption(&caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = api.send_audio(&params).await;
+        let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            api, "sendAudio", &params, std::path::Path::new(output_str), chat_id, smid, "transfer.stage.sending_audio", None
+        ).await;
         log_trace(trace_id, "denoise_audio_sent", &format!("ok={}", r.is_ok()));
+        r.is_ok()
+    };
+
+    if upload_success {
+        let up_elapsed = up_start.elapsed();
+        let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+            out_bytes as f64 / up_elapsed.as_secs_f64()
+        } else {
+            0.0
+        };
+        if let Some(jid) = stats_job_id {
+            crate::stats::record_upload_done(
+                jid,
+                user_id,
+                out_bytes as i64,
+                Some(up_speed as i64),
+                Some(1),
+            )
+            .await;
+        }
     }
+
 
     if let Some(msg_id) = status_msg_id {
         let _ = api

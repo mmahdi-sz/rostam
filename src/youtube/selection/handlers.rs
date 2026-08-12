@@ -450,71 +450,103 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<
         ),
     );
 
-    // Check traffic quotas (daily + monthly) before starting download.
-    if let (Some(uid), Some(db)) = (req.user_id, database.as_ref()) {
-        let estimated = estimate_bytes(&req, &selection);
-        let user_rank = rank::effective_rank(db.client(), uid).await;
-        let daily_limit = user_rank.daily_traffic_bytes();
-        let monthly_limit = user_rank.monthly_traffic_bytes();
-        let first_upload_at = rank::quota::get_first_upload_at(db.client(), uid)
-            .await
-            .unwrap_or_else(now_epoch);
-        let daily_used = rank::quota::get_daily_traffic(db.client(), uid)
-            .await
-            .unwrap_or(0) as u64;
-        let monthly_used = rank::quota::get_monthly_traffic(db.client(), uid, first_upload_at)
-            .await
-            .unwrap_or(0) as u64;
-        let daily_remaining = daily_limit.saturating_sub(daily_used);
-        let monthly_remaining = monthly_limit.saturating_sub(monthly_used);
-
-        let block = if daily_remaining == 0 {
-            let label = tf(
-                "youtube.traffic_daily_limit",
-                &[("limit", &fmt_traffic_fa(daily_limit))],
-            );
-            Some((label, user_rank.traffic_daily_next_rank()))
-        } else if monthly_remaining == 0 {
-            let label = tf(
-                "youtube.traffic_monthly_limit",
-                &[("limit", &fmt_traffic_fa(monthly_limit))],
-            );
-            Some((label, user_rank.traffic_monthly_next_rank()))
-        } else if estimated > 0 && (estimated > daily_remaining || estimated > monthly_remaining) {
-            let remaining = daily_remaining.min(monthly_remaining);
-            let next = if daily_remaining <= monthly_remaining {
-                user_rank.traffic_daily_next_rank()
-            } else {
-                user_rank.traffic_monthly_next_rank()
-            };
-            let label = tf(
-                "youtube.traffic_file_too_big",
-                &[
-                    ("size", &fmt_traffic_fa(estimated)),
-                    ("remaining", &fmt_traffic_fa(remaining)),
-                ],
-            );
-            Some((label, next))
+    // Check user rank & traffic quotas (daily + monthly) before starting download.
+    if let Some(uid) = req.user_id {
+        let fallback_db = if database.is_none() {
+            crate::stats::get_db_client().await
         } else {
             None
         };
+        let client_ref: Option<&tokio_postgres::Client> = match database.as_ref() {
+            Some(db) => Some(db.client()),
+            None => fallback_db.as_deref(),
+        };
+        if let Some(client) = client_ref {
+            let user_rank = rank::effective_rank(client, uid).await;
 
-        if let Some((label, next_rank)) = block {
-            log_trace(
-                trace_id,
-                "traffic_paywall",
-                &format!(
-                    "user_id={uid} rank={} est={estimated} daily_rem={daily_remaining} monthly_rem={monthly_remaining}",
-                    user_rank.as_str()
-                ),
-            );
-            answer(api, cq, "").await;
-            if let Some(min_rank) = next_rank {
-                crate::rank::paywall::block_limit(api, message.chat.id, &label, min_rank).await;
-            } else {
-                let _ = crate::bot::send_text(api, message.chat.id, &label).await;
+            // Check quality resolution rank paywall
+            if let Some(max) = user_rank.max_yt_quality()
+                && selection.height > max
+            {
+                log_trace(
+                    trace_id,
+                    "quality_paywall",
+                    &format!(
+                        "user_id={uid} height={} max={max} rank={}",
+                        selection.height,
+                        user_rank.as_str()
+                    ),
+                );
+                answer(api, cq, "").await;
+                let limit = format!("{max}p");
+                let min_rank = rank::types::Rank::min_for_quality(selection.height);
+                crate::rank::paywall::block_limit(api, message.chat.id, &limit, min_rank).await;
+                return;
             }
-            return;
+
+            let estimated = estimate_bytes(&req, &selection);
+            let daily_limit = user_rank.daily_traffic_bytes();
+            let monthly_limit = user_rank.monthly_traffic_bytes();
+            let first_upload_at = rank::quota::get_first_upload_at(client, uid)
+                .await
+                .unwrap_or_else(now_epoch);
+            let daily_used = rank::quota::get_daily_traffic(client, uid)
+                .await
+                .unwrap_or(0) as u64;
+            let monthly_used = rank::quota::get_monthly_traffic(client, uid, first_upload_at)
+                .await
+                .unwrap_or(0) as u64;
+            let daily_remaining = daily_limit.saturating_sub(daily_used);
+            let monthly_remaining = monthly_limit.saturating_sub(monthly_used);
+
+            let block = if daily_remaining == 0 {
+                let label = tf(
+                    "youtube.traffic_daily_limit",
+                    &[("limit", &fmt_traffic_fa(daily_limit))],
+                );
+                Some((label, user_rank.traffic_daily_next_rank()))
+            } else if monthly_remaining == 0 {
+                let label = tf(
+                    "youtube.traffic_monthly_limit",
+                    &[("limit", &fmt_traffic_fa(monthly_limit))],
+                );
+                Some((label, user_rank.traffic_monthly_next_rank()))
+            } else if estimated > 0 && (estimated > daily_remaining || estimated > monthly_remaining) {
+                let remaining = daily_remaining.min(monthly_remaining);
+                let next = if daily_remaining <= monthly_remaining {
+                    user_rank.traffic_daily_next_rank()
+                } else {
+                    user_rank.traffic_monthly_next_rank()
+                };
+                let label = tf(
+                    "youtube.traffic_file_too_big",
+                    &[
+                        ("size", &fmt_traffic_fa(estimated)),
+                        ("remaining", &fmt_traffic_fa(remaining)),
+                    ],
+                );
+                Some((label, next))
+            } else {
+                None
+            };
+
+            if let Some((label, next_rank)) = block {
+                log_trace(
+                    trace_id,
+                    "traffic_paywall",
+                    &format!(
+                        "user_id={uid} rank={} est={estimated} daily_rem={daily_remaining} monthly_rem={monthly_remaining}",
+                        user_rank.as_str()
+                    ),
+                );
+                answer(api, cq, "").await;
+                if let Some(min_rank) = next_rank {
+                    crate::rank::paywall::block_limit(api, message.chat.id, &label, min_rank).await;
+                } else {
+                    let _ = crate::bot::send_text(api, message.chat.id, &label).await;
+                }
+                return;
+            }
         }
     }
 

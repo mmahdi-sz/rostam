@@ -269,7 +269,8 @@ pub async fn handle_generate(
             do_generate(api, chat_id, created_by, rank, days, uses, database).await;
         }
         Err(e) => {
-            let _ = send_text(api, chat_id, &tf("redeem.gen_bad_args", &[("err", &e)])).await;
+            log_ev!("redeem", created_by as u64, "gen_bad_args", "err" => &e);
+            let _ = send_text(api, chat_id, &t("redeem.gen_bad_args")).await;
         }
     }
 }

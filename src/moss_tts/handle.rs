@@ -346,6 +346,11 @@ pub async fn handle_tts_text(
 
             let mut is_forbidden = false;
             let mut send_ok = false;
+            let out_bytes = std::fs::metadata(&voice_path).map(|m| m.len()).unwrap_or(0);
+            let up_start = std::time::Instant::now();
+            let stats_job_id = crate::stats::record_download_start(user_id, "moss_tts").await;
+
+            use crate::bot::send_file_with_upload_ticker;
             if is_ogg {
                 let voice_params = SendVoiceParams::builder()
                     .chat_id(ChatId::Integer(chat_id))
@@ -356,7 +361,16 @@ pub async fn handle_tts_text(
                     .parse_mode(ParseMode::MarkdownV2)
                     .build();
 
-                let r = api.send_voice(&voice_params).await;
+                let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                    api,
+                    "sendVoice",
+                    &voice_params,
+                    &voice_path,
+                    chat_id,
+                    status_msg.message_id,
+                    "transfer.stage.sending_audio",
+                    None,
+                ).await;
                 if let Err(e) = &r {
                     let err_str = format!("{e:?}");
                     log_ev!("tts", trace_id, "send_voice_failed", "err" => &err_str);
@@ -378,7 +392,16 @@ pub async fn handle_tts_text(
                     .caption(&result_caption)
                     .parse_mode(ParseMode::MarkdownV2)
                     .build();
-                let r = api.send_audio(&audio_params).await;
+                let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                    api,
+                    "sendAudio",
+                    &audio_params,
+                    &voice_path,
+                    chat_id,
+                    status_msg.message_id,
+                    "transfer.stage.sending_audio",
+                    None,
+                ).await;
                 if let Err(e) = &r {
                     let err_str = format!("{e:?}");
                     log_ev!("tts", trace_id, "send_audio_failed", "err" => &err_str);
@@ -388,6 +411,26 @@ pub async fn handle_tts_text(
                 }
                 send_ok = r.is_ok();
             }
+
+            if send_ok {
+                let up_elapsed = up_start.elapsed();
+                let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+                    out_bytes as f64 / up_elapsed.as_secs_f64()
+                } else {
+                    0.0
+                };
+                if let Some(jid) = stats_job_id {
+                    crate::stats::record_upload_done(
+                        jid,
+                        user_id,
+                        out_bytes as i64,
+                        Some(up_speed as i64),
+                        Some(1),
+                    )
+                    .await;
+                }
+            }
+
 
             let _ = std::fs::remove_file(&voice_path);
 

@@ -241,31 +241,47 @@ pub async fn handle_deoldify_image(
         }};
     }
 
+    let stats_job_id = stats::record_download_start(user_id, "deoldify").await;
+
     // Download photo from Telegram
-    if let Err(e) = crate::bot::files::download_telegram_file(api, &file_id, &input_path).await {
-        stop_timer!();
-        log_ev!("deoldify", trace_id, "download_failed", "err" => format!("{e:?}"));
-        let _ = api
-            .delete_message(
-                &frankenstein::methods::DeleteMessageParams::builder()
-                    .chat_id(chat_id)
-                    .message_id(status_msg.message_id)
-                    .build(),
-            )
-            .await;
-        let text = apply_premium_to_md(&t("deoldify.download_failed"));
-        let _ = api
-            .send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(&text)
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .build(),
-            )
-            .await;
-        let _ = std::fs::remove_dir_all(&work_dir);
-        refund!("download_failed");
-        return;
+    let dl_result = match crate::bot::files::download_telegram_file(api, &file_id, &input_path).await {
+        Ok(res) => res,
+        Err(e) => {
+            stop_timer!();
+            log_ev!("deoldify", trace_id, "download_failed", "err" => format!("{e:?}"));
+            let _ = api
+                .delete_message(
+                    &frankenstein::methods::DeleteMessageParams::builder()
+                        .chat_id(chat_id)
+                        .message_id(status_msg.message_id)
+                        .build(),
+                )
+                .await;
+            let text = apply_premium_to_md(&t("deoldify.download_failed"));
+            let _ = api
+                .send_message(
+                    &SendMessageParams::builder()
+                        .chat_id(chat_id)
+                        .text(&text)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .build(),
+                )
+                .await;
+            let _ = std::fs::remove_dir_all(&work_dir);
+            refund!("download_failed");
+            return;
+        }
+    };
+
+    if let Some(jid) = stats_job_id {
+        stats::record_download_done(
+            jid,
+            dl_result.bytes as i64,
+            None,
+            None,
+            Some(dl_result.speed_bps() as i64),
+        )
+        .await;
     }
 
     // Run DeOldify Colorizer
@@ -297,7 +313,20 @@ pub async fn handle_deoldify_image(
                 .parse_mode(ParseMode::MarkdownV2)
                 .build();
 
-            let send_res = api.send_photo(&photo_params).await;
+            let out_bytes = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+            let up_start = std::time::Instant::now();
+
+            use crate::bot::send_file_with_upload_ticker;
+            let send_res = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                api,
+                "sendPhoto",
+                &photo_params,
+                &output_path,
+                chat_id,
+                status_msg.message_id,
+                "transfer.stage.sending_photo",
+                None,
+            ).await;
 
             let _ = api
                 .delete_message(
@@ -310,9 +339,27 @@ pub async fn handle_deoldify_image(
 
             match send_res {
                 Ok(_) => {
+                    let up_elapsed = up_start.elapsed();
+                    let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+                        out_bytes as f64 / up_elapsed.as_secs_f64()
+                    } else {
+                        0.0
+                    };
+                    if let Some(jid) = stats_job_id {
+                        stats::record_upload_done(
+                            jid,
+                            user_id,
+                            out_bytes as i64,
+                            Some(up_speed as i64),
+                            Some(1),
+                        )
+                        .await;
+                    }
+
                     // Quota was deducted during reservation; no secondary charge here
                     stats::record_event_user(user_id, "deoldify", "colorize", "ok", 1).await;
                     log_ev!("deoldify", trace_id, "done", "status" => "ok");
+
                 }
                 Err(e) => {
                     let err_str = format!("{e:?}");

@@ -6,11 +6,12 @@
 
 use std::path::Path;
 use std::sync::{
-    Arc,
+    Arc, LazyLock,
     atomic::{AtomicBool, Ordering},
 };
 use std::time::{Duration, Instant};
 
+use regex::Regex;
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
@@ -36,6 +37,11 @@ use super::pipeline::{TempDirGuard, register_active_job, remove_active_job};
 
 pub const DEFAULT_MAX_CUT_RANGES: usize = 10;
 
+static TIMESTAMP_RANGE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?P<start>(?:\d{1,2}:)?\d{1,2}:\d{2})\s*(?:[-–—~]|->|=>|\bto\b|\bتا\b)\s*(?P<end>(?:\d{1,2}:)?\d{1,2}:\d{2})")
+        .expect("Valid timestamp range regex")
+});
+
 /// Normalizes Persian (`۰-۹`) and Arabic-Indic (`٠-٩`) digits to ASCII (`0-9`).
 pub fn normalize_digits(s: &str) -> String {
     s.chars()
@@ -47,23 +53,22 @@ pub fn normalize_digits(s: &str) -> String {
         .collect()
 }
 
-/// Parses a timestamp string (`HH:MM:SS` or `MM:SS`) into total seconds.
+/// Converts timestamp string (`HH:MM:SS` or `MM:SS`) to total seconds.
 pub fn parse_timestamp(s: &str) -> Option<u64> {
-    let s = s.trim();
-    let parts: Vec<&str> = s.split(':').collect();
+    let parts: Vec<&str> = s.trim().split(':').collect();
     match parts.len() {
         2 => {
-            let mins: u64 = parts[0].trim().parse().ok()?;
-            let secs: u64 = parts[1].trim().parse().ok()?;
+            let mins: u64 = parts[0].parse().ok()?;
+            let secs: u64 = parts[1].parse().ok()?;
             if secs >= 60 {
                 return None;
             }
             Some(mins * 60 + secs)
         }
         3 => {
-            let hours: u64 = parts[0].trim().parse().ok()?;
-            let mins: u64 = parts[1].trim().parse().ok()?;
-            let secs: u64 = parts[2].trim().parse().ok()?;
+            let hours: u64 = parts[0].parse().ok()?;
+            let mins: u64 = parts[1].parse().ok()?;
+            let secs: u64 = parts[2].parse().ok()?;
             if mins >= 60 || secs >= 60 {
                 return None;
             }
@@ -88,52 +93,57 @@ pub struct CutRange {
     pub raw_line: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RangeError {
-    InvalidFormat { line_idx: usize, text: String },
-    StartGteEnd { line_idx: usize, start: u64, end: u64 },
-    EndExceedsDuration { line_idx: usize, end: u64, duration: u64 },
-    ExceedsMaxRanges { max: usize },
+    #[error("No valid cut ranges found in input")]
     NoValidRanges,
+    #[error("Line {line_idx}: Invalid format '{text}' (expected MM:SS - MM:SS or HH:MM:SS - HH:MM:SS)")]
+    InvalidFormat { line_idx: usize, text: String },
+    #[error("Line {line_idx}: Start time ({start}s) is greater than or equal to end time ({end}s)")]
+    StartGteEnd {
+        line_idx: usize,
+        start: u64,
+        end: u64,
+    },
+    #[error(
+        "Line {line_idx}: End time ({end}s) exceeds video duration ({duration}s)"
+    )]
+    EndExceedsDuration {
+        line_idx: usize,
+        end: u64,
+        duration: u64,
+    },
+    #[error("Too many cut ranges specified (max {max})")]
+    ExceedsMaxRanges { max: usize },
 }
 
-/// Parses and validates multi-line cut ranges from user input.
+/// Parses and validates cut ranges extracted from user input (including embedded in long text).
 pub fn parse_cut_ranges(
     input: &str,
     duration_secs: u64,
     max_ranges: usize,
 ) -> Result<Vec<CutRange>, Vec<RangeError>> {
     let normalized = normalize_digits(input);
-    let lines: Vec<(usize, &str)> = normalized
-        .lines()
-        .enumerate()
-        .map(|(idx, line)| (idx + 1, line.trim()))
-        .filter(|(_, line)| !line.is_empty())
-        .collect();
-
-    if lines.is_empty() {
-        return Err(vec![RangeError::NoValidRanges]);
-    }
-
-    if lines.len() > max_ranges {
-        return Err(vec![RangeError::ExceedsMaxRanges { max: max_ranges }]);
-    }
-
     let mut ranges = Vec::new();
     let mut errors = Vec::new();
 
-    for (line_idx, line) in lines {
-        let parts: Vec<&str> = line.split('-').collect();
-        if parts.len() != 2 {
-            errors.push(RangeError::InvalidFormat {
-                line_idx,
-                text: line.to_string(),
-            });
-            continue;
-        }
+    let matches: Vec<_> = TIMESTAMP_RANGE_RE.captures_iter(&normalized).collect();
 
-        let start_opt = parse_timestamp(parts[0]);
-        let end_opt = parse_timestamp(parts[1]);
+    if matches.is_empty() {
+        return Err(vec![RangeError::NoValidRanges]);
+    }
+
+    if matches.len() > max_ranges {
+        return Err(vec![RangeError::ExceedsMaxRanges { max: max_ranges }]);
+    }
+
+    for (match_idx, cap) in matches.iter().enumerate() {
+        let line_idx = match_idx + 1;
+        let start_str = &cap["start"];
+        let end_str = &cap["end"];
+
+        let start_opt = parse_timestamp(start_str);
+        let end_opt = parse_timestamp(end_str);
 
         match (start_opt, end_opt) {
             (Some(start), Some(end)) => {
@@ -156,14 +166,14 @@ pub fn parse_cut_ranges(
                     ranges.push(CutRange {
                         start_secs: start,
                         end_secs: end_clamped,
-                        raw_line: line.to_string(),
+                        raw_line: cap[0].to_string(),
                     });
                 }
             }
             _ => {
                 errors.push(RangeError::InvalidFormat {
                     line_idx,
-                    text: line.to_string(),
+                    text: cap[0].to_string(),
                 });
             }
         }
@@ -315,6 +325,12 @@ pub async fn handle_video_upload(
     log_actor_id!("studio_trim", trace_id, user_id, "uploaded" => "video");
     log_ev!("studio_trim", trace_id, "video_received", "user_id" => user_id, "msg_id" => msg_id);
 
+    if !super::is_video_message_metadata(message) {
+        log_ev!("studio_trim", trace_id, "not_a_video_metadata", "=>" => "fail");
+        let _ = send_text_md(api, chat_id, &t("studio.trim.error.not_a_video")).await;
+        return;
+    }
+
     let file_id = message
         .video
         .as_ref()
@@ -328,7 +344,7 @@ pub async fn handle_video_upload(
 
     let Some(file_id) = file_id else {
         log_ev!("studio_trim", trace_id, "invalid_video", "=>" => "fail");
-        let _ = send_text_md(api, chat_id, &t("studio.trim.error.ffprobe_failed")).await;
+        let _ = send_text_md(api, chat_id, &t("studio.trim.error.not_a_video")).await;
         return;
     };
 
@@ -346,7 +362,11 @@ pub async fn handle_video_upload(
         .to_string();
 
     // 1. Reply with initial status: "در حال دانلود ویدئو..."
-    let status_text = apply_premium_to_md(&t("studio.trim.status_downloading"));
+    let status_raw = tf(
+        "studio.trim.status_downloading",
+        &[("elapsed", &md_escape("0s")), ("detail", "")],
+    );
+    let status_text = apply_premium_to_md(&status_raw);
     let params = frankenstein::methods::SendMessageParams::builder()
         .chat_id(chat_id)
         .reply_parameters(ReplyParameters::builder().message_id(msg_id).build())
@@ -371,14 +391,35 @@ pub async fn handle_video_upload(
         return;
     }
     let _guard = TempDirGuard::new(work_dir.clone());
+    let total_bytes = message
+        .video
+        .as_ref()
+        .and_then(|v| v.file_size)
+        .or_else(|| message.document.as_ref().and_then(|d| d.file_size))
+        .unwrap_or(0);
+
     let local_file = work_dir.join(&orig_filename);
 
-    if let Err(e) = download_telegram_file(api, &file_id, &local_file).await {
+    let dl_stop_flag = super::pipeline::spawn_download_ticker(
+        api.clone(),
+        chat_id,
+        status_msg_id,
+        local_file.clone(),
+        total_bytes,
+        "studio.trim",
+        None,
+    );
+
+    let dl_res = download_telegram_file(api, &file_id, &local_file).await;
+    dl_stop_flag.store(true, Ordering::Relaxed);
+
+    if let Err(e) = dl_res {
         log_ev!("studio_trim", trace_id, "download_failed", "=>" => format!("fail err={e}"));
         let _ = api.delete_message(&DeleteMessageParams::builder().chat_id(chat_id).message_id(status_msg_id).build()).await;
         let _ = send_text_md(api, chat_id, &t("studio.trim.error.download_failed")).await;
         return;
     }
+
 
     // Edit status to "در حال پردازش..."
     let processing_text = apply_premium_to_md(&t("studio.trim.status_processing"));
@@ -590,7 +631,11 @@ pub async fn execute_trim_job(
     register_active_job(user_id, cancel_flag.clone());
 
     // 1. Initial ticker message
-    let initial_status = apply_premium_to_md(&t("studio.trim.status_downloading"));
+    let status_raw = tf(
+        "studio.trim.status_downloading",
+        &[("elapsed", &md_escape("0s")), ("detail", "")],
+    );
+    let initial_status = apply_premium_to_md(&status_raw);
     let params = frankenstein::methods::SendMessageParams::builder()
         .chat_id(chat_id)
         .text(&initial_status)
@@ -625,14 +670,45 @@ pub async fn execute_trim_job(
         return;
     }
 
+    let stats_job_id = crate::stats::record_download_start(user_id, "studio_trim").await;
+
     // Ingest source video
-    if let Err(e) = download_telegram_file(api, file_id, &source_video).await {
-        log_ev!("studio_trim", trace_id, "download_failed", "=>" => format!("fail err={e}"));
-        remove_active_job(user_id);
-        let _ = api.delete_message(&DeleteMessageParams::builder().chat_id(chat_id).message_id(status_msg_id).build()).await;
-        let _ = send_text_md(api, chat_id, &t("studio.trim.error.download_failed")).await;
-        return;
+    let dl_stop_flag = super::pipeline::spawn_download_ticker(
+        api.clone(),
+        chat_id,
+        status_msg_id,
+        source_video.clone(),
+        0,
+        "studio.trim",
+        Some(cancel_flag.clone()),
+    );
+
+    let dl_result = match download_telegram_file(api, file_id, &source_video).await {
+        Ok(res) => {
+            dl_stop_flag.store(true, Ordering::Relaxed);
+            res
+        }
+        Err(e) => {
+            dl_stop_flag.store(true, Ordering::Relaxed);
+            log_ev!("studio_trim", trace_id, "download_failed", "=>" => format!("fail err={e}"));
+            remove_active_job(user_id);
+            let _ = api.delete_message(&DeleteMessageParams::builder().chat_id(chat_id).message_id(status_msg_id).build()).await;
+            let _ = send_text_md(api, chat_id, &t("studio.trim.error.download_failed")).await;
+            return;
+        }
+    };
+
+    if let Some(jid) = stats_job_id {
+        crate::stats::record_download_done(
+            jid,
+            dl_result.bytes as i64,
+            None,
+            None,
+            Some(dl_result.speed_bps() as i64),
+        )
+        .await;
     }
+
 
     if cancel_flag.load(Ordering::Relaxed) {
         remove_active_job(user_id);
@@ -764,6 +840,10 @@ pub async fn execute_trim_job(
                     source_path.to_str().unwrap_or_default(),
                     "-c",
                     "copy",
+                    "-avoid_negative_ts",
+                    "make_zero",
+                    "-movflags",
+                    "+faststart",
                     "-threads",
                     &threads_arg_inner,
                     out_path_inner.to_str().unwrap_or_default(),
@@ -797,8 +877,10 @@ pub async fn execute_trim_job(
                 return Ok(false);
             }
 
-            // Fallback to re-encode if copy failed
-            if !success {
+            if success {
+                log_ev!("studio_trim", trace_id, "copy_success", "range" => &raw_line);
+            } else {
+                // Fallback to re-encode if copy failed
                 log_ev!("studio_trim", trace_id, "copy_failed_fallback_encode", "range" => &raw_line);
                 let mut encode_child = match std::process::Command::new(crate::config::ffmpeg_path())
                     .args([
@@ -815,6 +897,10 @@ pub async fn execute_trim_job(
                         "aac",
                         "-preset",
                         "fast",
+                        "-avoid_negative_ts",
+                        "make_zero",
+                        "-movflags",
+                        "+faststart",
                         "-threads",
                         &threads_arg_inner,
                         out_path_inner.to_str().unwrap_or_default(),
@@ -947,9 +1033,35 @@ pub async fn execute_trim_job(
             }));
         }
 
-        match api.send_video(&send_video_params).await {
+        use crate::bot::send_file_with_upload_ticker;
+        match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            api,
+            "sendVideo",
+            &send_video_params,
+            &output_path,
+            chat_id,
+            status_msg_id,
+            "transfer.stage.sending_video",
+            None,
+        ).await {
             Ok(_) => {
                 let up_secs = upload_start.elapsed().as_secs();
+                let up_elapsed = upload_start.elapsed();
+                let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+                    file_size as f64 / up_elapsed.as_secs_f64()
+                } else {
+                    0.0
+                };
+                if let Some(jid) = stats_job_id {
+                    crate::stats::record_upload_done(
+                        jid,
+                        user_id,
+                        file_size as i64,
+                        Some(up_speed as i64),
+                        Some((idx + 1) as i32),
+                    )
+                    .await;
+                }
                 total_upload_secs += up_secs;
                 log_ev!("studio_trim", trace_id, "trim_delivered", "range" => &range.raw_line, "upload_secs" => up_secs);
                 if let Some(ref db) = database {
@@ -962,6 +1074,7 @@ pub async fn execute_trim_job(
                 log_ev!("studio_trim", trace_id, "send_video_failed", "=>" => format!("fail err={e}"));
             }
         }
+
 
         // Update ticker to next cut for outer task
         current_cut.store(idx + 2, Ordering::Relaxed);
@@ -1097,5 +1210,17 @@ mod tests {
         let errors = res.unwrap_err();
         assert_eq!(errors.len(), 1);
         assert!(matches!(errors[0], RangeError::ExceedsMaxRanges { max: 2 }));
+    }
+
+    #[test]
+    fn test_parse_cut_ranges_long_text_extraction() {
+        let input = "Hello bot! I want to edit this long video for Youtube.\nHere is the description of the video.\nPlease cut the video at the end:\n00:00:00 - 02:00:00\nEnjoy watching!";
+        let duration = 7200; // 2 hours
+        let res = parse_cut_ranges(input, duration, 10);
+        assert!(res.is_ok());
+        let ranges = res.unwrap();
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges[0].start_secs, 0);
+        assert_eq!(ranges[0].end_secs, 7200);
     }
 }

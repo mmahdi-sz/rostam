@@ -8,7 +8,7 @@ use frankenstein::{
 };
 
 use super::engine::run_nobg;
-use crate::bot::{CB_NOBG_CANCEL, edit_to_ai_lab};
+use crate::bot::{CB_NOBG_CANCEL, edit_to_ai_lab, send_text};
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf, to_fa_digits};
@@ -236,33 +236,49 @@ pub async fn handle_nobg_image(
     let input_path = temp_dir.join(format!("input.{ext}"));
     let output_path = temp_dir.join("output.png");
 
+    let stats_job_id = stats::record_download_start(user_id, "feynobg").await;
+
     // Download image from Telegram
     log_ev!("feynobg", trace_id, "downloading", "file_id" => &file_id);
-    if let Err(e) = crate::bot::download_telegram_file(api, &file_id, &input_path).await {
-        log_ev!("feynobg", trace_id, "download_failed", "err" => format!("{e:?}"));
-        if let Some(msg) = status_msg {
+    let dl_result = match crate::bot::download_telegram_file(api, &file_id, &input_path).await {
+        Ok(res) => res,
+        Err(e) => {
+            log_ev!("feynobg", trace_id, "download_failed", "err" => format!("{e:?}"));
+            if let Some(msg) = status_msg {
+                let _ = api
+                    .delete_message(
+                        &DeleteMessageParams::builder()
+                            .chat_id(chat_id)
+                            .message_id(msg.message_id)
+                            .build(),
+                    )
+                    .await;
+            }
+            let text = apply_premium_to_md(&t("nobg.download_failed"));
             let _ = api
-                .delete_message(
-                    &DeleteMessageParams::builder()
+                .send_message(
+                    &SendMessageParams::builder()
                         .chat_id(chat_id)
-                        .message_id(msg.message_id)
+                        .text(&text)
+                        .parse_mode(ParseMode::MarkdownV2)
                         .build(),
                 )
                 .await;
+            let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+            refund!("download_failed");
+            return;
         }
-        let text = apply_premium_to_md(&t("nobg.download_failed"));
-        let _ = api
-            .send_message(
-                &SendMessageParams::builder()
-                    .chat_id(chat_id)
-                    .text(&text)
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .build(),
-            )
-            .await;
-        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
-        refund!("download_failed");
-        return;
+    };
+
+    if let Some(jid) = stats_job_id {
+        stats::record_download_done(
+            jid,
+            dl_result.bytes as i64,
+            None,
+            None,
+            Some(dl_result.speed_bps() as i64),
+        )
+        .await;
     }
 
     // Run FeyNobg ONNX model
@@ -275,24 +291,52 @@ pub async fn handle_nobg_image(
             let caption_raw = tf("nobg.result_caption", &[("time", &sec_str)]);
             let caption = apply_premium_to_md(&caption_raw);
 
-            // Send output as Document to preserve PNG transparency (alpha channel)
-            let send_res = api
-                .send_document(
-                    &SendDocumentParams::builder()
-                        .chat_id(chat_id)
-                        .document(output_path)
-                        .caption(&caption)
-                        .parse_mode(ParseMode::MarkdownV2)
-                        .build(),
-                )
-                .await;
+            let out_bytes = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+            let up_start = std::time::Instant::now();
+
+            let doc_params = SendDocumentParams::builder()
+                .chat_id(chat_id)
+                .document(output_path.clone())
+                .caption(&caption)
+                .parse_mode(ParseMode::MarkdownV2)
+                .build();
+            use crate::bot::send_file_with_upload_ticker;
+            let status_mid = status_msg.as_ref().map(|m| m.message_id).unwrap_or(0);
+            let send_res = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                api,
+                "sendDocument",
+                &doc_params,
+                std::path::Path::new(&output_path),
+                chat_id,
+                status_mid,
+                "transfer.stage.sending_document",
+                None,
+            ).await;
 
             if let Err(e) = send_res {
                 log_ev!("feynobg", trace_id, "send_document_failed", "err" => format!("{e:?}"));
                 stats::record_error_global("feynobg", &format!("send_document_failed: {e}")).await;
                 stats::record_event_user(user_id, "nobg", "process", "fail", 1).await;
+                let _ = send_text(api, chat_id, &t("nobg.process_failed")).await;
                 refund!("send_document_failed");
             } else {
+                let up_elapsed = up_start.elapsed();
+                let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+                    out_bytes as f64 / up_elapsed.as_secs_f64()
+                } else {
+                    0.0
+                };
+                if let Some(jid) = stats_job_id {
+                    stats::record_upload_done(
+                        jid,
+                        user_id,
+                        out_bytes as i64,
+                        Some(up_speed as i64),
+                        Some(1),
+                    )
+                    .await;
+                }
+
                 log_ev!("feynobg", trace_id, "success", "duration" => sec_str);
                 stats::record_event_user(user_id, "nobg", "process", "ok", 1).await;
 

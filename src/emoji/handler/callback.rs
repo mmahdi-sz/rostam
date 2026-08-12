@@ -167,21 +167,27 @@ pub async fn handle_emoji_callback(
                         "[emoji_cb trace={trace_id} event=export_writing] path={path:?} bytes={}",
                         sql.len()
                     );
-                    if let Err(e) = fs::write(&path, &sql) {
-                        eprintln!("[emoji_cb trace={trace_id} event=export_write_failed] err={e}");
+                    if let Err(_e) = fs::write(&path, &sql) {
                         let _ = send_text(api, chat_id, &t("emoji.export_failed")).await;
                     } else {
-                        let r = api
-                            .send_document(
-                                &SendDocumentParams::builder()
-                                    .chat_id(chat_id)
-                                    .document(FileUpload::InputFile(InputFile {
-                                        path: path.clone(),
-                                    }))
-                                    .caption(t("emoji.export_caption"))
-                                    .build(),
-                            )
-                            .await;
+                        use crate::bot::send_file_with_upload_ticker;
+                        let params = SendDocumentParams::builder()
+                            .chat_id(chat_id)
+                            .document(FileUpload::InputFile(InputFile {
+                                path: path.clone(),
+                            }))
+                            .caption(t("emoji.export_caption"))
+                            .build();
+                        let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                            api,
+                            "sendDocument",
+                            &params,
+                            &path,
+                            chat_id,
+                            message_id,
+                            "transfer.stage.sending_document",
+                            None,
+                        ).await;
                         eprintln!(
                             "[emoji_cb trace={trace_id} event=export_sent] ok={}",
                             r.is_ok()

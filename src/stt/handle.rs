@@ -390,22 +390,39 @@ pub async fn handle_stt_audio(
     };
 
     let overall_start = Instant::now();
+    let stats_job_id = crate::stats::record_download_start(user_id, "stt").await;
 
     // ── Stage 1: Download ──
-    if let Err(e) = download_file(api, file_id, input_str)
-        .await
-        .map_err(|e| e.to_string())
-    {
-        remove_active_stt_job(user_id);
-        log_trace(trace_id, "stt_download_failed", &format!("err={e}"));
-        crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
-        crate::stats::record_error_global("stt", &format!("download failed: {e}")).await;
-        let _ = send_text_with_back(api, chat_id, &t("stt.download_failed")).await;
-        delete_status(api, chat_id, status_msg_id).await;
-        clean_up(&work_dir);
-        return;
+    let dl_result = match download_file(api, file_id, input_str).await {
+        Ok(res) => res,
+        Err(e) => {
+            let e_str = e.to_string();
+            remove_active_stt_job(user_id);
+            log_trace(trace_id, "stt_download_failed", &format!("err={e_str}"));
+            crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
+            crate::stats::record_error_global("stt", &format!("download failed: {e_str}")).await;
+            let _ = send_text_with_back(api, chat_id, &t("stt.download_failed")).await;
+            delete_status(api, chat_id, status_msg_id).await;
+            clean_up(&work_dir);
+            return;
+        }
+    };
+    if let Some(jid) = stats_job_id {
+        crate::stats::record_download_done(
+            jid,
+            dl_result.bytes as i64,
+            None,
+            None,
+            Some(dl_result.speed_bps() as i64),
+        )
+        .await;
     }
-    log_trace(trace_id, "stt_downloaded", "");
+    log_trace(
+        trace_id,
+        "stt_downloaded",
+        &format!("bytes={} speed={}", dl_result.bytes, dl_result.speed_human()),
+    );
+
 
     if cancel_flag.load(Ordering::Relaxed) {
         log_trace(trace_id, "stt_cancelled_after_download", "");

@@ -365,14 +365,16 @@ pub async fn handle_separation_callback(
         Err(e) => log_trace(trace_id, "processing_msg_failed", &format!("err={e}")),
     }
 
+    let stats_job_id = crate::stats::record_download_start(user_id, "separation").await;
+
     // Download file from Telegram.
     log_trace(
         trace_id,
         "download_start",
         &format!("file_id={file_id} filename={filename} is_video={is_video}"),
     );
-    let file_bytes = match download_file(api, &file_id, trace_id).await {
-        Ok(b) => b,
+    let (file_bytes, dl_result) = match download_file(api, &file_id, trace_id).await {
+        Ok(res) => res,
         Err(e) => {
             log_trace(trace_id, "download_failed", &format!("err={e}"));
             crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
@@ -384,6 +386,18 @@ pub async fn handle_separation_callback(
             return;
         }
     };
+
+    if let Some(jid) = stats_job_id {
+        crate::stats::record_download_done(
+            jid,
+            dl_result.bytes as i64,
+            None,
+            None,
+            Some(dl_result.speed_bps() as i64),
+        )
+        .await;
+    }
+
     log_trace(
         trace_id,
         "download_done",
@@ -806,8 +820,6 @@ pub async fn handle_separation_callback(
                     ),
                 );
 
-                let _ = delete_message(&api_task, chat_id, message_id).await;
-
                 let vocals_wav_path = tmp_dir.join("vocals.wav");
                 let instrumental_wav_path = tmp_dir.join("instrumental.wav");
                 let vocals_compressed_path =
@@ -824,13 +836,24 @@ pub async fn handle_separation_callback(
                 )
                 .ok();
 
+                let up_start = std::time::Instant::now();
+                let total_out_bytes = (std::fs::metadata(&vocals_compressed_path).map(|m| m.len()).unwrap_or(0))
+                    + (std::fs::metadata(&vocals_wav_path).map(|m| m.len()).unwrap_or(0))
+                    + (std::fs::metadata(&instrumental_compressed_path).map(|m| m.len()).unwrap_or(0))
+                    + (std::fs::metadata(&instrumental_wav_path).map(|m| m.len()).unwrap_or(0));
+
+                use crate::bot::send_file_with_upload_ticker;
+                let smid = message_id;
+
                 log_trace(trace_id, "send_vocals_compressed", "");
                 let p = SendAudioParams::builder()
                     .chat_id(chat_id)
                     .audio(PathBuf::from(&vocals_compressed_path))
                     .caption(t("separation.result.vocals_compressed_caption"))
                     .build();
-                match api_task.send_audio(&p).await {
+                match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                    &api_task, "sendAudio", &p, &vocals_compressed_path, chat_id, smid, "transfer.stage.sending_audio", None
+                ).await {
                     Ok(_) => log_trace(trace_id, "vocals_compressed_sent", ""),
                     Err(e) => log_trace(trace_id, "vocals_compressed_failed", &format!("err={e}")),
                 }
@@ -841,7 +864,9 @@ pub async fn handle_separation_callback(
                     .document(PathBuf::from(&vocals_wav_path))
                     .caption(t("separation.result.vocals_wav_caption"))
                     .build();
-                match api_task.send_document(&p).await {
+                match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                    &api_task, "sendDocument", &p, &vocals_wav_path, chat_id, smid, "transfer.stage.sending_document", None
+                ).await {
                     Ok(_) => log_trace(trace_id, "vocals_wav_sent", ""),
                     Err(e) => log_trace(trace_id, "vocals_wav_failed", &format!("err={e}")),
                 }
@@ -852,7 +877,9 @@ pub async fn handle_separation_callback(
                     .audio(PathBuf::from(&instrumental_compressed_path))
                     .caption(t("separation.result.instrumental_compressed_caption"))
                     .build();
-                match api_task.send_audio(&p).await {
+                match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                    &api_task, "sendAudio", &p, &instrumental_compressed_path, chat_id, smid, "transfer.stage.sending_audio", None
+                ).await {
                     Ok(_) => log_trace(trace_id, "instrumental_compressed_sent", ""),
                     Err(e) => log_trace(
                         trace_id,
@@ -867,10 +894,30 @@ pub async fn handle_separation_callback(
                     .document(PathBuf::from(&instrumental_wav_path))
                     .caption(t("separation.result.instrumental_wav_caption"))
                     .build();
-                match api_task.send_document(&p).await {
+                match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                    &api_task, "sendDocument", &p, &instrumental_wav_path, chat_id, smid, "transfer.stage.sending_document", None
+                ).await {
                     Ok(_) => log_trace(trace_id, "instrumental_wav_sent", ""),
                     Err(e) => log_trace(trace_id, "instrumental_wav_failed", &format!("err={e}")),
                 }
+
+                let up_elapsed = up_start.elapsed();
+                let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+                    total_out_bytes as f64 / up_elapsed.as_secs_f64()
+                } else {
+                    0.0
+                };
+                if let Some(jid) = stats_job_id {
+                    crate::stats::record_upload_done(
+                        jid,
+                        user_id,
+                        total_out_bytes as i64,
+                        Some(up_speed as i64),
+                        Some(4),
+                    )
+                    .await;
+                }
+
 
                 // Quota was already reserved via ffprobe duration; no second deduction needed.
 
@@ -1081,53 +1128,26 @@ async fn extract_and_prepare_audio(
     }
 }
 
-async fn download_file(api: &Bot, file_id: &str, trace_id: u64) -> crate::error::Result<Vec<u8>> {
-    use frankenstein::methods::GetFileParams;
+async fn download_file(
+    api: &Bot,
+    file_id: &str,
+    trace_id: u64,
+) -> crate::error::Result<(Vec<u8>, crate::bot::TransferResult)> {
+    let tmp_path = std::env::temp_dir().join(format!("sep_dl_{trace_id}.tmp"));
+    let res = crate::bot::download_telegram_file(api, file_id, &tmp_path)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let file_info = api
-        .get_file(&GetFileParams::builder().file_id(file_id).build())
-        .await?;
-    let file_path = file_info
-        .result
-        .file_path
-        .ok_or_else(|| anyhow::anyhow!("no file_path"))?;
-
-    let path_label = std::path::Path::new(&file_path)
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("<file>");
-    log_trace(trace_id, "file_path", &format!("file_name={path_label}"));
-
-    if file_path.starts_with('/') {
-        let bytes = std::fs::read(&file_path)?;
-        log_trace(trace_id, "local_read", &format!("size={}", bytes.len()));
-        return Ok(bytes);
-    }
-
-    let url = if let Some(base) = crate::config::bot_api_base_url() {
-        let base = base.trim_end_matches('/');
-        format!("{base}/file/bot{}/{file_path}", crate::config::bot_token()?)
-    } else {
-        format!(
-            "https://api.telegram.org/file/bot{}/{file_path}",
-            crate::config::bot_token()?
-        )
-    };
-
-    log_trace(trace_id, "http_download", "source=telegram_api");
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()?;
-    let response = client.get(&url).send().await?;
-    let status = response.status();
-    let bytes = response.bytes().await?.to_vec();
+    let bytes = std::fs::read(&tmp_path)?;
+    let _ = std::fs::remove_file(&tmp_path);
     log_trace(
         trace_id,
         "http_done",
-        &format!("status={status} bytes={}", bytes.len()),
+        &format!("bytes={} speed={}", bytes.len(), res.speed_human()),
     );
-    Ok(bytes)
+    Ok((bytes, res))
 }
+
 
 /// Formats seconds into mm:ss or hh:mm:ss.
 fn format_clock(secs: u64) -> String {

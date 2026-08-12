@@ -209,24 +209,35 @@ async fn handle_resolution_callback(
     };
 
     // Check user rank via DB.
-    if let (Some(uid), Some(db)) = (request.user_id, database.as_ref()) {
-        let user_rank = rank::effective_rank(db.client(), uid).await;
-        if let Some(max) = user_rank.max_yt_quality()
-            && height > max
-        {
-            log_trace(
-                trace_id,
-                "quality_paywall",
-                &format!(
-                    "user_id={uid} height={height} max={max} rank={}",
-                    user_rank.as_str()
-                ),
-            );
-            answer_callback(api, callback_query, "").await;
-            let limit = format!("{max}p");
-            let min_rank = rank::types::Rank::min_for_quality(height);
-            crate::rank::paywall::block_limit(api, message.chat.id, &limit, min_rank).await;
-            return true;
+    if let Some(uid) = request.user_id {
+        let fallback_db = if database.is_none() {
+            crate::stats::get_db_client().await
+        } else {
+            None
+        };
+        let client_ref: Option<&tokio_postgres::Client> = match database.as_ref() {
+            Some(db) => Some(db.client()),
+            None => fallback_db.as_deref(),
+        };
+        if let Some(client) = client_ref {
+            let user_rank = rank::effective_rank(client, uid).await;
+            if let Some(max) = user_rank.max_yt_quality()
+                && height > max
+            {
+                log_trace(
+                    trace_id,
+                    "quality_paywall",
+                    &format!(
+                        "user_id={uid} height={height} max={max} rank={}",
+                        user_rank.as_str()
+                    ),
+                );
+                answer_callback(api, callback_query, "").await;
+                let limit = format!("{max}p");
+                let min_rank = rank::types::Rank::min_for_quality(height);
+                crate::rank::paywall::block_limit(api, message.chat.id, &limit, min_rank).await;
+                return true;
+            }
         }
     }
 

@@ -139,6 +139,8 @@ pub static EMOJI_MAP: &[(&str, &str)] = &[
     ("🔧", "wrench"),
     ("🧰", "wrench"),
     ("❓", "question_mark"),
+    ("📹", "adobe_pr_animasion"),
+    ("🎥", "adobe_pr_animasion"),
     // NOTE: 🔥 is intentionally NOT here — it is randomized across fire1..fire4
     // by apply_premium_to_html (see premium_md.rs).
 ];

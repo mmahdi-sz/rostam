@@ -21,7 +21,11 @@ pub async fn fetch_spotify_track(track_id: &str) -> anyhow::Result<SpotifyTrackM
     match fetch_spotify_track_api(track_id).await {
         Ok(meta) => Ok(meta),
         Err(e) => {
-            log_ev!("sp", 0, "api_fetch_failed_trying_public_fallback", "err" => e.to_string());
+            // Only log when credentials ARE configured but still failed (real error).
+            // Missing credentials is by-design; don't spam.
+            if crate::config::spotify_client_id().is_some() {
+                log_ev!("sp", 0, "api_fetch_failed_trying_public_fallback", "err" => e.to_string());
+            }
             fetch_spotify_track_public(track_id).await
         }
     }

@@ -67,36 +67,40 @@ pub async fn fetch_video_info(
         &format!("status={}", output.status),
     );
 
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let lower = stderr.to_ascii_lowercase();
+
+    if lower.contains("http error 429") || lower.contains("too many requests") {
+        log_trace(
+            trace_id,
+            "yt_dlp_rate_limited",
+            stderr.lines().last().unwrap_or(""),
+        );
+        return Err(FetchError::RateLimited);
+    }
+    if lower.contains("no such table: moz_cookies")
+        || lower.contains("database is locked")
+        || lower.contains("could not find cookies")
+        || lower.contains("could not find firefox cookies")
+        || lower.contains("cookies database")
+        || lower.contains("unable to open database file")
+        || lower.contains("no cookies found")
+        || lower.contains("the page needs to be reloaded")
+        || lower.contains("confirm you're not a robot")
+        || lower.contains("confirm you’re not a robot")
+        || lower.contains("sign in to confirm")
+    {
+        log_trace(
+            trace_id,
+            "yt_dlp_bad_cookie",
+            stderr.lines().last().unwrap_or(""),
+        );
+        return Err(FetchError::BadCookie(
+            stderr.lines().last().unwrap_or("").to_string(),
+        ));
+    }
+
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let lower = stderr.to_ascii_lowercase();
-        if lower.contains("http error 429") || lower.contains("too many requests") {
-            log_trace(
-                trace_id,
-                "yt_dlp_rate_limited",
-                stderr.lines().last().unwrap_or(""),
-            );
-            return Err(FetchError::RateLimited);
-        }
-        if lower.contains("no such table: moz_cookies")
-            || lower.contains("database is locked")
-            || lower.contains("could not find cookies")
-            || lower.contains("unable to open database file")
-            || lower.contains("no cookies found")
-            || lower.contains("the page needs to be reloaded")
-            || lower.contains("confirm you're not a robot")
-            || lower.contains("confirm you’re not a robot")
-            || lower.contains("sign in to confirm")
-        {
-            log_trace(
-                trace_id,
-                "yt_dlp_bad_cookie",
-                stderr.lines().last().unwrap_or(""),
-            );
-            return Err(FetchError::BadCookie(
-                stderr.lines().last().unwrap_or("").to_string(),
-            ));
-        }
         log_trace(
             trace_id,
             "yt_dlp_other_error",
@@ -111,6 +115,7 @@ pub async fn fetch_video_info(
 
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| FetchError::Other(format!("failed to parse yt-dlp json: {e}")))?;
+
 
     // Detect whether playlist or single video.
     let is_playlist = json
@@ -167,7 +172,19 @@ pub async fn fetch_video_info(
         .map(|s| s.to_string())
         .filter(|s| !s.trim().is_empty());
     let mut video_formats = extract_video_formats(&json);
+    if video_formats.is_empty() && !is_playlist && !yt_dlp_browser_spec.is_empty() {
+        log_trace(
+            trace_id,
+            "yt_dlp_zero_formats_with_cookie",
+            &format!("cookie_spec={yt_dlp_browser_spec}"),
+        );
+        return Err(FetchError::BadCookie(format!(
+            "0 formats extracted with cookie {}",
+            yt_dlp_browser_spec
+        )));
+    }
     let mut available_heights = available_heights(&video_formats);
+
     let mut audio_languages = extract_audio_languages(&json);
     let mut subtitle_languages = extract_subtitle_languages(&json);
     let format_count = json

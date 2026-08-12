@@ -109,7 +109,7 @@ pub fn start_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup {
         vec![btn_icon(
             &t("start.studio_button"),
             CB_START_STUDIO,
-            "clapper",
+            "adobe_pr_animasion",
         )],
         vec![btn_icon(
             &t("start.leaderboard_button"),

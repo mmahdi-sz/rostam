@@ -96,7 +96,7 @@ async fn run_playlist_download(
     let _cancel_guard = UnregisterGuard(request_id);
     let trace_id = req.trace_id;
     let user_id = req.user_id.unwrap_or(0);
-    let stats_job_id = stats::record_download_start(user_id).await;
+    let stats_job_id = stats::record_download_start(user_id, "youtube").await;
     let _active_dl_guard = crate::metrics::ActiveDownloadGuard::new();
     let _duration_guard = crate::metrics::RequestDurationGuard::new("youtube");
 
@@ -224,7 +224,7 @@ async fn run_playlist_download(
             Ok(bytes) => {
                 sent += 1;
                 if let Some(job_id) = stats_job_id {
-                    stats::record_upload_done(job_id, user_id, bytes as i64).await;
+                    stats::record_upload_done(job_id, user_id, bytes as i64, None, Some(sent as i32)).await;
                 }
             }
             Err(reason) => {
@@ -297,7 +297,7 @@ async fn run_playlist_download(
         &format!("sent={sent} failed={} total={total_videos}", failures.len()),
     );
     if let Some(job_id) = stats_job_id {
-        stats::record_download_done(job_id, (sent as i64) * 100_000_000, None, None).await;
+        stats::record_download_done(job_id, (sent as i64) * 100_000_000, None, None, None).await;
     }
 }
 
@@ -504,12 +504,18 @@ async fn download_single_playlist_item(
             caption_entities,
             height,
             None,
-        );
-        api.send_video(&params).await.map(|_| ())
+            );
+        let progress = crate::bot::transfer::TransferProgress::new(0);
+        crate::bot::transfer::send_params_metered::<_, frankenstein::response::MethodResponse<frankenstein::types::Message>>(
+            &api.api_url, "sendVideo", &params, &progress, None
+        ).await.map(|_| ())
     } else {
         let params =
             build_single_doc_params(&path, req.chat_id, &thumb_path, caption, caption_entities);
-        api.send_document(&params).await.map(|_| ())
+        let progress = crate::bot::transfer::TransferProgress::new(0);
+        crate::bot::transfer::send_params_metered::<_, frankenstein::response::MethodResponse<frankenstein::types::Message>>(
+            &api.api_url, "sendDocument", &params, &progress, None
+        ).await.map(|_| ())
     };
 
     cleanup_dir(&dir, trace_id).await;
@@ -560,9 +566,37 @@ async fn run_download(
     let user_id = req.user_id.unwrap_or(0);
 
     // Record download start
-    let stats_job_id = stats::record_download_start(user_id).await;
+    let stats_job_id = stats::record_download_start(user_id, "youtube").await;
     let _active_dl_guard = crate::metrics::ActiveDownloadGuard::new();
     let _duration_guard = crate::metrics::RequestDurationGuard::new("youtube");
+
+    let user_rank = if user_id > 0 {
+        if let Some(db) = stats::get_db_client().await {
+            crate::rank::effective_rank(&db, user_id).await
+        } else {
+            crate::rank::types::Rank::Dalavar
+        }
+    } else {
+        crate::rank::types::Rank::Dalavar
+    };
+
+    if let Some(max) = user_rank.max_yt_quality()
+        && height > max
+    {
+        log_trace(
+            trace_id,
+            "quality_paywall_download_aborted",
+            &format!(
+                "user_id={user_id} height={height} max={max} rank={}",
+                user_rank.as_str()
+            ),
+        );
+        let limit = format!("{max}p");
+        let min_rank = crate::rank::types::Rank::min_for_quality(height);
+        crate::rank::paywall::block_limit(&api, status_chat_id, &limit, min_rank).await;
+        unregister_cancel(request_id);
+        return;
+    }
 
     let is_audio = selection.audio_only.is_some();
     let quality_label = if let Some(aq) = selection.audio_only {
@@ -594,7 +628,7 @@ async fn run_download(
                 &api,
                 status_chat_id,
                 status_message_id,
-                tf("youtube.download.failed", &[("error", "format not found")]),
+                t("youtube.download.failed"),
             )
             .await;
             return;
@@ -623,7 +657,7 @@ async fn run_download(
             &api,
             status_chat_id,
             status_message_id,
-            tf("youtube.download.failed", &[("error", &e.to_string())]),
+            t("youtube.download.failed"),
         )
         .await;
         return;
@@ -733,7 +767,7 @@ async fn run_download(
                 &api,
                 status_chat_id,
                 status_message_id,
-                tf("youtube.download.failed", &[("error", &e.to_string())]),
+                t("youtube.download.failed"),
             )
             .await;
             return;
@@ -746,10 +780,7 @@ async fn run_download(
             &api,
             status_chat_id,
             status_message_id,
-            tf(
-                "youtube.download.failed",
-                &[("error", "piped stdout missing")],
-            ),
+            t("youtube.download.failed"),
         )
         .await;
         return;
@@ -760,10 +791,7 @@ async fn run_download(
             &api,
             status_chat_id,
             status_message_id,
-            tf(
-                "youtube.download.failed",
-                &[("error", "piped stderr missing")],
-            ),
+            t("youtube.download.failed"),
         )
         .await;
         return;
@@ -840,7 +868,7 @@ async fn run_download(
                 &api,
                 status_chat_id,
                 status_message_id,
-                tf("youtube.download.failed", &[("error", &e.to_string())]),
+                t("youtube.download.failed"),
             )
             .await;
             return;
@@ -862,7 +890,7 @@ async fn run_download(
             &api,
             status_chat_id,
             status_message_id,
-            tf("youtube.download.failed", &[("error", &err)]),
+            t("youtube.download.failed"),
         )
         .await;
         cleanup_dir(&dir, trace_id).await;
@@ -877,7 +905,7 @@ async fn run_download(
                 &api,
                 status_chat_id,
                 status_message_id,
-                tf("youtube.download.failed", &[("error", "no output file")]),
+                t("youtube.download.failed"),
             )
             .await;
             cleanup_dir(&dir, trace_id).await;
@@ -921,7 +949,7 @@ async fn run_download(
                 None
             }
         });
-        stats::record_download_done(jid, file_size_bytes as i64, duration_i32, bitrate).await;
+        stats::record_download_done(jid, file_size_bytes as i64, duration_i32, bitrate, None).await;
     }
 
     let hardsub_transcoded = matches!(selection.subtitle_mode, SubtitleMode::Hardsub)
@@ -1015,7 +1043,7 @@ async fn run_download(
                     &api,
                     status_chat_id,
                     status_message_id,
-                    tf("youtube.download.split_failed", &[("error", &e)]),
+                    t("youtube.download.split_failed"),
                 )
                 .await;
                 cleanup_dir(&dir, trace_id).await;
@@ -1255,7 +1283,7 @@ async fn run_download(
             maybe_send_non_h264_notice(&api, req.chat_id, &codec_name, trace_id).await;
         }
         if let Some(jid) = stats_job_id {
-            stats::record_upload_done(jid, user_id, file_size_bytes as i64).await;
+            stats::record_upload_done(jid, user_id, file_size_bytes as i64, None, Some(1)).await;
         }
         let _ = api
             .delete_message(

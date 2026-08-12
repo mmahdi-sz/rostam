@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::time::Instant;
 
 use frankenstein::{
     AsyncTelegramApi,
@@ -12,12 +11,27 @@ use crate::i18n::{t, tf};
 
 use super::super::trace::log_trace;
 use super::progress::format_upload_body;
-use super::runner::EDIT_THROTTLE;
 use super::status::{edit_progress_status, edit_status};
 
 pub enum MediaPayload {
     Video(SendVideoParams),
     Document(SendDocumentParams),
+}
+
+impl MediaPayload {
+    #[allow(dead_code)]
+    pub fn file_path(&self) -> Option<&std::path::Path> {
+        match self {
+            MediaPayload::Video(p) => match &p.video {
+                FileUpload::InputFile(i) => Some(&i.path),
+                _ => None,
+            },
+            MediaPayload::Document(p) => match &p.document {
+                FileUpload::InputFile(i) => Some(&i.path),
+                _ => None,
+            },
+        }
+    }
 }
 
 /// Runs the send_video or send_document call with progress ticks and cancel support.
@@ -33,28 +47,51 @@ pub async fn send_media_with_progress(
     cancel_fut: &mut std::pin::Pin<&mut impl std::future::Future<Output = ()>>,
     trace_id: u64,
 ) -> bool {
-    let api_for_send = api.clone();
+    let file_bytes = match &payload {
+        MediaPayload::Video(p) => match &p.video {
+            FileUpload::InputFile(i) => std::fs::metadata(&i.path).map(|m| m.len()).unwrap_or(0),
+            _ => 0,
+        },
+        MediaPayload::Document(p) => match &p.document {
+            FileUpload::InputFile(i) => std::fs::metadata(&i.path).map(|m| m.len()).unwrap_or(0),
+            _ => 0,
+        },
+    };
+    let progress = crate::bot::transfer::TransferProgress::new(file_bytes);
+    let progress_clone = progress.clone();
+    let api_url = api.api_url.clone();
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancel_clone = cancel_flag.clone();
+    
     let mut send_task = tokio::spawn(async move {
         match payload {
-            MediaPayload::Video(params) => api_for_send.send_video(&params).await.map(|_| ()),
-            MediaPayload::Document(params) => api_for_send.send_document(&params).await.map(|_| ()),
+            MediaPayload::Video(params) => crate::bot::transfer::send_params_metered::<_, frankenstein::response::MethodResponse<frankenstein::types::Message>>(
+                &api_url, "sendVideo", &params, &progress_clone, Some(cancel_clone)
+            ).await.map(|_| ()),
+            MediaPayload::Document(params) => crate::bot::transfer::send_params_metered::<_, frankenstein::response::MethodResponse<frankenstein::types::Message>>(
+                &api_url, "sendDocument", &params, &progress_clone, Some(cancel_clone)
+            ).await.map(|_| ()),
         }
     });
-    let upload_start = Instant::now();
-    let mut interval = tokio::time::interval(EDIT_THROTTLE);
+
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
     interval.tick().await;
+    let mut last_snap_str = String::new();
 
     let send_result = loop {
         tokio::select! {
             result = &mut send_task => { break result; }
             _ = interval.tick() => {
-                let elapsed = upload_start.elapsed();
-                log_trace(trace_id, "upload_progress", &format!("elapsed={}s", elapsed.as_secs()));
-                edit_progress_status(api, status_chat_id, status_message_id,
-                    format_upload_body(quality_label, elapsed), request_id).await;
+                let snap = progress.snapshot();
+                let body = format_upload_body(quality_label, &snap);
+                if body != last_snap_str {
+                    last_snap_str = body.clone();
+                    edit_progress_status(api, status_chat_id, status_message_id, body, request_id).await;
+                }
             }
             _ = cancel_fut.as_mut() => {
                 log_trace(trace_id, "upload_cancelled", "cancel signal");
+                cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
                 send_task.abort();
                 edit_status(api, status_chat_id, status_message_id, t("youtube.download.cancelled")).await;
                 return false;
@@ -67,7 +104,7 @@ pub async fn send_media_with_progress(
             log_trace(
                 trace_id,
                 "upload_ok",
-                &format!("elapsed={}s", upload_start.elapsed().as_secs()),
+                &format!("elapsed={}s", progress.elapsed().as_secs()),
             );
             true
         }
@@ -151,35 +188,52 @@ pub async fn send_audio_file(
     if !caption_entities.is_empty() {
         params.caption_entities = Some(caption_entities);
     }
-    let api_for_send = api.clone();
-    let mut send_task = tokio::spawn(async move { api_for_send.send_audio(&params).await });
-    let upload_start = Instant::now();
-    let mut interval = tokio::time::interval(EDIT_THROTTLE);
+    
+    let file_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let progress = crate::bot::transfer::TransferProgress::new(file_bytes);
+    let progress_clone = progress.clone();
+    let api_url = api.api_url.clone();
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let cancel_clone = cancel_flag.clone();
+    
+    let mut send_task = tokio::spawn(async move {
+        crate::bot::transfer::send_params_metered::<_, frankenstein::response::MethodResponse<frankenstein::types::Message>>(
+            &api_url, "sendAudio", &params, &progress_clone, Some(cancel_clone)
+        ).await.map(|_| ())
+    });
+    
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
     interval.tick().await;
     let label = t("youtube.audio.uploading");
+    let mut last_snap_str = String::new();
+    
     let send_result = loop {
         tokio::select! {
             result = &mut send_task => { break result; }
             _ = interval.tick() => {
-                let elapsed = upload_start.elapsed();
-                log_trace(trace_id, "audio_upload_progress", &format!("elapsed={}s", elapsed.as_secs()));
-                edit_progress_status(api, status_chat_id, status_message_id,
-                    format_upload_body(&label, elapsed), request_id).await;
+                let snap = progress.snapshot();
+                let body = format_upload_body(&label, &snap);
+                if body != last_snap_str {
+                    last_snap_str = body.clone();
+                    edit_progress_status(api, status_chat_id, status_message_id, body, request_id).await;
+                }
             }
             _ = cancel_fut.as_mut() => {
                 log_trace(trace_id, "audio_upload_cancelled", "cancel signal");
+                cancel_flag.store(true, std::sync::atomic::Ordering::Relaxed);
                 send_task.abort();
                 edit_status(api, status_chat_id, status_message_id, t("youtube.download.cancelled")).await;
                 return false;
             }
         }
     };
+
     match send_result {
         Ok(Ok(_)) => {
             log_trace(
                 trace_id,
                 "audio_upload_ok",
-                &format!("elapsed={}s", upload_start.elapsed().as_secs()),
+                &format!("elapsed={}s", progress.elapsed().as_secs()),
             );
             true
         }
