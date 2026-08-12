@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.4.3] - 2026-08-12
+
+### Fixed
+- **Telegram MethodResponse Deserialization in Transfer Metering (`transfer`)**: Updated `send_params_metered` in `src/bot/transfer.rs` to fallback to deserializing `frankenstein::response::MethodResponse<R>` and returning `.result` when callers pass inner types directly (e.g., `Message` in `send_file_with_upload_ticker`). Fixes `err=missing field message_id` failures across 15+ processing modules (`separation`, `denoise`, `studio_trim`, `studio_compress`, `feynobg`, `deoldify`, `upscale`, `moss_tts`, `emoji`, `pdfcompress`, `filecompress`, `gemini_watermark`, `surge_dl`, `spotify`, `soundcloud`, `musicset`).
+
+---
+
 ## [2.4.2] - 2026-08-12
 
 ### Added

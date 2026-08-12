@@ -455,6 +455,13 @@ where
     progress.set_stage(Stage::Done);
     record_finalize_sample(total_bytes, finalize_elapsed).await;
     
+    if let Ok(result) = serde_json::from_str::<R>(&body) {
+        return Ok(result);
+    }
+    if let Ok(wrapped) = serde_json::from_str::<frankenstein::response::MethodResponse<R>>(&body) {
+        return Ok(wrapped.result);
+    }
+
     let result: R = serde_json::from_str(&body)?;
     Ok(result)
 }

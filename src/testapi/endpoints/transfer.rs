@@ -132,7 +132,7 @@ pub async fn test_transfer_upload(
         c_clone.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     
-    let _ = crate::bot::transfer::send_params_metered::<_, frankenstein::response::MethodResponse<frankenstein::types::Message>>(
+    let _ = crate::bot::transfer::send_params_metered::<_, frankenstein::types::Message>(
         &api_url,
         "sendDocument",
         &params,
