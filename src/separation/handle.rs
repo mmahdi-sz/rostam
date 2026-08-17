@@ -837,10 +837,18 @@ pub async fn handle_separation_callback(
                 .ok();
 
                 let up_start = std::time::Instant::now();
-                let total_out_bytes = (std::fs::metadata(&vocals_compressed_path).map(|m| m.len()).unwrap_or(0))
-                    + (std::fs::metadata(&vocals_wav_path).map(|m| m.len()).unwrap_or(0))
-                    + (std::fs::metadata(&instrumental_compressed_path).map(|m| m.len()).unwrap_or(0))
-                    + (std::fs::metadata(&instrumental_wav_path).map(|m| m.len()).unwrap_or(0));
+                let total_out_bytes = (std::fs::metadata(&vocals_compressed_path)
+                    .map(|m| m.len())
+                    .unwrap_or(0))
+                    + (std::fs::metadata(&vocals_wav_path)
+                        .map(|m| m.len())
+                        .unwrap_or(0))
+                    + (std::fs::metadata(&instrumental_compressed_path)
+                        .map(|m| m.len())
+                        .unwrap_or(0))
+                    + (std::fs::metadata(&instrumental_wav_path)
+                        .map(|m| m.len())
+                        .unwrap_or(0));
 
                 use crate::bot::send_file_with_upload_ticker;
                 let smid = message_id;
@@ -852,8 +860,17 @@ pub async fn handle_separation_callback(
                     .caption(t("separation.result.vocals_compressed_caption"))
                     .build();
                 match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-                    &api_task, "sendAudio", &p, &vocals_compressed_path, chat_id, smid, "transfer.stage.sending_audio", None
-                ).await {
+                    &api_task,
+                    "sendAudio",
+                    &p,
+                    &vocals_compressed_path,
+                    chat_id,
+                    smid,
+                    "transfer.stage.sending_audio",
+                    None,
+                )
+                .await
+                {
                     Ok(_) => log_trace(trace_id, "vocals_compressed_sent", ""),
                     Err(e) => log_trace(trace_id, "vocals_compressed_failed", &format!("err={e}")),
                 }
@@ -865,8 +882,17 @@ pub async fn handle_separation_callback(
                     .caption(t("separation.result.vocals_wav_caption"))
                     .build();
                 match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-                    &api_task, "sendDocument", &p, &vocals_wav_path, chat_id, smid, "transfer.stage.sending_document", None
-                ).await {
+                    &api_task,
+                    "sendDocument",
+                    &p,
+                    &vocals_wav_path,
+                    chat_id,
+                    smid,
+                    "transfer.stage.sending_document",
+                    None,
+                )
+                .await
+                {
                     Ok(_) => log_trace(trace_id, "vocals_wav_sent", ""),
                     Err(e) => log_trace(trace_id, "vocals_wav_failed", &format!("err={e}")),
                 }
@@ -878,8 +904,17 @@ pub async fn handle_separation_callback(
                     .caption(t("separation.result.instrumental_compressed_caption"))
                     .build();
                 match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-                    &api_task, "sendAudio", &p, &instrumental_compressed_path, chat_id, smid, "transfer.stage.sending_audio", None
-                ).await {
+                    &api_task,
+                    "sendAudio",
+                    &p,
+                    &instrumental_compressed_path,
+                    chat_id,
+                    smid,
+                    "transfer.stage.sending_audio",
+                    None,
+                )
+                .await
+                {
                     Ok(_) => log_trace(trace_id, "instrumental_compressed_sent", ""),
                     Err(e) => log_trace(
                         trace_id,
@@ -895,8 +930,17 @@ pub async fn handle_separation_callback(
                     .caption(t("separation.result.instrumental_wav_caption"))
                     .build();
                 match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-                    &api_task, "sendDocument", &p, &instrumental_wav_path, chat_id, smid, "transfer.stage.sending_document", None
-                ).await {
+                    &api_task,
+                    "sendDocument",
+                    &p,
+                    &instrumental_wav_path,
+                    chat_id,
+                    smid,
+                    "transfer.stage.sending_document",
+                    None,
+                )
+                .await
+                {
                     Ok(_) => log_trace(trace_id, "instrumental_wav_sent", ""),
                     Err(e) => log_trace(trace_id, "instrumental_wav_failed", &format!("err={e}")),
                 }
@@ -917,7 +961,6 @@ pub async fn handle_separation_callback(
                     )
                     .await;
                 }
-
 
                 // Quota was already reserved via ffprobe duration; no second deduction needed.
 
@@ -1147,7 +1190,6 @@ async fn download_file(
     );
     Ok((bytes, res))
 }
-
 
 /// Formats seconds into mm:ss or hh:mm:ss.
 fn format_clock(secs: u64) -> String {

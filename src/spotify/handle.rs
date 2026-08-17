@@ -332,7 +332,8 @@ pub async fn handle_spotify_url(
         status_msg_id,
         "transfer.stage.sending_audio",
         None,
-    ).await;
+    )
+    .await;
 
     match upload_res {
         Ok(_) => {
@@ -359,7 +360,6 @@ pub async fn handle_spotify_url(
             // Record stats & quota
             crate::stats::record_event_user(user_id, "spotify", "download", "ok", 1).await;
             crate::stats::record_event_global("spotify", "download", "ok", 1).await;
-
 
             if let Some(db) = database {
                 if let Some(first_up) =

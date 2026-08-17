@@ -2,7 +2,7 @@
 //! Speed and ETA come from counted bytes, never from an assumed total.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -38,7 +38,7 @@ impl Stage {
     fn as_u8(self) -> u8 {
         self as u8
     }
-    
+
     fn from_u8(val: u8) -> Self {
         match val {
             0 => Stage::Fetching,
@@ -237,7 +237,11 @@ impl TransferProgress {
                     done: fmt_bytes(total),
                     total: fmt_bytes(total),
                     speed: fmt_speed(speed_bps),
-                    eta: if total == 0 { "—".to_string() } else { "00:00".to_string() },
+                    eta: if total == 0 {
+                        "—".to_string()
+                    } else {
+                        "00:00".to_string()
+                    },
                     elapsed: format_elapsed(elapsed),
                 };
             }
@@ -251,16 +255,22 @@ impl TransferProgress {
 
         TransferSnapshot {
             stage: stage_str,
-            percent: pct.map(|p| format!("{:.1}%", p)).unwrap_or_else(|| "".to_string()),
+            percent: pct
+                .map(|p| format!("{:.1}%", p))
+                .unwrap_or_else(|| "".to_string()),
             bar: build_bar(pct.unwrap_or(0.0) as f32),
             done: fmt_bytes(done),
-            total: if total == 0 { "—".to_string() } else { fmt_bytes(total) },
+            total: if total == 0 {
+                "—".to_string()
+            } else {
+                fmt_bytes(total)
+            },
             speed: speed.map(fmt_speed).unwrap_or_else(|| "—".to_string()),
             eta: eta.map(format_elapsed).unwrap_or_else(|| "—".to_string()),
             elapsed: format_elapsed(self.elapsed()),
         }
     }
-    
+
     pub fn set_finalize_bps_hint(&self, hint: u64) {
         self.finalize_bps_hint.store(hint, Ordering::Relaxed);
     }
@@ -292,16 +302,23 @@ pub fn fmt_bytes(b: u64) -> String {
 static REDIS_CLIENT: OnceCell<redis::Client> = OnceCell::const_new();
 
 async fn get_redis_conn() -> Option<redis::aio::MultiplexedConnection> {
-    let client = REDIS_CLIENT.get_or_init(|| async {
-        let url = std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string());
-        redis::Client::open(url).expect("Invalid Redis URL")
-    }).await;
+    let client = REDIS_CLIENT
+        .get_or_init(|| async {
+            let url =
+                std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1/".to_string());
+            redis::Client::open(url).expect("Invalid Redis URL")
+        })
+        .await;
     client.get_multiplexed_async_connection().await.ok()
 }
 
 pub async fn load_ema_bps(key: &str) -> Option<u64> {
     let mut conn = get_redis_conn().await?;
-    let val: Option<u64> = redis::cmd("GET").arg(key).query_async(&mut conn).await.ok()?;
+    let val: Option<u64> = redis::cmd("GET")
+        .arg(key)
+        .query_async(&mut conn)
+        .await
+        .ok()?;
     val
 }
 
@@ -310,13 +327,24 @@ pub async fn update_ema_bps(key: &str, sample_bps: u64) {
         return;
     }
     if let Some(mut conn) = get_redis_conn().await {
-        let old: Option<u64> = redis::cmd("GET").arg(key).query_async(&mut conn).await.unwrap_or(None);
+        let old: Option<u64> = redis::cmd("GET")
+            .arg(key)
+            .query_async(&mut conn)
+            .await
+            .unwrap_or(None);
         let new_val = if let Some(old_val) = old {
             ((0.3 * sample_bps as f64) + (0.7 * old_val as f64)) as u64
         } else {
             sample_bps
         };
-        let _: Option<()> = redis::cmd("SET").arg(key).arg(new_val).arg("EX").arg(30 * 24 * 3600).query_async(&mut conn).await.ok();
+        let _: Option<()> = redis::cmd("SET")
+            .arg(key)
+            .arg(new_val)
+            .arg("EX")
+            .arg(30 * 24 * 3600)
+            .query_async(&mut conn)
+            .await
+            .ok();
     }
 }
 
@@ -358,11 +386,22 @@ where
     }
 
     let val = serde_json::to_value(params)?;
-    let map = val.as_object().ok_or_else(|| anyhow::anyhow!("params is not an object"))?;
+    let map = val
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("params is not an object"))?;
 
     let file_allowlist = [
-        "photo", "audio", "document", "video", "animation", "voice", 
-        "video_note", "thumbnail", "cover", "sticker", "media"
+        "photo",
+        "audio",
+        "document",
+        "video",
+        "animation",
+        "voice",
+        "video_note",
+        "thumbnail",
+        "cover",
+        "sticker",
+        "media",
     ];
 
     let mut form = multipart::Form::new();
@@ -386,7 +425,7 @@ where
                 }
             }
         }
-        
+
         let field_val = match v {
             serde_json::Value::String(s) => s.clone(),
             other => other.to_string(),
@@ -400,7 +439,7 @@ where
         let f = tokio::fs::File::open(&path_str).await?;
         let p = progress.clone();
         let cancel_clone = cancel.clone();
-        
+
         let stream = ReaderStream::with_capacity(f, CHUNK)
             .map_err(|e| e)
             .and_then(move |c| {
@@ -415,34 +454,33 @@ where
                 futures::future::ready(Ok(c))
             })
             .inspect_ok(move |c| p.bump(c.len() as u64));
-            
-        let file_name = std::path::Path::new(&path_str).file_name().and_then(|s| s.to_str()).unwrap_or("file").to_string();
-        let part = multipart::Part::stream_with_length(
-            reqwest::Body::wrap_stream(stream),
-            len,
-        ).file_name(file_name);
-        
+
+        let file_name = std::path::Path::new(&path_str)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file")
+            .to_string();
+        let part = multipart::Part::stream_with_length(reqwest::Body::wrap_stream(stream), len)
+            .file_name(file_name);
+
         form = form.part(param_name, part);
     }
 
     progress.set_stage(Stage::Streaming);
-    
+
     let client = crate::http::client();
     let url = format!("{}/{}", api_url.trim_end_matches('/'), method);
-    
-    let resp = client.post(&url)
-        .multipart(form)
-        .send()
-        .await?;
-        
+
+    let resp = client.post(&url).multipart(form).send().await?;
+
     let finalize_start = Instant::now();
     progress.set_stage(Stage::Finalizing);
-    
+
     let status = resp.status();
     let body = resp.text().await?;
-    
+
     let finalize_elapsed = finalize_start.elapsed();
-    
+
     if !status.is_success() {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
             if let Some(desc) = json.get("description").and_then(|v| v.as_str()) {
@@ -451,10 +489,10 @@ where
         }
         return Err(anyhow::anyhow!("HTTP error {}: {}", status, body));
     }
-    
+
     progress.set_stage(Stage::Done);
     record_finalize_sample(total_bytes, finalize_elapsed).await;
-    
+
     if let Ok(result) = serde_json::from_str::<R>(&body) {
         return Ok(result);
     }
@@ -466,7 +504,10 @@ where
     Ok(result)
 }
 
-pub async fn send_file_with_upload_ticker<P: serde::Serialize + Clone + Send + Sync + 'static, R: serde::de::DeserializeOwned + Send + 'static>(
+pub async fn send_file_with_upload_ticker<
+    P: serde::Serialize + Clone + Send + Sync + 'static,
+    R: serde::de::DeserializeOwned + Send + 'static,
+>(
     api: &frankenstein::client_reqwest::Bot,
     method: &str,
     params: &P,
@@ -477,7 +518,14 @@ pub async fn send_file_with_upload_ticker<P: serde::Serialize + Clone + Send + S
     cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 ) -> anyhow::Result<R> {
     if status_message_id == 0 {
-        return send_params_metered::<P, R>(&api.api_url, method, params, &TransferProgress::new(0), cancel_flag).await;
+        return send_params_metered::<P, R>(
+            &api.api_url,
+            method,
+            params,
+            &TransferProgress::new(0),
+            cancel_flag,
+        )
+        .await;
     }
     let file_bytes = std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
     let progress = TransferProgress::new(file_bytes);
@@ -488,7 +536,14 @@ pub async fn send_file_with_upload_ticker<P: serde::Serialize + Clone + Send + S
 
     let params_owned = (*params).clone();
     let mut send_task = tokio::spawn(async move {
-        send_params_metered::<P, R>(&api_url, &method_str, &params_owned, &progress_clone, cancel_clone).await
+        send_params_metered::<P, R>(
+            &api_url,
+            &method_str,
+            &params_owned,
+            &progress_clone,
+            cancel_clone,
+        )
+        .await
     });
 
     let mut interval = tokio::time::interval(Duration::from_secs(2));
@@ -560,7 +615,14 @@ impl AsyncTelegramApiMetered for frankenstein::client_reqwest::Bot {
     ) -> anyhow::Result<frankenstein::types::Message> {
         let progress = TransferProgress::new(0);
         let resp: frankenstein::response::MethodResponse<frankenstein::types::Message> =
-            send_params_metered(self.api_url.as_str(), "sendDocument", params, &progress, None).await?;
+            send_params_metered(
+                self.api_url.as_str(),
+                "sendDocument",
+                params,
+                &progress,
+                None,
+            )
+            .await?;
         Ok(resp.result)
     }
 
@@ -570,7 +632,8 @@ impl AsyncTelegramApiMetered for frankenstein::client_reqwest::Bot {
     ) -> anyhow::Result<frankenstein::types::Message> {
         let progress = TransferProgress::new(0);
         let resp: frankenstein::response::MethodResponse<frankenstein::types::Message> =
-            send_params_metered(self.api_url.as_str(), "sendVideo", params, &progress, None).await?;
+            send_params_metered(self.api_url.as_str(), "sendVideo", params, &progress, None)
+                .await?;
         Ok(resp.result)
     }
 
@@ -580,7 +643,8 @@ impl AsyncTelegramApiMetered for frankenstein::client_reqwest::Bot {
     ) -> anyhow::Result<frankenstein::types::Message> {
         let progress = TransferProgress::new(0);
         let resp: frankenstein::response::MethodResponse<frankenstein::types::Message> =
-            send_params_metered(self.api_url.as_str(), "sendAudio", params, &progress, None).await?;
+            send_params_metered(self.api_url.as_str(), "sendAudio", params, &progress, None)
+                .await?;
         Ok(resp.result)
     }
 
@@ -590,7 +654,8 @@ impl AsyncTelegramApiMetered for frankenstein::client_reqwest::Bot {
     ) -> anyhow::Result<frankenstein::types::Message> {
         let progress = TransferProgress::new(0);
         let resp: frankenstein::response::MethodResponse<frankenstein::types::Message> =
-            send_params_metered(self.api_url.as_str(), "sendVoice", params, &progress, None).await?;
+            send_params_metered(self.api_url.as_str(), "sendVoice", params, &progress, None)
+                .await?;
         Ok(resp.result)
     }
 
@@ -600,7 +665,8 @@ impl AsyncTelegramApiMetered for frankenstein::client_reqwest::Bot {
     ) -> anyhow::Result<frankenstein::types::Message> {
         let progress = TransferProgress::new(0);
         let resp: frankenstein::response::MethodResponse<frankenstein::types::Message> =
-            send_params_metered(self.api_url.as_str(), "sendPhoto", params, &progress, None).await?;
+            send_params_metered(self.api_url.as_str(), "sendPhoto", params, &progress, None)
+                .await?;
         Ok(resp.result)
     }
 }
@@ -617,7 +683,7 @@ mod tests {
         assert_eq!(p.percent(), None);
         assert_eq!(p.eta(), None);
     }
-    
+
     #[test]
     fn test_fmt_speed() {
         assert_eq!(fmt_speed(999.0), "999 B/s");
@@ -625,7 +691,7 @@ mod tests {
         assert_eq!(fmt_speed(999_999.0), "1000 KB/s");
         assert_eq!(fmt_speed(1_000_000.0), "1.0 MB/s");
     }
-    
+
     #[test]
     fn test_fmt_bytes() {
         assert_eq!(fmt_bytes(999), "999 B");
@@ -633,7 +699,7 @@ mod tests {
         assert_eq!(fmt_bytes(1_000_000), "1.0 MB");
         assert_eq!(fmt_bytes(1_000_000_000), "1.00 GB");
     }
-    
+
     #[test]
     fn test_detect_files() {
         let params = SendVideoParams::builder()
@@ -646,12 +712,12 @@ mod tests {
             }))
             .caption("test caption".to_string())
             .build();
-            
+
         let val = serde_json::to_value(&params).unwrap();
         let map = val.as_object().unwrap();
-        
+
         let file_allowlist = ["video", "thumbnail"];
-        
+
         let mut count = 0;
         for (k, v) in map {
             if file_allowlist.contains(&k.as_str()) {
@@ -662,7 +728,7 @@ mod tests {
                 }
             }
         }
-        
+
         assert_eq!(count, 2);
     }
 }

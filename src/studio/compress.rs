@@ -26,7 +26,9 @@ use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
 use crate::log::next_trace_id;
 use crate::moebius::cpu::{acquire_cpu, pin_current_thread, release_cpu, trim_memory};
-use crate::studio::pipeline::{TempDirGuard, cancel_active_job, register_active_job, remove_active_job};
+use crate::studio::pipeline::{
+    TempDirGuard, cancel_active_job, register_active_job, remove_active_job,
+};
 use crate::studio::trim::run_ffprobe;
 
 const SESSION_TTL_SECS: u64 = 3600;
@@ -44,10 +46,10 @@ pub struct CompressSession {
     pub duration_secs: u64,
 
     // Current user selections
-    pub codec: String,  // "h264", "h265", "vp9", "av1"
-    pub res_h: u32,     // 2160, 1440, 1080, 720, 480, 360, 240, 144
-    pub fps: u32,       // 60, 45, 30, 24, 20, 15, 13
-    pub br_ratio: u32,  // 100, 75, 50, 25, 16, 12
+    pub codec: String, // "h264", "h265", "vp9", "av1"
+    pub res_h: u32,    // 2160, 1440, 1080, 720, 480, 360, 240, 144
+    pub fps: u32,      // 60, 45, 30, 24, 20, 15, 13
+    pub br_ratio: u32, // 100, 75, 50, 25, 16, 12
 }
 
 fn redis_key(user_id: i64) -> String {
@@ -98,25 +100,33 @@ pub async fn clear_session(user_id: i64) {
 }
 
 /// Computes bitrate in kbps for the given resolution height and ratio percentage.
-pub fn calculate_target_bitrate_kbps(session: &CompressSession, target_h: u32, ratio_percent: u32) -> u64 {
+pub fn calculate_target_bitrate_kbps(
+    session: &CompressSession,
+    target_h: u32,
+    ratio_percent: u32,
+) -> u64 {
     let orig_w = session.orig_w.max(1) as f64;
     let orig_h = session.orig_h.max(1) as f64;
     let target_w = (orig_w * target_h as f64 / orig_h).round();
-    
+
     let orig_pixels = orig_w * orig_h;
     let target_pixels = target_w * target_h as f64;
     let pixel_ratio = (target_pixels / orig_pixels).min(1.0);
 
     let orig_kbps = (session.orig_bitrate as f64 / 1000.0).max(100.0);
     let base_target_kbps = orig_kbps * pixel_ratio;
-    
+
     let final_kbps = base_target_kbps * (ratio_percent as f64 / 100.0);
     (final_kbps.round() as u64).max(50)
 }
 
 /// Computes estimated output file size in MB.
 #[allow(dead_code)]
-pub fn calculate_estimated_size_mb(session: &CompressSession, target_h: u32, ratio_percent: u32) -> f64 {
+pub fn calculate_estimated_size_mb(
+    session: &CompressSession,
+    target_h: u32,
+    ratio_percent: u32,
+) -> f64 {
     let bitrate_kbps = calculate_target_bitrate_kbps(session, target_h, ratio_percent);
     let total_bits = (bitrate_kbps * 1000) as f64 * session.duration_secs as f64;
     (total_bits / 8.0) / (1024.0 * 1024.0)
@@ -127,7 +137,12 @@ pub fn build_compress_keyboard(session: &CompressSession) -> InlineKeyboardMarku
     let mut rows = Vec::new();
 
     // Section 1: Codec
-    let codecs = [("h264", "H.264"), ("h265", "H.265"), ("vp9", "VP9"), ("av1", "AV1")];
+    let codecs = [
+        ("h264", "H.264"),
+        ("h265", "H.265"),
+        ("vp9", "VP9"),
+        ("av1", "AV1"),
+    ];
     let mut codec_row = Vec::new();
     for (key, label) in codecs {
         let cb = format!("stc:set:c:{key}");
@@ -144,7 +159,12 @@ pub fn build_compress_keyboard(session: &CompressSession) -> InlineKeyboardMarku
     let res_matrix: &[&[(u32, &str)]] = &[
         &[(2160, "2160p (4K)"), (1440, "1440p (2K)")],
         &[(1080, "1080p (fullHD)"), (720, "720p (HD)")],
-        &[(480, "480p (SD)"), (360, "360p"), (240, "240p"), (144, "144p")],
+        &[
+            (480, "480p (SD)"),
+            (360, "360p"),
+            (240, "240p"),
+            (144, "144p"),
+        ],
     ];
 
     for row in res_matrix {
@@ -166,10 +186,7 @@ pub fn build_compress_keyboard(session: &CompressSession) -> InlineKeyboardMarku
     }
 
     // Section 3: FPS (Filtered by <= orig_fps)
-    let fps_matrix: &[&[u32]] = &[
-        &[60, 45, 30, 24],
-        &[20, 15, 13],
-    ];
+    let fps_matrix: &[&[u32]] = &[&[60, 45, 30, 24], &[20, 15, 13]];
 
     for row in fps_matrix {
         let mut fps_row = Vec::new();
@@ -191,10 +208,7 @@ pub fn build_compress_keyboard(session: &CompressSession) -> InlineKeyboardMarku
     }
 
     // Section 4: Bitrate Ratio (Calculated kbps)
-    let br_matrix: &[&[u32]] = &[
-        &[100, 75, 50],
-        &[25, 16, 12],
-    ];
+    let br_matrix: &[&[u32]] = &[&[100, 75, 50], &[25, 16, 12]];
 
     for row in br_matrix {
         let mut br_row = Vec::new();
@@ -226,7 +240,9 @@ pub fn build_compress_keyboard(session: &CompressSession) -> InlineKeyboardMarku
         "back",
     )]);
 
-    InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(rows)
+        .build()
 }
 
 /// Renders the MarkdownV2 text for the compression menu.
@@ -235,7 +251,7 @@ pub fn build_compress_text(session: &CompressSession) -> String {
     let orig_bitrate_kbps = session.orig_bitrate / 1000;
     let orig_size_mb = (session.orig_size_bytes as f64) / (1024.0 * 1024.0);
     let orig_size_str = format!("{orig_size_mb:.1}");
-    
+
     let sel_codec = match session.codec.as_str() {
         "h264" => "H.264",
         "h265" => "H.265 (HEVC)",
@@ -244,11 +260,15 @@ pub fn build_compress_text(session: &CompressSession) -> String {
         _ => session.codec.as_str(),
     };
     let sel_res = format!("{}p", session.res_h);
-    
+
     let sel_br_kbps = calculate_target_bitrate_kbps(session, session.res_h, session.br_ratio);
     let sel_br_label = format!("{sel_br_kbps} kbps");
 
-    let container = if session.codec == "h264" { ".mp4" } else { ".mkv" };
+    let container = if session.codec == "h264" {
+        ".mp4"
+    } else {
+        ".mkv"
+    };
 
     let raw = tf(
         "studio.compress.menu_title",
@@ -277,13 +297,22 @@ pub fn format_eta_hms(secs: u64) -> String {
 
     let mut parts = Vec::new();
     if hours > 0 {
-        parts.push(tf("studio.compress.eta_unit_hours", &[("n", &hours.to_string())]));
+        parts.push(tf(
+            "studio.compress.eta_unit_hours",
+            &[("n", &hours.to_string())],
+        ));
     }
     if mins > 0 {
-        parts.push(tf("studio.compress.eta_unit_minutes", &[("n", &mins.to_string())]));
+        parts.push(tf(
+            "studio.compress.eta_unit_minutes",
+            &[("n", &mins.to_string())],
+        ));
     }
     if seconds > 0 || parts.is_empty() {
-        parts.push(tf("studio.compress.eta_unit_seconds", &[("n", &seconds.to_string())]));
+        parts.push(tf(
+            "studio.compress.eta_unit_seconds",
+            &[("n", &seconds.to_string())],
+        ));
     }
     parts.join(&t("studio.compress.eta_join_and"))
 }
@@ -295,7 +324,8 @@ pub fn compute_vmaf_score(
     orig_h: u32,
     threads_arg: &str,
 ) -> String {
-    let vmaf_filter = format!("[0:v]scale={orig_w}:{orig_h}[dist];[1:v][dist]libvmaf=n_threads={threads_arg}");
+    let vmaf_filter =
+        format!("[0:v]scale={orig_w}:{orig_h}[dist];[1:v][dist]libvmaf=n_threads={threads_arg}");
     let mut cmd = std::process::Command::new(crate::config::ffmpeg_path());
     cmd.args([
         "-i",
@@ -369,7 +399,8 @@ pub async fn handle_video_upload(
 
     if !super::is_video_message_metadata(&msg) {
         log_ev!("studio_compress", trace_id, "not_a_video_metadata", "=>" => "fail");
-        let _ = crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.not_a_video")).await;
+        let _ =
+            crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.not_a_video")).await;
         return;
     }
 
@@ -387,12 +418,17 @@ pub async fn handle_video_upload(
         )
     } else {
         log_ev!("studio_compress", trace_id, "invalid_video_msg", "=>" => "fail");
-        let _ = crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.not_a_video")).await;
+        let _ =
+            crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.not_a_video")).await;
         return;
     };
 
     log_actor_id!("studio_compress", trace_id, user_id, "uploaded" => "video");
-    let file_id_prefix = if file_id.len() >= 6 { &file_id[..6] } else { &file_id };
+    let file_id_prefix = if file_id.len() >= 6 {
+        &file_id[..6]
+    } else {
+        &file_id
+    };
     log_ev!("studio_compress", trace_id, "video_received", "user_id" => user_id, "file_id" => file_id_prefix);
 
     let status_raw = tf(
@@ -420,7 +456,8 @@ pub async fn handle_video_upload(
     let work_dir = std::env::temp_dir().join(format!("studio_compress_{trace_id}_{user_id}"));
     if let Err(e) = std::fs::create_dir_all(&work_dir) {
         log_ev!("studio_compress", trace_id, "mkdir_failed", "=>" => format!("fail err={e}"));
-        let _ = crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.download_failed")).await;
+        let _ = crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.download_failed"))
+            .await;
         return;
     }
     let _guard = TempDirGuard::new(work_dir.clone());
@@ -442,16 +479,18 @@ pub async fn handle_video_upload(
 
     if let Err(e) = dl_res {
         log_ev!("studio_compress", trace_id, "download_failed", "=>" => format!("fail err={e}"));
-        let _ = crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.download_failed")).await;
+        let _ = crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.download_failed"))
+            .await;
         return;
     }
-
 
     let meta = match run_ffprobe(&local_file) {
         Ok(m) => m,
         Err(e) => {
             log_ev!("studio_compress", trace_id, "ffprobe_failed", "=>" => format!("fail err={e}"));
-            let _ = crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.ffprobe_failed")).await;
+            let _ =
+                crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.ffprobe_failed"))
+                    .await;
             return;
         }
     };
@@ -539,7 +578,9 @@ pub async fn handle_compress_cb(
         true
     } else if cb_data == CB_STUDIO_COMPRESS_START {
         let Some(session) = load_session(user_id).await else {
-            let _ = crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.compress_failed")).await;
+            let _ =
+                crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.compress_failed"))
+                    .await;
             return true;
         };
         start_compression_job(api, chat_id, message_id, user_id, session, flow_manager).await;
@@ -640,7 +681,8 @@ pub async fn start_compression_job(
         if cancel_flag.load(Ordering::Relaxed) {
             remove_active_job(user_id);
             clear_session(user_id).await;
-            let _ = crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
+            let _ =
+                crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
             crate::studio::send_studio_menu_new_msg(&api, chat_id, user_id, &flow_manager).await;
             return;
         }
@@ -649,7 +691,12 @@ pub async fn start_compression_job(
         if let Err(e) = std::fs::create_dir_all(&work_dir) {
             log_ev!("studio_compress", trace_id, "mkdir_failed", "=>" => format!("fail err={e}"));
             remove_active_job(user_id);
-            let _ = crate::bot::send_text_md(&api, chat_id, &t("studio.compress.error.download_failed")).await;
+            let _ = crate::bot::send_text_md(
+                &api,
+                chat_id,
+                &t("studio.compress.error.download_failed"),
+            )
+            .await;
             return;
         }
         let _guard = TempDirGuard::new(work_dir.clone());
@@ -658,12 +705,23 @@ pub async fn start_compression_job(
         let download_start = Instant::now();
         let stats_job_id = crate::stats::record_download_start(user_id, "studio_compress").await;
 
-        let dl_result = match crate::bot::files::download_telegram_file(&api, &session.file_id, &input_file).await {
+        let dl_result = match crate::bot::files::download_telegram_file(
+            &api,
+            &session.file_id,
+            &input_file,
+        )
+        .await
+        {
             Ok(res) => res,
             Err(e) => {
                 log_ev!("studio_compress", trace_id, "download_failed", "=>" => format!("fail err={e}"));
                 remove_active_job(user_id);
-                let _ = crate::bot::send_text_md(&api, chat_id, &t("studio.compress.error.download_failed")).await;
+                let _ = crate::bot::send_text_md(
+                    &api,
+                    chat_id,
+                    &t("studio.compress.error.download_failed"),
+                )
+                .await;
                 return;
             }
         };
@@ -680,11 +738,11 @@ pub async fn start_compression_job(
         }
         let download_secs = download_start.elapsed().as_secs();
 
-
         if cancel_flag.load(Ordering::Relaxed) {
             remove_active_job(user_id);
             clear_session(user_id).await;
-            let _ = crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
+            let _ =
+                crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
             crate::studio::send_studio_menu_new_msg(&api, chat_id, user_id, &flow_manager).await;
             return;
         }
@@ -701,13 +759,18 @@ pub async fn start_compression_job(
             release_cpu(cores, trace_id).await;
             remove_active_job(user_id);
             clear_session(user_id).await;
-            let _ = crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
+            let _ =
+                crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
             crate::studio::send_studio_menu_new_msg(&api, chat_id, user_id, &flow_manager).await;
             return;
         }
 
         // Output format & container
-        let ext = if session.codec == "h264" { "mp4" } else { "mkv" };
+        let ext = if session.codec == "h264" {
+            "mp4"
+        } else {
+            "mkv"
+        };
         let codec_tag = session.codec.to_uppercase();
         let file_stem = std::path::Path::new(&session.filename)
             .file_stem()
@@ -779,7 +842,11 @@ pub async fn start_compression_job(
             });
         }
 
-        let preset_flag = if session.codec == "av1" { "9" } else { "medium" };
+        let preset_flag = if session.codec == "av1" {
+            "9"
+        } else {
+            "medium"
+        };
         let input_path = input_file.clone();
         let output_path = output_file.clone();
         let vcodec_str = vcodec_flag.to_string();
@@ -814,12 +881,17 @@ pub async fn start_compression_job(
                 "-c:a",
                 "copy",
             ]);
-            if output_path.extension().and_then(|e| e.to_str()).unwrap_or("") == "mp4" {
+            if output_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                == "mp4"
+            {
                 cmd.args(["-movflags", "+faststart"]);
             }
             cmd.stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .arg(&output_path);
+                .stderr(std::process::Stdio::null())
+                .arg(&output_path);
 
             let mut child = match cmd.spawn() {
                 Ok(c) => c,
@@ -837,7 +909,8 @@ pub async fn start_compression_job(
                                 let proc_secs = us / 1_000_000;
                                 if duration_secs > 0 {
                                     let pct = ((proc_secs as f64 / duration_secs as f64) * 100.0)
-                                        .clamp(0.0, 99.0) as u8;
+                                        .clamp(0.0, 99.0)
+                                        as u8;
                                     pct_flag.store(pct, Ordering::Relaxed);
                                 }
                             }
@@ -852,7 +925,9 @@ pub async fn start_compression_job(
                     Ok(Some(status)) => {
                         success = status.success()
                             && output_path.exists()
-                            && std::fs::metadata(&output_path).map(|m| m.len() > 0).unwrap_or(false);
+                            && std::fs::metadata(&output_path)
+                                .map(|m| m.len() > 0)
+                                .unwrap_or(false);
                         break;
                     }
                     Ok(None) => std::thread::sleep(std::time::Duration::from_millis(200)),
@@ -880,7 +955,8 @@ pub async fn start_compression_job(
         if cancel_flag.load(Ordering::Relaxed) {
             remove_active_job(user_id);
             clear_session(user_id).await;
-            let _ = crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
+            let _ =
+                crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
             crate::studio::send_studio_menu_new_msg(&api, chat_id, user_id, &flow_manager).await;
             return;
         }
@@ -893,25 +969,44 @@ pub async fn start_compression_job(
         if !ffmpeg_ok || !output_file.exists() {
             log_ev!("studio_compress", trace_id, "ffmpeg_failed", "=>" => "fail");
             remove_active_job(user_id);
-            let _ = crate::bot::send_text_md(&api, chat_id, &t("studio.compress.error.compress_failed")).await;
+            let _ = crate::bot::send_text_md(
+                &api,
+                chat_id,
+                &t("studio.compress.error.compress_failed"),
+            )
+            .await;
             return;
         }
 
         // Upload output document (file) with completion caption
-        let output_len = std::fs::metadata(&output_file).map(|m| m.len()).unwrap_or(0);
+        let output_len = std::fs::metadata(&output_file)
+            .map(|m| m.len())
+            .unwrap_or(0);
         let final_size_mb = (output_len as f64) / (1024.0 * 1024.0);
         let final_size_str = format!("{final_size_mb:.1}");
         let orig_size_mb = (session.orig_size_bytes as f64) / (1024.0 * 1024.0);
         let orig_size_str = format!("{orig_size_mb:.1}");
-        
+
         let saved_percent = if session.orig_size_bytes > 0 && output_len < session.orig_size_bytes {
-            (((session.orig_size_bytes as f64 - output_len as f64) / session.orig_size_bytes as f64) * 100.0).round() as u32
+            (((session.orig_size_bytes as f64 - output_len as f64)
+                / session.orig_size_bytes as f64)
+                * 100.0)
+                .round() as u32
         } else {
             0
         };
 
-        let upload_secs = job_start.elapsed().as_secs().saturating_sub(download_secs + compress_secs);
-        let vmaf_score = compute_vmaf_score(&output_file, &input_file, session.orig_w, session.orig_h, &threads_arg);
+        let upload_secs = job_start
+            .elapsed()
+            .as_secs()
+            .saturating_sub(download_secs + compress_secs);
+        let vmaf_score = compute_vmaf_score(
+            &output_file,
+            &input_file,
+            session.orig_w,
+            session.orig_h,
+            &threads_arg,
+        );
 
         let done_raw = tf(
             "studio.compress.job_done",
@@ -936,7 +1031,9 @@ pub async fn start_compression_job(
             .parse_mode(ParseMode::MarkdownV2)
             .build();
 
-        let out_bytes = std::fs::metadata(&output_file).map(|m| m.len()).unwrap_or(0);
+        let out_bytes = std::fs::metadata(&output_file)
+            .map(|m| m.len())
+            .unwrap_or(0);
         let up_start = std::time::Instant::now();
 
         use crate::bot::send_file_with_upload_ticker;
@@ -949,13 +1046,19 @@ pub async fn start_compression_job(
             message_id,
             "transfer.stage.sending_document",
             None,
-        ).await;
+        )
+        .await;
         remove_active_job(user_id);
         clear_session(user_id).await;
 
         if let Err(e) = send_res {
             log_ev!("studio_compress", trace_id, "upload_failed", "=>" => format!("fail err={e}"));
-            let _ = crate::bot::send_text_md(&api, chat_id, &t("studio.compress.error.compress_failed")).await;
+            let _ = crate::bot::send_text_md(
+                &api,
+                chat_id,
+                &t("studio.compress.error.compress_failed"),
+            )
+            .await;
             return;
         }
 
@@ -975,7 +1078,6 @@ pub async fn start_compression_job(
             )
             .await;
         }
-
 
         // Delete status message
         let _ = api
@@ -1073,9 +1175,13 @@ mod tests {
         );
 
         // Also test via start_compression_job path: t() without tf() leaves placeholders
-        let bad_text = crate::i18n::apply_premium_to_md(&crate::i18n::t("studio.compress.status_downloading"));
+        let bad_text =
+            crate::i18n::apply_premium_to_md(&crate::i18n::t("studio.compress.status_downloading"));
         println!("bad_text (t without tf) = {:?}", bad_text);
         let has_braces = bad_text.contains('{') || bad_text.contains('}');
-        println!("Has unescaped braces (start_compression_job bug): {}", has_braces);
+        println!(
+            "Has unescaped braces (start_compression_job bug): {}",
+            has_braces
+        );
     }
 }

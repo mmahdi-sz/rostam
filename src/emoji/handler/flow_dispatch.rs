@@ -175,7 +175,11 @@ pub async fn handle_emoji_flow_message(
         | FlowState::AwaitingCompressFiles { .. }
         | FlowState::AwaitingStudioTrimVideo
         | FlowState::AwaitingStudioTrimRanges { .. }
-        | FlowState::AwaitingStudioCompressVideo => {
+        | FlowState::AwaitingStudioCompressVideo
+        | FlowState::AwaitingStudioExtractVideo
+        | FlowState::AwaitingStudioBurnInput { .. }
+        | FlowState::AwaitingPkgFile
+        | FlowState::AwaitingPkgConvertChoice { .. } => {
             eprintln!("[emoji_msg trace={trace_id} event=skip] — handled in main");
             false
         }
@@ -222,5 +226,9 @@ fn state_name(state: &FlowState) -> &'static str {
         FlowState::AwaitingStudioTrimVideo => "AwaitingStudioTrimVideo",
         FlowState::AwaitingStudioTrimRanges { .. } => "AwaitingStudioTrimRanges",
         FlowState::AwaitingStudioCompressVideo => "AwaitingStudioCompressVideo",
+        FlowState::AwaitingStudioExtractVideo => "AwaitingStudioExtractVideo",
+        FlowState::AwaitingStudioBurnInput { .. } => "AwaitingStudioBurnInput",
+        FlowState::AwaitingPkgFile => "AwaitingPkgFile",
+        FlowState::AwaitingPkgConvertChoice { .. } => "AwaitingPkgConvertChoice",
     }
 }

@@ -420,9 +420,12 @@ pub async fn handle_stt_audio(
     log_trace(
         trace_id,
         "stt_downloaded",
-        &format!("bytes={} speed={}", dl_result.bytes, dl_result.speed_human()),
+        &format!(
+            "bytes={} speed={}",
+            dl_result.bytes,
+            dl_result.speed_human()
+        ),
     );
-
 
     if cancel_flag.load(Ordering::Relaxed) {
         log_trace(trace_id, "stt_cancelled_after_download", "");

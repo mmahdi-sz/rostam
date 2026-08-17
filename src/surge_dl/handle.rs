@@ -733,7 +733,8 @@ async fn send_single_file(
         message_id,
         "transfer.stage.sending_document",
         None,
-    ).await?;
+    )
+    .await?;
     Ok(())
 }
 
@@ -797,7 +798,8 @@ async fn send_split_file(
             message_id,
             "transfer.stage.sending_document",
             None,
-        ).await?;
+        )
+        .await?;
         log_ev!("surge_dl", trace_id, "part_sent", "n" => i + 1, "total" => total);
     }
 
@@ -1162,7 +1164,6 @@ fn sanitize_rename(typed: &str) -> Option<String> {
             s
         })
 }
-
 
 async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
     let client = crate::http::client();

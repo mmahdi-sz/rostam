@@ -291,7 +291,9 @@ pub async fn handle_nobg_image(
             let caption_raw = tf("nobg.result_caption", &[("time", &sec_str)]);
             let caption = apply_premium_to_md(&caption_raw);
 
-            let out_bytes = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+            let out_bytes = std::fs::metadata(&output_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
             let up_start = std::time::Instant::now();
 
             let doc_params = SendDocumentParams::builder()
@@ -311,7 +313,8 @@ pub async fn handle_nobg_image(
                 status_mid,
                 "transfer.stage.sending_document",
                 None,
-            ).await;
+            )
+            .await;
 
             if let Err(e) = send_res {
                 log_ev!("feynobg", trace_id, "send_document_failed", "err" => format!("{e:?}"));

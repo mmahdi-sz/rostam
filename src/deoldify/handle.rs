@@ -244,34 +244,35 @@ pub async fn handle_deoldify_image(
     let stats_job_id = stats::record_download_start(user_id, "deoldify").await;
 
     // Download photo from Telegram
-    let dl_result = match crate::bot::files::download_telegram_file(api, &file_id, &input_path).await {
-        Ok(res) => res,
-        Err(e) => {
-            stop_timer!();
-            log_ev!("deoldify", trace_id, "download_failed", "err" => format!("{e:?}"));
-            let _ = api
-                .delete_message(
-                    &frankenstein::methods::DeleteMessageParams::builder()
-                        .chat_id(chat_id)
-                        .message_id(status_msg.message_id)
-                        .build(),
-                )
-                .await;
-            let text = apply_premium_to_md(&t("deoldify.download_failed"));
-            let _ = api
-                .send_message(
-                    &SendMessageParams::builder()
-                        .chat_id(chat_id)
-                        .text(&text)
-                        .parse_mode(ParseMode::MarkdownV2)
-                        .build(),
-                )
-                .await;
-            let _ = std::fs::remove_dir_all(&work_dir);
-            refund!("download_failed");
-            return;
-        }
-    };
+    let dl_result =
+        match crate::bot::files::download_telegram_file(api, &file_id, &input_path).await {
+            Ok(res) => res,
+            Err(e) => {
+                stop_timer!();
+                log_ev!("deoldify", trace_id, "download_failed", "err" => format!("{e:?}"));
+                let _ = api
+                    .delete_message(
+                        &frankenstein::methods::DeleteMessageParams::builder()
+                            .chat_id(chat_id)
+                            .message_id(status_msg.message_id)
+                            .build(),
+                    )
+                    .await;
+                let text = apply_premium_to_md(&t("deoldify.download_failed"));
+                let _ = api
+                    .send_message(
+                        &SendMessageParams::builder()
+                            .chat_id(chat_id)
+                            .text(&text)
+                            .parse_mode(ParseMode::MarkdownV2)
+                            .build(),
+                    )
+                    .await;
+                let _ = std::fs::remove_dir_all(&work_dir);
+                refund!("download_failed");
+                return;
+            }
+        };
 
     if let Some(jid) = stats_job_id {
         stats::record_download_done(
@@ -313,7 +314,9 @@ pub async fn handle_deoldify_image(
                 .parse_mode(ParseMode::MarkdownV2)
                 .build();
 
-            let out_bytes = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+            let out_bytes = std::fs::metadata(&output_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
             let up_start = std::time::Instant::now();
 
             use crate::bot::send_file_with_upload_ticker;
@@ -326,7 +329,8 @@ pub async fn handle_deoldify_image(
                 status_msg.message_id,
                 "transfer.stage.sending_photo",
                 None,
-            ).await;
+            )
+            .await;
 
             let _ = api
                 .delete_message(
@@ -359,7 +363,6 @@ pub async fn handle_deoldify_image(
                     // Quota was deducted during reservation; no secondary charge here
                     stats::record_event_user(user_id, "deoldify", "colorize", "ok", 1).await;
                     log_ev!("deoldify", trace_id, "done", "status" => "ok");
-
                 }
                 Err(e) => {
                     let err_str = format!("{e:?}");

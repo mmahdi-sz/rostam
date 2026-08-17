@@ -67,6 +67,18 @@ pub fn cancel_active_job(user_id: i64) -> bool {
     false
 }
 
+/// Returns the job cancel keyboard for a supported Studio domain.
+pub fn get_job_cancel_keyboard(
+    domain_prefix: &str,
+) -> Option<frankenstein::types::InlineKeyboardMarkup> {
+    match domain_prefix {
+        "studio.trim" => Some(crate::studio::trim::job_cancel_keyboard()),
+        "studio.extract" => Some(crate::studio::extract::job_cancel_keyboard()),
+        "studio.burn" => Some(crate::studio::burn::job_cancel_keyboard()),
+        _ => None,
+    }
+}
+
 /// Spawns a background task that periodically updates `status_msg_id` with live download stats
 /// (elapsed time, downloaded size, total size, percentage, speed, and ETA) until `stop_flag` is set.
 pub fn spawn_download_ticker(
@@ -78,10 +90,10 @@ pub fn spawn_download_ticker(
     domain_prefix: &'static str,
     cancel_flag: Option<Arc<AtomicBool>>,
 ) -> Arc<AtomicBool> {
-    use frankenstein::{AsyncTelegramApi, ParseMode, methods::EditMessageTextParams};
-    use std::time::{Duration, Instant};
     use crate::i18n::{apply_premium_to_md, md_escape, tf};
     use crate::studio::compress::format_eta_hms;
+    use frankenstein::{AsyncTelegramApi, ParseMode, methods::EditMessageTextParams};
+    use std::time::{Duration, Instant};
 
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_inner = stop_flag.clone();
@@ -98,9 +110,7 @@ pub fn spawn_download_ticker(
             }
 
             let elapsed_secs = start_time.elapsed().as_secs();
-            let downloaded_bytes = std::fs::metadata(&dest_path)
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let downloaded_bytes = std::fs::metadata(&dest_path).map(|m| m.len()).unwrap_or(0);
 
             let speed_bps = if elapsed_secs > 0 {
                 downloaded_bytes as f64 / elapsed_secs as f64
@@ -169,8 +179,8 @@ pub fn spawn_download_ticker(
                     .text(&text)
                     .parse_mode(ParseMode::MarkdownV2);
 
-                let params = if domain_prefix == "studio.trim" {
-                    builder.reply_markup(crate::studio::trim::job_cancel_keyboard()).build()
+                let params = if let Some(kb) = get_job_cancel_keyboard(domain_prefix) {
+                    builder.reply_markup(kb).build()
                 } else {
                     builder.build()
                 };

@@ -37,7 +37,10 @@ pub fn remove_active_pdf_job(user_id: i64) {
 
 fn format_lite_filename(filename: &str) -> String {
     let path = std::path::Path::new(filename);
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("document");
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("document");
     let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("pdf");
     format!("{stem}_lite.{ext}")
 }
@@ -312,16 +315,23 @@ async fn run_pdf_compress(
         let mut interval = tokio::time::interval(Duration::from_secs(2));
         interval.tick().await;
         let mut last_secs = 999999u64;
-        while timer_running_clone.load(Ordering::Relaxed) && !cancel_flag_clone.load(Ordering::Relaxed) {
+        while timer_running_clone.load(Ordering::Relaxed)
+            && !cancel_flag_clone.load(Ordering::Relaxed)
+        {
             interval.tick().await;
-            if !timer_running_clone.load(Ordering::Relaxed) || cancel_flag_clone.load(Ordering::Relaxed) {
+            if !timer_running_clone.load(Ordering::Relaxed)
+                || cancel_flag_clone.load(Ordering::Relaxed)
+            {
                 break;
             }
             let elapsed = start_inst.elapsed().as_secs();
             if elapsed != last_secs {
                 last_secs = elapsed;
                 let elapsed_str = format!("{:02}:{:02}", elapsed / 60, elapsed % 60);
-                let text = apply_premium_to_md(&tf("pdfcompress.processing_ticker", &[("elapsed", &md_escape(&elapsed_str))]));
+                let text = apply_premium_to_md(&tf(
+                    "pdfcompress.processing_ticker",
+                    &[("elapsed", &md_escape(&elapsed_str))],
+                ));
                 let params = EditMessageTextParams::builder()
                     .chat_id(chat_id)
                     .message_id(message_id)
@@ -345,7 +355,8 @@ async fn run_pdf_compress(
             let e_str = e.to_string();
             log_ev!("pdfcompress", trace_id, "download_failed", "=>" => format!("fail err={e_str}"));
             std::fs::remove_dir_all(&work_dir).ok();
-            crate::stats::record_error_global("pdfcompress", &format!("download failed: {e_str}")).await;
+            crate::stats::record_error_global("pdfcompress", &format!("download failed: {e_str}"))
+                .await;
             let _ = edit_status(
                 &api,
                 chat_id,
@@ -405,7 +416,15 @@ async fn run_pdf_compress(
     let timeout_secs = crate::config::pdf_compress_timeout_secs();
     log_ev!("pdfcompress", trace_id, "gs_spawn", "level" => &level, "timeout" => timeout_secs);
 
-    let gs_res = run_gs(&input_path, &output_path, &level, timeout_secs, trace_id, &cores).await;
+    let gs_res = run_gs(
+        &input_path,
+        &output_path,
+        &level,
+        timeout_secs,
+        trace_id,
+        &cores,
+    )
+    .await;
     release_cpu(cores, trace_id).await;
 
     if cancel_flag.load(Ordering::Relaxed) {
@@ -433,19 +452,15 @@ async fn run_pdf_compress(
             log_ev!("pdfcompress", trace_id, "gs_failed", "err" => &err, "=>" => "fail");
             std::fs::remove_dir_all(&work_dir).ok();
             crate::stats::record_error_global("pdfcompress", &format!("gs failed: {err}")).await;
-            let _ = edit_status(
-                &api,
-                chat_id,
-                message_id,
-                &t("pdfcompress.error.gs_failed"),
-            )
-            .await;
+            let _ = edit_status(&api, chat_id, message_id, &t("pdfcompress.error.gs_failed")).await;
             crate::stats::record_event_user(user_id, "pdfcompress", &level, "fail", 0).await;
             return;
         }
     }
 
-    let compressed_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+    let compressed_size = std::fs::metadata(&output_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
     if compressed_size == 0 || compressed_size >= orig_size {
         timer_running.store(false, Ordering::Relaxed);
         remove_active_pdf_job(user_id);
@@ -486,7 +501,9 @@ async fn run_pdf_compress(
         report
     ));
 
-    let out_bytes = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+    let out_bytes = std::fs::metadata(&output_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
     let up_start = std::time::Instant::now();
 
     let doc_params = SendDocumentParams::builder()
@@ -509,7 +526,9 @@ async fn run_pdf_compress(
         message_id,
         "transfer.stage.uploading",
         None,
-    ).await {
+    )
+    .await
+    {
         Ok(_) => {
             let up_elapsed = up_start.elapsed();
             let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
@@ -699,6 +718,7 @@ fn starts_with_pdf_magic(path: &std::path::Path) -> bool {
     &buf == b"%PDF-"
 }
 
+#[allow(dead_code)]
 fn escape_md(s: &str) -> String {
     s.chars()
         .map(|c| match c {

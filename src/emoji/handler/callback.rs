@@ -173,9 +173,7 @@ pub async fn handle_emoji_callback(
                         use crate::bot::send_file_with_upload_ticker;
                         let params = SendDocumentParams::builder()
                             .chat_id(chat_id)
-                            .document(FileUpload::InputFile(InputFile {
-                                path: path.clone(),
-                            }))
+                            .document(FileUpload::InputFile(InputFile { path: path.clone() }))
                             .caption(t("emoji.export_caption"))
                             .build();
                         let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
@@ -187,7 +185,8 @@ pub async fn handle_emoji_callback(
                             message_id,
                             "transfer.stage.sending_document",
                             None,
-                        ).await;
+                        )
+                        .await;
                         eprintln!(
                             "[emoji_cb trace={trace_id} event=export_sent] ok={}",
                             r.is_ok()

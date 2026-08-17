@@ -623,6 +623,183 @@ if [ "$(echo "$RES_SC3" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_SC3" | jq
 fi
 echo "✅ Studio Compress tests passed!"
 
+echo "Testing /test/studio/extract (Full extraction)"
+RES_SE1=$(curl -s -X POST "$BASE_URL/test/studio/extract" \
+    -H "Content-Type: application/json" \
+    -d '{"streams": [{"kind": "audio", "codec_name": "aac", "language": "eng"}, {"kind": "subtitle", "codec_name": "subrip", "language": "fas"}]}')
+if [ "$(echo "$RES_SE1" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_SE1" | jq -r '.total_streams')" != "2" ] || [ "$(echo "$RES_SE1" | jq -r '.audio_count')" != "1" ] || [ "$(echo "$RES_SE1" | jq -r '.sub_count')" != "1" ]; then
+    echo "Fail: Studio extract full extraction test failed. Got: $RES_SE1"
+    exit 1
+fi
+if [ "$(echo "$RES_SE1" | jq -r '.mapped_extensions[0]')" != "m4a" ] || [ "$(echo "$RES_SE1" | jq -r '.mapped_extensions[1]')" != "srt" ]; then
+    echo "Fail: Studio extract extension mapping test failed. Got: $RES_SE1"
+    exit 1
+fi
+
+echo "Testing /test/studio/extract (Partial extraction - Audio only)"
+RES_SE2=$(curl -s -X POST "$BASE_URL/test/studio/extract" \
+    -H "Content-Type: application/json" \
+    -d '{"streams": [{"kind": "audio", "codec_name": "flac", "language": "eng"}]}')
+if [ "$(echo "$RES_SE2" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_SE2" | jq -r '.audio_count')" != "1" ] || [ "$(echo "$RES_SE2" | jq -r '.sub_count')" != "0" ]; then
+    echo "Fail: Studio extract partial audio extraction test failed. Got: $RES_SE2"
+    exit 1
+fi
+
+echo "Testing /test/studio/extract (Zero extractable streams)"
+RES_SE3=$(curl -s -X POST "$BASE_URL/test/studio/extract" \
+    -H "Content-Type: application/json" \
+    -d '{"streams": []}')
+if [ "$(echo "$RES_SE3" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_SE3" | jq -r '.total_streams')" != "0" ]; then
+    echo "Fail: Studio extract zero streams test failed. Got: $RES_SE3"
+    exit 1
+fi
+echo "✅ Studio Extract tests passed!"
+
+echo "Testing /test/studio/burn (ASS subtitle style-preserved path)"
+RES_SB1=$(curl -s -X POST "$BASE_URL/test/studio/burn" \
+    -H "Content-Type: application/json" \
+    -d '{"sub_filename": "sub.ass", "order": "video_first"}')
+if [ "$(echo "$RES_SB1" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_SB1" | jq -r '.sub_format')" != "ass" ] || [ "$(echo "$RES_SB1" | jq -r '.filter_type')" != "ass" ]; then
+    echo "Fail: Studio burn ASS test failed. Got: $RES_SB1"
+    exit 1
+fi
+
+echo "Testing /test/studio/burn (SRT subtitle default-style path)"
+RES_SB2=$(curl -s -X POST "$BASE_URL/test/studio/burn" \
+    -H "Content-Type: application/json" \
+    -d '{"sub_filename": "sub.srt", "order": "sub_first"}')
+if [ "$(echo "$RES_SB2" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_SB2" | jq -r '.sub_format')" != "srt" ] || [ "$(echo "$RES_SB2" | jq -r '.filter_type')" != "subtitles" ]; then
+    echo "Fail: Studio burn SRT test failed. Got: $RES_SB2"
+    exit 1
+fi
+
+echo "Testing /test/studio/burn (Unsupported subtitle format failure path)"
+RES_SB3=$(curl -s -X POST "$BASE_URL/test/studio/burn" \
+    -H "Content-Type: application/json" \
+    -d '{"sub_filename": "invalid.txt"}')
+if [ "$(echo "$RES_SB3" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_SB3" | jq -r '.sub_format')" != "unsupported" ]; then
+    echo "Fail: Studio burn unsupported format test failed. Got: $RES_SB3"
+    exit 1
+fi
+echo "Testing /test/studio/burn (SRT document routes to subtitle, not video)"
+RES_SB4=$(curl -s -X POST "$BASE_URL/test/studio/burn" \
+    -H "Content-Type: application/json" \
+    -d '{"sub_filename": "movie.srt"}')
+if [ "$(echo "$RES_SB4" | jq -r '.route_decision')" != "subtitle" ] || [ "$(echo "$RES_SB4" | jq -r '.sub_workdir_name')" != "sub.srt" ]; then
+    echo "Fail: Studio burn srt routing test failed. Got: $RES_SB4"
+    exit 1
+fi
+
+echo "Testing /test/studio/burn (path traversal filename sanitized, fixed workdir name)"
+RES_SB5=$(curl -s -X POST "$BASE_URL/test/studio/burn" \
+    -H "Content-Type: application/json" \
+    -d '{"sub_filename": "sub.ass", "video_filename": "../../etc/passwd.mkv"}')
+if [ "$(echo "$RES_SB5" | jq -r '.video_workdir_name')" != "input.mkv" ]; then
+    echo "Fail: Studio burn workdir name test failed. Got: $RES_SB5"
+    exit 1
+fi
+if echo "$RES_SB5" | jq -r '.sanitized_display_name' | grep -q '/'; then
+    echo "Fail: Studio burn sanitized name still has path separators. Got: $RES_SB5"
+    exit 1
+fi
+if echo "$RES_SB5" | jq -r '.filter_arg' | grep -q "'"; then
+    echo "Fail: Studio burn filter arg must not be shell-quoted. Got: $RES_SB5"
+    exit 1
+fi
+
+echo "Testing /test/studio/burn (duration cap failure path)"
+RES_SB6=$(curl -s -X POST "$BASE_URL/test/studio/burn" \
+    -H "Content-Type: application/json" \
+    -d '{"sub_filename": "sub.srt", "duration_secs": 99999}')
+if [ "$(echo "$RES_SB6" | jq -r '.duration_blocked')" != "true" ]; then
+    echo "Fail: Studio burn duration cap test failed. Got: $RES_SB6"
+    exit 1
+fi
+if [ "$(echo "$RES_SB6" | jq -r '.stats_events | index("studio_burn/burn/too_long")')" = "null" ]; then
+    echo "Fail: Studio burn too_long stats event missing. Got: $RES_SB6"
+    exit 1
+fi
+for K in too_long_err_text download_failed_err_text oversized_err_text job_cancelled_text status_downloading_text status_uploading_text; do
+    V=$(echo "$RES_SB6" | jq -r ".$K")
+    if [ -z "$V" ] || [ "$V" = "null" ] || echo "$V" | grep -q '^!.*!$'; then
+        echo "Fail: Studio burn missing i18n for $K. Got: $V"
+        exit 1
+    fi
+done
+if [ "$(echo "$RES_SB6" | jq -r '.job_cancel_keyboard[0][0].callback_data')" != "stb:jobcancel" ]; then
+    echo "Fail: Studio burn job cancel callback wrong. Got: $RES_SB6"
+    exit 1
+fi
+echo "Testing /test/studio/burn (source codec drives the encoder)"
+for PAIR in "av1:libsvtav1" "hevc:libx265" "vp9:libvpx-vp9" "h264:libx264" "weirdcodec:libx264"; do
+    SRC="${PAIR%%:*}"; WANT="${PAIR##*:}"
+    RES_SB7=$(curl -s -X POST "$BASE_URL/test/studio/burn" \
+        -H "Content-Type: application/json" \
+        -d "{\"sub_filename\": \"sub.srt\", \"source_codec\": \"$SRC\"}")
+    GOT=$(echo "$RES_SB7" | jq -r '.video_encoder')
+    if [ "$GOT" != "$WANT" ]; then
+        echo "Fail: Studio burn encoder for $SRC should be $WANT, got $GOT. Res: $RES_SB7"
+        exit 1
+    fi
+done
+# pix_fmt is only forced on the x264 path; forcing it on AV1 would drop 10-bit sources to 8-bit.
+RES_SB8=$(curl -s -X POST "$BASE_URL/test/studio/burn" \
+    -H "Content-Type: application/json" -d '{"sub_filename": "sub.srt", "source_codec": "av1"}')
+if echo "$RES_SB8" | jq -r '.video_encoder_args | join(" ")' | grep -q "yuv420p"; then
+    echo "Fail: Studio burn must not force pix_fmt on the AV1 path. Got: $RES_SB8"
+    exit 1
+fi
+echo "Testing /test/studio/burn (oversized output is split, not rejected)"
+# 2402 MB is the real report: an AV1 source re-encoded to H.264 landed over the 2000 MB cap.
+RES_SB9=$(curl -s -X POST "$BASE_URL/test/studio/burn" \
+    -H "Content-Type: application/json" \
+    -d '{"sub_filename": "sub.srt", "duration_secs": 3600, "output_bytes": 2519076864}')
+if [ "$(echo "$RES_SB9" | jq -r '.split_needed')" != "true" ]; then
+    echo "Fail: Studio burn 2402 MB output must be split. Got: $RES_SB9"
+    exit 1
+fi
+if [ "$(echo "$RES_SB9" | jq -r '.split_parts_planned')" != "2" ]; then
+    echo "Fail: Studio burn 2402 MB output must halve into 2 parts. Got: $RES_SB9"
+    exit 1
+fi
+# Every piece must fit under the cap, or splitting bought nothing.
+if [ "$(echo "$RES_SB9" | jq -r '.split_part_bytes_max <= .max_upload_bytes')" != "true" ]; then
+    echo "Fail: Studio burn split part still above the upload cap. Got: $RES_SB9"
+    exit 1
+fi
+if [ "$(echo "$RES_SB9" | jq -r '.split_segment_secs')" != "1800" ]; then
+    echo "Fail: Studio burn segment length for 1h/2parts should be 1800s. Got: $RES_SB9"
+    exit 1
+fi
+if [ "$(echo "$RES_SB9" | jq -r '.stats_events | index("studio_burn/burn/split")')" = "null" ]; then
+    echo "Fail: Studio burn split stats event missing. Got: $RES_SB9"
+    exit 1
+fi
+for K in status_splitting_text job_done_part_rendered_text; do
+    V=$(echo "$RES_SB9" | jq -r ".$K")
+    if [ -z "$V" ] || [ "$V" = "null" ] || echo "$V" | grep -q '^!.*!$'; then
+        echo "Fail: Studio burn missing i18n for $K. Got: $V"
+        exit 1
+    fi
+done
+# A file far over the cap needs more than two pieces, or each "half" is still unsendable.
+RES_SB10=$(curl -s -X POST "$BASE_URL/test/studio/burn" \
+    -H "Content-Type: application/json" \
+    -d '{"sub_filename": "sub.srt", "duration_secs": 3600, "output_bytes": 5242880000}')
+if [ "$(echo "$RES_SB10" | jq -r '.split_parts_planned')" != "3" ]; then
+    echo "Fail: Studio burn 5000 MB output needs 3 parts. Got: $RES_SB10"
+    exit 1
+fi
+# Under the cap nothing is split and the single-file caption is used.
+RES_SB11=$(curl -s -X POST "$BASE_URL/test/studio/burn" \
+    -H "Content-Type: application/json" \
+    -d '{"sub_filename": "sub.srt", "output_bytes": 104857600}')
+if [ "$(echo "$RES_SB11" | jq -r '.split_needed')" != "false" ] || [ "$(echo "$RES_SB11" | jq -r '.split_parts_planned')" != "1" ]; then
+    echo "Fail: Studio burn small output must not be split. Got: $RES_SB11"
+    exit 1
+fi
+echo "✅ Studio Burn tests passed!"
+
 echo "Testing /test/transfer/meter (fetching + uploading)"
 RES_TR_M=$(curl -s -X POST "$BASE_URL/test/transfer/meter" -H "Content-Type: application/json" \
     -d '{"total_bytes": 104857600, "lang": "en", "stage": "fetching", "chunks": [{"bytes": 50000000, "after_ms": 100}]}')
@@ -647,6 +824,50 @@ RES_TR_UPC=$(curl -s -X POST "$BASE_URL/test/transfer/upload" -H "Content-Type: 
 if [ "$(echo "$RES_TR_UPC" | jq -r '.bytes_counted < 4194304')" != "true" ]; then echo "Fail: upload canceled bytes: $RES_TR_UPC"; exit 1; fi
 
 echo "✅ Transfer tests passed!"
+
+echo ""
+echo "=== Running Package Converter Tests ==="
+
+echo "Testing /test/pkg/validate (valid deb)"
+RES_PKG_V1=$(curl -s -X POST "$BASE_URL/test/pkg/validate" -H "Content-Type: application/json" -d '{"format": "deb", "test_case": "valid"}')
+if [ "$(echo "$RES_PKG_V1" | jq -r '.ok')" != "true" ]; then echo "Fail: pkg validate deb valid: $RES_PKG_V1"; exit 1; fi
+
+echo "Testing /test/pkg/validate (path traversal)"
+RES_PKG_V2=$(curl -s -X POST "$BASE_URL/test/pkg/validate" -H "Content-Type: application/json" -d '{"format": "deb", "test_case": "path_traversal"}')
+if [ "$(echo "$RES_PKG_V2" | jq -r '.ok')" != "false" ] || [ "$(echo "$RES_PKG_V2" | jq -r '.error_kind')" != "PathTraversal" ]; then
+    echo "Fail: pkg validate path_traversal: $RES_PKG_V2"; exit 1;
+fi
+
+echo "Testing /test/pkg/validate (symlink escape)"
+RES_PKG_V3=$(curl -s -X POST "$BASE_URL/test/pkg/validate" -H "Content-Type: application/json" -d '{"format": "pacman", "test_case": "symlink_escape"}')
+if [ "$(echo "$RES_PKG_V3" | jq -r '.ok')" != "false" ] || [ "$(echo "$RES_PKG_V3" | jq -r '.error_kind')" != "SymlinkEscape" ]; then
+    echo "Fail: pkg validate symlink_escape: $RES_PKG_V3"; exit 1;
+fi
+
+echo "Testing /test/pkg/convert (Dalavar paywall)"
+RES_PKG_C1=$(curl -s -X POST "$BASE_URL/test/pkg/convert" -H "Content-Type: application/json" -d '{"src_fmt": "deb", "dst_fmt": "rpm", "rank": "dalavar"}')
+if [ "$(echo "$RES_PKG_C1" | jq -r '.paywall_blocked')" != "true" ]; then echo "Fail: pkg convert paywall: $RES_PKG_C1"; exit 1; fi
+
+echo "Testing /test/pkg/convert (Sepahbod alien dispatch)"
+RES_PKG_C2=$(curl -s -X POST "$BASE_URL/test/pkg/convert" -H "Content-Type: application/json" -d '{"src_fmt": "deb", "dst_fmt": "rpm", "rank": "sepahbod"}')
+if [ "$(echo "$RES_PKG_C2" | jq -r '.paywall_blocked')" != "false" ] || [ "$(echo "$RES_PKG_C2" | jq -r '.tool_selected')" != "alien" ]; then
+    echo "Fail: pkg convert sepahbod: $RES_PKG_C2"; exit 1;
+fi
+
+echo "Testing /test/pkg/convert (Sepahbod fpm pacman dispatch)"
+RES_PKG_C3=$(curl -s -X POST "$BASE_URL/test/pkg/convert" -H "Content-Type: application/json" -d '{"src_fmt": "deb", "dst_fmt": "pacman", "rank": "sepahbod"}')
+if [ "$(echo "$RES_PKG_C3" | jq -r '.tool_selected')" != "fpm" ]; then echo "Fail: pkg convert fpm pacman: $RES_PKG_C3"; exit 1; fi
+
+echo "Testing /test/pkg/convert (Quota exhausted)"
+RES_PKG_C4=$(curl -s -X POST "$BASE_URL/test/pkg/convert" -H "Content-Type: application/json" -d '{"src_fmt": "deb", "dst_fmt": "rpm", "rank": "sepahbod", "quota_exhausted": true}')
+if [ "$(echo "$RES_PKG_C4" | jq -r '.quota_blocked')" != "true" ]; then echo "Fail: pkg convert quota: $RES_PKG_C4"; exit 1; fi
+
+echo "Testing /test/pkg/ux"
+RES_PKG_UX=$(curl -s -X POST "$BASE_URL/test/pkg/ux" -H "Content-Type: application/json" -d '{"src_fmt": "deb", "stage": "converting"}')
+if [ "$(echo "$RES_PKG_UX" | jq -r '.target_buttons | length')" != "2" ]; then echo "Fail: pkg ux buttons: $RES_PKG_UX"; exit 1; fi
+if [ "$(echo "$RES_PKG_UX" | jq -r '.detected_text_len < 4096')" != "true" ]; then echo "Fail: pkg ux length: $RES_PKG_UX"; exit 1; fi
+
+echo "✅ Package Converter tests passed!"
 
 echo "✅ Extended TestAPI Endpoint Suite passed!"
 

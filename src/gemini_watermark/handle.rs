@@ -238,7 +238,9 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
         status_msg_id,
         "transfer.stage.sending_document",
         None,
-    ).await {
+    )
+    .await
+    {
         Ok(_) => {
             let up_elapsed = up_start.elapsed();
             let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
@@ -308,4 +310,3 @@ async fn download_file(
     log_ev!("gwm", trace_id, "download_start", "raw" => format!("file_id={file_id}"));
     crate::bot::download_telegram_file(api, file_id, dest).await
 }
-

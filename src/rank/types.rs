@@ -350,6 +350,24 @@ impl Rank {
             Self::Esfandyar | Self::Rostam => None,
         }
     }
+
+    /// Daily package conversion count (0 = feature blocked for this rank).
+    pub fn pkgconvert_daily_count(&self) -> u64 {
+        match self {
+            Self::Dalavar | Self::Sohrab => 0,
+            Self::Sepahbod => 5,
+            Self::Esfandyar | Self::Rostam => 20,
+        }
+    }
+
+    /// Next rank with higher package conversion quota.
+    pub fn pkgconvert_next_rank(&self) -> Option<Self> {
+        match self {
+            Self::Dalavar | Self::Sohrab => Some(Self::Sepahbod),
+            Self::Sepahbod => Some(Self::Esfandyar),
+            Self::Esfandyar | Self::Rostam => None,
+        }
+    }
 }
 
 /// Integer division rounded up. Shared between gift code and referral modules for weighted remaining day calculation.

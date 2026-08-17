@@ -57,6 +57,9 @@ fn resolve_icon(icon_key: &str) -> Option<String> {
     if icon_key.is_empty() {
         return None;
     }
+    if icon_key.chars().all(|c| c.is_ascii_digit()) {
+        return Some(icon_key.to_string());
+    }
     let id = t(&format!("emoji.panel.icons.{icon_key}"));
     if id.is_empty() || id.starts_with('!') {
         None
@@ -66,16 +69,7 @@ fn resolve_icon(icon_key: &str) -> Option<String> {
 }
 
 pub fn btn_icon(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardButton {
-    let icon_id = if icon_key.is_empty() {
-        None
-    } else {
-        let id = t(&format!("emoji.panel.icons.{icon_key}"));
-        if id.is_empty() || id.starts_with('!') {
-            None
-        } else {
-            Some(id)
-        }
-    };
+    let icon_id = resolve_icon(icon_key);
     InlineKeyboardButton {
         text: text.to_string(),
         icon_custom_emoji_id: icon_id,
@@ -94,16 +88,7 @@ pub fn btn_icon(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboa
 }
 
 pub fn btn_icon_primary(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardButton {
-    let icon_id = if icon_key.is_empty() {
-        None
-    } else {
-        let id = t(&format!("emoji.panel.icons.{icon_key}"));
-        if id.is_empty() || id.starts_with('!') {
-            None
-        } else {
-            Some(id)
-        }
-    };
+    let icon_id = resolve_icon(icon_key);
     InlineKeyboardButton {
         text: text.to_string(),
         icon_custom_emoji_id: icon_id,
@@ -122,16 +107,7 @@ pub fn btn_icon_primary(text: &str, callback_data: &str, icon_key: &str) -> Inli
 }
 
 pub fn btn_icon_plain(text: &str, callback_data: &str, icon_key: &str) -> InlineKeyboardButton {
-    let icon_id = if icon_key.is_empty() {
-        None
-    } else {
-        let id = t(&format!("emoji.panel.icons.{icon_key}"));
-        if id.is_empty() || id.starts_with('!') {
-            None
-        } else {
-            Some(id)
-        }
-    };
+    let icon_id = resolve_icon(icon_key);
     InlineKeyboardButton {
         text: text.to_string(),
         icon_custom_emoji_id: icon_id,

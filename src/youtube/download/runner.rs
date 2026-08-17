@@ -224,7 +224,14 @@ async fn run_playlist_download(
             Ok(bytes) => {
                 sent += 1;
                 if let Some(job_id) = stats_job_id {
-                    stats::record_upload_done(job_id, user_id, bytes as i64, None, Some(sent as i32)).await;
+                    stats::record_upload_done(
+                        job_id,
+                        user_id,
+                        bytes as i64,
+                        None,
+                        Some(sent as i32),
+                    )
+                    .await;
                 }
             }
             Err(reason) => {
@@ -504,18 +511,24 @@ async fn download_single_playlist_item(
             caption_entities,
             height,
             None,
-            );
+        );
         let progress = crate::bot::transfer::TransferProgress::new(0);
-        crate::bot::transfer::send_params_metered::<_, frankenstein::response::MethodResponse<frankenstein::types::Message>>(
-            &api.api_url, "sendVideo", &params, &progress, None
-        ).await.map(|_| ())
+        crate::bot::transfer::send_params_metered::<
+            _,
+            frankenstein::response::MethodResponse<frankenstein::types::Message>,
+        >(&api.api_url, "sendVideo", &params, &progress, None)
+        .await
+        .map(|_| ())
     } else {
         let params =
             build_single_doc_params(&path, req.chat_id, &thumb_path, caption, caption_entities);
         let progress = crate::bot::transfer::TransferProgress::new(0);
-        crate::bot::transfer::send_params_metered::<_, frankenstein::response::MethodResponse<frankenstein::types::Message>>(
-            &api.api_url, "sendDocument", &params, &progress, None
-        ).await.map(|_| ())
+        crate::bot::transfer::send_params_metered::<
+            _,
+            frankenstein::response::MethodResponse<frankenstein::types::Message>,
+        >(&api.api_url, "sendDocument", &params, &progress, None)
+        .await
+        .map(|_| ())
     };
 
     cleanup_dir(&dir, trace_id).await;

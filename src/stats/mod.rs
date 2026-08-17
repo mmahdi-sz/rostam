@@ -331,7 +331,9 @@ pub async fn record_download_start(user_id: i64, feature: &str) -> Option<i64> {
         Ok(Some(r)) => Some(r.get(0)),
         Ok(None) => None,
         Err(e) => {
-            eprintln!("[stats event=record_download_start_failed] user_id={user_id} feature={feature} err={e}");
+            eprintln!(
+                "[stats event=record_download_start_failed] user_id={user_id} feature={feature} err={e}"
+            );
             None
         }
     }
@@ -398,4 +400,3 @@ pub async fn record_upload_done(
         eprintln!("[stats event=add_traffic_failed] user_id={user_id} err={e}");
     }
 }
-

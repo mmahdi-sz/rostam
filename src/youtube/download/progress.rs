@@ -159,10 +159,7 @@ pub fn format_elapsed(d: std::time::Duration) -> String {
     }
 }
 
-pub fn format_upload_body(
-    quality_label: &str,
-    snap: &crate::bot::TransferSnapshot,
-) -> String {
+pub fn format_upload_body(quality_label: &str, snap: &crate::bot::TransferSnapshot) -> String {
     tf(
         "youtube.download.progress.upload_body",
         &[
@@ -178,7 +175,6 @@ pub fn format_upload_body(
         ],
     )
 }
-
 
 #[cfg(test)]
 mod tests {

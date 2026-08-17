@@ -23,6 +23,7 @@ pub enum QuotaKind {
     NobgWeekly,
     CompressCpuDaily,
     CompressCpuMonthly,
+    PkgConvertDaily,
 }
 
 impl QuotaKind {
@@ -47,6 +48,7 @@ impl QuotaKind {
             Self::NobgWeekly => "nobg_weekly",
             Self::CompressCpuDaily => "compress_cpu_daily",
             Self::CompressCpuMonthly => "compress_cpu_monthly",
+            Self::PkgConvertDaily => "pkg_convert_daily",
         }
     }
 }

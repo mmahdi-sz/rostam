@@ -478,7 +478,9 @@ async fn upload_track(
         0,
         "transfer.stage.sending_audio",
         None,
-    ).await {
+    )
+    .await
+    {
         Ok(_) => {
             add_traffic(database, user_id, &track.mp3).await;
         }
@@ -567,7 +569,9 @@ async fn archive_and_upload(
             0,
             "transfer.stage.sending_document",
             None,
-        ).await {
+        )
+        .await
+        {
             log_ev!("ms", trace_id, "part_upload_fail", "err" => e.to_string());
             crate::stats::record_error_global("musicset", format!("upload_part: {e}")).await;
             return false;

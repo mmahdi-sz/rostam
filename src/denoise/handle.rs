@@ -251,8 +251,11 @@ pub async fn handle_denoise_audio(
     }
 
     let file_size = std::fs::metadata(input_str).map(|m| m.len()).unwrap_or(0);
-    log_trace(trace_id, "denoise_downloaded", &format!("size={file_size} speed={}", dl_result.speed_human()));
-
+    log_trace(
+        trace_id,
+        "denoise_downloaded",
+        &format!("size={file_size} speed={}", dl_result.speed_human()),
+    );
 
     // 2. Convert to 48kHz mono 16-bit PCM WAV (DeepFilterNet optimal sample rate)
     // Blocking (std::process::Command) — run on the blocking thread pool.
@@ -615,8 +618,16 @@ pub async fn handle_denoise_audio(
             .parse_mode(ParseMode::MarkdownV2)
             .build();
         let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-            api, "sendVoice", &params, std::path::Path::new(output_str), chat_id, smid, "transfer.stage.sending_audio", None
-        ).await;
+            api,
+            "sendVoice",
+            &params,
+            std::path::Path::new(output_str),
+            chat_id,
+            smid,
+            "transfer.stage.sending_audio",
+            None,
+        )
+        .await;
         log_trace(trace_id, "denoise_voice_sent", &format!("ok={}", r.is_ok()));
         r.is_ok()
     } else if is_video {
@@ -627,8 +638,16 @@ pub async fn handle_denoise_audio(
             .parse_mode(ParseMode::MarkdownV2)
             .build();
         let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-            api, "sendVideo", &params, std::path::Path::new(output_str), chat_id, smid, "transfer.stage.sending_video", None
-        ).await;
+            api,
+            "sendVideo",
+            &params,
+            std::path::Path::new(output_str),
+            chat_id,
+            smid,
+            "transfer.stage.sending_video",
+            None,
+        )
+        .await;
         log_trace(trace_id, "denoise_video_sent", &format!("ok={}", r.is_ok()));
         r.is_ok()
     } else {
@@ -639,8 +658,16 @@ pub async fn handle_denoise_audio(
             .parse_mode(ParseMode::MarkdownV2)
             .build();
         let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-            api, "sendAudio", &params, std::path::Path::new(output_str), chat_id, smid, "transfer.stage.sending_audio", None
-        ).await;
+            api,
+            "sendAudio",
+            &params,
+            std::path::Path::new(output_str),
+            chat_id,
+            smid,
+            "transfer.stage.sending_audio",
+            None,
+        )
+        .await;
         log_trace(trace_id, "denoise_audio_sent", &format!("ok={}", r.is_ok()));
         r.is_ok()
     };
@@ -663,7 +690,6 @@ pub async fn handle_denoise_audio(
             .await;
         }
     }
-
 
     if let Some(msg_id) = status_msg_id {
         let _ = api

@@ -38,7 +38,9 @@
             "guide_yt_text": "🎬 *یوتیوب*\n\n╣ لینک ویدیو یا پلی‌لیست را بفرست\n╣ ویدیو تا 4K، صدای با کیفیت بالا، کدک AV1 / VP9 / H264\n╣ زیرنویس با ترجمه هوشمند\n╝ کپی لینک: در اپ یوتیوب روی *Share* بزن و *Copy link* را انتخاب کن",
             "guide_sp_text": "🟢 *اسپاتیفای*\n\n╣ لینک آهنگ، آلبوم یا پلی‌لیست را بفرست\n╣ آهنگ با کیفیت بالا همراه کاور و مشخصات کامل\n╣ آلبوم و پلی‌لیست، تکی یا داخل فایل زیپ\n╝ کپی لینک: روی سه نقطه بزن، *Share* و بعد *Copy Song Link*",
             "guide_sc_text": "🟠 *ساندکلاود*\n\n╣ لینک آهنگ، ست یا پلی‌لیست را بفرست\n╣ آهنگ و ریمیکس با بهترین کیفیت موجود\n╣ پشتیبانی از ست و پلی‌لیست همراه کاور\n╝ کپی لینک: روی *Share* بزن و آدرس نمایش‌داده‌شده را کپی کن",
-            "studio_button": "استودیو جادویی عکس و ویدئو"
+            "studio_button": "استودیو جادویی عکس و ویدئو",
+            "dev_cafe_button": "کافه برنامه‌نویسی و فناوری ☕️",
+            "dev_cafe_title": "💻 *کافه برنامه‌نویسی و فناوری*\n\nمجموعه ابزارهای تخصصی برای توسعه‌دهندگان، برنامه‌نویسان و مدیران سیستم:\n\n• 📦 *تبدیل فرمت بسته‌ها:* تبدیل سریع و امن بسته‌های نرم‌افزاری بین DEB، RPM و Pacman\n\n*ابزار مورد نظر را انتخاب کنید👇:*"
         },
         "tts": {
             "enter_text_default": "📝 **تبدیل متن به صدا**\n\nلطفاً متنی که می‌خواهید به صدا تبدیل شود را ارسال کنید \\(حداکثر ۵۰۰ کاراکتر\\):",
@@ -246,9 +248,9 @@
                     "headphones": "5933749305155260825",
                     "soundwave": "5418000793208896425",
                     "quality_high": "5462902520215002477",
-                    "windows_logo": "4994997504404619799",
+                    "windows_logo": "5366318141771096216",
                     "app_store": "6068909301735360991",
-                    "android_logo": "5897540239768948011",
+                    "android_logo": "5301286542998774155",
                     "linux_logo": "5850237475720532199",
                     "speed_fast": "5215203703190989803",
                     "flag_ir": "5271878966347601947",
@@ -317,7 +319,33 @@
                     "wrench": "5264908182886557148",
                     "question_mark": "5897846616966041652",
                     "soundcloud_logo": "5366186127361326004",
-                    "spotify_logo": "5233578612665375810"
+                    "spotify_logo": "5233578612665375810",
+                    "arch_linux_logo": "5301033874367717956",
+                    "ubuntu_linux_logo": "5300985968302498775",
+                    "apple_logo": "5301155675345265040",
+                    "tux_linux_logo": "5300957668762987048",
+                    "github_logo": "5300931211764441870",
+                    "redhat_linux_logo": "5300965854970651009",
+                    "vim_logo": "5300761723765007779",
+                    "notepad_plus_plus_logo": "5300844878626824738",
+                    "fish_shell_logo": "5300792557335225091",
+                    "nginx_logo": "5301053291914863195",
+                    "google_chrome_logo": "5300882244842300470",
+                    "microsoft_edge_logo": "5301078731006155650",
+                    "mozilla_firefox_logo": "5301145298704278719",
+                    "safari_logo": "5301220310308101164",
+                    "docker_logo": "5301137237050663843",
+                    "manjaro_linux_logo": "5300940673577395744",
+                    "linux_mint_logo": "5305346326475579760",
+                    "debian_linux_logo": "5300838891442413975",
+                    "kali_linux_logo": "5300820182564872893",
+                    "javascript_logo": "5300896259320586992",
+                    "typescript_logo": "5301254000031572585",
+                    "css3_logo": "5301277643826536470",
+                    "html5_logo": "5301117377121887562",
+                    "postgresql_logo": "5305391548186238433",
+                    "vscode_logo": "5301201579955725162",
+                    "powershell_logo": "5301110372030225169"
                 },
                 "guide": "راهنما",
                 "add_emojis": "افزودن ایموجی"
@@ -755,12 +783,15 @@
                     "ip_lookup": "استعلام IP",
                     "studio_trim": "✂️ برش ویدئو",
                     "studio_compress": "🎥 فشرده‌سازی ویدئو",
+                    "studio_extract": "🎵 استخراج صدا و زیرنویس",
+                    "studio_burn": "🎬 حک زیرنویس روی ویدیو",
                     "paywall": "پی‌وال",
                     "rank": "رنک و خرید",
                     "referral": "زیرمجموعه‌گیری",
                     "cpu": "صف پردازش (CPU)",
                     "cookie": "کوکی پول",
-                    "broadcast": "پیام همگانی"
+                    "broadcast": "پیام همگانی",
+                    "pkgconvert": "📦 تبدیل بسته"
                 },
                 "more": {
                     "youtube": "یوتیوب (کیفیت/کنسل)",
@@ -944,7 +975,8 @@
             "fc_button": "فشرده‌سازی فایل",
             "pdf_compress_button": "کاهش حجم PDF",
             "ip_lookup_button": "تحلیل و استعلام آی‌پی",
-            "surge_button": "دانلود لینک مستقیم"
+            "surge_button": "دانلود لینک مستقیم",
+            "pkg_button": "تبدیل بسته 📦"
         },
         "fc": {
             "welcome": "📁 *به فشرده‌سازی خوش آمدید*\n\nدر این قسمت میتوانید فایل های خود را فشرده سازی بکنید\nفرمت‌های پشتیبانی‌شده:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n*فرمت خروجی رو انتخاب کن👇:*",
@@ -1191,10 +1223,56 @@
             "expired": "⚠️ *این درخواست منقضی شده\\. لینک را دوباره بفرست\\.*"
         },
         "studio": {
-            "title": "🎥 *استودیو جادویی عکس و ویدئو*\n\nابزارهای حرفه‌ای ویرایش و پردازش رسانه:\n\n• ✂️ *برش و ادیت ویدئو:* برش دقیق چند‌بخش از ویدئو به صورت همزمان\n• 🎥 *فشرده‌سازی پیشرفته ویدیو:* تنظیم کدک، رزولوشن، FPS و بیت‌ریت\n\n*ابزار مورد نظر را انتخاب کنید👇:*",
+            "title": "🎥 *استودیو جادویی عکس و ویدئو*\n\nابزارهای حرفه‌ای ویرایش و پردازش رسانه:\n\n• ✂️ *برش و ادیت ویدئو:* برش دقیق چند‌بخش از ویدئو به صورت همزمان\n• 🎥 *فشرده‌سازی پیشرفته ویدیو:* تنظیم کدک، رزولوشن، FPS و بیت‌ریت\n• 🎵 *جداسازی زیرنویس و صدا:* استخراج تمامی ترک‌های صوتی و زیرنویس ویدیو به صورت مستقیم\n\n*ابزار مورد نظر را انتخاب کنید👇:*",
             "trim_button": "برش و ادیت ویدئو",
             "compress_button": "فشرده‌سازی پیشرفته ویدیو",
+            "extract_button": "جداسازی زیرنویس و صدا",
+            "burn_button": "حک زیرنویس روی ویدیو",
             "back_to_studio": "برگشت به استودیو",
+            "burn": {
+                "prompt": "🎬 *حک زیرنویس روی ویدیو*\n\nلطفاً فایل ویدیو و فایل زیرنویس \\(\\.srt، \\.ass، \\.vtt\\) خود را ارسال کنید\\.\n\n_ترتیب ارسال دلخواه است \\(ابتدا ویدیو یا ابتدا زیرنویس\\)\\._",
+                "video_received_need_sub": "📹 *ویدیو دریافت شد و دانلود در پیش‌زمینه آغاز گردید\\.*\n\n👇 *اکنون فایل زیرنویس \\(\\.srt، \\.ass، \\.vtt\\) را ارسال کنید\\.*",
+                "sub_received_need_video": "📝 *فایل زیرنویس دریافت و تایید شد\\.*\n\n👇 *اکنون فایل ویدیو را ارسال کنید\\.*",
+                "sub_replaced": "🔄 *فایل زیرنویس جدید جایگزین زیرنویس قبلی شد\\.*",
+                "cancel_btn": "لغو و بازگشت به استودیو",
+                "cancelled": "❌ عملیات حک زیرنویس لغو شد\\.",
+                "status_downloading": "📥 *در حال دانلود ویدئو\\.\\.\\.*\n⏱️ *زمان سپری‌شده:* {elapsed}{detail}",
+                "status_downloading_detail": "\n📥 *دانلودشده:* `{dl_mb} مگابایت` از `{total_mb} مگابایت` \\({pct}%\\)\n🚀 *سرعت:* `{speed}`   ⌛ *زمان باقی‌مانده:* {eta}",
+                "status_burning": "🔥 *در حال حک زیرنویس روی ویدیو\\.\\.\\.*\n⏱️ *زمان گذشته:* `{elapsed}`\n📊 *پیشرفت:* `{pct}%` \\| 🚀 *سرعت:* `{speed}`\n⏳ *زمان باقی‌مانده:* `{eta}`",
+                "status_uploading": "📤 *در حال آپلود ویدیو پردازش‌شده\\.\\.\\.*",
+                "job_done": "✨ *حک زیرنویس با موفقیت انجام شد\\!*\n\n📁 *نام فایل:* `{filename}`\n⏱️ *زمان حک:* `{burn_time}`",
+                "job_cancelled": "🚫 عملیات حک زیرنویس توسط شما لغو شد\\.",
+                "feature_name": "حک زیرنویس روی ویدیو",
+                "error": {
+                    "unsupported_sub": "⚠️ فرمت فایل زیرنویس پشتیبانی نمی‌شود\\. لطفاً فایل \\.srt، \\.ass یا \\.vtt ارسال کنید\\.",
+                    "burn_failed": "⚠️ حک زیرنویس روی ویدیو با خطا مواجه شد\\.",
+                    "download_failed": "⚠️ دانلود فایل ویدیو با خطا مواجه شد\\. لطفاً دوباره تلاش کنید\\.",
+                    "too_long": "⚠️ مدت این ویدیو `{duration}` است و از سقف `{max}` برای حک زیرنویس بیشتر است\\.",
+                    "oversized": "⚠️ حجم ویدیوی پردازش‌شده بیش از ۲۰۰۰ مگابایت است و قابل ارسال نیست\\."
+                },
+                "status_splitting": "✂️ *حجم ویدیوی پردازش‌شده از سقف ارسال تلگرام بیشتر است\\.*\n\n🔪 *در حال تقسیم ویدیو به* `{parts}` *بخش\\.\\.\\.*\n_بدون انکود مجدد، پس کیفیت تغییری نمی‌کند\\._",
+                "job_done_part": "✨ *حک زیرنویس با موفقیت انجام شد\\!*\n\n📁 *نام فایل:* `{filename}`\n🔪 *بخش:* `{part}` از `{total}`\n⏱️ *زمان حک:* `{burn_time}`"
+            },
+            "extract": {
+                "send_video_prompt": "🎵 *جداسازی زیرنویس و صدا از ویدیو*\n\nلطفاً ویدئویی که می‌خواهید زیرنویس و صدای آن استخراج شود را ارسال کنید\\.",
+                "cancel_btn": "لغو و بازگشت به استودیو",
+                "cancelled": "❌ عملیات استخراج زیرنویس و صدا لغو شد\\.",
+                "status_downloading": "📥 *در حال دانلود ویدئو\\.\\.\\.*\n⏱️ *زمان سپری‌شده:* {elapsed}{detail}",
+                "status_downloading_detail": "\n📥 *دانلودشده:* `{dl_mb} مگابایت` از `{total_mb} مگابایت` \\({pct}%\\)\n🚀 *سرعت:* `{speed}`   ⌛ *زمان باقی‌مانده:* {eta}",
+                "status_probing": "🔍 *در حال بررسی ترک‌های ویدیو\\.\\.\\.*",
+                "status_extracting": "⚙️ *در حال استخراج ترک‌های صوتی و زیرنویس\\.\\.\\.*\n⏱️ *زمان سپری‌شده:* {elapsed}",
+                "status_uploading": "📤 *در حال ارسال فایل {current} از {total}\\.\\.\\.*\n📄 *فایل:* `{filename}`",
+                "job_cancelled": "🚫 عملیات استخراج توسط شما لغو شد\\.",
+                "job_done": "🎉 *تمام محتوای صوتی و زیرنویس این ویدیو استخراج شد\\!*\n\n📊 *آمار استخراج:*\n• 🎵 ترک‌های صوتی: `{audio_count}`\n• 💬 زیرنویس‌ها: `{sub_count}`\n\n⏱️ *زمان صرف شده:* {total_time}",
+                "caption_audio": "🎵 *ترک صوتی {num}* {lang_info}",
+                "caption_sub": "💬 *زیرنویس {num}* {lang_info}",
+                "error": {
+                    "not_a_video": "⚠️ فایل فرستاده‌شده یک ویدئوی معتبر نیست\\. لطفاً فایل ویدئویی ارسال کنید\\.",
+                    "download_failed": "⚠️ دریافت فایل ویدئو با خطا مواجه شد\\. دوباره تلاش کنید\\.",
+                    "no_streams": "⚠️ این ویدیو فاقد صدا و زیرنویس است\\.",
+                    "extract_failed": "⚠️ استخراج زیرنویس و صدا با خطا مواجه شد\\."
+                }
+            },
             "compress": {
                 "send_video_prompt": "🎥 *فشرده‌سازی پیشرفته ویدیو*\n\nلطفاً ویدئویی که می‌خواهید فشرده کنید را ارسال کنید\\.",
                 "cancel_btn": "لغو و بازگشت به استودیو",
@@ -1273,6 +1351,40 @@
             "eta_unknown": "—",
             "eta_label": "زمان باقی‌مانده",
             "done": "✅ {size} در {elapsed} — میانگین {speed}"
+        },
+        "pkg": {
+            "title": "تبدیل بسته",
+            "prompt": "📦 *تبدیل فرمت بسته‌های نرم‌افزاری*\n\nلطفاً یک فایل بسته با فرمت \\.deb، \\.rpm یا \\.pkg\\.tar\\.zst ارسال کنید\\.",
+            "detected": "📦 *فرمت فایل:* {fmt}\n\nلطفاً فرمت خروجی مورد نظر خود را انتخاب کنید👇",
+            "convert_btn_rpm": "→ RPM",
+            "convert_btn_deb": "→ DEB",
+            "convert_btn_pacman": "→ Pacman (tar.zst)",
+            "cancel_btn": "❌ انصراف",
+            "stage": {
+                "downloading": "⬇️ *در حال دریافت فایل…*",
+                "validating": "🔍 *در حال بررسی و اعتبارسنجی امنیتی بسته…*",
+                "converting": "⚙️ *در حال تبدیل فرمت…* \\({elapsed}\\)",
+                "uploading": "⬆️ *در حال ارسال فایل تبدیل‌شده…*"
+            },
+            "success": "✅ *تبدیل بسته با موفقیت انجام شد\\!*\n\n• *فرمت اولیه:* {src}\n• *فرمت خروجی:* {dst}\n• *حجم خروجی:* {size}\n\n💻 *دستور نصب پیش‌فرض:*\n```bash\n{cmd}\n```",
+            "success_deps_warn": "✅ *تبدیل بسته انجام شد\\!*\n\n• *فرمت اولیه:* {src}\n• *فرمت خروجی:* {dst}\n⚠️ *هشدار وابستگی:* {warn}\n\n💻 *دستور نصب پیش‌فرض:*\n```bash\n{cmd}\n```",
+            "cancelled": "❌ *عملیات تبدیل بسته لغو شد\\.*",
+            "error": {
+                "file_too_large": "❌ *حجم فایل ورودی بیش از حد مجاز است* \\(حداکثر {max}\\)\\.",
+                "unsupported_format": "❌ *فرمت فایل ورودی پشتیبانی نمی‌شود\\.*\nفرمت‌های مجاز: \\.deb, \\.rpm, \\.pkg\\.tar\\.zst",
+                "format_mismatch": "❌ *ساختار فایل با پسوند آن مطابقت ندارد\\.*",
+                "archive_too_large": "❌ *محتوای فشرده‌شده بسته بیش از حد مجاز است* \\(حداکثر ۵۰۰ مگابایت\\)\\.",
+                "too_many_entries": "❌ *تعداد فایل‌های داخل بسته بیش از حد مجاز است* \\(حداکثر ۱۰,۰۰۰ فایل\\)\\.",
+                "malicious_archive": "❌ *فایل ورودی شامل مسیرهای ناامن یا لینک‌های خروجی است و پردازش نمی‌شود\\.*",
+                "validate_timeout": "❌ *بررسی امنیتی بسته زمان‌بر شد و متوقف گردید\\.*",
+                "parse_failed": "❌ *فایل ورودی خراب است یا ساختار آرشیو معتبر ندارد\\.*",
+                "system_error": "❌ *خطای سیستمی در پردازش\\. لطفاً مجدداً تلاش کنید\\.*",
+                "convert_timeout": "❌ *فرآیند تبدیل زمان‌بر شد و متوقف گردید\\.*",
+                "convert_failed": "❌ *تبدیل بسته با خطا مواجه شد\\.*",
+                "no_output": "❌ *فایل خروجی توسط مبدل تولید نشد\\.*"
+            },
+            "paywall": "⚠️ *تبدیل فرمت بسته مخصوص کاربران سپهبد و بالاتر است\\.*",
+            "quota_exceeded": "❌ *سقف روزانه تبدیل بسته شما به پایان رسیده است\\.*"
         }
     },
     "en": {
@@ -1314,7 +1426,9 @@
             "guide_yt_text": "🎬 *YouTube*\n\n╠ Send a video or playlist link\n╠ Video up to 4K, high\\-quality audio, AV1 / VP9 / H264 codecs\n╠ Subtitles with smart translation\n╚ Copy the link: tap *Share* in the YouTube app, then *Copy link*",
             "guide_sp_text": "🟢 *Spotify*\n\n╠ Send a track, album or playlist link\n╠ High\\-quality songs with cover and full metadata\n╠ Albums and playlists, single files or one zip archive\n╚ Copy the link: tap the three dots, *Share*, then *Copy Song Link*",
             "guide_sc_text": "🟠 *SoundCloud*\n\n╠ Send a track, set or playlist link\n╠ Tracks and remixes in the best quality available\n╠ Sets and playlists supported, cover included\n╚ Copy the link: tap *Share* and copy the address shown",
-            "studio_button": "Photo & Video Magic Studio"
+            "studio_button": "Photo & Video Magic Studio",
+            "dev_cafe_button": "Programming & Tech Cafe ☕️",
+            "dev_cafe_title": "💻 *Programming & Tech Cafe*\n\nSpecialized developer & sysadmin tools:\n\n• 📦 *Package Converter:* Fast & secure package conversion between DEB, RPM, and Pacman\n\n*Select a tool below👇:*"
         },
         "tts": {
             "enter_text_default": "📝 **Text to Speech**\n\nPlease send the text you want converted to speech \\(max 500 characters\\):",
@@ -1522,9 +1636,9 @@
                     "headphones": "5933749305155260825",
                     "soundwave": "5418000793208896425",
                     "quality_high": "5462902520215002477",
-                    "windows_logo": "4994997504404619799",
+                    "windows_logo": "5366318141771096216",
                     "app_store": "6068909301735360991",
-                    "android_logo": "5897540239768948011",
+                    "android_logo": "5301286542998774155",
                     "linux_logo": "5850237475720532199",
                     "speed_fast": "5215203703190989803",
                     "flag_ir": "5271878966347601947",
@@ -1593,7 +1707,33 @@
                     "wrench": "5264908182886557148",
                     "question_mark": "5897846616966041652",
                     "soundcloud_logo": "5366186127361326004",
-                    "spotify_logo": "5233578612665375810"
+                    "spotify_logo": "5233578612665375810",
+                    "arch_linux_logo": "5301033874367717956",
+                    "ubuntu_linux_logo": "5300985968302498775",
+                    "apple_logo": "5301155675345265040",
+                    "tux_linux_logo": "5300957668762987048",
+                    "github_logo": "5300931211764441870",
+                    "redhat_linux_logo": "5300965854970651009",
+                    "vim_logo": "5300761723765007779",
+                    "notepad_plus_plus_logo": "5300844878626824738",
+                    "fish_shell_logo": "5300792557335225091",
+                    "nginx_logo": "5301053291914863195",
+                    "google_chrome_logo": "5300882244842300470",
+                    "microsoft_edge_logo": "5301078731006155650",
+                    "mozilla_firefox_logo": "5301145298704278719",
+                    "safari_logo": "5301220310308101164",
+                    "docker_logo": "5301137237050663843",
+                    "manjaro_linux_logo": "5300940673577395744",
+                    "linux_mint_logo": "5305346326475579760",
+                    "debian_linux_logo": "5300838891442413975",
+                    "kali_linux_logo": "5300820182564872893",
+                    "javascript_logo": "5300896259320586992",
+                    "typescript_logo": "5301254000031572585",
+                    "css3_logo": "5301277643826536470",
+                    "html5_logo": "5301117377121887562",
+                    "postgresql_logo": "5305391548186238433",
+                    "vscode_logo": "5301201579955725162",
+                    "powershell_logo": "5301110372030225169"
                 },
                 "guide": "Guide",
                 "add_emojis": "Add Emoji"
@@ -2030,12 +2170,15 @@
                     "ip_lookup": "IP Lookup",
                     "studio_trim": "✂️ Video Trim",
                     "studio_compress": "🎥 Video Compression",
+                    "studio_extract": "🎵 Extract Audio & Subtitles",
+                    "studio_burn": "🎬 Subtitle Burn",
                     "paywall": "Paywall",
                     "rank": "Ranks & Purchases",
                     "referral": "Referrals",
                     "cpu": "Processing Queue (CPU)",
                     "cookie": "Cookie Pool",
-                    "broadcast": "Broadcast"
+                    "broadcast": "Broadcast",
+                    "pkgconvert": "📦 Package Converter"
                 },
                 "more": {
                     "youtube": "YouTube (quality/cancel)",
@@ -2083,7 +2226,7 @@
                 "result_caption": "✅ **Voce generata con successo\\!**",
                 "process_failed": "Elaborazione AI fallita\\\\. Riprova\\\\."
             },
-            "ai_lab_title": "*Laboratorio AI 🧪*\n\n*🔇 Riduzione Rumore*\nElimina il rumore di fondo da podcast, interviste e registrazioni ambientali — non adatto alla musica\n\n*🖼️ Miglioramento Immagini*\nAumenta la risoluzione fino a 4x — adatto per foto generali e anime, max 20 MB\n\n*🎙️ Testo da Voce*\nConverti messaggi vocali, file audio e video in testo — supporta persiano e inglese, modello piccolo (veloce) o grande (preciso)\n\n*🎵 Separazione Vocale*\nSepara la voce dalla musica di sottofondo — output alta qualità + file compresso per la riproduzione\n\n*✨ Rimozione Filigrana Gemini*\nRimuovi filigrane AI dalle immagini — fino a 3 passaggi, tutti i risultati inviati\n\n*🗣️ Sintesi Vocale*\nConverti testo in voce con voce predefinita o clonata —\n\n*🎨 Colorizzazione Foto*\n\n*✂️ Rimozione Sfondo*",
+            "ai_lab_title": "*Laboratorio AI 🧪*\n\n*🔇 Riduzione Rumore*\nElimina il rumore di fondo da podcast, interviste e registrazioni ambientali — non adatto alla musica\n\n*🖼️ Miglioramento Immagini*\nAumenta la risoluzione fino a 4x — adatto per foto generali e anime, max 20 MB\n\n*🎙️ Testo da Voce*\nConverti messaggi vocali, file audio e video in testo — supporta persiano e inglese, modello piccolo (veloz) o grande (preciso)\n\n*🎵 Separazione Vocale*\nSepara la voce dalla musica di sottofondo — output alta qualità + file compresso per la riproduzione\n\n*✨ Rimozione Filigrana Gemini*\nRimuovi filigrane AI dalle immagini — fino a 3 passaggi, tutti i risultati inviati\n\n*🗣️ Sintesi Vocale*\nConverti testo in voce con voce predefinita o clonata —\n\n*🎨 Colorizzazione Foto*\n\n*✂️ Rimozione Sfondo*",
             "deoldify": {
                 "prompt": "🎨 **Colorizzazione Foto**\n\nQuesto strumento utilizza reti neurali profonde per convertire le tue vecchie foto in bianco e nero in foto a colori naturali preservando la luminosità originale\\\\.\n\n📥 **Invia la tua foto in bianco e nero:**\n*\\(Supporta JPG, PNG, WEBP e documenti immagine\\)*",
                 "preparing": "🎨 **Immagine ricevuta\\\\. Colorizzazione in corso... ⏳**\n\n⏱️ **Tempo trascorso:** {elapsed}",
@@ -2246,7 +2389,8 @@
             "fc_button": "File Compression",
             "pdf_compress_button": "PDF Compression",
             "ip_lookup_button": "IP Analysis",
-            "surge_button": "Direct Link Download"
+            "surge_button": "Direct Link Download",
+            "pkg_button": "Package Converter 📦"
         },
         "fc": {
             "welcome": "📁 *Welcome to File Compression*\n\nCompress your files here\\.\nSupported formats:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n*Select output format👇:*",
@@ -2493,10 +2637,56 @@
             "expired": "⚠️ *This request expired\\. Send the link again\\.*"
         },
         "studio": {
-            "title": "🎥 *Photo & Video Magic Studio*\n\nProfessional media editing tools:\n\n• ✂️ *Video Trim & Edit:* Multi-range video trimming\n• 🎥 *Advanced Video Compression:* Tune codec, resolution, FPS and bitrate\n\n*Select a tool below👇:*",
+            "title": "🎥 *Photo & Video Magic Studio*\n\nProfessional media editing tools:\n\n• ✂️ *Video Trim & Edit:* Multi-range video trimming\n• 🎥 *Advanced Video Compression:* Tune codec, resolution, FPS and bitrate\n• 🎵 *Extract Audio & Subtitles:* Directly extract all audio and subtitle streams\n\n*Select a tool below👇:*",
             "trim_button": "Video Trim & Edit",
             "compress_button": "Advanced Video Compression",
+            "extract_button": "Extract Audio & Subtitles",
+            "burn_button": "Burn Subtitle onto Video",
             "back_to_studio": "Back to Studio",
+            "burn": {
+                "prompt": "🎬 *Burn Subtitle onto Video*\n\nPlease send your video file and subtitle file \\(\\.srt, \\.ass, \\.vtt\\)\\.\n\n_Send order is flexible \\(video first or subtitle first\\)\\._",
+                "video_received_need_sub": "📹 *Video received and downloaded\\.*\n\n👇 *Now send the subtitle file \\(\\.srt, \\.ass, \\.vtt\\)\\.*",
+                "sub_received_need_video": "📝 *Subtitle file received and validated\\.*\n\n👇 *Now send the video file\\.*",
+                "sub_replaced": "🔄 *New subtitle file replaced the previous one\\.*",
+                "cancel_btn": "Cancel and back to studio",
+                "cancelled": "❌ Subtitle burn operation cancelled\\.",
+                "status_downloading": "📥 *Downloading video\\.\\.\\.*\n⏱️ *Elapsed:* {elapsed}{detail}",
+                "status_downloading_detail": "\n📥 *Downloaded:* `{dl_mb} MB` of `{total_mb} MB` \\({pct}%\\)\n🚀 *Speed:* `{speed}`   ⌛ *ETA:* {eta}",
+                "status_burning": "🔥 *Burning subtitle onto video\\.\\.\\.*\n⏱️ *Elapsed:* `{elapsed}`\n📊 *Progress:* `{pct}%` \\| 🚀 *Speed:* `{speed}`\n⏳ *ETA:* `{eta}`",
+                "status_uploading": "📤 *Uploading processed video\\.\\.\\.*",
+                "job_done": "✨ *Subtitle burned successfully\\!*\n\n📁 *Filename:* `{filename}`\n⏱️ *Burn time:* `{burn_time}`",
+                "job_cancelled": "🚫 Subtitle burn operation cancelled by you\\.",
+                "feature_name": "Hardsub Subtitle Burning",
+                "error": {
+                    "unsupported_sub": "⚠️ Unsupported subtitle format\\. Please send a \\.srt, \\.ass, or \\.vtt file\\.",
+                    "burn_failed": "⚠️ Failed to burn subtitle onto video\\.",
+                    "download_failed": "⚠️ Failed to download the video file\\. Please try again\\.",
+                    "too_long": "⚠️ This video is `{duration}` long, above the `{max}` limit for subtitle burning\\.",
+                    "oversized": "⚠️ The processed video is larger than 2000 MB and cannot be sent\\."
+                },
+                "status_splitting": "✂️ *The processed video is above Telegram's upload limit\\.*\n\n🔪 *Splitting it into* `{parts}` *parts\\.\\.\\.*\n_Stream\\-copied, so quality is unchanged\\._",
+                "job_done_part": "✨ *Subtitle burned successfully\\!*\n\n📁 *File name:* `{filename}`\n🔪 *Part:* `{part}` of `{total}`\n⏱️ *Burn time:* `{burn_time}`"
+            },
+            "extract": {
+                "send_video_prompt": "🎵 *Extract Audio & Subtitles*\n\nPlease send the video you want to extract audio and subtitles from\\.",
+                "cancel_btn": "Cancel & Return to Studio",
+                "cancelled": "❌ Extract operation cancelled\\.",
+                "status_downloading": "📥 *Downloading video\\.\\.\\.*\n⏱️ *Elapsed time:* {elapsed}{detail}",
+                "status_downloading_detail": "\n📥 *Downloaded:* `{dl_mb} MB` of `{total_mb} MB` \\({pct}%\\)\n🚀 *Speed:* `{speed}`   ⌛ *Remaining:* {eta}",
+                "status_probing": "🔍 *Probing video streams\\.\\.\\.*",
+                "status_extracting": "⚙️ *Extracting audio and subtitle streams\\.\\.\\.*\n⏱️ *Elapsed time:* {elapsed}",
+                "status_uploading": "📤 *Uploading file {current} of {total}\\.\\.\\.*\n📄 *File:* `{filename}`",
+                "job_cancelled": "🚫 Stream extraction operation cancelled by you\\.",
+                "job_done": "🎉 *All audio and subtitle streams were extracted successfully\\!*\n\n📊 *Extraction Stats:*\n• 🎵 Audio tracks: `{audio_count}`\n• 💬 Subtitles: `{sub_count}`\n\n⏱️ *Total Time:* {total_time}",
+                "caption_audio": "🎵 *Audio Track {num}* {lang_info}",
+                "caption_sub": "💬 *Subtitle {num}* {lang_info}",
+                "error": {
+                    "not_a_video": "⚠️ The uploaded file is not a valid video\\. Please send a video file\\.",
+                    "download_failed": "⚠️ Failed to download video file\\. Please try again\\.",
+                    "no_streams": "⚠️ This video has no audio or subtitle streams\\.",
+                    "extract_failed": "⚠️ Stream extraction failed\\."
+                }
+            },
             "compress": {
                 "send_video_prompt": "🎥 *Advanced Video Compression*\n\nPlease send the video you want to compress\\.",
                 "cancel_btn": "Cancel & Return to Studio",
@@ -2575,6 +2765,40 @@
             "eta_unknown": "—",
             "eta_label": "ETA",
             "done": "✅ {size} in {elapsed} — avg {speed}"
+        },
+        "pkg": {
+            "title": "Package Converter",
+            "prompt": "📦 *Package Format Converter*\n\nPlease send a package file with \\.deb, \\.rpm, or \\.pkg\\.tar\\.zst format\\.",
+            "detected": "📦 *Detected format:* {fmt}\n\nPlease select your desired target format👇",
+            "convert_btn_rpm": "→ RPM",
+            "convert_btn_deb": "→ DEB",
+            "convert_btn_pacman": "→ Pacman (tar.zst)",
+            "cancel_btn": "❌ Cancel",
+            "stage": {
+                "downloading": "⬇️ *Downloading package…*",
+                "validating": "🔍 *Validating package security…*",
+                "converting": "⚙️ *Converting format…* \\({elapsed}\\)",
+                "uploading": "⬆️ *Uploading converted package…*"
+            },
+            "success": "✅ *Package converted successfully\\!*\n\n• *Source format:* {src}\n• *Target format:* {dst}\n• *Output size:* {size}\n\n💻 *Default installation command:*\n```bash\n{cmd}\n```",
+            "success_deps_warn": "✅ *Package converted\\!*\n\n• *Source format:* {src}\n• *Target format:* {dst}\n⚠️ *Dependency warning:* {warn}\n\n💻 *Default installation command:*\n```bash\n{cmd}\n```",
+            "cancelled": "❌ *Package conversion cancelled\\.*",
+            "error": {
+                "file_too_large": "❌ *Input file size exceeds limit* \\(max {max}\\)\\.",
+                "unsupported_format": "❌ *Unsupported input format\\.*\nSupported formats: \\.deb, \\.rpm, \\.pkg\\.tar\\.zst",
+                "format_mismatch": "❌ *File magic bytes do not match extension\\.*",
+                "archive_too_large": "❌ *Decompressed archive size exceeds limit* \\(max 500 MB\\)\\.",
+                "too_many_entries": "❌ *Package entry count exceeds limit* \\(max 10,000 files\\)\\.",
+                "malicious_archive": "❌ *Archive contains unsafe paths or escaping symlinks\\.*",
+                "validate_timeout": "❌ *Package validation timed out\\.*",
+                "parse_failed": "❌ *Corrupted or invalid package structure\\.*",
+                "system_error": "❌ *System error occurred\\. Please try again\\.*",
+                "convert_timeout": "❌ *Package conversion timed out\\.*",
+                "convert_failed": "❌ *Package conversion failed\\.*",
+                "no_output": "❌ *No output package generated\\.*"
+            },
+            "paywall": "⚠️ *Package converter is available for Sepahbod rank and above\\.*",
+            "quota_exceeded": "❌ *Your daily package conversion limit has been reached\\.*"
         }
     },
     "it": {
@@ -2616,7 +2840,9 @@
             "guide_yt_text": "🎬 *YouTube*\n\n╠ Invia il link di un video o di una playlist\n╠ Video fino a 4K, audio ad alta qualità, codec AV1 / VP9 / H264\n╠ Sottotitoli con traduzione intelligente\n╚ Copiare il link: nell’app YouTube tocca *Share*, poi *Copy link*",
             "guide_sp_text": "🟢 *Spotify*\n\n╠ Invia il link di un brano, album o playlist\n╠ Brani ad alta qualità con copertina e meta\\-dati completi\n╠ Album e playlist, singoli o in un archivio zip\n╚ Copiare il link: tocca i tre puntini, *Share*, poi *Copy Song Link*",
             "guide_sc_text": "🟠 *SoundCloud*\n\n╠ Invia il link di una traccia, di un set o di una playlist\n╠ Tracce e remix con la migliore qualità disponibile\n╠ Set e playlist supportati, copertina inclusa\n╚ Copiare il link: tocca *Share* e copia l’indirizzo mostrato",
-            "studio_button": "Studio Magico Foto e Video"
+            "studio_button": "Studio Magico Foto e Video",
+            "dev_cafe_button": "Caffè Programmazione e Tecnologia ☕️",
+            "dev_cafe_title": "💻 *Caffè Programmazione e Tecnologia*\n\nStrumenti per sviluppatori e amministratori di sistema:\n\n• 📦 *Convertitore di Pacchetti:* Conversione rapida e sicura tra DEB, RPM e Pacman\n\n*Seleziona uno strumento👇:*"
         },
         "tts": {
             "enter_text_default": "📝 **Sintesi Vocale**\n\nInvia il testo che vuoi convertire in voce \\(max 500 caratteri\\):",
@@ -2824,9 +3050,9 @@
                     "headphones": "5933749305155260825",
                     "soundwave": "5418000793208896425",
                     "quality_high": "5462902520215002477",
-                    "windows_logo": "4994997504404619799",
+                    "windows_logo": "5366318141771096216",
                     "app_store": "6068909301735360991",
-                    "android_logo": "5897540239768948011",
+                    "android_logo": "5301286542998774155",
                     "linux_logo": "5850237475720532199",
                     "speed_fast": "5215203703190989803",
                     "flag_ir": "5271878966347601947",
@@ -2895,7 +3121,33 @@
                     "wrench": "5264908182886557148",
                     "question_mark": "5897846616966041652",
                     "soundcloud_logo": "5366186127361326004",
-                    "spotify_logo": "5233578612665375810"
+                    "spotify_logo": "5233578612665375810",
+                    "arch_linux_logo": "5301033874367717956",
+                    "ubuntu_linux_logo": "5300985968302498775",
+                    "apple_logo": "5301155675345265040",
+                    "tux_linux_logo": "5300957668762987048",
+                    "github_logo": "5300931211764441870",
+                    "redhat_linux_logo": "5300965854970651009",
+                    "vim_logo": "5300761723765007779",
+                    "notepad_plus_plus_logo": "5300844878626824738",
+                    "fish_shell_logo": "5300792557335225091",
+                    "nginx_logo": "5301053291914863195",
+                    "google_chrome_logo": "5300882244842300470",
+                    "microsoft_edge_logo": "5301078731006155650",
+                    "mozilla_firefox_logo": "5301145298704278719",
+                    "safari_logo": "5301220310308101164",
+                    "docker_logo": "5301137237050663843",
+                    "manjaro_linux_logo": "5300940673577395744",
+                    "linux_mint_logo": "5305346326475579760",
+                    "debian_linux_logo": "5300838891442413975",
+                    "kali_linux_logo": "5300820182564872893",
+                    "javascript_logo": "5300896259320586992",
+                    "typescript_logo": "5301254000031572585",
+                    "css3_logo": "5301277643826536470",
+                    "html5_logo": "5301117377121887562",
+                    "postgresql_logo": "5305391548186238433",
+                    "vscode_logo": "5301201579955725162",
+                    "powershell_logo": "5301110372030225169"
                 },
                 "guide": "Guida",
                 "add_emojis": "Aggiungi Emoji"
@@ -3332,12 +3584,15 @@
                     "ip_lookup": "Ricerca IP",
                     "studio_trim": "✂️ Taglio Video",
                     "studio_compress": "🎥 Compressione Video",
+                    "studio_extract": "🎵 Estrai Audio e Sottotitoli",
+                    "studio_burn": "🎬 Masterizza Sottotitoli",
                     "paywall": "Paywall",
                     "rank": "Ranghi e Acquisti",
                     "referral": "Referral",
                     "cpu": "Coda Elaborazione (CPU)",
                     "cookie": "Cookie Pool",
-                    "broadcast": "Messaggio Globale"
+                    "broadcast": "Messaggio Globale",
+                    "pkgconvert": "📦 Convertitore Pacchetti"
                 },
                 "more": {
                     "youtube": "YouTube (qualità/annulla)",
@@ -3522,7 +3777,8 @@
             "fc_button": "Compressione File",
             "pdf_compress_button": "Compressione PDF",
             "ip_lookup_button": "Analisi IP",
-            "surge_button": "Download da link diretto"
+            "surge_button": "Download da link diretto",
+            "pkg_button": "Convertitore Pacchetti 📦"
         },
         "fc": {
             "welcome": "📁 *Benvenuto nella Compressione File*\n\nComprimi i tuoi file qui\\.\nFormati supportati:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n*Seleziona formato di uscita👇:*",
@@ -3769,10 +4025,56 @@
             "expired": "⚠️ *Richiesta scaduta\\. Invia di nuovo il link\\.*"
         },
         "studio": {
-            "title": "🎥 *Studio Magico Foto e Video*\n\nStrumenti di montaggio e modifica media:\n\n• ✂️ *Taglio e Modifica Video:* Taglio video multi-intervallo\n• 🎥 *Compressione Video Avanzata:* Regola codec, risoluzione, FPS e bitrate\n\n*Seleziona uno strumento qui sotto👇:*",
+            "title": "🎥 *Studio Magico Foto e Video*\n\nStrumenti di montaggio e modifica media:\n\n• ✂️ *Taglio e Modifica Video:* Taglio video multi-intervallo\n• 🎥 *Compressione Video Avanzata:* Regola codec, risoluzione, FPS e bitrate\n• 🎵 *Estrai Audio e Sottotitoli:* Estrai direttamente tutte le tracce audio e sottotitoli\n\n*Seleziona uno strumento qui sotto👇:*",
             "trim_button": "Taglio e Modifica Video",
             "compress_button": "Compressione Video Avanzata",
+            "extract_button": "Estrai Audio e Sottotitoli",
+            "burn_button": "Masterizza Sottotitoli su Video",
             "back_to_studio": "Torna allo Studio",
+            "burn": {
+                "prompt": "🎬 *Masterizza Sottotitoli su Video*\n\nInvia il file video e il file sottotitoli \\(\\.srt, \\.ass, \\.vtt\\)\\.\n\n_L'ordine di invio è flessibile \\(prima il video o prima i sottotitoli\\)\\._",
+                "video_received_need_sub": "📹 *Video ricevuto e download in background avviato\\.*\n\n👇 *Ora invia il file sottotitoli \\(\\.srt, \\.ass, \\.vtt\\)\\.*",
+                "sub_received_need_video": "📝 *File sottotitoli ricevuto e convalidato\\.*\n\n👇 *Ora invia il file video\\.*",
+                "sub_replaced": "🔄 *Il nuovo file sottotitoli ha sostituito il precedente\\.*",
+                "cancel_btn": "Annulla e torna allo studio",
+                "cancelled": "❌ Operazione di masterizzazione sottotitoli annullata\\.",
+                "status_downloading": "📥 *Download del video in corso\\.\\.\\.*\n⏱️ *Trascorso:* {elapsed}{detail}",
+                "status_downloading_detail": "\n📥 *Scaricato:* `{dl_mb} MB` di `{total_mb} MB` \\({pct}%\\)\n🚀 *Velocità:* `{speed}`   ⌛ *Tempo stimato:* {eta}",
+                "status_burning": "🔥 *Masterizzazione sottotitoli sul video in corso\\.\\.\\.*\n⏱️ *Trascorso:* `{elapsed}`\n📊 *Avanzamento:* `{pct}%` \\| 🚀 *Velocità:* `{speed}`\n⏳ *Tempo stimato:* `{eta}`",
+                "status_uploading": "📤 *Caricamento del video elaborato in corso\\.\\.\\.*",
+                "job_done": "✨ *Sottotitoli masterizzati con successo\\!*\n\n📁 *Nome file:* `{filename}`\n⏱️ *Tempo di elaborazione:* `{burn_time}`",
+                "job_cancelled": "🚫 Operazione annullata dall'utente\\.",
+                "feature_name": "Masterizzazione Sottotitoli",
+                "error": {
+                    "unsupported_sub": "⚠️ Formato sottotitoli non supportato\\. Invia un file \\.srt, \\.ass o \\.vtt\\.",
+                    "burn_failed": "⚠️ Impossibile masterizzare i sottotitoli sul video\\.",
+                    "download_failed": "⚠️ Download del file video fallito\\. Riprova\\.",
+                    "too_long": "⚠️ Questo video dura `{duration}`, oltre il limite di `{max}` per la masterizzazione dei sottotitoli\\.",
+                    "oversized": "⚠️ Il video elaborato supera 2000 MB e non può essere inviato\\."
+                },
+                "status_splitting": "✂️ *Il video elaborato supera il limite di caricamento di Telegram\\.*\n\n🔪 *Divisione in* `{parts}` *parti\\.\\.\\.*\n_Copia diretta dei flussi, quindi la qualità non cambia\\._",
+                "job_done_part": "✨ *Sottotitoli masterizzati con successo\\!*\n\n📁 *Nome file:* `{filename}`\n🔪 *Parte:* `{part}` di `{total}`\n⏱️ *Tempo di masterizzazione:* `{burn_time}`"
+            },
+            "extract": {
+                "send_video_prompt": "🎵 *Estrai Audio e Sottotitoli*\n\nInvia il video da cui vuoi estrarre audio e sottotitoli\\.",
+                "cancel_btn": "Annulla e Torna allo Studio",
+                "cancelled": "❌ Estrazione annullata\\.",
+                "status_downloading": "📥 *Scaricamento del video in corso\\.\\.\\.*\n⏱️ *Tempo trascorso:* {elapsed}{detail}",
+                "status_downloading_detail": "\n📥 *Scaricato:* `{dl_mb} MB` di `{total_mb} MB` \\({pct}%\\)\n🚀 *Velocità:* `{speed}`   ⌛ *Rimanente:* {eta}",
+                "status_probing": "🔍 *Analisi delle tracce video in corso\\.\\.\\.*",
+                "status_extracting": "⚙️ *Estrazione delle tracce audio e sottotitoli in corso\\.\\.\\.*\n⏱️ *Tempo trascorso:* {elapsed}",
+                "status_uploading": "📤 *Invio del file {current} di {total} in corso\\.\\.\\.*\n📄 *File:* `{filename}`",
+                "job_cancelled": "🚫 Operazione di estrazione annullata dall'utente\\.",
+                "job_done": "🎉 *Tutte le tracce audio e sottotitoli sono state estratte con successo\\!*\n\n📊 *Statistiche Estrazione:*\n• 🎵 Tracce audio: `{audio_count}`\n• 💬 Sottotitoli: `{sub_count}`\n\n⏱️ *Tempo Totale:* {total_time}",
+                "caption_audio": "🎵 *Traccia Audio {num}* {lang_info}",
+                "caption_sub": "💬 *Sottotitolo {num}* {lang_info}",
+                "error": {
+                    "not_a_video": "⚠️ Il file inviato non è un video valido\\. Per favore invia un file video\\.",
+                    "download_failed": "⚠️ Download del file video non riuscito\\. Riprova\\.",
+                    "no_streams": "⚠️ Questo video non contiene tracce audio o sottotitoli\\.",
+                    "extract_failed": "⚠️ Estrazione delle tracce non riuscita\\."
+                }
+            },
             "compress": {
                 "send_video_prompt": "🎥 *Compressione Video Avanzata*\n\nInvia il video che desideri comprimere\\.",
                 "cancel_btn": "Annulla e Torna allo Studio",
@@ -3851,6 +4153,40 @@
             "eta_unknown": "—",
             "eta_label": "ETA",
             "done": "✅ {size} in {elapsed} — media {speed}"
+        },
+        "pkg": {
+            "title": "Convertitore di Pacchetti",
+            "prompt": "📦 *Convertitore di Pacchetti*\n\nInvia un file pacchetto in formato \\.deb, \\.rpm, o \\.pkg\\.tar\\.zst\\.",
+            "detected": "📦 *Formato rilevato:* {fmt}\n\nSeleziona il formato di destinazione desiderato👇",
+            "convert_btn_rpm": "→ RPM",
+            "convert_btn_deb": "→ DEB",
+            "convert_btn_pacman": "→ Pacman (tar.zst)",
+            "cancel_btn": "❌ Annulla",
+            "stage": {
+                "downloading": "⬇️ *Download del pacchetto…*",
+                "validating": "🔍 *Verifica sicurezza del pacchetto…*",
+                "converting": "⚙️ *Conversione in corso…* \\({elapsed}\\)",
+                "uploading": "⬆️ *Caricamento del pacchetto convertito…*"
+            },
+            "success": "✅ *Conversione completata con successo\\!*\n\n• *Formato origine:* {src}\n• *Formato destinazione:* {dst}\n• *Dimensione:* {size}\n\n💻 *Comando di installazione predefinito:*\n```bash\n{cmd}\n```",
+            "success_deps_warn": "✅ *Pacchetto convertito\\!*\n\n• *Formato origine:* {src}\n• *Formato destinazione:* {dst}\n⚠️ *Avviso dipendenze:* {warn}\n\n💻 *Comando di installazione predefinito:*\n```bash\n{cmd}\n```",
+            "cancelled": "❌ *Conversione annullata\\.*",
+            "error": {
+                "file_too_large": "❌ *Dimensione file superiore al limite* \\(max {max}\\)\\.",
+                "unsupported_format": "❌ *Formato non supportato\\.*\nFormati supportati: \\.deb, \\.rpm, \\.pkg\\.tar\\.zst",
+                "format_mismatch": "❌ *La struttura del file non corrisponde all'estensione\\.*",
+                "archive_too_large": "❌ *Dimensione decompressa superiore al limite* \\(max 500 MB\\)\\.",
+                "too_many_entries": "❌ *Numero di file nel pacchetto superiore al limite* \\(max 10.000\\)\\.",
+                "malicious_archive": "❌ *Il pacchetto contiene percorsi non sicuri o symlink non validi\\.*",
+                "validate_timeout": "❌ *Tempo limite per la convalida del pacchetto superato\\.*",
+                "parse_failed": "❌ *Struttura del pacchetto danneggiata o non valida\\.*",
+                "system_error": "❌ *Errore di sistema\\. Riprova\\.*",
+                "convert_timeout": "❌ *Tempo limite per la conversione superato\\.*",
+                "convert_failed": "❌ *Conversione del pacchetto fallita\\.*",
+                "no_output": "❌ *Nessun pacchetto generato\\.*"
+            },
+            "paywall": "⚠️ *Il convertitore di pacchetti è riservato al grado Sepahbod e superiori\\.*",
+            "quota_exceeded": "❌ *Hai raggiunto il limite giornaliero di conversioni\\.*"
         }
     },
     "ru": {
@@ -3892,7 +4228,9 @@
             "guide_yt_text": "🎬 *YouTube*\n\n╠ Отправьте ссылку на видео или плейлист\n╠ Видео до 4K, высококачественное аудио, кодеки AV1 / VP9 / H264\n╠ Субтитры с умным переводом\n╚ Скопировать ссылку: в приложении YouTube нажмите *Share*, затем *Copy link*",
             "guide_sp_text": "🟢 *Spotify*\n\n╠ Отправьте ссылку на трек, альбом или плейлист\n╠ Треки в высоком качестве с обложкой и полными метаданными\n╠ Альбомы и плейлисты, поштучно или в ZIP\\-архиве\n╚ Скопировать ссылку: нажмите три точки, *Share*, затем *Copy Song Link*",
             "guide_sc_text": "🟠 *SoundCloud*\n\n╠ Отправьте ссылку на трек, сет или плейлист\n╠ Треки и ремиксы в лучшем доступном качестве\n╠ Поддержка сетов и плейлистов с обложкой\n╚ Скопировать ссылку: нажмите *Share* и скопируйте показанный адрес",
-            "studio_button": "Магия фото и видео студия"
+            "studio_button": "Магия фото и видео студия",
+            "dev_cafe_button": "Кафе программирования и технологий ☕️",
+            "dev_cafe_title": "💻 *Кафе программирования и технологий*\n\nСпециализированные инструменты для разработчиков и системных администраторов:\n\n• 📦 *Конвертер пакетов:* Быстрая и безопасная конвертация пакетов между DEB, RPM и Pacman\n\n*Выберите инструмент👇:*"
         },
         "tts": {
             "enter_text_default": "📝 **Преобразование текста в речь**\n\nОтправьте текст для озвучки \\(максимум 500 символов\\):",
@@ -4100,9 +4438,9 @@
                     "headphones": "5933749305155260825",
                     "soundwave": "5418000793208896425",
                     "quality_high": "5462902520215002477",
-                    "windows_logo": "4994997504404619799",
+                    "windows_logo": "5366318141771096216",
                     "app_store": "6068909301735360991",
-                    "android_logo": "5897540239768948011",
+                    "android_logo": "5301286542998774155",
                     "linux_logo": "5850237475720532199",
                     "speed_fast": "5215203703190989803",
                     "flag_ir": "5271878966347601947",
@@ -4171,7 +4509,33 @@
                     "wrench": "5264908182886557148",
                     "question_mark": "5897846616966041652",
                     "soundcloud_logo": "5366186127361326004",
-                    "spotify_logo": "5233578612665375810"
+                    "spotify_logo": "5233578612665375810",
+                    "arch_linux_logo": "5301033874367717956",
+                    "ubuntu_linux_logo": "5300985968302498775",
+                    "apple_logo": "5301155675345265040",
+                    "tux_linux_logo": "5300957668762987048",
+                    "github_logo": "5300931211764441870",
+                    "redhat_linux_logo": "5300965854970651009",
+                    "vim_logo": "5300761723765007779",
+                    "notepad_plus_plus_logo": "5300844878626824738",
+                    "fish_shell_logo": "5300792557335225091",
+                    "nginx_logo": "5301053291914863195",
+                    "google_chrome_logo": "5300882244842300470",
+                    "microsoft_edge_logo": "5301078731006155650",
+                    "mozilla_firefox_logo": "5301145298704278719",
+                    "safari_logo": "5301220310308101164",
+                    "docker_logo": "5301137237050663843",
+                    "manjaro_linux_logo": "5300940673577395744",
+                    "linux_mint_logo": "5305346326475579760",
+                    "debian_linux_logo": "5300838891442413975",
+                    "kali_linux_logo": "5300820182564872893",
+                    "javascript_logo": "5300896259320586992",
+                    "typescript_logo": "5301254000031572585",
+                    "css3_logo": "5301277643826536470",
+                    "html5_logo": "5301117377121887562",
+                    "postgresql_logo": "5305391548186238433",
+                    "vscode_logo": "5301201579955725162",
+                    "powershell_logo": "5301110372030225169"
                 },
                 "guide": "Guide",
                 "add_emojis": "Add Emoji"
@@ -4609,12 +4973,15 @@
                     "ip_lookup": "Поиск IP",
                     "studio_trim": "✂️ Обрезка видео",
                     "studio_compress": "🎥 Сжатие видео",
+                    "studio_extract": "🎵 Извлечение аудио и субтитров",
+                    "studio_burn": "🎬 Вшивание субтитров",
                     "paywall": "Пейвол",
                     "rank": "Ранги и покупки",
                     "referral": "Рефералы",
                     "cpu": "Очередь обработки (CPU)",
                     "cookie": "Cookie Pool",
-                    "broadcast": "Рассылка"
+                    "broadcast": "Рассылка",
+                    "pkgconvert": "📦 Конвертер пакетов"
                 },
                 "more": {
                     "youtube": "YouTube (quality/cancel)",
@@ -4798,7 +5165,8 @@
             "fc_button": "Сжатие файлов",
             "pdf_compress_button": "Сжатие PDF",
             "ip_lookup_button": "Анализ IP",
-            "surge_button": "Прямая загрузка"
+            "surge_button": "Прямая загрузка",
+            "pkg_button": "Конвертер пакетов 📦"
         },
         "fc": {
             "welcome": "📁 *Добро пожаловать в сжатие файлов*\n\nСжимайте свои файлы здесь\\.\nПоддерживаемые форматы:\n• ![📂](tg://emoji?id=5341492148468465410) *ZIP*\n• ![🖥](tg://emoji?id=5269428537181365274) *7Z*\n• ![📂](tg://emoji?id=6111889443193358766) *RAR*\n• 🗜 *ZSTD*\n\n*Выберите формат вывода👇:*",
@@ -5045,10 +5413,56 @@
             "expired": "⚠️ *Запрос устарел\\. Отправьте ссылку снова\\.*"
         },
         "studio": {
-            "title": "🎥 *Студия магии фото и видео*\n\nПрофессиональные инструменты обработки медиа:\n\n• ✂️ *Обрезка и монтаж видео:* Обрезка нескольких интервалов видео\n• 🎥 *Продвинутое сжатие видео:* Настройка кодека, разрешения, FPS и битрейта\n\n*Выберите инструмент ниже👇:*",
+            "title": "🎥 *Студия магии фото и видео*\n\nПрофессиональные инструменты обработки медиа:\n\n• ✂️ *Обрезка и монтаж видео:* Обрезка нескольких интервалов видео\n• 🎥 *Продвинутое сжатие видео:* Настройка кодека, разрешения, FPS и битрейта\n• 🎵 *Извлечение аудио и субтитров:* Извлечение всех аудиодорожек и субтитров\n\n*Выберите инструмент ниже👇:*",
             "trim_button": "Обрезка и монтаж видео",
             "compress_button": "Продвинутое сжатие видео",
+            "extract_button": "Извлечение аудио и субтитров",
+            "burn_button": "Вшить субтитры в видео",
             "back_to_studio": "Назад в студию",
+            "burn": {
+                "prompt": "🎬 *Вшить субтитры в видео*\n\nПожалуйста, отправьте видеофайл и файл субтитров \\(\\.srt, \\.ass, \\.vtt\\)\\.\n\n_Порядок отправки любой \\(сначала видео или сначала субтитры\\)\\._",
+                "video_received_need_sub": "📹 *Видео получено, фоновая загрузка начата\\.*\n\n👇 *Теперь отправьте файл субтитров \\(\\.srt, \\.ass, \\.vtt\\)\\.*",
+                "sub_received_need_video": "📝 *Файл субтитров получен и проверен\\.*\n\n👇 *Теперь отправьте видеофайл\\.*",
+                "sub_replaced": "🔄 *Новый файл субтитров заменил предыдущий\\.*",
+                "cancel_btn": "Отмена и возврат в студию",
+                "cancelled": "❌ Операция вшивания субтитров отменена\\.",
+                "status_downloading": "📥 *Загрузка видео\\.\\.\\.*\n⏱️ *Прошло:* {elapsed}{detail}",
+                "status_downloading_detail": "\n📥 *Загружено:* `{dl_mb} МБ` из `{total_mb} МБ` \\({pct}%\\)\n🚀 *Скорость:* `{speed}`   ⌛ *Осталось:* {eta}",
+                "status_burning": "🔥 *Вшивание субтитров в видео\\.\\.\\.*\n⏱️ *Прошло:* `{elapsed}`\n📊 *Прогресс:* `{pct}%` \\| 🚀 *Скорость:* `{speed}`\n⏳ *Осталось:* `{eta}`",
+                "status_uploading": "📤 *Загрузка обработанного видео\\.\\.\\.*",
+                "job_done": "✨ *Субтитры успешно вшиты\\!*\n\n📁 *Имя файла:* `{filename}`\n⏱️ *Время обработки:* `{burn_time}`",
+                "job_cancelled": "🚫 Операция отменена пользователем\\.",
+                "feature_name": "Вшивание субтитров",
+                "error": {
+                    "unsupported_sub": "⚠️ Неподдерживаемый формат субтитров\\. Пожалуйста, отправьте файл \\.srt, \\.ass или \\.vtt\\.",
+                    "burn_failed": "⚠️ Ошибка при вшивании субтитров в видео\\.",
+                    "download_failed": "⚠️ Не удалось загрузить видеофайл\\. Попробуйте снова\\.",
+                    "too_long": "⚠️ Длительность этого видео `{duration}`, что превышает лимит `{max}` для вшивания субтитров\\.",
+                    "oversized": "⚠️ Обработанное видео больше 2000 МБ и не может быть отправлено\\."
+                },
+                "status_splitting": "✂️ *Обработанное видео превышает лимит загрузки Telegram\\.*\n\n🔪 *Разделение на* `{parts}` *частей\\.\\.\\.*\n_Копирование потоков, качество не меняется\\._",
+                "job_done_part": "✨ *Субтитры успешно вшиты\\!*\n\n📁 *Имя файла:* `{filename}`\n🔪 *Часть:* `{part}` из `{total}`\n⏱️ *Время вшивания:* `{burn_time}`"
+            },
+            "extract": {
+                "send_video_prompt": "🎵 *Извлечение аудио и субтитров*\n\nПожалуйста, отправьте видео, из которого хотите извлечь аудио и субтитры\\.",
+                "cancel_btn": "Отмена и возврат в студию",
+                "cancelled": "❌ Операция извлечения отменена\\.",
+                "status_downloading": "📥 *Скачивание видео\\.\\.\\.*\n⏱️ *Прошло времени:* {elapsed}{detail}",
+                "status_downloading_detail": "\n📥 *Скачано:* `{dl_mb} МБ` из `{total_mb} МБ` \\({pct}%\\)\n🚀 *Скорость:* `{speed}`   ⌛ *Осталось:* {eta}",
+                "status_probing": "🔍 *Анализ дорожек видео\\.\\.\\.*",
+                "status_extracting": "⚙️ *Извлечение аудиодорожек и субтитров\\.\\.\\.*\n⏱️ *Прошло времени:* {elapsed}",
+                "status_uploading": "📤 *Отправка файла {current} из {total}\\.\\.\\.*\n📄 *Файл:* `{filename}`",
+                "job_cancelled": "🚫 Операция извлечения отменена пользователем\\.",
+                "job_done": "🎉 *Все аудиодорожки и субтитры успешно извлечены\\!*\n\n📊 *Статистика извлечения:*\n• 🎵 Аудиодорожки: `{audio_count}`\n• 💬 Субтитры: `{sub_count}`\n\n⏱️ *Всего времени:* {total_time}",
+                "caption_audio": "🎵 *Аудиодорожка {num}* {lang_info}",
+                "caption_sub": "💬 *Субтитры {num}* {lang_info}",
+                "error": {
+                    "not_a_video": "⚠️ Отправленный файл не является видео\\. Пожалуйста, отправьте видеофайл\\.",
+                    "download_failed": "⚠️ Не удалось скачать видео файл\\. Попробуйте снова\\.",
+                    "no_streams": "⚠️ В этом видео отсутствуют аудиодорожки и субтитры\\.",
+                    "extract_failed": "⚠️ Не удалось извлечь аудио или субтитры\\."
+                }
+            },
             "compress": {
                 "send_video_prompt": "🎥 *Продвинутое сжатие видео*\n\nПожалуйста, отправьте видео, которое хотите сжать\\.",
                 "cancel_btn": "Отмена и возврат в студию",
@@ -5127,6 +5541,40 @@
             "eta_unknown": "—",
             "eta_label": "Осталось",
             "done": "✅ {size} за {elapsed} — средняя {speed}"
+        },
+        "pkg": {
+            "title": "Конвертер пакетов",
+            "prompt": "📦 *Конвертер пакетов*\n\nОтправьте файл пакета в формате \\.deb, \\.rpm или \\.pkg\\.tar\\.zst\\.",
+            "detected": "📦 *Определенный формат:* {fmt}\n\nВыберите целевой формат👇",
+            "convert_btn_rpm": "→ RPM",
+            "convert_btn_deb": "→ DEB",
+            "convert_btn_pacman": "→ Pacman (tar.zst)",
+            "cancel_btn": "❌ Отмена",
+            "stage": {
+                "downloading": "⬇️ *Загрузка пакета…*",
+                "validating": "🔍 *Проверка безопасности пакета…*",
+                "converting": "⚙️ *Конвертация формата…* \\({elapsed}\\)",
+                "uploading": "⬆️ *Отправка готового пакета…*"
+            },
+            "success": "✅ *Пакет успешно сконвертирован\\!*\n\n• *Исходный формат:* {src}\n• *Целевой формат:* {dst}\n• *Размер:* {size}\n\n💻 *Команда установки по умолчанию:*\n```bash\n{cmd}\n```",
+            "success_deps_warn": "✅ *Пакет сконвертирован\\!*\n\n• *Исходный формат:* {src}\n• *Целевой формат:* {dst}\n⚠️ *Предупреждение о зависимостях:* {warn}\n\n💻 *Команда установки по умолчанию:*\n```bash\n{cmd}\n```",
+            "cancelled": "❌ *Конвертация отменена\\.*",
+            "error": {
+                "file_too_large": "❌ *Размер файла превышает допустимый лимит* \\(макс {max}\\)\\.",
+                "unsupported_format": "❌ *Неподдерживаемый формат\\.*\nПоддерживаемые форматы: \\.deb, \\.rpm, \\.pkg\\.tar\\.zst",
+                "format_mismatch": "❌ *Структура файла не соответствует расширению\\.*",
+                "archive_too_large": "❌ *Распакованный размер архива превышает лимит* \\(макс 500 МБ\\)\\.",
+                "too_many_entries": "❌ *Количество файлов в пакете превышает лимит* \\(макс 10 000\\)\\.",
+                "malicious_archive": "❌ *Архив содержит небезопасные пути или символические ссылки\\.*",
+                "validate_timeout": "❌ *Время проверки пакета истекло\\.*",
+                "parse_failed": "❌ *Пакет поврежден или имеет недействительную структуру\\.*",
+                "system_error": "❌ *Системная ошибка\\. Попробуйте еще раз\\.*",
+                "convert_timeout": "❌ *Время конвертации пакета истекло\\.*",
+                "convert_failed": "❌ *Ошибка при конвертации пакета\\.*",
+                "no_output": "❌ *Выходной пакет не был создан\\.*"
+            },
+            "paywall": "⚠️ *Конвертер пакетов доступен для ранга Sepahbod и выше\\.*",
+            "quota_exceeded": "❌ *Вы исчерпали суточный лимит конвертаций пакетов\\.*"
         }
     }
 }

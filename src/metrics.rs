@@ -97,7 +97,6 @@ pub fn init() {
     });
 }
 
-
 pub fn get() -> &'static Metrics {
     init();
     METRICS.get().expect("metrics not initialized")

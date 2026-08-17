@@ -245,7 +245,8 @@ pub async fn handle_soundcloud_url(
         status_msg_id,
         "transfer.stage.sending_audio",
         None,
-    ).await;
+    )
+    .await;
 
     match upload_res {
         Ok(_) => {
@@ -272,7 +273,6 @@ pub async fn handle_soundcloud_url(
             // Record stats & quota
             crate::stats::record_event_user(user_id, "soundcloud", "download", "ok", 1).await;
             crate::stats::record_event_global("soundcloud", "download", "ok", 1).await;
-
 
             if let Some(db) = database {
                 if let Some(first_up) =

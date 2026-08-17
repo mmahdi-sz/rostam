@@ -511,7 +511,9 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<
                     &[("limit", &fmt_traffic_fa(monthly_limit))],
                 );
                 Some((label, user_rank.traffic_monthly_next_rank()))
-            } else if estimated > 0 && (estimated > daily_remaining || estimated > monthly_remaining) {
+            } else if estimated > 0
+                && (estimated > daily_remaining || estimated > monthly_remaining)
+            {
                 let remaining = daily_remaining.min(monthly_remaining);
                 let next = if daily_remaining <= monthly_remaining {
                     user_rank.traffic_daily_next_rank()

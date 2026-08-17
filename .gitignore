@@ -22,3 +22,7 @@ plans/
 testapi.log
 scripts/run_testapi_suite.sh
 files/.official_logout_done
+node_modules/
+.codegraph/
+package.json
+package-lock.json

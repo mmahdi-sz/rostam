@@ -4,7 +4,6 @@
 //! care whether the caller runs a subprocess or, as here, pins its own
 //! blocking-task thread before running ONNX inference on it.
 
-
 use std::time::Duration;
 
 const SEP_BASE: &str = "http://127.0.0.1:6589";
@@ -56,7 +55,9 @@ pub async fn is_user_cpu_busy(user_id: i64) -> bool {
     match res {
         Ok(r) => {
             let json: serde_json::Value = r.json().await.unwrap_or_default();
-            json.get("is_busy").and_then(|v| v.as_bool()).unwrap_or(false)
+            json.get("is_busy")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
         }
         Err(e) => {
             eprintln!("[gwm] is_user_cpu_busy err={e}");

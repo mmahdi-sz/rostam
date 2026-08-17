@@ -8,10 +8,7 @@ use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     methods::{DeleteMessageParams, EditMessageTextParams, SendDocumentParams, SendMessageParams},
-    types::{
-        InlineKeyboardMarkup, Message,
-        ReplyMarkup, ReplyParameters,
-    },
+    types::{InlineKeyboardMarkup, Message, ReplyMarkup, ReplyParameters},
 };
 
 use super::config::{CompressAlgo, CompressConfig, CompressFmt};
@@ -1222,8 +1219,7 @@ async fn run_filecompress_worker(
     // Re-arm: send the file-compress prompt so user isn't stranded.
     macro_rules! re_arm_flow {
         () => {{
-            let upload_text =
-                apply_premium_to_md(&t("fc.upload_prompt").replace("{count}", "0"));
+            let upload_text = apply_premium_to_md(&t("fc.upload_prompt").replace("{count}", "0"));
             let send_res = api
                 .send_message(
                     &SendMessageParams::builder()
@@ -1290,16 +1286,8 @@ async fn run_filecompress_worker(
     }
 
     if let Some(jid) = stats_job_id {
-        crate::stats::record_download_done(
-            jid,
-            total_dl_bytes as i64,
-            None,
-            None,
-            None,
-        )
-        .await;
+        crate::stats::record_download_done(jid, total_dl_bytes as i64, None, None, None).await;
     }
-
 
     if cancel_flag.load(Ordering::Relaxed) {
         crate::log_ev!("filecompress", trace_id, "cancelled_before_engine", "user_id" => user_id);
@@ -1426,7 +1414,12 @@ async fn run_filecompress_worker(
                     ("total", &part_count.to_string()),
                 ],
             );
-            format!("{}\n\n{}\n{}", t("fc.result_caption"), raw_report, part_label)
+            format!(
+                "{}\n\n{}\n{}",
+                t("fc.result_caption"),
+                raw_report,
+                part_label
+            )
         } else {
             format!("{}\n\n{}", t("fc.result_caption"), raw_report)
         };
@@ -1451,7 +1444,9 @@ async fn run_filecompress_worker(
             progress_msg_id,
             "transfer.stage.sending_document",
             None,
-        ).await {
+        )
+        .await
+        {
             crate::log_ev!("filecompress", trace_id, "send_failed", "err" => format!("{e}"));
             let _ = send_text_with_back(&api, chat_id, &t("fc.error.send_failed")).await;
             break;
@@ -1473,7 +1468,6 @@ async fn run_filecompress_worker(
             )
             .await;
         }
-
     }
 
     // Delete progress message
@@ -1511,7 +1505,6 @@ async fn run_filecompress_worker(
         );
     }
 }
-
 
 async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
     let client = crate::http::client();

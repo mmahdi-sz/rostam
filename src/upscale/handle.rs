@@ -518,9 +518,16 @@ pub async fn handle_upscale_image(
             done_flag.store(true, Ordering::Relaxed);
             unregister_upscale(user_id);
             release_cpu(cores, trace_id).await;
-            crate::stats::record_event_user(user_id, "upscale", &format!("x{scale_factor}"), "fail", 0)
+            crate::stats::record_event_user(
+                user_id,
+                "upscale",
+                &format!("x{scale_factor}"),
+                "fail",
+                0,
+            )
+            .await;
+            crate::stats::record_error_global("upscale", &format!("download failed: {e_str}"))
                 .await;
-            crate::stats::record_error_global("upscale", &format!("download failed: {e_str}")).await;
             edit_or_send(api, chat_id, status_msg_id, &t("upscale.download_failed")).await;
             clean_up(&work_dir);
             refund!("download_failed");
@@ -538,7 +545,6 @@ pub async fn handle_upscale_image(
         )
         .await;
     }
-
 
     // ── run realesrgan ────────────────────────────────────────────────────────
     let input_str = input_str_slice.to_string();
@@ -629,7 +635,9 @@ pub async fn handle_upscale_image(
         ),
     ));
 
-    let out_bytes = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+    let out_bytes = std::fs::metadata(&output_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
     let up_start = std::time::Instant::now();
 
     use crate::bot::send_file_with_upload_ticker;
@@ -643,8 +651,16 @@ pub async fn handle_upscale_image(
             .parse_mode(ParseMode::MarkdownV2)
             .build();
         let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-            api, "sendDocument", &params, &output_path, chat_id, smid, "transfer.stage.sending_document", None
-        ).await;
+            api,
+            "sendDocument",
+            &params,
+            &output_path,
+            chat_id,
+            smid,
+            "transfer.stage.sending_document",
+            None,
+        )
+        .await;
         log_ev!("upscale", trace_id, "send_document", "=>" => if r.is_ok() { "ok" } else { "fail" });
         r.is_ok()
     } else {
@@ -655,8 +671,16 @@ pub async fn handle_upscale_image(
             .parse_mode(ParseMode::MarkdownV2)
             .build();
         let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-            api, "sendPhoto", &params, &output_path, chat_id, smid, "transfer.stage.sending_photo", None
-        ).await;
+            api,
+            "sendPhoto",
+            &params,
+            &output_path,
+            chat_id,
+            smid,
+            "transfer.stage.sending_photo",
+            None,
+        )
+        .await;
         log_ev!("upscale", trace_id, "send_photo", "=>" => if r.is_ok() { "ok" } else { "fail" });
         r.is_ok()
     };
@@ -696,7 +720,6 @@ pub async fn handle_upscale_image(
 
     clean_up(&work_dir);
     log_ev!("upscale", trace_id, "done");
-
 }
 
 // ── small helpers ─────────────────────────────────────────────────────────────

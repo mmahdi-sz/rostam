@@ -8,8 +8,8 @@ use crate::bot::{
     CB_ADMIN_STATS, CB_AI_DENOISE, CB_AI_DEOLDIFY, CB_AI_GWM, CB_AI_NOBG, CB_AI_SEP, CB_AI_STT,
     CB_AI_TTS, CB_AI_UPSCALE, CB_BROADCAST_MODE_COPY, CB_BROADCAST_MODE_FORWARD,
     CB_BROADCAST_SEND_ACTIVE, CB_BROADCAST_SEND_ALL, CB_BROADCAST_TOGGLE_PIN, CB_DENOISE_CANCEL,
-    CB_DEOLDIFY_CANCEL, CB_LANG_SET, CB_NOBG_CANCEL, CB_START_AI_LAB,
-    CB_START_GUIDE, CB_START_GUIDE_PLATFORM, CB_START_LEADERBOARD, CB_START_STUDIO, CB_START_TOOLS, CB_TTS_CANCEL,
+    CB_DEOLDIFY_CANCEL, CB_LANG_SET, CB_NOBG_CANCEL, CB_START_AI_LAB, CB_START_GUIDE,
+    CB_START_GUIDE_PLATFORM, CB_START_LEADERBOARD, CB_START_STUDIO, CB_START_TOOLS, CB_TTS_CANCEL,
     CB_USER_PANEL,
 };
 
@@ -819,6 +819,25 @@ async fn handle_message(
                 return Ok(());
             }
 
+            if matches!(flow_manager.get(uid), FlowState::AwaitingPkgFile) {
+                if message.document.is_some() {
+                    let trace_id = next_trace_id();
+                    log_ev!("pkgconvert", trace_id, "file_dispatched", "user_id" => uid);
+                    crate::pkgconvert::handle_pkg_file(api, &message, uid, flow_manager, database)
+                        .await;
+                } else {
+                    let _ = crate::bot::send_text_md(api, message.chat.id, &t("pkg.prompt")).await;
+                }
+                return Ok(());
+            }
+
+            if matches!(
+                flow_manager.get(uid),
+                FlowState::AwaitingPkgConvertChoice { .. }
+            ) {
+                return Ok(());
+            }
+
             if matches!(flow_manager.get(uid), FlowState::AwaitingIpLookupInput) {
                 if message.text.is_some() {
                     let trace_id = next_trace_id();
@@ -1107,7 +1126,10 @@ async fn handle_message(
                 }
             }
 
-            if matches!(flow_manager.get(uid), FlowState::AwaitingStudioCompressVideo) {
+            if matches!(
+                flow_manager.get(uid),
+                FlowState::AwaitingStudioCompressVideo
+            ) {
                 if message.video.is_some() || message.document.is_some() {
                     let trace_id = next_trace_id();
                     log_ev!("studio_compress", trace_id, "video_dispatched", "user_id" => uid);
@@ -1116,13 +1138,57 @@ async fn handle_message(
                     let fm = flow_manager.clone();
                     flow_manager.clear(uid);
                     super::spawn_user_task(async move {
-                        crate::studio::compress::handle_video_upload(&api2, msg2, uid, trace_id, &fm).await;
+                        crate::studio::compress::handle_video_upload(
+                            &api2, msg2, uid, trace_id, &fm,
+                        )
+                        .await;
                     });
                     return Ok(());
                 }
             }
 
-            if let FlowState::AwaitingStudioTrimRanges { file_id, filename, duration_secs } = flow_manager.get(uid) {
+            if matches!(flow_manager.get(uid), FlowState::AwaitingStudioExtractVideo) {
+                if message.video.is_some() || message.document.is_some() {
+                    let trace_id = next_trace_id();
+                    log_ev!("studio_extract", trace_id, "video_dispatched", "user_id" => uid);
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    let fm = flow_manager.clone();
+                    flow_manager.clear(uid);
+                    super::spawn_user_task(async move {
+                        crate::studio::extract::handle_video_upload(
+                            &api2, msg2, uid, trace_id, &fm,
+                        )
+                        .await;
+                    });
+                    return Ok(());
+                }
+            }
+
+            if let FlowState::AwaitingStudioBurnInput { session } = flow_manager.get(uid) {
+                if message.video.is_some() || message.document.is_some() {
+                    let trace_id = next_trace_id();
+                    log_ev!("studio_burn", trace_id, "input_dispatched", "user_id" => uid);
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    let mut fm = flow_manager.clone();
+                    let db2 = database.clone();
+                    super::spawn_user_task(async move {
+                        crate::studio::burn::handle_input_message(
+                            &api2, &msg2, uid, session, &mut fm, &db2,
+                        )
+                        .await;
+                    });
+                    return Ok(());
+                }
+            }
+
+            if let FlowState::AwaitingStudioTrimRanges {
+                file_id,
+                filename,
+                duration_secs,
+            } = flow_manager.get(uid)
+            {
                 if message.text.is_some() {
                     let trace_id = next_trace_id();
                     log_ev!("studio_trim", trace_id, "ranges_dispatched", "user_id" => uid);
@@ -1475,7 +1541,12 @@ async fn handle_callback(
         return Ok(());
     }
 
-    if cb_data.starts_with("studio") || cb_data.starts_with("stc:") || cb_data == CB_START_STUDIO {
+    if cb_data.starts_with("studio")
+        || cb_data.starts_with("stc:")
+        || cb_data.starts_with("strex:")
+        || cb_data.starts_with("stb:")
+        || cb_data == CB_START_STUDIO
+    {
         if let Some(msg) = answer_and_get_msg!() {
             if crate::studio::handle_callback(
                 api,
@@ -1484,6 +1555,7 @@ async fn handle_callback(
                 cb_user_id as i64,
                 cb_data,
                 flow_manager,
+                database,
             )
             .await
             {
@@ -1587,9 +1659,13 @@ async fn handle_callback(
             )
             .await;
         if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
-            let r =
-                crate::bot::keyboards::edit_to_guide(api, message.chat.id, message.message_id).await;
-            log_trace(trace_id, "cb_start_guide_done", &format!("ok={}", r.is_ok()));
+            let r = crate::bot::keyboards::edit_to_guide(api, message.chat.id, message.message_id)
+                .await;
+            log_trace(
+                trace_id,
+                "cb_start_guide_done",
+                &format!("ok={}", r.is_ok()),
+            );
         }
         return Ok(());
     }
@@ -1700,6 +1776,22 @@ async fn handle_callback(
                 "cb_start_tools_done",
                 &format!("ok={}", r.is_ok()),
             );
+        }
+        return Ok(());
+    }
+
+    if cb_data == crate::bot::constants::CB_START_DEV_CAFE {
+        let trace_id = next_trace_id();
+        log_ev!("dev_cafe", trace_id, "cb_start_dev_cafe", "user_id" => cb_user_id);
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            let _ = crate::bot::edit_to_dev_cafe(api, message.chat.id, message.message_id).await;
         }
         return Ok(());
     }
@@ -2049,6 +2141,95 @@ async fn handle_callback(
                 message.message_id,
                 cb_user_id as i64,
                 flow_manager,
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == crate::bot::constants::CB_TOOLS_PKG {
+        let trace_id = next_trace_id();
+        log_ev!("pkgconvert", trace_id, "cb_pkg_entry", "user_id" => cb_user_id);
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            crate::pkgconvert::enter_pkgconvert(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == crate::bot::constants::CB_PKG_CANCEL {
+        let trace_id = next_trace_id();
+        log_ev!("pkgconvert", trace_id, "cb_pkg_cancel", "user_id" => cb_user_id);
+        flow_manager.clear(cb_user_id as i64);
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            let _ = crate::bot::edit_to_dev_cafe(api, message.chat.id, message.message_id).await;
+        }
+        return Ok(());
+    }
+
+    if cb_data == crate::bot::constants::CB_PKG_JOBCANCEL {
+        let trace_id = next_trace_id();
+        log_ev!("pkgconvert", trace_id, "cb_pkg_jobcancel", "user_id" => cb_user_id);
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            crate::pkgconvert::handle_pkg_jobcancel(
+                cb_user_id as i64,
+                api,
+                message.chat.id,
+                message.message_id,
+            )
+            .await;
+        }
+        return Ok(());
+    }
+
+    if cb_data.starts_with(crate::bot::constants::CB_PKG_CONVERT_PREFIX) {
+        let trace_id = next_trace_id();
+        log_ev!("pkgconvert", trace_id, "cb_pkg_convert", "user_id" => cb_user_id, "cb" => cb_data);
+        let action = &cb_data[crate::bot::constants::CB_PKG_CONVERT_PREFIX.len()..];
+        let _ = api
+            .answer_callback_query(
+                &AnswerCallbackQueryParams::builder()
+                    .callback_query_id(callback_query.id.clone())
+                    .build(),
+            )
+            .await;
+        if let Some(MaybeInaccessibleMessage::Message(message)) = callback_query.message {
+            crate::pkgconvert::handle_pkg_callback(
+                api,
+                message.chat.id,
+                message.message_id,
+                cb_user_id as i64,
+                flow_manager,
+                action,
+                &callback_query.id,
+                database,
             )
             .await;
         }

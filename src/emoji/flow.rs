@@ -129,6 +129,17 @@ pub enum FlowState {
         duration_secs: u64,
     },
     AwaitingStudioCompressVideo,
+    AwaitingStudioExtractVideo,
+    AwaitingStudioBurnInput {
+        session: Arc<std::sync::Mutex<crate::studio::burn::BurnSession>>,
+    },
+    AwaitingPkgFile,
+    AwaitingPkgConvertChoice {
+        file_id: String,
+        filename: String,
+        file_size: u64,
+        src_fmt: crate::pkgconvert::detect::PkgFormat,
+    },
 }
 
 #[derive(Debug, Clone)]

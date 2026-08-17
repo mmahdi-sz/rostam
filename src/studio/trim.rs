@@ -11,7 +11,6 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
-use regex::Regex;
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
@@ -19,6 +18,7 @@ use frankenstein::{
     methods::{DeleteMessageParams, EditMessageTextParams, SendVideoParams},
     types::{InlineKeyboardMarkup, Message, ReplyParameters},
 };
+use regex::Regex;
 
 use crate::bot::{
     files::download_telegram_file,
@@ -97,7 +97,9 @@ pub struct CutRange {
 pub enum RangeError {
     #[error("No valid cut ranges found in input")]
     NoValidRanges,
-    #[error("Line {line_idx}: Invalid format '{text}' (expected MM:SS - MM:SS or HH:MM:SS - HH:MM:SS)")]
+    #[error(
+        "Line {line_idx}: Invalid format '{text}' (expected MM:SS - MM:SS or HH:MM:SS - HH:MM:SS)"
+    )]
     InvalidFormat { line_idx: usize, text: String },
     #[error("Line {line_idx}: Start time ({start}s) is greater than or equal to end time ({end}s)")]
     StartGteEnd {
@@ -105,9 +107,7 @@ pub enum RangeError {
         start: u64,
         end: u64,
     },
-    #[error(
-        "Line {line_idx}: End time ({end}s) exceeds video duration ({duration}s)"
-    )]
+    #[error("Line {line_idx}: End time ({end}s) exceeds video duration ({duration}s)")]
     EndExceedsDuration {
         line_idx: usize,
         end: u64,
@@ -235,9 +235,8 @@ pub fn run_ffprobe(video_path: &Path) -> anyhow::Result<VideoMetadata> {
         .unwrap_or(0);
 
     let video_stream = streams.and_then(|arr| {
-        arr.iter().find(|st| {
-            st.get("width").is_some() || st.get("codec_name").is_some()
-        })
+        arr.iter()
+            .find(|st| st.get("width").is_some() || st.get("codec_name").is_some())
     });
 
     let width = video_stream
@@ -335,12 +334,7 @@ pub async fn handle_video_upload(
         .video
         .as_ref()
         .map(|v| v.file_id.clone())
-        .or_else(|| {
-            message
-                .document
-                .as_ref()
-                .map(|d| d.file_id.clone())
-        });
+        .or_else(|| message.document.as_ref().map(|d| d.file_id.clone()));
 
     let Some(file_id) = file_id else {
         log_ev!("studio_trim", trace_id, "invalid_video", "=>" => "fail");
@@ -386,7 +380,14 @@ pub async fn handle_video_upload(
     let work_dir = std::env::temp_dir().join(format!("studio_trim_{trace_id}_{user_id}"));
     if let Err(e) = std::fs::create_dir_all(&work_dir) {
         log_ev!("studio_trim", trace_id, "mkdir_failed", "=>" => format!("fail err={e}"));
-        let _ = api.delete_message(&DeleteMessageParams::builder().chat_id(chat_id).message_id(status_msg_id).build()).await;
+        let _ = api
+            .delete_message(
+                &DeleteMessageParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(status_msg_id)
+                    .build(),
+            )
+            .await;
         let _ = send_text_md(api, chat_id, &t("studio.trim.error.download_failed")).await;
         return;
     }
@@ -415,42 +416,57 @@ pub async fn handle_video_upload(
 
     if let Err(e) = dl_res {
         log_ev!("studio_trim", trace_id, "download_failed", "=>" => format!("fail err={e}"));
-        let _ = api.delete_message(&DeleteMessageParams::builder().chat_id(chat_id).message_id(status_msg_id).build()).await;
+        let _ = api
+            .delete_message(
+                &DeleteMessageParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(status_msg_id)
+                    .build(),
+            )
+            .await;
         let _ = send_text_md(api, chat_id, &t("studio.trim.error.download_failed")).await;
         return;
     }
 
-
     // Edit status to "در حال پردازش..."
     let processing_text = apply_premium_to_md(&t("studio.trim.status_processing"));
-    let _ = api.edit_message_text(
-        &EditMessageTextParams::builder()
-            .chat_id(chat_id)
-            .message_id(status_msg_id)
-            .text(&processing_text)
-            .parse_mode(ParseMode::MarkdownV2)
-            .build()
-    ).await;
+    let _ = api
+        .edit_message_text(
+            &EditMessageTextParams::builder()
+                .chat_id(chat_id)
+                .message_id(status_msg_id)
+                .text(&processing_text)
+                .parse_mode(ParseMode::MarkdownV2)
+                .build(),
+        )
+        .await;
 
     // Run ffprobe
     let meta = match run_ffprobe(&local_file) {
         Ok(m) => m,
         Err(e) => {
             log_ev!("studio_trim", trace_id, "ffprobe_failed", "=>" => format!("fail err={e}"));
-            let _ = api.delete_message(&DeleteMessageParams::builder().chat_id(chat_id).message_id(status_msg_id).build()).await;
+            let _ = api
+                .delete_message(
+                    &DeleteMessageParams::builder()
+                        .chat_id(chat_id)
+                        .message_id(status_msg_id)
+                        .build(),
+                )
+                .await;
             let _ = send_text_md(api, chat_id, &t("studio.trim.error.ffprobe_failed")).await;
             return;
         }
     };
 
-pub fn format_bitrate(bps: u64) -> String {
-    if bps == 0 {
-        "N/A".to_string()
-    } else {
-        let kbps = bps / 1000;
-        format!("{kbps} kbps")
+    pub fn format_bitrate(bps: u64) -> String {
+        if bps == 0 {
+            "N/A".to_string()
+        } else {
+            let kbps = bps / 1000;
+            format!("{kbps} kbps")
+        }
     }
-}
 
     // Edit status message into metadata prompt with start button
     let duration_formatted = format_timestamp(meta.duration_secs);
@@ -540,10 +556,7 @@ pub async fn handle_ranges_input(
                     RangeError::InvalidFormat { line_idx, text } => {
                         err_msgs.push(tf(
                             "studio.trim.error.invalid_format",
-                            &[
-                                ("line", &line_idx.to_string()),
-                                ("text", &md_escape(&text)),
-                            ],
+                            &[("line", &line_idx.to_string()), ("text", &md_escape(&text))],
                         ));
                     }
                     RangeError::StartGteEnd { line_idx, .. } => {
@@ -640,7 +653,9 @@ pub async fn execute_trim_job(
         .chat_id(chat_id)
         .text(&initial_status)
         .parse_mode(ParseMode::MarkdownV2)
-        .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(job_cancel_keyboard()))
+        .reply_markup(frankenstein::types::ReplyMarkup::InlineKeyboardMarkup(
+            job_cancel_keyboard(),
+        ))
         .build();
 
     let status_msg_id = match api.send_message(&params).await {
@@ -656,7 +671,14 @@ pub async fn execute_trim_job(
     if let Err(e) = std::fs::create_dir_all(&work_dir) {
         log_ev!("studio_trim", trace_id, "mkdir_failed", "=>" => format!("fail err={e}"));
         remove_active_job(user_id);
-        let _ = api.delete_message(&DeleteMessageParams::builder().chat_id(chat_id).message_id(status_msg_id).build()).await;
+        let _ = api
+            .delete_message(
+                &DeleteMessageParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(status_msg_id)
+                    .build(),
+            )
+            .await;
         let _ = send_text_md(api, chat_id, &t("studio.trim.error.download_failed")).await;
         return;
     }
@@ -665,7 +687,14 @@ pub async fn execute_trim_job(
 
     if cancel_flag.load(Ordering::Relaxed) {
         remove_active_job(user_id);
-        let _ = api.delete_message(&DeleteMessageParams::builder().chat_id(chat_id).message_id(status_msg_id).build()).await;
+        let _ = api
+            .delete_message(
+                &DeleteMessageParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(status_msg_id)
+                    .build(),
+            )
+            .await;
         let _ = send_text_md(api, chat_id, &t("studio.trim.job_cancelled")).await;
         return;
     }
@@ -692,7 +721,14 @@ pub async fn execute_trim_job(
             dl_stop_flag.store(true, Ordering::Relaxed);
             log_ev!("studio_trim", trace_id, "download_failed", "=>" => format!("fail err={e}"));
             remove_active_job(user_id);
-            let _ = api.delete_message(&DeleteMessageParams::builder().chat_id(chat_id).message_id(status_msg_id).build()).await;
+            let _ = api
+                .delete_message(
+                    &DeleteMessageParams::builder()
+                        .chat_id(chat_id)
+                        .message_id(status_msg_id)
+                        .build(),
+                )
+                .await;
             let _ = send_text_md(api, chat_id, &t("studio.trim.error.download_failed")).await;
             return;
         }
@@ -709,10 +745,16 @@ pub async fn execute_trim_job(
         .await;
     }
 
-
     if cancel_flag.load(Ordering::Relaxed) {
         remove_active_job(user_id);
-        let _ = api.delete_message(&DeleteMessageParams::builder().chat_id(chat_id).message_id(status_msg_id).build()).await;
+        let _ = api
+            .delete_message(
+                &DeleteMessageParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(status_msg_id)
+                    .build(),
+            )
+            .await;
         let _ = send_text_md(api, chat_id, &t("studio.trim.job_cancelled")).await;
         return;
     }
@@ -728,7 +770,14 @@ pub async fn execute_trim_job(
     if cancel_flag.load(Ordering::Relaxed) {
         release_cpu(cores, trace_id).await;
         remove_active_job(user_id);
-        let _ = api.delete_message(&DeleteMessageParams::builder().chat_id(chat_id).message_id(status_msg_id).build()).await;
+        let _ = api
+            .delete_message(
+                &DeleteMessageParams::builder()
+                    .chat_id(chat_id)
+                    .message_id(status_msg_id)
+                    .build(),
+            )
+            .await;
         let _ = send_text_md(api, chat_id, &t("studio.trim.job_cancelled")).await;
         return;
     }
@@ -979,7 +1028,9 @@ pub async fn execute_trim_job(
         }
 
         // Check file size limit (2GB Bot API ceiling)
-        let file_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+        let file_size = std::fs::metadata(&output_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
         if file_size > 2000 * 1024 * 1024 {
             log_ev!("studio_trim", trace_id, "file_oversized", "size" => file_size);
             let over_text = apply_premium_to_md(&tf(
@@ -1027,10 +1078,13 @@ pub async fn execute_trim_job(
         if clip_duration > 0 {
             send_video_params.duration = Some(clip_duration as u32);
         }
-        if thumb_path.exists() && std::fs::metadata(&thumb_path).map(|m| m.len() > 0).unwrap_or(false) {
-            send_video_params.thumbnail = Some(FileUpload::InputFile(InputFile {
-                path: thumb_path,
-            }));
+        if thumb_path.exists()
+            && std::fs::metadata(&thumb_path)
+                .map(|m| m.len() > 0)
+                .unwrap_or(false)
+        {
+            send_video_params.thumbnail =
+                Some(FileUpload::InputFile(InputFile { path: thumb_path }));
         }
 
         use crate::bot::send_file_with_upload_ticker;
@@ -1043,7 +1097,9 @@ pub async fn execute_trim_job(
             status_msg_id,
             "transfer.stage.sending_video",
             None,
-        ).await {
+        )
+        .await
+        {
             Ok(_) => {
                 let up_secs = upload_start.elapsed().as_secs();
                 let up_elapsed = upload_start.elapsed();
@@ -1075,7 +1131,6 @@ pub async fn execute_trim_job(
             }
         }
 
-
         // Update ticker to next cut for outer task
         current_cut.store(idx + 2, Ordering::Relaxed);
     }
@@ -1090,7 +1145,14 @@ pub async fn execute_trim_job(
     remove_active_job(user_id);
 
     // Delete ticker message
-    let _ = api.delete_message(&DeleteMessageParams::builder().chat_id(chat_id).message_id(status_msg_id).build()).await;
+    let _ = api
+        .delete_message(
+            &DeleteMessageParams::builder()
+                .chat_id(chat_id)
+                .message_id(status_msg_id)
+                .build(),
+        )
+        .await;
 
     if cancel_flag.load(Ordering::Relaxed) {
         let _ = send_text_md(api, chat_id, &t("studio.trim.job_cancelled")).await;
@@ -1148,9 +1210,18 @@ mod tests {
 
     #[test]
     fn test_normalize_digits() {
-        assert_eq!(normalize_digits("۰۰:۰۱:۳۰ - ۰۰:۰۵:۴۵"), "00:01:30 - 00:05:45");
-        assert_eq!(normalize_digits("٠٠:٠١:٣٠ - ٠٠:٠٥:٤٥"), "00:01:30 - 00:05:45");
-        assert_eq!(normalize_digits("00:01:00 - 00:02:00"), "00:01:00 - 00:02:00");
+        assert_eq!(
+            normalize_digits("۰۰:۰۱:۳۰ - ۰۰:۰۵:۴۵"),
+            "00:01:30 - 00:05:45"
+        );
+        assert_eq!(
+            normalize_digits("٠٠:٠١:٣٠ - ٠٠:٠٥:٤٥"),
+            "00:01:30 - 00:05:45"
+        );
+        assert_eq!(
+            normalize_digits("00:01:00 - 00:02:00"),
+            "00:01:00 - 00:02:00"
+        );
     }
 
     #[test]

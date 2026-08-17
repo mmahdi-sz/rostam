@@ -156,7 +156,10 @@ pub async fn test_free_rank(Json(payload): Json<Value>) -> axum::response::Respo
                     let label = crate::i18n::t(&label_key);
                     let banner = crate::i18n::apply_premium_to_html(&crate::i18n::tf(
                         "referral.banner",
-                        &[("username", "rostam_bot"), ("user_id", &user_id.to_string())],
+                        &[
+                            ("username", "rostam_bot"),
+                            ("user_id", &user_id.to_string()),
+                        ],
                     ));
                     (kb, label, banner)
                 })
@@ -187,7 +190,9 @@ pub async fn test_free_rank(Json(payload): Json<Value>) -> axum::response::Respo
     }
     if let (Some(b), Some(f)) = (buy_row, free_row) {
         if f != b + 1 {
-            errors.push(format!("free rank row {f} is not directly below buy row {b}"));
+            errors.push(format!(
+                "free rank row {f} is not directly below buy row {b}"
+            ));
         }
     }
     if let Some(b) = btn {
@@ -209,13 +214,21 @@ pub async fn test_free_rank(Json(payload): Json<Value>) -> axum::response::Respo
     if expandable != 3 {
         errors.push(format!("banner has {expandable} expandable quotes, want 3"));
     }
-    let want_glyphs = if lang == "fa" { ('╣', '╝') } else { ('╠', '╚') };
+    let want_glyphs = if lang == "fa" {
+        ('╣', '╝')
+    } else {
+        ('╠', '╚')
+    };
     if !banner.contains(want_glyphs.0) || !banner.contains(want_glyphs.1) {
-        errors.push(format!("banner missing {want_glyphs:?} tree glyphs for {lang}"));
+        errors.push(format!(
+            "banner missing {want_glyphs:?} tree glyphs for {lang}"
+        ));
     }
     let banner_len = banner.encode_utf16().count();
     if banner_len > 4096 {
-        errors.push(format!("banner is {banner_len} UTF-16 units, over the 4096 cap"));
+        errors.push(format!(
+            "banner is {banner_len} UTF-16 units, over the 4096 cap"
+        ));
     }
 
     Json(json!({

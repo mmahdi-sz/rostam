@@ -89,11 +89,11 @@ pub async fn test_emoji_panel(Json(req): Json<EmojiPanelReq>) -> Json<EmojiPanel
         .map(|b| b.callback_data.clone().unwrap_or_default())
         .collect();
     let start_kb = crate::bot::keyboards::start_menu_keyboard(true);
-    let in_start_menu = start_kb
-        .inline_keyboard
-        .iter()
-        .flatten()
-        .any(|b| b.callback_data.as_deref().is_some_and(|c| c.starts_with("emoji:")));
+    let in_start_menu = start_kb.inline_keyboard.iter().flatten().any(|b| {
+        b.callback_data
+            .as_deref()
+            .is_some_and(|c| c.starts_with("emoji:"))
+    });
     Json(EmojiPanelResp {
         ok: true,
         is_admin,

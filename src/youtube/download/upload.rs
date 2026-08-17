@@ -62,15 +62,33 @@ pub async fn send_media_with_progress(
     let api_url = api.api_url.clone();
     let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let cancel_clone = cancel_flag.clone();
-    
+
     let mut send_task = tokio::spawn(async move {
         match payload {
-            MediaPayload::Video(params) => crate::bot::transfer::send_params_metered::<_, frankenstein::response::MethodResponse<frankenstein::types::Message>>(
-                &api_url, "sendVideo", &params, &progress_clone, Some(cancel_clone)
-            ).await.map(|_| ()),
-            MediaPayload::Document(params) => crate::bot::transfer::send_params_metered::<_, frankenstein::response::MethodResponse<frankenstein::types::Message>>(
-                &api_url, "sendDocument", &params, &progress_clone, Some(cancel_clone)
-            ).await.map(|_| ()),
+            MediaPayload::Video(params) => crate::bot::transfer::send_params_metered::<
+                _,
+                frankenstein::response::MethodResponse<frankenstein::types::Message>,
+            >(
+                &api_url,
+                "sendVideo",
+                &params,
+                &progress_clone,
+                Some(cancel_clone),
+            )
+            .await
+            .map(|_| ()),
+            MediaPayload::Document(params) => crate::bot::transfer::send_params_metered::<
+                _,
+                frankenstein::response::MethodResponse<frankenstein::types::Message>,
+            >(
+                &api_url,
+                "sendDocument",
+                &params,
+                &progress_clone,
+                Some(cancel_clone),
+            )
+            .await
+            .map(|_| ()),
         }
     });
 
@@ -188,25 +206,34 @@ pub async fn send_audio_file(
     if !caption_entities.is_empty() {
         params.caption_entities = Some(caption_entities);
     }
-    
+
     let file_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     let progress = crate::bot::transfer::TransferProgress::new(file_bytes);
     let progress_clone = progress.clone();
     let api_url = api.api_url.clone();
     let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let cancel_clone = cancel_flag.clone();
-    
+
     let mut send_task = tokio::spawn(async move {
-        crate::bot::transfer::send_params_metered::<_, frankenstein::response::MethodResponse<frankenstein::types::Message>>(
-            &api_url, "sendAudio", &params, &progress_clone, Some(cancel_clone)
-        ).await.map(|_| ())
+        crate::bot::transfer::send_params_metered::<
+            _,
+            frankenstein::response::MethodResponse<frankenstein::types::Message>,
+        >(
+            &api_url,
+            "sendAudio",
+            &params,
+            &progress_clone,
+            Some(cancel_clone),
+        )
+        .await
+        .map(|_| ())
     });
-    
+
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
     interval.tick().await;
     let label = t("youtube.audio.uploading");
     let mut last_snap_str = String::new();
-    
+
     let send_result = loop {
         tokio::select! {
             result = &mut send_task => { break result; }

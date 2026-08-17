@@ -107,6 +107,11 @@ pub fn start_menu_keyboard(is_admin: bool) -> InlineKeyboardMarkup {
         )],
         vec![btn_icon(&t("start.tools_button"), CB_START_TOOLS, "wrench")],
         vec![btn_icon(
+            &t("start.dev_cafe_button"),
+            CB_START_DEV_CAFE,
+            "windows_logo",
+        )],
+        vec![btn_icon(
             &t("start.studio_button"),
             CB_START_STUDIO,
             "adobe_pr_animasion",
@@ -237,7 +242,9 @@ pub fn guide_keyboard() -> InlineKeyboardMarkup {
         })
         .collect();
     rows.push(vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")]);
-    InlineKeyboardMarkup::builder().inline_keyboard(rows).build()
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(rows)
+        .build()
 }
 
 pub fn guide_platform_keyboard() -> InlineKeyboardMarkup {
@@ -315,6 +322,49 @@ pub fn tools_keyboard() -> InlineKeyboardMarkup {
             vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
         ])
         .build()
+}
+
+pub fn dev_cafe_keyboard() -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::builder()
+        .inline_keyboard(vec![
+            vec![btn_icon(
+                &t("tools.pkg_button"),
+                crate::bot::constants::CB_TOOLS_PKG,
+                "package_box",
+            )],
+            vec![btn_icon(&t("start.back"), CB_START_PANEL, "back")],
+        ])
+        .build()
+}
+
+pub async fn edit_to_dev_cafe(
+    api: &Bot,
+    chat_id: i64,
+    message_id: i32,
+) -> crate::error::Result<()> {
+    let text = apply_premium_to_md(&t("start.dev_cafe_title"));
+    let params = EditMessageTextParams::builder()
+        .chat_id(chat_id)
+        .message_id(message_id)
+        .text(&text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(dev_cafe_keyboard())
+        .build();
+    api.edit_message_text(&params).await?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub async fn send_dev_cafe_menu(api: &Bot, chat_id: i64) -> crate::error::Result<()> {
+    let text = apply_premium_to_md(&t("start.dev_cafe_title"));
+    let params = SendMessageParams::builder()
+        .chat_id(chat_id)
+        .text(&text)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(ReplyMarkup::InlineKeyboardMarkup(dev_cafe_keyboard()))
+        .build();
+    api.send_message(&params).await?;
+    Ok(())
 }
 
 pub async fn edit_to_tools(api: &Bot, chat_id: i64, message_id: i32) -> crate::error::Result<()> {

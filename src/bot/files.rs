@@ -94,16 +94,16 @@ pub async fn download_telegram_file_metered(
         if !is_safe {
             return Err("file path outside allowed local directory".into());
         }
-        
+
         if let Some(p) = progress {
             p.set_stage(crate::bot::transfer::Stage::Copying);
         }
-        
+
         let mut f_in = tokio::fs::File::open(&file_path).await?;
         let mut f_out = tokio::fs::File::create(dest).await?;
         let mut bytes_copied = 0u64;
         let mut buf = vec![0u8; 1024 * 1024]; // 1MB buffer
-        
+
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         loop {
             if let Some(c) = &cancel {
@@ -121,7 +121,7 @@ pub async fn download_telegram_file_metered(
                 p.bump(n as u64);
             }
         }
-        
+
         let elapsed = dl_start.elapsed();
         log_trace(
             trace,
@@ -150,11 +150,11 @@ pub async fn download_telegram_file_metered(
     let mut response = client.get(&url).send().await?;
     let mut file = tokio::fs::File::create(dest).await?;
     let mut bytes_copied = 0u64;
-    
+
     if let Some(p) = progress {
         p.set_stage(crate::bot::transfer::Stage::Streaming);
     }
-    
+
     while let Some(chunk) = response.chunk().await? {
         if let Some(c) = &cancel {
             if c.load(std::sync::atomic::Ordering::Relaxed) {
@@ -182,4 +182,3 @@ pub async fn download_telegram_file_metered(
         elapsed,
     })
 }
-

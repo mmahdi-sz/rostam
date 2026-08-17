@@ -116,7 +116,6 @@ pub async fn fetch_video_info(
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| FetchError::Other(format!("failed to parse yt-dlp json: {e}")))?;
 
-
     // Detect whether playlist or single video.
     let is_playlist = json
         .get("_type")

@@ -52,7 +52,14 @@ const F_FILES: &[Feat] = &[
     feat("emoji", "admin.stats.names.emoji", false),
     feat("ip_lookup", "admin.stats.names.ip_lookup", false),
     feat("studio_trim", "admin.stats.names.studio_trim", false),
-    feat("studio_compress", "admin.stats.names.studio_compress", false),
+    feat(
+        "studio_compress",
+        "admin.stats.names.studio_compress",
+        false,
+    ),
+    feat("studio_extract", "admin.stats.names.studio_extract", false),
+    feat("studio_burn", "admin.stats.names.studio_burn", false),
+    feat("pkgconvert", "admin.stats.names.pkgconvert", false),
 ];
 
 const F_MONEY: &[Feat] = &[

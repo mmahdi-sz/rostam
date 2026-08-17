@@ -117,18 +117,24 @@ if [ "$FAMILY" = "debian" ]; then
   PKGS="git curl ca-certificates unzip tar xz-utils build-essential pkg-config \
         ffmpeg ghostscript redis-server postgresql postgresql-client \
         python3 python3-venv python3-pip procps cmake g++ make gperf zlib1g-dev libssl-dev \
-        espeak-ng p7zip-full sudo clang libclang-dev"
+        espeak-ng p7zip-full sudo clang libclang-dev bubblewrap alien rpm libarchive-tools ruby ruby-dev"
   [ "$SKIP_FIREFOX" = 0 ] && PKGS="$PKGS firefox-esr"
   apt-get install -y --no-install-recommends $PKGS
   apt-get install -y --no-install-recommends rar 2>/dev/null || warn "rar unavailable (surge archive-split degrades)"
 else
   PKGS="git curl ca-certificates unzip tar xz base-devel ffmpeg ghostscript \
-        redis postgresql python python-pip procps cmake gperf espeak-ng p7zip sudo clang"
+        redis postgresql python python-pip procps cmake gperf espeak-ng p7zip sudo clang bubblewrap rpm-tools libarchive ruby"
   [ "$SKIP_FIREFOX" = 0 ] && PKGS="$PKGS firefox"
   pac -Sy --noconfirm --needed archlinux-keyring
   pac -Syu --noconfirm --needed $PKGS
 fi
 ok "system packages ready"
+
+if ! command -v fpm >/dev/null 2>&1; then
+  say "installing fpm via gem…"
+  gem install --no-document fpm || warn "fpm gem installation failed (pacman package conversion degrades)"
+fi
+[ -x "$(command -v fpm 2>/dev/null)" ] && ok "fpm ready" || warn "fpm not on PATH"
 
 if ! command -v cargo >/dev/null 2>&1; then
   say "installing Rust via rustup…"

@@ -2,7 +2,9 @@
 //!
 //! Houses media editing tools starting with video trimming (`studio_trim`).
 
+pub mod burn;
 pub mod compress;
+pub mod extract;
 pub mod pipeline;
 pub mod trim;
 
@@ -14,9 +16,12 @@ use frankenstein::{
 };
 
 use crate::bot::constants::{
-    CB_START_PANEL, CB_START_STUDIO, CB_STUDIO_COMPRESS, CB_STUDIO_PANEL, CB_STUDIO_TRIM,
-    CB_STUDIO_TRIM_CANCEL, CB_STUDIO_TRIM_JOBCANCEL,
+    CB_START_PANEL, CB_START_STUDIO, CB_STUDIO_BURN, CB_STUDIO_BURN_CANCEL,
+    CB_STUDIO_BURN_JOBCANCEL, CB_STUDIO_COMPRESS, CB_STUDIO_EXTRACT, CB_STUDIO_EXTRACT_CANCEL,
+    CB_STUDIO_EXTRACT_JOBCANCEL, CB_STUDIO_PANEL, CB_STUDIO_TRIM, CB_STUDIO_TRIM_CANCEL,
+    CB_STUDIO_TRIM_JOBCANCEL,
 };
+use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_primary};
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, t};
@@ -35,11 +40,17 @@ pub fn studio_keyboard() -> InlineKeyboardMarkup {
                 CB_STUDIO_COMPRESS,
                 "adobe_pr_animasion",
             )],
-            vec![btn_icon_primary(
-                &t("start.back"),
-                CB_START_PANEL,
-                "back",
+            vec![btn_icon(
+                &t("studio.extract_button"),
+                CB_STUDIO_EXTRACT,
+                "sound_wave",
             )],
+            vec![btn_icon(
+                &t("studio.burn_button"),
+                CB_STUDIO_BURN,
+                "clapper",
+            )],
+            vec![btn_icon_primary(&t("start.back"), CB_START_PANEL, "back")],
         ])
         .build()
 }
@@ -130,6 +141,7 @@ pub async fn handle_callback(
     user_id: i64,
     cb_data: &str,
     flow_manager: &FlowManager,
+    database: &Option<PostgresDatabase>,
 ) -> bool {
     let trace_id = next_trace_id();
     log_ev!("studio", trace_id, "callback", "cb" => cb_data, "user_id" => user_id);
@@ -154,7 +166,36 @@ pub async fn handle_callback(
         let cancelled = pipeline::cancel_active_job(user_id);
         log_ev!("studio_trim", trace_id, "job_cancel_result", "cancelled" => cancelled);
         true
-    } else if cb_data == crate::bot::constants::CB_STUDIO_TRIM_START || cb_data.starts_with("studio_trim:start") {
+    } else if cb_data == CB_STUDIO_EXTRACT {
+        extract::enter_extract_prompt(api, chat_id, message_id, user_id, flow_manager).await;
+        true
+    } else if cb_data == CB_STUDIO_EXTRACT_CANCEL {
+        log_ev!("studio_extract", trace_id, "cancel_flow", "user_id" => user_id);
+        enter_studio(api, chat_id, message_id, user_id, flow_manager).await;
+        true
+    } else if cb_data == CB_STUDIO_EXTRACT_JOBCANCEL {
+        log_ev!("studio_extract", trace_id, "job_cancel_clicked", "user_id" => user_id);
+        let cancelled = pipeline::cancel_active_job(user_id);
+        log_ev!("studio_extract", trace_id, "job_cancel_result", "cancelled" => cancelled);
+        true
+    } else if cb_data == CB_STUDIO_BURN {
+        burn::enter_burn_prompt(api, chat_id, message_id, user_id, flow_manager, database).await;
+        true
+    } else if cb_data == CB_STUDIO_BURN_CANCEL {
+        log_ev!("studio_burn", trace_id, "cancel_flow", "user_id" => user_id);
+        if let FlowState::AwaitingStudioBurnInput { session } = flow_manager.get(user_id) {
+            burn::abort_session(&session);
+        }
+        enter_studio(api, chat_id, message_id, user_id, flow_manager).await;
+        true
+    } else if cb_data == CB_STUDIO_BURN_JOBCANCEL {
+        log_ev!("studio_burn", trace_id, "job_cancel_clicked", "user_id" => user_id);
+        let cancelled = pipeline::cancel_active_job(user_id);
+        log_ev!("studio_burn", trace_id, "job_cancel_result", "cancelled" => cancelled);
+        true
+    } else if cb_data == crate::bot::constants::CB_STUDIO_TRIM_START
+        || cb_data.starts_with("studio_trim:start")
+    {
         log_ev!("studio_trim", trace_id, "start_ranges_prompt", "user_id" => user_id);
         let text = apply_premium_to_md(&t("studio.trim.ranges_prompt"));
         let params = EditMessageTextParams::builder()
@@ -198,10 +239,39 @@ pub fn is_video_message_metadata(msg: &frankenstein::types::Message) -> bool {
             let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
             if matches!(
                 ext.as_str(),
-                "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv" | "m4v" | "3gp" | "3g2"
-                | "ts" | "mts" | "m2ts" | "vob" | "ogv" | "qt" | "f4v" | "asf" | "rm" | "rmvb"
-                | "mpg" | "mpeg" | "mpe" | "mpv" | "divx" | "xvid" | "m2v" | "264" | "h264"
-                | "265" | "h265" | "hevc" | "av1"
+                "mp4"
+                    | "mkv"
+                    | "avi"
+                    | "mov"
+                    | "webm"
+                    | "flv"
+                    | "wmv"
+                    | "m4v"
+                    | "3gp"
+                    | "3g2"
+                    | "ts"
+                    | "mts"
+                    | "m2ts"
+                    | "vob"
+                    | "ogv"
+                    | "qt"
+                    | "f4v"
+                    | "asf"
+                    | "rm"
+                    | "rmvb"
+                    | "mpg"
+                    | "mpeg"
+                    | "mpe"
+                    | "mpv"
+                    | "divx"
+                    | "xvid"
+                    | "m2v"
+                    | "264"
+                    | "h264"
+                    | "265"
+                    | "h265"
+                    | "hevc"
+                    | "av1"
             ) {
                 return true;
             }
@@ -223,8 +293,23 @@ pub fn is_video_message_metadata(msg: &frankenstein::types::Message) -> bool {
             let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
             if matches!(
                 ext.as_str(),
-                "pdf" | "zip" | "rar" | "7z" | "txt" | "jpg" | "jpeg" | "png" | "gif" | "webp"
-                | "mp3" | "wav" | "flac" | "m4a" | "ogg" | "opus" | "aac"
+                "pdf"
+                    | "zip"
+                    | "rar"
+                    | "7z"
+                    | "txt"
+                    | "jpg"
+                    | "jpeg"
+                    | "png"
+                    | "gif"
+                    | "webp"
+                    | "mp3"
+                    | "wav"
+                    | "flac"
+                    | "m4a"
+                    | "ogg"
+                    | "opus"
+                    | "aac"
             ) {
                 return false;
             }
@@ -331,5 +416,3 @@ mod tests {
         assert!(!is_video_message_metadata(&pdf_msg));
     }
 }
-
-

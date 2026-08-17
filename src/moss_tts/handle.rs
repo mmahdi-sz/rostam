@@ -370,7 +370,8 @@ pub async fn handle_tts_text(
                     status_msg.message_id,
                     "transfer.stage.sending_audio",
                     None,
-                ).await;
+                )
+                .await;
                 if let Err(e) = &r {
                     let err_str = format!("{e:?}");
                     log_ev!("tts", trace_id, "send_voice_failed", "err" => &err_str);
@@ -401,7 +402,8 @@ pub async fn handle_tts_text(
                     status_msg.message_id,
                     "transfer.stage.sending_audio",
                     None,
-                ).await;
+                )
+                .await;
                 if let Err(e) = &r {
                     let err_str = format!("{e:?}");
                     log_ev!("tts", trace_id, "send_audio_failed", "err" => &err_str);
@@ -430,7 +432,6 @@ pub async fn handle_tts_text(
                     .await;
                 }
             }
-
 
             let _ = std::fs::remove_file(&voice_path);
 

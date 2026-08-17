@@ -105,6 +105,14 @@ pub async fn run() -> anyhow::Result<()> {
             post(endpoints::studio::test_studio_compress),
         )
         .route(
+            "/test/studio/extract",
+            post(endpoints::studio::test_studio_extract),
+        )
+        .route(
+            "/test/studio/burn",
+            post(endpoints::studio::test_studio_burn),
+        )
+        .route(
             "/test/surge/validate_url",
             post(endpoints::surge::test_surge_validate_url),
         )
@@ -150,6 +158,12 @@ pub async fn run() -> anyhow::Result<()> {
             "/test/transfer/upload",
             post(endpoints::transfer::test_transfer_upload),
         )
+        .route(
+            "/test/pkg/validate",
+            post(endpoints::pkg::test_pkg_validate),
+        )
+        .route("/test/pkg/convert", post(endpoints::pkg::test_pkg_convert))
+        .route("/test/pkg/ux", post(endpoints::pkg::test_pkg_ux))
         // Catch-all for outgoing frankenstein calls
         .route(
             "/bot{token}/{method}",
