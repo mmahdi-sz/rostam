@@ -33,7 +33,7 @@ rand = "0.8"
 hound = "3.5"
 vosk = "0.3"
 libc = "0.2"
-redis = { version = "0.27", features = ["tokio-comp"] }
+redis = { version = "1.6", features = ["tokio-comp"] }
 ort = "=2.0.0-rc.12"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "bmp"] }
 # ترجمه‌ی زیرنویس: بایندینگ Rust برای CTranslate2 (مدل NLLB در files/models/nllb/).
