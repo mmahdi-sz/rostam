@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use frankenstein::{
@@ -12,6 +12,10 @@ use frankenstein::{
 };
 
 use crate::bot::send_text;
+use crate::common::cpu_broker::CpuBrokerGuard;
+use crate::common::dir::TempDirGuard;
+use crate::common::keyboard::job_cancel_keyboard;
+use crate::common::ticker::ProgressTicker;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::panel::{btn_icon_danger, btn_icon_plain, btn_icon_success};
 use crate::emoji::{FlowManager, FlowState};
@@ -24,7 +28,6 @@ use crate::rank::{
 
 const UPSCALE_BIN: &str = "files/realesrgan/realesrgan-ncnn-vulkan";
 const MODEL_DIR: &str = "files/realesrgan/models";
-const SEP_BASE: &str = "http://127.0.0.1:6589";
 pub const CB_UPSCALE_CANCEL: &str = "upscale:cancel";
 pub const CB_UPSCALE_MODEL_PREFIX: &str = "upscale:model:";
 pub const CB_UPSCALE_ANIME_TOGGLE: &str = "upscale:anime_toggle";
@@ -37,76 +40,16 @@ const ANIME_MODELS: &[(&str, u32, &str)] = &[
 ];
 
 // ── active cancel flags ───────────────────────────────────────────────────────
-static ACTIVE_UPSCALES: OnceLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> = OnceLock::new();
+use crate::common::job::{JobGuard, JobRegistry};
 
-fn active_upscales() -> &'static Mutex<HashMap<i64, Arc<AtomicBool>>> {
-    ACTIVE_UPSCALES.get_or_init(|| Mutex::new(HashMap::new()))
-}
+static ACTIVE_UPSCALES: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
-use crate::sync_util::lock_or_recover;
-
-fn register_upscale(user_id: i64) -> Arc<AtomicBool> {
-    let flag = Arc::new(AtomicBool::new(false));
-    lock_or_recover(active_upscales()).insert(user_id, flag.clone());
-    flag
-}
-
-fn unregister_upscale(user_id: i64) {
-    lock_or_recover(active_upscales()).remove(&user_id);
+pub fn register_upscale(user_id: i64) -> (Arc<AtomicBool>, JobGuard<i64>) {
+    ACTIVE_UPSCALES.register_with_guard(user_id)
 }
 
 pub fn cancel_upscale(user_id: i64) -> bool {
-    if let Some(flag) = lock_or_recover(active_upscales()).get(&user_id) {
-        flag.store(true, Ordering::Relaxed);
-        true
-    } else {
-        false
-    }
-}
-
-// ── CPU broker ────────────────────────────────────────────────────────────────
-
-async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
-    let client = crate::http::client();
-    let res = client
-        .post(format!("{SEP_BASE}/cpu/acquire"))
-        .form(&[
-            ("user_id", user_id.to_string()),
-            ("is_vip", "false".to_string()),
-        ])
-        .timeout(Duration::from_secs(120))
-        .send()
-        .await;
-    match res {
-        Ok(r) => {
-            let json: serde_json::Value = r.json().await.unwrap_or_default();
-            let cores: Vec<i32> = json
-                .get("cores")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
-            log_ev!("upscale", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
-            cores
-        }
-        Err(e) => {
-            log_ev!("upscale", trace_id, "cpu_acquire_failed", "=>" => format!("fail err={e}"));
-            vec![]
-        }
-    }
-}
-
-async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
-    if cores.is_empty() {
-        return;
-    }
-    let client = crate::http::client();
-    let body = serde_json::json!({ "cores": cores });
-    let r = client
-        .post(format!("{SEP_BASE}/cpu/release"))
-        .json(&body)
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await;
-    log_ev!("upscale", trace_id, "cpu_released", "cores" => format!("{cores:?}"), "=>" => if r.is_ok() { "ok" } else { "fail" });
+    ACTIVE_UPSCALES.cancel(&user_id)
 }
 
 // Pin a subprocess (by PID) to the given CPU core list via sched_setaffinity.
@@ -195,13 +138,7 @@ fn upscale_keyboard(anime_expanded: bool, active_model: &str) -> InlineKeyboardM
 }
 
 fn upscale_status_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon_danger(
-            &t("upscale.cancel_button"),
-            CB_UPSCALE_CANCEL,
-            "cancel",
-        )]])
-        .build()
+    job_cancel_keyboard(&t("upscale.cancel_button"), CB_UPSCALE_CANCEL, "cancel")
 }
 
 // ── entry / model selection ───────────────────────────────────────────────────
@@ -353,14 +290,14 @@ const fn upscale_quota_kind(scale: u32) -> QuotaKind {
 
 pub async fn handle_upscale_image(
     api: Bot,
-    message: frankenstein::types::Message,
+    message: Message,
     user_id: i64,
     scale_factor: u32,
     model_name: String,
     database: Option<PostgresDatabase>,
 ) {
     let api = &api;
-    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+    if CpuBrokerGuard::is_user_busy(user_id).await {
         let _ = send_text(api, message.chat.id, &t("active_job_running")).await;
         return;
     }
@@ -426,8 +363,7 @@ pub async fn handle_upscale_image(
             }
             Err(e) => {
                 log_ev!("upscale", trace_id, "quota_reserve", "err" => format!("{e}"), "=>" => "fail");
-                crate::rank::paywall::quota_db_error(api, chat_id, "upscale", &format!("{e}"))
-                    .await;
+                crate::rank::paywall::quota_db_error(api, chat_id, "upscale", &format!("{e}")).await;
                 return;
             }
         }
@@ -474,40 +410,37 @@ pub async fn handle_upscale_image(
     log_ev!("upscale", trace_id, "status_sent", "msg_id" => format!("{status_msg_id:?}"));
 
     // ── cancel flag + elapsed timer ───────────────────────────────────────────
-    let cancel_flag = register_upscale(user_id);
-    let done_flag = Arc::new(AtomicBool::new(false));
-
-    if let Some(smid) = status_msg_id {
-        let api_t = api.clone();
-        let done_t = done_flag.clone();
-        let cancel_t = cancel_flag.clone();
-        let start_t = std::time::Instant::now();
-        crate::app::spawn_user_task(async move {
-            loop {
-                tokio::time::sleep(Duration::from_secs(3)).await;
-                if done_t.load(Ordering::Relaxed) || cancel_t.load(Ordering::Relaxed) {
-                    break;
-                }
-                let s = start_t.elapsed().as_secs();
-                let elapsed = format!("{:02}:{:02}", s / 60, s % 60);
-                let text = tf("upscale.processing", &[("elapsed", &elapsed)]);
-                let params = EditMessageTextParams::builder()
-                    .chat_id(chat_id)
-                    .message_id(smid)
-                    .text(&text)
-                    .reply_markup(upscale_status_keyboard())
-                    .build();
-                let _ = api_t.edit_message_text(&params).await;
-            }
-        });
-    }
+    let (cancel_flag, _job_guard) = register_upscale(user_id);
+    let ticker_handle = status_msg_id.map(|smid| {
+        ProgressTicker::new(api, chat_id, smid)
+            .interval(Duration::from_secs(3))
+            .with_cancel_flag(cancel_flag.clone())
+            .with_keyboard(upscale_status_keyboard())
+            .spawn(|elapsed| {
+                let s = elapsed.as_secs();
+                let elapsed_str = format!("{:02}:{:02}", s / 60, s % 60);
+                let text = tf("upscale.processing", &[("elapsed", &elapsed_str)]);
+                Some(apply_premium_to_md(&text))
+            })
+    });
 
     // ── acquire CPU cores ─────────────────────────────────────────────────────
-    let cores = acquire_cpu(user_id, trace_id).await;
+    let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "upscale").await;
 
     // ── download ──────────────────────────────────────────────────────────────
-    let work_dir = std::env::temp_dir().join(format!("upscale_{trace_id}"));
-    std::fs::create_dir_all(&work_dir).ok();
+    let dir_guard = match TempDirGuard::create("upscale", trace_id) {
+        Ok(g) => g,
+        Err(e) => {
+            log_ev!("upscale", trace_id, "temp_dir_failed", "err" => format!("{e}"));
+            if let Some(ticker) = ticker_handle {
+                ticker.stop();
+            }
+            cpu_guard.release().await;
+            refund!("temp_dir_failed");
+            return;
+        }
+    };
+    let work_dir = dir_guard.path().to_path_buf();
     let input_path = work_dir.join(format!("input.{orig_ext}"));
     let output_path = work_dir.join(format!("output.{orig_ext}"));
 
@@ -515,9 +448,10 @@ pub async fn handle_upscale_image(
         (input_path.to_str(), output_path.to_str())
     else {
         log_ev!("upscale", trace_id, "invalid_path", "=>" => "fail");
-        done_flag.store(true, Ordering::Relaxed);
-        unregister_upscale(user_id);
-        release_cpu(cores, trace_id).await;
+        if let Some(ticker) = ticker_handle {
+            ticker.stop();
+        }
+        cpu_guard.release().await;
         clean_up(&work_dir);
         refund!("invalid_path");
         return;
@@ -530,9 +464,10 @@ pub async fn handle_upscale_image(
         Err(e) => {
             let e_str = e.to_string();
             log_ev!("upscale", trace_id, "download_failed", "=>" => format!("fail err={e_str}"));
-            done_flag.store(true, Ordering::Relaxed);
-            unregister_upscale(user_id);
-            release_cpu(cores, trace_id).await;
+            if let Some(ticker) = ticker_handle {
+                ticker.stop();
+            }
+            cpu_guard.release().await;
             crate::stats::record_event_user(
                 user_id,
                 "upscale",
@@ -566,7 +501,7 @@ pub async fn handle_upscale_image(
     let output_str = output_str_slice.to_string();
     let model_owned = model_name.to_string();
     let cancel_for_run = cancel_flag.clone();
-    let cores_for_run = cores.clone();
+    let cores_for_run = cpu_guard.cores().to_vec();
 
     let result = tokio::task::spawn_blocking(move || {
         run_upscale(
@@ -581,9 +516,10 @@ pub async fn handle_upscale_image(
     })
     .await;
 
-    done_flag.store(true, Ordering::Relaxed);
-    unregister_upscale(user_id);
-    release_cpu(cores, trace_id).await;
+    if let Some(ticker) = ticker_handle {
+        ticker.stop();
+    }
+    cpu_guard.release().await;
 
     let processing_secs = match result {
         Ok(Ok(s)) => {
@@ -848,4 +784,32 @@ fn escape_md(s: &str) -> String {
 
 fn clean_up(dir: &std::path::Path) {
     std::fs::remove_dir_all(dir).ok();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_upscale_cancel_lifecycle() {
+        let user_id = 999_888_007;
+        let (flag, _guard) = register_upscale(user_id);
+        assert!(ACTIVE_UPSCALES.is_active(&user_id));
+        assert!(!flag.load(Ordering::SeqCst));
+
+        // cancel job
+        let cancelled = cancel_upscale(user_id);
+        assert!(cancelled);
+        assert!(flag.load(Ordering::SeqCst));
+        assert!(!ACTIVE_UPSCALES.is_active(&user_id));
+
+        // unregister guard drop test
+        let user_id_2 = 999_888_008;
+        {
+            let (_flag2, _guard2) = register_upscale(user_id_2);
+            assert!(ACTIVE_UPSCALES.is_active(&user_id_2));
+        }
+        assert!(!cancel_upscale(user_id_2));
+        assert!(!ACTIVE_UPSCALES.is_active(&user_id_2));
+    }
 }

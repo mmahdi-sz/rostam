@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::LazyLock;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use frankenstein::{
@@ -19,7 +18,6 @@ use tokio::sync::mpsc;
 use super::engine::{ProgressSnapshot, run_tts_engine};
 use crate::bot::CB_TTS_CANCEL;
 use crate::database::postgresql::PostgresDatabase;
-use crate::emoji::panel::btn_icon_danger;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, t, tf};
 use crate::log::next_trace_id;
@@ -32,15 +30,11 @@ pub const TTS_MAX_CHARS: usize = 500;
 
 pub const CB_TTS_JOB_CANCEL: &str = "tts:jobcancel";
 
-/// Per-user active job cancellation flag; passed to engine to interrupt generation loop and release CPU.
-static ACTIVE_TTS_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+use crate::common::job::JobRegistry;
 
-fn remove_active_tts_job(user_id: i64) {
-    if let Ok(mut jobs) = ACTIVE_TTS_JOBS.lock() {
-        jobs.remove(&user_id);
-    }
-}
+/// Per-user active job cancellation flag; passed to engine to interrupt generation loop and release CPU.
+static ACTIVE_TTS_JOBS: LazyLock<JobRegistry<i64>> =
+    LazyLock::new(JobRegistry::new);
 
 pub fn tts_cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
@@ -55,24 +49,12 @@ pub fn tts_cancel_keyboard() -> InlineKeyboardMarkup {
 
 /// Cancel button on progress message — cancels job in progress.
 fn tts_job_cancel_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon_danger(
-            &t("tts.cancel_button"),
-            CB_TTS_JOB_CANCEL,
-            "cancel",
-        )]])
-        .build()
+    crate::common::job_cancel_keyboard(&t("tts.cancel_button"), CB_TTS_JOB_CANCEL, "cancel")
 }
 
 /// Invoked from "Cancel" button on progress message.
 pub fn signal_tts_cancel(user_id: i64) -> bool {
-    if let Ok(mut jobs) = ACTIVE_TTS_JOBS.lock() {
-        if let Some(flag) = jobs.remove(&user_id) {
-            flag.store(true, Ordering::Relaxed);
-            return true;
-        }
-    }
-    false
+    ACTIVE_TTS_JOBS.cancel(&user_id)
 }
 
 pub async fn enter_tts(
@@ -147,7 +129,7 @@ pub async fn handle_tts_text(
     flow_manager: &FlowManager,
     database: Option<PostgresDatabase>,
 ) {
-    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+    if crate::common::CpuBrokerGuard::is_user_busy(user_id).await {
         let _ = crate::bot::send_text(api, chat_id, &t("active_job_running")).await;
         return;
     }
@@ -291,10 +273,8 @@ pub async fn handle_tts_text(
 
     let text_clone = text_input.to_string();
 
-    let cancel_flag = Arc::new(AtomicBool::new(false));
-    if let Ok(mut jobs) = ACTIVE_TTS_JOBS.lock() {
-        jobs.insert(user_id, cancel_flag.clone());
-    }
+    let cancel_flag = ACTIVE_TTS_JOBS.register(user_id);
+    let _job_guard = ACTIVE_TTS_JOBS.guard(user_id);
     let engine_cancel = cancel_flag.clone();
 
     // Spawn TTS Engine Task
@@ -334,8 +314,6 @@ pub async fn handle_tts_text(
         Ok(res) => res,
         Err(e) => Err(format!("Join error: {e}")),
     };
-
-    remove_active_tts_job(user_id);
 
     // Delete progress message
     let del_params = DeleteMessageParams::builder()
@@ -552,4 +530,34 @@ pub fn tts_job_cancel_keyboard_for_test() -> InlineKeyboardMarkup {
 #[cfg(feature = "testapi")]
 pub fn tts_cancel_keyboard_for_test() -> InlineKeyboardMarkup {
     tts_cancel_keyboard()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tts_cancel_lifecycle() {
+        let user_id = 999_888_008;
+        let flag = ACTIVE_TTS_JOBS.register(user_id);
+        assert!(ACTIVE_TTS_JOBS.is_active(&user_id));
+        assert!(!flag.load(Ordering::SeqCst));
+
+        // simulate cancel
+        let cancelled = signal_tts_cancel(user_id);
+        assert!(cancelled);
+        assert!(flag.load(Ordering::SeqCst));
+        assert!(!ACTIVE_TTS_JOBS.is_active(&user_id));
+
+        // second cancel should return false
+        assert!(!signal_tts_cancel(user_id));
+
+        // guard drop unregister test
+        let user_id_2 = 999_888_009;
+        let (flag2, _guard) = ACTIVE_TTS_JOBS.register_with_guard(user_id_2);
+        assert!(ACTIVE_TTS_JOBS.is_active(&user_id_2));
+        assert!(!flag2.load(Ordering::SeqCst));
+        drop(_guard);
+        assert!(!ACTIVE_TTS_JOBS.is_active(&user_id_2));
+    }
 }

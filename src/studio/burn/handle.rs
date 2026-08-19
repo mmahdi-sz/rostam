@@ -18,13 +18,11 @@ use frankenstein::{
 use crate::bot::files::download_telegram_file;
 use crate::bot::send_text_md;
 use crate::bot::transfer::send_file_with_upload_ticker;
+use crate::common::cpu_broker::CpuBrokerGuard;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
 use crate::log::next_trace_id;
-use crate::moebius::cpu::{
-    acquire_cpu, is_user_cpu_busy, pin_current_thread, release_cpu, trim_memory,
-};
 use crate::rank::{effective_rank, paywall::block_feature, types::Rank};
 use crate::stats::{record_error_global, record_event_global, record_event_user};
 use crate::studio::compress::format_eta_hms;
@@ -91,7 +89,7 @@ pub async fn enter_burn_prompt(
         return;
     }
 
-    if is_user_cpu_busy(user_id).await {
+    if CpuBrokerGuard::is_user_busy(user_id).await {
         log_ev!("studio_burn", trace_id, "cpu_busy", "=>" => "blocked");
         let _ = send_text_md(api, chat_id, &t("active_job_running")).await;
         return;
@@ -518,8 +516,7 @@ pub async fn execute_burn_job(
         return;
     }
 
-    // Checked here, not at prompt entry: minutes of uploading pass in between.
-    if is_user_cpu_busy(user_id).await {
+    if CpuBrokerGuard::is_user_busy(user_id).await {
         log_ev!("studio_burn", trace_id, "cpu_busy", "=>" => "blocked");
         fail!("active_job_running");
         return;
@@ -539,17 +536,16 @@ pub async fn execute_burn_job(
         s_info.local_path.clone()
     };
 
-    let cores = acquire_cpu(user_id, trace_id).await;
-    let threads_arg = if cores.is_empty() {
+    let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "studio_burn").await;
+    let threads_arg = if cpu_guard.cores().is_empty() {
         "2".to_string()
     } else {
-        cores.len().to_string()
+        cpu_guard.cores().len().to_string()
     };
 
     // A user who cancels while queued must not lose the slot to a job that then runs anyway.
     if cancel_flag.load(Ordering::Relaxed) {
-        release_cpu(cores, trace_id).await;
-        trim_memory();
+        cpu_guard.release().await;
         log_ev!("studio_burn", trace_id, "cancelled", "stage" => "post_acquire");
         record_event_user(user_id, "studio_burn", "burn", "cancelled", 1).await;
         fail!("studio.burn.job_cancelled");
@@ -567,8 +563,6 @@ pub async fn execute_burn_job(
     let output_filename = format!("burned_{display_stem}.mp4");
 
     let job_start = Instant::now();
-
-    // watch coalesces: the editor task always renders the newest text, in order, one at a time.
     let (tick_tx, mut tick_rx) = tokio::sync::watch::channel(String::new());
     let api_tick = api.clone();
     crate::app::spawn_user_task(async move {
@@ -591,7 +585,7 @@ pub async fn execute_burn_job(
         }
     });
 
-    let cores_cl = cores.clone();
+    let cores_cl = cpu_guard.cores().to_vec();
     let cancel_cl = cancel_flag.clone();
     let total_duration = meta.duration_secs.max(1);
     let ffmpeg_bin = crate::config::ffmpeg_path();
@@ -601,7 +595,9 @@ pub async fn execute_burn_job(
     let source_codec = meta.codec.clone();
 
     let burn_res = tokio::task::spawn_blocking(move || -> Result<(), String> {
-        pin_current_thread(&cores_cl, trace_id);
+        if !cores_cl.is_empty() {
+            crate::moebius::cpu::pin_current_thread(&cores_cl, trace_id);
+        }
         run_ffmpeg_burn(
             &ffmpeg_bin,
             &input_path,
@@ -618,8 +614,7 @@ pub async fn execute_burn_job(
     })
     .await;
 
-    release_cpu(cores, trace_id).await;
-    trim_memory();
+    cpu_guard.release().await;
 
     if cancel_flag.load(Ordering::Relaxed) {
         log_ev!("studio_burn", trace_id, "cancelled", "stage" => "burn");

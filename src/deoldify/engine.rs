@@ -241,10 +241,10 @@ pub async fn run_deoldify_colorize(
         "input" => input_path.display(), "model" => MODEL_PATH);
 
     // Acquire CPU core allocation from CPU Broker
-    let cores = crate::moebius::cpu::acquire_cpu(user_id, trace_id).await;
-    log_ev!("deoldify", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
+    let mut cpu_guard = crate::common::CpuBrokerGuard::acquire(user_id, trace_id, "deoldify").await;
+    log_ev!("deoldify", trace_id, "cpu_acquired", "cores" => format!("{:?}", cpu_guard.cores()));
 
-    let num_threads = cores.len().max(1);
+    let num_threads = cpu_guard.cores().len().max(1);
     let input_path_buf = input_path.to_path_buf();
     let output_path_buf = output_path.to_path_buf();
     let holder = session_holder().clone();
@@ -396,7 +396,7 @@ pub async fn run_deoldify_colorize(
     .await;
 
     // Release CPU cores back to CPU Broker
-    crate::moebius::cpu::release_cpu(cores, trace_id).await;
+    cpu_guard.release().await;
 
     match process_res {
         Ok(Ok(())) => {

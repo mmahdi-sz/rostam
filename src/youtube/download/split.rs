@@ -11,26 +11,9 @@ pub async fn split_video(
 ) -> Result<Vec<String>, String> {
     let total_secs = match duration_secs.filter(|&d| d > 0) {
         Some(d) => d,
-        None => {
-            let out = tokio::process::Command::new("ffprobe")
-                .args([
-                    "-v",
-                    "error",
-                    "-show_entries",
-                    "format=duration",
-                    "-of",
-                    "default=noprint_wrappers=1:nokey=1",
-                    input,
-                ])
-                .output()
-                .await
-                .map_err(|e| format!("ffprobe spawn: {e}"))?;
-            String::from_utf8_lossy(&out.stdout)
-                .trim()
-                .parse::<f64>()
-                .map(|f| f.round() as u64)
-                .map_err(|_| "ffprobe: could not parse duration".to_string())?
-        }
+        None => crate::common::ffmpeg::probe_duration(std::path::Path::new(input))
+            .await
+            .map_err(|e| format!("ffprobe duration: {e}"))?,
     };
 
     if total_secs == 0 {

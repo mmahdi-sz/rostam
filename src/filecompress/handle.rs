@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::LazyLock;
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
@@ -17,15 +15,15 @@ use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, t};
 use crate::log::next_trace_id;
 
+use crate::common::job::JobRegistry;
+
 /// Cancel flag per user so the "Cancel" button on progress message works.
 /// Kills 7z/rar process to free CPU instead of discarding output.
-pub(super) static ACTIVE_FC_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+pub(super) static ACTIVE_FC_JOBS: LazyLock<JobRegistry<i64>> =
+    LazyLock::new(JobRegistry::new);
 
-pub(super) fn remove_active_fc_job(user_id: i64) {
-    if let Ok(mut jobs) = ACTIVE_FC_JOBS.lock() {
-        jobs.remove(&user_id);
-    }
+pub fn cancel_fc_job(user_id: i64) -> bool {
+    ACTIVE_FC_JOBS.cancel(&user_id)
 }
 
 pub const CB_TOOLS_FILECOMPRESS: &str = "tools:fc";
@@ -90,11 +88,7 @@ pub async fn handle_fc_callback(
 
     if action == "jobcancel" {
         crate::log_ev!("filecompress", trace_id, "job_cancelled", "user_id" => user_id);
-        if let Ok(mut jobs) = ACTIVE_FC_JOBS.lock() {
-            if let Some(flag) = jobs.remove(&user_id) {
-                flag.store(true, Ordering::Relaxed);
-            }
-        }
+        cancel_fc_job(user_id);
         flow_manager.clear(user_id);
         let params = EditMessageTextParams::builder()
             .chat_id(chat_id)
@@ -160,3 +154,31 @@ pub use super::progress::{
     cancel_only_keyboard_for_test, format_clock_for_test, job_cancel_keyboard_for_test,
     options_keyboard_for_test, render_progress_for_test,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn test_fc_cancel_lifecycle() {
+        let user_id = 999_888_010;
+        let flag = ACTIVE_FC_JOBS.register(user_id);
+        assert!(ACTIVE_FC_JOBS.is_active(&user_id));
+        assert!(!flag.load(Ordering::SeqCst));
+
+        // simulate cancel
+        let cancelled = cancel_fc_job(user_id);
+        assert!(cancelled);
+        assert!(flag.load(Ordering::SeqCst));
+        assert!(!ACTIVE_FC_JOBS.is_active(&user_id));
+
+        // guard drop unregister test
+        let user_id_2 = 999_888_011;
+        let (flag2, _guard) = ACTIVE_FC_JOBS.register_with_guard(user_id_2);
+        assert!(ACTIVE_FC_JOBS.is_active(&user_id_2));
+        assert!(!flag2.load(Ordering::SeqCst));
+        drop(_guard);
+        assert!(!ACTIVE_FC_JOBS.is_active(&user_id_2));
+    }
+}

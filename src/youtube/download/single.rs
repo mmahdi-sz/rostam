@@ -14,7 +14,7 @@ use crate::stats;
 use crate::youtube::trace::log_trace;
 use crate::youtube::types::VideoCodec;
 
-use super::cancel::{UnregisterGuard, unregister_cancel};
+use super::cancel::cancel_guard;
 use super::helpers::{
     cleanup_dir, fetch_thumbnail, maybe_send_non_h264_notice, pick_largest_file, quality_label_for,
     sanitize_audio_filename, sanitize_video_filename, send_subtitle_files,
@@ -42,6 +42,7 @@ pub(crate) async fn run_download(
     status_message_id: i32,
     cancel: Arc<Notify>,
 ) {
+    let _cancel_guard = cancel_guard(request_id);
     let height = selection.height;
     let codec = selection.codec;
     let Some(req) = take_request(request_id) else {
@@ -52,10 +53,8 @@ pub(crate) async fn run_download(
             t("youtube.download.request_expired"),
         )
         .await;
-        unregister_cancel(request_id);
         return;
     };
-    let _cancel_guard = UnregisterGuard(request_id);
     let mut cancel_fut = std::pin::pin!(cancel.notified());
     let trace_id = req.trace_id;
     let user_id = req.user_id.unwrap_or(0);
@@ -93,7 +92,6 @@ pub(crate) async fn run_download(
         let limit = format!("{max}p");
         let min_rank = crate::rank::types::Rank::min_for_quality(height);
         crate::rank::paywall::block_limit(&api, status_chat_id, &limit, min_rank).await;
-        unregister_cancel(request_id);
         return;
     }
 

@@ -5,15 +5,12 @@ use std::sync::{
 };
 use std::time::Duration;
 
-use frankenstein::{
-    AsyncTelegramApi,
-    client_reqwest::Bot,
-    methods::EditMessageTextParams,
-};
+use frankenstein::client_reqwest::Bot;
 
+use crate::common::ticker::ProgressTicker;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::FlowManager;
-use crate::i18n::{entities_for_text, t, tf};
+use crate::i18n::{apply_premium_to_md, t, tf};
 
 use super::client::separate_audio;
 use super::error::SeparationError;
@@ -65,42 +62,27 @@ pub async fn run_separation_task(params: SeparationTaskParams) {
         trace_id,
     } = params;
 
-    let api_status = api.clone();
-    let cancel_status = cancel_flag.clone();
     let eta_total = audio_duration_secs.saturating_mul(match mode {
         SeparationMode::Fast => 3,
         SeparationMode::Quality => 5,
     });
 
-    let status_task = crate::app::spawn_user_task(async move {
-        let started = std::time::Instant::now();
-        loop {
-            tokio::time::sleep(Duration::from_secs(5)).await;
-            if cancel_status.load(Ordering::Relaxed) {
-                return;
-            }
-            let elapsed = started.elapsed().as_secs();
-            let remaining = eta_total.saturating_sub(elapsed);
+    let ticker_handle = ProgressTicker::new(&api, chat_id, message_id)
+        .interval(Duration::from_secs(5))
+        .with_cancel_flag(cancel_flag.clone())
+        .with_keyboard(queue_cancel_keyboard())
+        .spawn(move |elapsed| {
+            let el_secs = elapsed.as_secs();
+            let remaining = eta_total.saturating_sub(el_secs);
             let text = tf(
                 "separation.progress",
                 &[
-                    ("elapsed", &format_clock(elapsed)),
+                    ("elapsed", &format_clock(el_secs)),
                     ("remaining", &format_clock(remaining)),
                 ],
             );
-            let entities = entities_for_text(&text);
-            let mut params = EditMessageTextParams::builder()
-                .chat_id(chat_id)
-                .message_id(message_id)
-                .text(&text)
-                .reply_markup(queue_cancel_keyboard())
-                .build();
-            if !entities.is_empty() {
-                params.entities = Some(entities);
-            }
-            let _ = api_status.edit_message_text(&params).await;
-        }
-    });
+            Some(apply_premium_to_md(&text))
+        });
 
     // Race separation against cancel signal (cancel aborts the HTTP request via drop).
     let op_started = std::time::Instant::now();
@@ -126,8 +108,8 @@ pub async fn run_separation_task(params: SeparationTaskParams) {
         } => { None }
     };
 
-    // Abort orphan status-update task now that we have a result.
-    status_task.abort();
+    // Stop ticker now that we have a result.
+    ticker_handle.stop();
     // The whole track sat in RAM twice (read buffer + multipart copy); hand
     // the pages back — separation talks to a remote service, so no broker
     // release happens here to do it.

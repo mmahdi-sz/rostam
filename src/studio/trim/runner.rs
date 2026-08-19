@@ -13,15 +13,15 @@ use crate::bot::{
     files::download_telegram_file,
     messaging::{send_text_md, send_text_md_with_keyboard},
 };
+use crate::common::cpu_broker::CpuBrokerGuard;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
 use crate::log::next_trace_id;
-use crate::moebius::cpu::{acquire_cpu, pin_current_thread, release_cpu, trim_memory};
 use crate::rank::quota::add_traffic;
 use crate::stats::record_event_user;
 use crate::studio::pipeline::{
-    TempDirGuard, register_active_job, remove_active_job, spawn_download_ticker,
+    TempDirGuard, job_guard, register_active_job, spawn_download_ticker,
 };
 use crate::log_ev;
 
@@ -41,7 +41,7 @@ pub async fn execute_trim_job(
     flow_manager: &FlowManager,
     database: Option<PostgresDatabase>,
 ) {
-    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+    if CpuBrokerGuard::is_user_busy(user_id).await {
         let _ = crate::bot::send_text_md(api, chat_id, &t("active_job_running")).await;
         return;
     }
@@ -53,6 +53,7 @@ pub async fn execute_trim_job(
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
     register_active_job(user_id, cancel_flag.clone());
+    let _job_guard = job_guard(user_id);
 
     // 1. Initial ticker message
     let status_raw = tf(
@@ -70,46 +71,19 @@ pub async fn execute_trim_job(
         .build();
 
     let status_msg_id = match api.send_message(&params).await {
-        Ok(resp) => resp.result.message_id,
-        Err(e) => {
-            log_ev!("studio_trim", trace_id, "job_status_send_failed", "=>" => format!("fail err={e}"));
-            remove_active_job(user_id);
-            return;
-        }
+        Ok(m) => m.result.message_id,
+        Err(_) => 0,
     };
 
-    let work_dir = std::env::temp_dir().join(format!("studio_trim_job_{trace_id}_{user_id}"));
+    let work_dir = std::env::temp_dir().join(format!("studio_trim_run_{trace_id}_{user_id}"));
     if let Err(e) = std::fs::create_dir_all(&work_dir) {
         log_ev!("studio_trim", trace_id, "mkdir_failed", "=>" => format!("fail err={e}"));
-        remove_active_job(user_id);
-        let _ = api
-            .delete_message(
-                &DeleteMessageParams::builder()
-                    .chat_id(chat_id)
-                    .message_id(status_msg_id)
-                    .build(),
-            )
-            .await;
-        let _ = send_text_md(api, chat_id, &t("studio.trim.error.download_failed")).await;
+        let _ = send_text_md(api, chat_id, &t("studio.trim.error.trim_failed")).await;
         return;
     }
     let _guard = TempDirGuard::new(work_dir.clone());
+
     let source_video = work_dir.join(filename);
-
-    if cancel_flag.load(Ordering::Relaxed) {
-        remove_active_job(user_id);
-        let _ = api
-            .delete_message(
-                &DeleteMessageParams::builder()
-                    .chat_id(chat_id)
-                    .message_id(status_msg_id)
-                    .build(),
-            )
-            .await;
-        let _ = send_text_md(api, chat_id, &t("studio.trim.job_cancelled")).await;
-        return;
-    }
-
     let stats_job_id = crate::stats::record_download_start(user_id, "studio_trim").await;
 
     // Ingest source video
@@ -131,7 +105,6 @@ pub async fn execute_trim_job(
         Err(e) => {
             dl_stop_flag.store(true, Ordering::Relaxed);
             log_ev!("studio_trim", trace_id, "download_failed", "=>" => format!("fail err={e}"));
-            remove_active_job(user_id);
             let _ = api
                 .delete_message(
                     &DeleteMessageParams::builder()
@@ -157,7 +130,7 @@ pub async fn execute_trim_job(
     }
 
     if cancel_flag.load(Ordering::Relaxed) {
-        remove_active_job(user_id);
+        log_ev!("studio_trim", trace_id, "job_cancelled_post_dl", "user_id" => user_id);
         let _ = api
             .delete_message(
                 &DeleteMessageParams::builder()
@@ -170,17 +143,20 @@ pub async fn execute_trim_job(
         return;
     }
 
+    // Probe input media metadata for thumbnail dimensioning
+    let _meta = run_ffprobe(&source_video).await;
+
     // Acquire CPU broker cores
-    let cores = acquire_cpu(user_id, trace_id).await;
-    let threads_arg = if !cores.is_empty() {
-        cores.len().to_string()
+    let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "studio_trim").await;
+    let threads_arg = if !cpu_guard.cores().is_empty() {
+        cpu_guard.cores().len().to_string()
     } else {
         "2".to_string()
     };
 
     if cancel_flag.load(Ordering::Relaxed) {
-        release_cpu(cores, trace_id).await;
-        remove_active_job(user_id);
+        cpu_guard.release().await;
+
         let _ = api
             .delete_message(
                 &DeleteMessageParams::builder()
@@ -279,14 +255,16 @@ pub async fn execute_trim_job(
 
         let raw_line = range.raw_line.clone();
         let cancel_flag_inner = cancel_flag.clone();
-        let cores_inner = cores.clone();
+        let cores_inner = cpu_guard.cores().to_vec();
         let threads_arg_inner = threads_arg.clone();
         let out_path_inner = output_path.clone();
         let work_dir_inner = work_dir.clone();
         let current_idx = idx + 1;
 
         let run_res = tokio::task::spawn_blocking(move || {
-            pin_current_thread(&cores_inner, trace_id);
+            if !cores_inner.is_empty() {
+                crate::moebius::cpu::pin_current_thread(&cores_inner, trace_id);
+            }
 
             // Fast copy attempt
             let mut child = match std::process::Command::new(crate::config::ffmpeg_path())
@@ -553,9 +531,7 @@ pub async fn execute_trim_job(
     let trim_secs = loop_secs.saturating_sub(total_upload_secs);
     let upload_secs = total_upload_secs;
 
-    release_cpu(cores, trace_id).await;
-    trim_memory();
-    remove_active_job(user_id);
+    cpu_guard.release().await;
 
     // Delete ticker message
     let _ = api

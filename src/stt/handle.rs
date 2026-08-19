@@ -5,6 +5,10 @@ use frankenstein::{
 };
 
 use crate::bot::{edit_to_start_menu, send_long_text, send_text, send_text_with_back};
+use crate::common::cpu_broker::CpuBrokerGuard;
+use crate::common::dir::TempDirGuard;
+use crate::common::ffmpeg::{convert_to_wav, probe_metadata};
+use crate::common::ticker::ProgressTicker;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, t, tf};
@@ -18,13 +22,18 @@ use crate::stt::deepfilter;
 use crate::stt::types::{SttConfig, SttLang, SttModelSize};
 use crate::stt::vosk;
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::LazyLock;
+use std::sync::atomic::Ordering;
+
+use crate::common::job::JobRegistry;
 
 // Global map tracking active STT jobs per user_id: user_id -> cancel_flag
-static ACTIVE_STT_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static ACTIVE_STT_JOBS: LazyLock<JobRegistry<i64>> =
+    LazyLock::new(JobRegistry::new);
+
+pub fn cancel_stt_job(user_id: i64) -> bool {
+    ACTIVE_STT_JOBS.cancel(&user_id)
+}
 
 // ponytail: thin shim — existing log_trace() calls below keep working with correct domain.
 fn log_trace(trace_id: u64, event: &str, details: &str) {
@@ -267,11 +276,7 @@ pub async fn handle_stt_callback(
         }
         CB_STT_JOB_CANCEL => {
             log_trace(trace_id, "stt_job_cancel", &format!("user_id={user_id}"));
-            if let Ok(mut jobs) = ACTIVE_STT_JOBS.lock() {
-                if let Some(cancel_flag) = jobs.remove(&user_id) {
-                    cancel_flag.store(true, Ordering::Relaxed);
-                }
-            }
+            cancel_stt_job(user_id);
             flow_manager.clear(user_id);
             let _ = api
                 .delete_message(
@@ -295,39 +300,6 @@ pub async fn handle_stt_callback(
     }
 }
 
-/// Converts audio to 16kHz mono 16-bit PCM WAV using ffmpeg.
-async fn convert_to_wav(input: &str, output: &str) -> anyhow::Result<()> {
-    let status = tokio::process::Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-i",
-            input,
-            "-ar",
-            "16000",
-            "-ac",
-            "1",
-            "-sample_fmt",
-            "s16",
-            "-f",
-            "wav",
-            output,
-        ])
-        .status()
-        .await
-        .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?;
-
-    if !status.success() {
-        anyhow::bail!("ffmpeg conversion failed");
-    }
-    Ok(())
-}
-
-fn remove_active_stt_job(user_id: i64) {
-    if let Ok(mut jobs) = ACTIVE_STT_JOBS.lock() {
-        jobs.remove(&user_id);
-    }
-}
-
 /// Downloads a Telegram file by file_id to a local path.
 use crate::bot::download_telegram_file as download_file;
 
@@ -342,7 +314,7 @@ pub async fn handle_stt_audio(
     config: &SttConfig,
     database: Option<PostgresDatabase>,
 ) {
-    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+    if CpuBrokerGuard::is_user_busy(user_id).await {
         let _ = crate::bot::send_text_md(api, chat_id, &crate::i18n::t("active_job_running")).await;
         return;
     }
@@ -355,11 +327,8 @@ pub async fn handle_stt_audio(
         &format!("user_id={user_id} chat_id={chat_id}"),
     );
 
-    // Register cancel flag for this user
-    let cancel_flag = Arc::new(AtomicBool::new(false));
-    if let Ok(mut jobs) = ACTIVE_STT_JOBS.lock() {
-        jobs.insert(user_id, cancel_flag.clone());
-    }
+    // Register cancel flag and RAII guard for this user
+    let (cancel_flag, _job_guard) = ACTIVE_STT_JOBS.register_with_guard(user_id);
 
     // ── Stage 1: Send initial status message & capture message_id ──
     let text_with_emojis = crate::i18n::apply_premium_to_md(&t("stt.stage_downloading"));
@@ -380,8 +349,16 @@ pub async fn handle_stt_audio(
         Err(_) => None,
     };
 
-    let work_dir = std::env::temp_dir().join(format!("stt_{trace_id}"));
-    std::fs::create_dir_all(&work_dir).ok();
+    let dir_guard = match TempDirGuard::create("stt", trace_id) {
+        Ok(g) => g,
+        Err(e) => {
+            log_trace(trace_id, "stt_temp_dir_failed", &e.to_string());
+            let _ = send_text_with_back(api, chat_id, &t("stt.convert_failed")).await;
+            delete_status(api, chat_id, status_msg_id).await;
+            return;
+        }
+    };
+    let work_dir = dir_guard.path().to_path_buf();
 
     let input_path = work_dir.join("input");
     let wav_path = work_dir.join("converted.wav");
@@ -393,7 +370,7 @@ pub async fn handle_stt_audio(
         denoised_path.to_str(),
     ) else {
         log_trace(trace_id, "stt_invalid_path", "invalid UTF-8 path");
-        remove_active_stt_job(user_id);
+
         clean_up(&work_dir);
         return;
     };
@@ -406,7 +383,7 @@ pub async fn handle_stt_audio(
         Ok(res) => res,
         Err(e) => {
             let e_str = e.to_string();
-            remove_active_stt_job(user_id);
+    
             log_trace(trace_id, "stt_download_failed", &format!("err={e_str}"));
             crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
             crate::stats::record_error_global("stt", &format!("download failed: {e_str}")).await;
@@ -438,7 +415,7 @@ pub async fn handle_stt_audio(
 
     if cancel_flag.load(Ordering::Relaxed) {
         log_trace(trace_id, "stt_cancelled_after_download", "");
-        remove_active_stt_job(user_id);
+
         clean_up(&work_dir);
         return;
     }
@@ -446,8 +423,14 @@ pub async fn handle_stt_audio(
     // ── Stage 2: Convert to WAV ──
     edit_status(api, chat_id, status_msg_id, &t("stt.stage_converting")).await;
 
-    if let Err(e) = convert_to_wav(input_str, wav_str).await {
-        remove_active_stt_job(user_id);
+    if let Err(e) = convert_to_wav(
+        std::path::Path::new(input_str),
+        std::path::Path::new(wav_str),
+        16000,
+        1,
+    )
+    .await
+    {
         log_trace(trace_id, "stt_convert_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
         crate::stats::record_error_global("stt", &format!("convert failed: {e}")).await;
@@ -460,12 +443,15 @@ pub async fn handle_stt_audio(
 
     if cancel_flag.load(Ordering::Relaxed) {
         log_trace(trace_id, "stt_cancelled_after_convert", "");
-        remove_active_stt_job(user_id);
+
         clean_up(&work_dir);
         return;
     }
 
-    let audio_duration = wav_duration(wav_str).await.unwrap_or(0.0);
+    let audio_duration = probe_metadata(std::path::Path::new(wav_str))
+        .await
+        .map(|m| m.duration_exact)
+        .unwrap_or(0.0);
     let duration_secs = audio_duration.ceil() as u64;
 
     // Quota reservation
@@ -480,7 +466,7 @@ pub async fn handle_stt_audio(
             let client = match db.get().await {
                 Ok(c) => c,
                 Err(e) => {
-                    remove_active_stt_job(user_id);
+            
                     log_trace(trace_id, "stt_quota_checkout", &format!("err={e} => fail"));
                     delete_status(api, chat_id, status_msg_id).await;
                     clean_up(&work_dir);
@@ -546,7 +532,7 @@ pub async fn handle_stt_audio(
                     } else {
                         (file_key, "remaining", format_duration_fa(d_rem.min(w_rem)))
                     };
-                    remove_active_stt_job(user_id);
+            
                     log_trace(
                         trace_id,
                         $event,
@@ -568,7 +554,7 @@ pub async fn handle_stt_audio(
 
             macro_rules! db_fail {
                 ($e:expr) => {{
-                    remove_active_stt_job(user_id);
+            
                     log_trace(
                         trace_id,
                         "stt_quota_reserve",
@@ -676,20 +662,22 @@ pub async fn handle_stt_audio(
         let wav_in = wav_str.to_string();
         let wav_out = denoised_str.to_string();
         // DeepFilterNet inference is CPU-heavy — reserve cores like every other engine.
-        let dn_cores = crate::moebius::cpu::acquire_cpu(user_id, trace_id).await;
+        let mut dn_guard = CpuBrokerGuard::acquire(user_id, trace_id, "stt").await;
         log_trace(
             trace_id,
             "stt_denoise_cpu_acquired",
-            &format!("cores={dn_cores:?}"),
+            &format!("cores={:?}", dn_guard.cores()),
         );
-        let dn_pin = dn_cores.clone();
+        let dn_cores = dn_guard.cores().to_vec();
         let dn_res = tokio::task::spawn_blocking(move || {
-            crate::moebius::cpu::pin_current_thread(&dn_pin, trace_id);
+            if !dn_cores.is_empty() {
+                crate::moebius::cpu::pin_current_thread(&dn_cores, trace_id);
+            }
             deepfilter::denoise(&wav_in, &wav_out).map_err(|e| e.to_string())
         })
         .await
         .unwrap_or_else(|e| Err(e.to_string()));
-        crate::moebius::cpu::release_cpu(dn_cores, trace_id).await;
+        dn_guard.release().await;
         match dn_res {
             Ok(s) => {
                 log_trace(trace_id, "stt_denoised", &format!("elapsed={s:.1}s"));
@@ -712,7 +700,7 @@ pub async fn handle_stt_audio(
 
     if cancel_flag.load(Ordering::Relaxed) {
         log_trace(trace_id, "stt_cancelled_after_denoise", "");
-        remove_active_stt_job(user_id);
+
         clean_up(&work_dir);
         refund!("cancelled_after_denoise");
         return;
@@ -720,33 +708,20 @@ pub async fn handle_stt_audio(
 
     // ── Stage 4: Transcribe with live timer ──
     let duration_label = format_duration_hms(audio_duration);
-    let initial_text = tf(
-        "stt.stage_transcribing",
-        &[("duration", &duration_label), ("elapsed", "0")],
-    );
-    edit_status(api, chat_id, status_msg_id, &initial_text).await;
-
-    // Spawn live timer — edits status every 2 seconds
-    let timer_running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let timer_flag = timer_running.clone();
-    let cancel_timer_flag = cancel_flag.clone();
-    let api_timer = api.clone();
-    let timer_msg_id = status_msg_id;
     let dur_label = duration_label.clone();
-    let timer_handle = crate::app::spawn_user_task(async move {
-        let mut tick = 2u64;
-        while timer_flag.load(Ordering::Relaxed) && !cancel_timer_flag.load(Ordering::Relaxed) {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            if !timer_flag.load(Ordering::Relaxed) || cancel_timer_flag.load(Ordering::Relaxed) {
-                break;
-            }
-            let text = tf(
-                "stt.stage_transcribing",
-                &[("duration", &dur_label), ("elapsed", &tick.to_string())],
-            );
-            edit_status(&api_timer, chat_id, timer_msg_id, &text).await;
-            tick += 2;
-        }
+    let ticker_handle = status_msg_id.map(|msg_id| {
+        ProgressTicker::new(api, chat_id, msg_id)
+            .interval(std::time::Duration::from_secs(2))
+            .with_cancel_flag(cancel_flag.clone())
+            .with_keyboard(cancel_job_keyboard())
+            .spawn(move |elapsed| {
+                let tick = (elapsed.as_secs() / 2) * 2;
+                let text = tf(
+                    "stt.stage_transcribing",
+                    &[("duration", &dur_label), ("elapsed", &tick.to_string())],
+                );
+                Some(apply_premium_to_md(&text))
+            })
     });
 
     // 4. Transcribe — CPU-heavy blocking. Reserve cores through the broker first,
@@ -757,38 +732,46 @@ pub async fn handle_stt_audio(
         wav_str.to_string()
     };
     let config_clone = config.clone();
-    let cores = crate::moebius::cpu::acquire_cpu(user_id, trace_id).await;
-    log_trace(trace_id, "stt_cpu_acquired", &format!("cores={cores:?}"));
+    let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "stt").await;
+    log_trace(
+        trace_id,
+        "stt_cpu_acquired",
+        &format!("cores={:?}", cpu_guard.cores()),
+    );
 
     // The broker can block up to 120s — the user may have cancelled while queued.
     if cancel_flag.load(Ordering::Relaxed) {
-        crate::moebius::cpu::release_cpu(cores, trace_id).await;
-        timer_running.store(false, Ordering::Relaxed);
-        let _ = timer_handle.await;
+        cpu_guard.release().await;
+        if let Some(ticker) = ticker_handle {
+            ticker.stop();
+        }
         log_trace(trace_id, "stt_cancelled_before_transcribe", "");
-        remove_active_stt_job(user_id);
+
         clean_up(&work_dir);
         refund!("cancelled_before_transcribe");
         return;
     }
 
-    let cores_pin = cores.clone();
+    let cores_pin = cpu_guard.cores().to_vec();
     let transcribed = tokio::task::spawn_blocking(move || {
         // Pin from inside the blocking task; threads Vosk spawns inherit it.
-        crate::moebius::cpu::pin_current_thread(&cores_pin, trace_id);
+        if !cores_pin.is_empty() {
+            crate::moebius::cpu::pin_current_thread(&cores_pin, trace_id);
+        }
         vosk::transcribe(&config_clone, &audio_source).map_err(|e| e.to_string())
     })
     .await
     .unwrap_or_else(|e| Err(e.to_string()));
     // Also trims: Vosk just dropped a 97–205 MB model.
-    crate::moebius::cpu::release_cpu(cores, trace_id).await;
+    cpu_guard.release().await;
     let (text, processing_secs) = match transcribed {
         Ok(r) => r,
         Err(e) => {
             // Stop the timer
-            timer_running.store(false, Ordering::Relaxed);
-            let _ = timer_handle.await;
-            remove_active_stt_job(user_id);
+            if let Some(ticker) = ticker_handle {
+                ticker.stop();
+            }
+
             log_trace(trace_id, "stt_transcribe_failed", &format!("err={e}"));
             crate::stats::record_event_user(
                 user_id,
@@ -808,11 +791,11 @@ pub async fn handle_stt_audio(
     };
 
     // Stop the timer
-    timer_running.store(false, Ordering::Relaxed);
-    let _ = timer_handle.await;
+    if let Some(ticker) = ticker_handle {
+        ticker.stop();
+    }
 
     let was_cancelled = cancel_flag.load(Ordering::Relaxed);
-    remove_active_stt_job(user_id);
 
     if was_cancelled {
         log_trace(trace_id, "stt_cancelled_during_transcribe", "");
@@ -893,30 +876,6 @@ pub async fn send_stt_ready_prompt(api: &Bot, chat_id: i64, config: &SttConfig) 
     let _ = api.send_message(&params).await;
 }
 
-async fn wav_duration(path: &str) -> anyhow::Result<f64> {
-    let output = tokio::process::Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "csv=p=0",
-            path,
-        ])
-        .output()
-        .await?;
-    if !output.status.success() {
-        anyhow::bail!(
-            "ffprobe failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let d: f64 = s.parse()?;
-    Ok(d)
-}
-
 fn clean_up(dir: &std::path::Path) {
     std::fs::remove_dir_all(dir).ok();
 }
@@ -983,5 +942,32 @@ fn format_duration_hms(secs_f: f64) -> String {
         format!("{mins} دقیقه و {secs} ثانیه")
     } else {
         format!("{secs} ثانیه")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_stt_cancel_lifecycle() {
+        let user_id = 999_888_006;
+        let flag = ACTIVE_STT_JOBS.register(user_id);
+        assert!(ACTIVE_STT_JOBS.is_active(&user_id));
+        assert!(!flag.load(Ordering::SeqCst));
+
+        // simulate cancel
+        let cancelled = cancel_stt_job(user_id);
+        assert!(cancelled);
+        assert!(flag.load(Ordering::SeqCst));
+        assert!(!ACTIVE_STT_JOBS.is_active(&user_id));
+
+        // guard drop unregister test
+        let user_id_2 = 999_888_007;
+        let (flag2, _guard) = ACTIVE_STT_JOBS.register_with_guard(user_id_2);
+        assert!(ACTIVE_STT_JOBS.is_active(&user_id_2));
+        assert!(!flag2.load(Ordering::SeqCst));
+        drop(_guard);
+        assert!(!ACTIVE_STT_JOBS.is_active(&user_id_2));
     }
 }

@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::LazyLock;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use frankenstein::{
@@ -13,12 +12,15 @@ use frankenstein::{
 };
 
 use crate::bot::{edit_to_tools, send_text_with_back};
+use crate::common::cpu_broker::CpuBrokerGuard;
+use crate::common::dir::TempDirGuard;
+use crate::common::format::fmt_bytes;
+use crate::common::keyboard::job_cancel_keyboard as shared_job_cancel_keyboard;
+use crate::common::ticker::ProgressTicker;
 use crate::emoji::panel::btn_icon;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
 use crate::log::next_trace_id;
-
-const SEP_BASE: &str = "http://127.0.0.1:6589";
 
 pub const CB_TOOLS_PDF_COMPRESS: &str = "tools:pdf_compress";
 pub const CB_PDF_MODE_SIMPLE: &str = "pdf:mode:simple";
@@ -26,13 +28,13 @@ pub const CB_PDF_MODE_ADVANCED: &str = "pdf:mode:advanced";
 pub const CB_PDF_LEVEL_PREFIX: &str = "pdf:level:";
 pub const CB_PDF_CANCEL: &str = "pdf:cancel";
 
-pub static ACTIVE_PDF_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+use crate::common::job::JobRegistry;
 
-pub fn remove_active_pdf_job(user_id: i64) {
-    if let Ok(mut jobs) = ACTIVE_PDF_JOBS.lock() {
-        jobs.remove(&user_id);
-    }
+pub static ACTIVE_PDF_JOBS: LazyLock<JobRegistry<i64>> =
+    LazyLock::new(JobRegistry::new);
+
+pub fn cancel_pdf_job(user_id: i64) -> bool {
+    ACTIVE_PDF_JOBS.cancel(&user_id)
 }
 
 fn format_lite_filename(filename: &str) -> String {
@@ -81,13 +83,7 @@ fn cancel_keyboard() -> InlineKeyboardMarkup {
 }
 
 fn job_cancel_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon(
-            &t("pdfcompress.cancel_button"),
-            "pdf:jobcancel",
-            "cancel",
-        )]])
-        .build()
+    shared_job_cancel_keyboard(&t("pdfcompress.cancel_button"), "pdf:jobcancel", "cancel")
 }
 
 fn level_keyboard() -> InlineKeyboardMarkup {
@@ -231,7 +227,7 @@ pub async fn handle_pdf_level(
     flow_manager: &mut FlowManager,
     level: &str,
 ) {
-    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+    if CpuBrokerGuard::is_user_busy(user_id).await {
         let _ = crate::bot::send_text(api, chat_id, &t("active_job_running")).await;
         return;
     }
@@ -294,55 +290,36 @@ async fn run_pdf_compress(
     trace_id: u64,
     flow_manager: FlowManager,
 ) {
-    let work_dir = std::env::temp_dir().join(format!("pdfcompress_{trace_id}"));
-    std::fs::create_dir_all(&work_dir).ok();
+    let cancel_flag = ACTIVE_PDF_JOBS.register(user_id);
+    let _job_guard = ACTIVE_PDF_JOBS.guard(user_id);
+
+    let ticker_handle = ProgressTicker::new(&api, chat_id, message_id)
+        .interval(Duration::from_secs(2))
+        .with_cancel_flag(cancel_flag.clone())
+        .with_keyboard(job_cancel_keyboard())
+        .spawn(|elapsed| {
+            let s = elapsed.as_secs();
+            let elapsed_str = format!("{:02}:{:02}", s / 60, s % 60);
+            let text = apply_premium_to_md(&tf(
+                "pdfcompress.processing_ticker",
+                &[("elapsed", &md_escape(&elapsed_str))],
+            ));
+            Some(text)
+        });
+
+    let dir_guard = match TempDirGuard::create("pdfcompress", trace_id) {
+        Ok(g) => g,
+        Err(e) => {
+            log_ev!("pdfcompress", trace_id, "temp_dir_failed", "err" => format!("{e}"));
+            ticker_handle.stop();
+            let _ = edit_status(&api, chat_id, message_id, &t("pdfcompress.error.gs_failed")).await;
+            return;
+        }
+    };
+    let work_dir = dir_guard.path().to_path_buf();
     let input_path = work_dir.join("input.pdf");
     let output_filename = format_lite_filename(&filename);
     let output_path = work_dir.join(&output_filename);
-
-    let cancel_flag = Arc::new(AtomicBool::new(false));
-    if let Ok(mut jobs) = ACTIVE_PDF_JOBS.lock() {
-        jobs.insert(user_id, cancel_flag.clone());
-    }
-
-    let timer_running = Arc::new(AtomicBool::new(true));
-    let timer_running_clone = timer_running.clone();
-    let cancel_flag_clone = cancel_flag.clone();
-    let api_timer = api.clone();
-    let start_inst = std::time::Instant::now();
-
-    let _ticker = crate::app::spawn_user_task(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(2));
-        interval.tick().await;
-        let mut last_secs = 999999u64;
-        while timer_running_clone.load(Ordering::Relaxed)
-            && !cancel_flag_clone.load(Ordering::Relaxed)
-        {
-            interval.tick().await;
-            if !timer_running_clone.load(Ordering::Relaxed)
-                || cancel_flag_clone.load(Ordering::Relaxed)
-            {
-                break;
-            }
-            let elapsed = start_inst.elapsed().as_secs();
-            if elapsed != last_secs {
-                last_secs = elapsed;
-                let elapsed_str = format!("{:02}:{:02}", elapsed / 60, elapsed % 60);
-                let text = apply_premium_to_md(&tf(
-                    "pdfcompress.processing_ticker",
-                    &[("elapsed", &md_escape(&elapsed_str))],
-                ));
-                let params = EditMessageTextParams::builder()
-                    .chat_id(chat_id)
-                    .message_id(message_id)
-                    .text(&text)
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .reply_markup(job_cancel_keyboard())
-                    .build();
-                let _ = api_timer.edit_message_text(&params).await;
-            }
-        }
-    });
 
     let stats_job_id = crate::stats::record_download_start(user_id, "pdfcompress").await;
 
@@ -350,11 +327,9 @@ async fn run_pdf_compress(
     let dl_result = match download_file(&api, &file_id, &input_path).await {
         Ok(res) => res,
         Err(e) => {
-            timer_running.store(false, Ordering::Relaxed);
-            remove_active_pdf_job(user_id);
+            ticker_handle.stop();
             let e_str = e.to_string();
             log_ev!("pdfcompress", trace_id, "download_failed", "=>" => format!("fail err={e_str}"));
-            std::fs::remove_dir_all(&work_dir).ok();
             crate::stats::record_error_global("pdfcompress", &format!("download failed: {e_str}"))
                 .await;
             let _ = edit_status(
@@ -369,9 +344,7 @@ async fn run_pdf_compress(
     };
 
     if cancel_flag.load(Ordering::Relaxed) {
-        timer_running.store(false, Ordering::Relaxed);
-        remove_active_pdf_job(user_id);
-        std::fs::remove_dir_all(&work_dir).ok();
+        ticker_handle.stop();
         return;
     }
 
@@ -390,10 +363,8 @@ async fn run_pdf_compress(
     log_ev!("pdfcompress", trace_id, "download_done", "bytes" => orig_size, "speed" => dl_result.speed_human());
 
     if !starts_with_pdf_magic(&input_path) {
-        timer_running.store(false, Ordering::Relaxed);
-        remove_active_pdf_job(user_id);
+        ticker_handle.stop();
         log_ev!("pdfcompress", trace_id, "bad_magic_bytes", "=>" => "reject");
-        std::fs::remove_dir_all(&work_dir).ok();
         let _ = edit_status(
             &api,
             chat_id,
@@ -404,12 +375,10 @@ async fn run_pdf_compress(
         return;
     }
 
-    let cores = acquire_cpu(user_id, trace_id).await;
+    let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "pdfcompress").await;
     if cancel_flag.load(Ordering::Relaxed) {
-        timer_running.store(false, Ordering::Relaxed);
-        remove_active_pdf_job(user_id);
-        release_cpu(cores, trace_id).await;
-        std::fs::remove_dir_all(&work_dir).ok();
+        ticker_handle.stop();
+        cpu_guard.release().await;
         return;
     }
 
@@ -422,35 +391,29 @@ async fn run_pdf_compress(
         &level,
         timeout_secs,
         trace_id,
-        &cores,
+        &cpu_guard.cores(),
     )
     .await;
-    release_cpu(cores, trace_id).await;
+    cpu_guard.release().await;
 
     if cancel_flag.load(Ordering::Relaxed) {
-        timer_running.store(false, Ordering::Relaxed);
-        remove_active_pdf_job(user_id);
-        std::fs::remove_dir_all(&work_dir).ok();
+        ticker_handle.stop();
         return;
     }
 
     match gs_res {
         Ok(()) => {}
         Err(GsError::Timeout) => {
-            timer_running.store(false, Ordering::Relaxed);
-            remove_active_pdf_job(user_id);
+            ticker_handle.stop();
             log_ev!("pdfcompress", trace_id, "gs_timeout", "=>" => "fail");
-            std::fs::remove_dir_all(&work_dir).ok();
             crate::stats::record_error_global("pdfcompress", "gs timeout").await;
             let _ = edit_status(&api, chat_id, message_id, &t("pdfcompress.error.timeout")).await;
             crate::stats::record_event_user(user_id, "pdfcompress", &level, "timeout", 0).await;
             return;
         }
         Err(GsError::Failed(err)) => {
-            timer_running.store(false, Ordering::Relaxed);
-            remove_active_pdf_job(user_id);
+            ticker_handle.stop();
             log_ev!("pdfcompress", trace_id, "gs_failed", "err" => &err, "=>" => "fail");
-            std::fs::remove_dir_all(&work_dir).ok();
             crate::stats::record_error_global("pdfcompress", &format!("gs failed: {err}")).await;
             let _ = edit_status(&api, chat_id, message_id, &t("pdfcompress.error.gs_failed")).await;
             crate::stats::record_event_user(user_id, "pdfcompress", &level, "fail", 0).await;
@@ -462,10 +425,8 @@ async fn run_pdf_compress(
         .map(|m| m.len())
         .unwrap_or(0);
     if compressed_size == 0 || compressed_size >= orig_size {
-        timer_running.store(false, Ordering::Relaxed);
-        remove_active_pdf_job(user_id);
+        ticker_handle.stop();
         log_ev!("pdfcompress", trace_id, "no_improvement", "orig" => orig_size, "compressed" => compressed_size);
-        std::fs::remove_dir_all(&work_dir).ok();
         let _ = edit_status(
             &api,
             chat_id,
@@ -506,15 +467,14 @@ async fn run_pdf_compress(
         .unwrap_or(0);
     let up_start = std::time::Instant::now();
 
+    ticker_handle.stop();
+
     let doc_params = SendDocumentParams::builder()
         .chat_id(chat_id)
         .document(PathBuf::from(&output_path))
         .caption(&caption)
         .parse_mode(ParseMode::MarkdownV2)
         .build();
-
-    timer_running.store(false, Ordering::Relaxed);
-    remove_active_pdf_job(user_id);
 
     use crate::bot::send_file_with_upload_ticker;
     match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
@@ -729,16 +689,6 @@ fn escape_md(s: &str) -> String {
         .collect()
 }
 
-fn fmt_bytes(bytes: u64) -> String {
-    const MB: f64 = 1024.0 * 1024.0;
-    let mb = bytes as f64 / MB;
-    if mb >= 1024.0 {
-        format!("{:.2} GB", mb / 1024.0)
-    } else {
-        format!("{mb:.1} MB")
-    }
-}
-
 async fn edit_status(api: &Bot, chat_id: i64, message_id: i32, text: &str) {
     let kb = crate::bot::back_keyboard();
     let params = EditMessageTextParams::builder()
@@ -751,51 +701,6 @@ async fn edit_status(api: &Bot, chat_id: i64, message_id: i32, text: &str) {
 }
 
 use crate::bot::download_telegram_file as download_file;
-
-// ── CPU broker (same pattern as upscale) ────────────────────────────────────────
-
-async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
-    let client = crate::http::client();
-    let res = client
-        .post(format!("{SEP_BASE}/cpu/acquire"))
-        .form(&[
-            ("user_id", user_id.to_string()),
-            ("is_vip", "false".to_string()),
-        ])
-        .timeout(Duration::from_secs(120))
-        .send()
-        .await;
-    match res {
-        Ok(r) => {
-            let json: serde_json::Value = r.json().await.unwrap_or_default();
-            let cores: Vec<i32> = json
-                .get("cores")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
-            log_ev!("pdfcompress", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
-            cores
-        }
-        Err(e) => {
-            log_ev!("pdfcompress", trace_id, "cpu_acquire_failed", "=>" => format!("fail err={e}"));
-            vec![]
-        }
-    }
-}
-
-async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
-    if cores.is_empty() {
-        return;
-    }
-    let client = crate::http::client();
-    let body = serde_json::json!({ "cores": cores });
-    let r = client
-        .post(format!("{SEP_BASE}/cpu/release"))
-        .json(&body)
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await;
-    log_ev!("pdfcompress", trace_id, "cpu_released", "cores" => format!("{cores:?}"), "=>" => if r.is_ok() { "ok" } else { "fail" });
-}
 
 #[cfg(test)]
 mod tests {
@@ -926,8 +831,8 @@ mod tests {
 
     #[test]
     fn test_fmt_bytes() {
-        assert_eq!(fmt_bytes(512), "0.0 MB");
-        assert_eq!(fmt_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(fmt_bytes(512), "512 B");
+        assert_eq!(fmt_bytes(1024 * 1024), "1.00 MB");
         assert_eq!(fmt_bytes(1024 * 1024 * 1024), "1.00 GB");
     }
 
@@ -951,5 +856,27 @@ mod tests {
 
         let _ = std::fs::remove_file(input);
         let _ = std::fs::remove_file(output);
+    }
+
+    #[test]
+    fn test_pdf_cancel_lifecycle() {
+        let user_id = 999_888_009;
+        let flag = ACTIVE_PDF_JOBS.register(user_id);
+        assert!(ACTIVE_PDF_JOBS.is_active(&user_id));
+        assert!(!flag.load(Ordering::SeqCst));
+
+        // simulate cancel
+        let cancelled = cancel_pdf_job(user_id);
+        assert!(cancelled);
+        assert!(flag.load(Ordering::SeqCst));
+        assert!(!ACTIVE_PDF_JOBS.is_active(&user_id));
+
+        // guard drop unregister test
+        let user_id_2 = 999_888_010;
+        let (flag2, _guard) = ACTIVE_PDF_JOBS.register_with_guard(user_id_2);
+        assert!(ACTIVE_PDF_JOBS.is_active(&user_id_2));
+        assert!(!flag2.load(Ordering::SeqCst));
+        drop(_guard);
+        assert!(!ACTIVE_PDF_JOBS.is_active(&user_id_2));
     }
 }

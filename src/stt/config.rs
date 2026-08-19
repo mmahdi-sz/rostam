@@ -49,11 +49,5 @@ pub fn ready_keyboard() -> InlineKeyboardMarkup {
 
 /// Build the cancel keyboard for an active processing job.
 pub fn cancel_job_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon_danger(
-            &t("stt.cancel_button"),
-            CB_STT_JOB_CANCEL,
-            "cancel",
-        )]])
-        .build()
+    crate::common::job_cancel_keyboard(&t("stt.cancel_button"), CB_STT_JOB_CANCEL, "cancel")
 }

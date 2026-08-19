@@ -39,8 +39,12 @@ use crate::bot::{
     CB_DENOISE_CANCEL, ai_lab_back_keyboard, send_text, send_text_md_with_keyboard,
     send_text_with_back,
 };
+use crate::common::cpu_broker::CpuBrokerGuard;
+use crate::common::dir::TempDirGuard;
+use crate::common::ffmpeg::{convert_to_wav, probe_metadata};
+use crate::common::keyboard::job_cancel_keyboard;
+use crate::common::ticker::ProgressTicker;
 use crate::database::postgresql::PostgresDatabase;
-use crate::emoji::panel::btn_icon_danger;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, t, tf};
 use crate::log::next_trace_id;
@@ -87,13 +91,7 @@ pub async fn enter_denoise(
 }
 
 fn denoise_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon_danger(
-            &t("denoise.cancel_button"),
-            CB_DENOISE_CANCEL,
-            "cancel",
-        )]])
-        .build()
+    job_cancel_keyboard(&t("denoise.cancel_button"), CB_DENOISE_CANCEL, "cancel")
 }
 
 /// Handles denoise cancel callback — back to AI Lab.
@@ -121,7 +119,7 @@ pub async fn handle_denoise_audio(
     user_id: i64,
     database: &Option<PostgresDatabase>,
 ) {
-    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+    if CpuBrokerGuard::is_user_busy(user_id).await {
         let _ = send_text(api, message.chat.id, &t("active_job_running")).await;
         return;
     }
@@ -195,8 +193,15 @@ pub async fn handle_denoise_audio(
         Err(_) => None,
     };
 
-    let work_dir = std::env::temp_dir().join(format!("denoise_{trace_id}"));
-    std::fs::create_dir_all(&work_dir).ok();
+    let dir_guard = match TempDirGuard::create("denoise", trace_id) {
+        Ok(g) => g,
+        Err(e) => {
+            log_trace(trace_id, "denoise_temp_dir_failed", &e.to_string());
+            let _ = send_text_with_back(api, chat_id, &t("denoise.convert_failed")).await;
+            return;
+        }
+    };
+    let work_dir = dir_guard.path().to_path_buf();
 
     let input_path = work_dir.join(format!("input.{orig_ext}"));
     let wav_path = work_dir.join("denoise_input.wav");
@@ -248,7 +253,14 @@ pub async fn handle_denoise_audio(
     );
 
     // 2. Convert to 48kHz mono 16-bit PCM WAV (DeepFilterNet optimal sample rate)
-    if let Err(e) = convert_to_wav(input_str, wav_str, 48000).await {
+    if let Err(e) = convert_to_wav(
+        std::path::Path::new(input_str),
+        std::path::Path::new(wav_str),
+        48000,
+        1,
+    )
+    .await
+    {
         log_trace(trace_id, "denoise_convert_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "denoise", "", "fail", 0).await;
         crate::stats::record_error_global("denoise", &format!("convert failed: {e}")).await;
@@ -258,8 +270,11 @@ pub async fn handle_denoise_audio(
     }
     log_trace(trace_id, "denoise_converted", "");
 
-    // Determine audio duration from WAV header
-    let audio_duration = wav_duration(wav_str).await.unwrap_or(0.0);
+    // Determine audio duration from WAV metadata
+    let audio_duration = probe_metadata(std::path::Path::new(wav_str))
+        .await
+        .map(|m| m.duration_exact)
+        .unwrap_or(0.0);
     let duration_secs = audio_duration.ceil() as u64;
 
     // Reserve quota upfront (check-then-deduct previously allowed dual race calls).
@@ -454,29 +469,24 @@ pub async fn handle_denoise_audio(
 
     // 3. Denoise via DeepFilterNet — blocking (std::process::Command), run on thread pool.
     let est_total_secs = (audio_duration / 5.1).max(2.0);
-    let cancel_flag_ticker = cancel_flag.clone();
-    let progress_ticker = if let Some(msg_id) = status_msg_id {
-        let api_clone = api.clone();
-        let start_inst = std::time::Instant::now();
-        Some(crate::app::spawn_user_task(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_millis(1500));
-            loop {
-                interval.tick().await;
-                if cancel_flag_ticker.load(Ordering::SeqCst) {
-                    break;
-                }
-                let elapsed_secs = start_inst.elapsed().as_secs_f64();
+    let progress_ticker = status_msg_id.map(|msg_id| {
+        ProgressTicker::new(api, chat_id, msg_id)
+            .interval(std::time::Duration::from_millis(1500))
+            .with_cancel_flag(cancel_flag.clone())
+            .with_keyboard(denoise_keyboard())
+            .spawn(move |elapsed| {
+                let elapsed_secs = elapsed.as_secs_f64();
                 let percent = ((elapsed_secs / est_total_secs) * 100.0).min(99.0) as f32;
                 let eta_secs = (est_total_secs - elapsed_secs).max(0.0);
 
                 let bar = crate::youtube::download::progress::build_bar(percent);
                 let elapsed_str =
-                    crate::youtube::download::progress::format_elapsed(start_inst.elapsed());
+                    crate::youtube::download::progress::format_elapsed(elapsed);
                 let eta_str = crate::youtube::download::progress::format_elapsed(
                     std::time::Duration::from_secs_f64(eta_secs),
                 );
 
-                let text = apply_premium_to_md(&tf(
+                Some(apply_premium_to_md(&tf(
                     "denoise.progress",
                     &[
                         ("bar", &bar),
@@ -484,49 +494,30 @@ pub async fn handle_denoise_audio(
                         ("elapsed", &elapsed_str),
                         ("eta", &eta_str),
                     ],
-                ));
+                )))
+            })
+    });
 
-                if cancel_flag_ticker.load(Ordering::SeqCst) {
-                    break;
-                }
-
-                let params = EditMessageTextParams::builder()
-                    .chat_id(chat_id)
-                    .message_id(msg_id)
-                    .text(&text)
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .reply_markup(denoise_keyboard())
-                    .build();
-                if let Err(e) = api_clone.edit_message_text(&params).await {
-                    let desc = e.to_string();
-                    if !desc.contains("message is not modified") {
-                        log_trace(trace_id, "denoise_progress_edit_failed", &desc);
-                    }
-                }
-            }
-        }))
-    } else {
-        None
-    };
-
-    let cores = crate::moebius::cpu::acquire_cpu(user_id, trace_id).await;
-    let cores_clone = cores.clone();
+    let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "denoise").await;
 
     let denoise_res = {
         let wav_in = wav_str.to_string();
         let wav_out = denoised_str.to_string();
+        let guard_cores = cpu_guard.cores().to_vec();
         tokio::task::spawn_blocking(move || {
-            crate::moebius::cpu::pin_current_thread(&cores_clone, trace_id);
+            if !guard_cores.is_empty() {
+                crate::moebius::cpu::pin_current_thread(&guard_cores, trace_id);
+            }
             deepfilter::denoise(&wav_in, &wav_out).map_err(|e| e.to_string())
         })
         .await
         .unwrap_or_else(|e| Err(format!("denoise task panicked: {e}")))
     };
 
-    crate::moebius::cpu::release_cpu(cores, trace_id).await;
+    cpu_guard.release().await;
 
     if let Some(ticker) = progress_ticker {
-        ticker.abort();
+        ticker.stop();
     }
 
     if cancel_flag.load(Ordering::SeqCst) {
@@ -771,33 +762,6 @@ fn mime_to_ext(mime: &str) -> String {
     }
     .to_string()
 }
-
-async fn convert_to_wav(input: &str, output: &str, sample_rate: u32) -> crate::error::Result<()> {
-    let output = tokio::process::Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-i",
-            input,
-            "-ar",
-            &sample_rate.to_string(),
-            "-ac",
-            "1",
-            "-sample_fmt",
-            "s16",
-            "-f",
-            "wav",
-            output,
-        ])
-        .output()
-        .await
-        .map_err(|e| anyhow::anyhow!("ffmpeg spawn failed: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("ffmpeg conversion failed: {stderr}");
-    }
-    Ok(())
-}
-
 async fn convert_from_wav(input: &str, output: &str, ext: &str) -> crate::error::Result<()> {
     let status = match ext {
         "ogg" => tokio::process::Command::new("ffmpeg")
@@ -883,30 +847,6 @@ async fn convert_from_wav_video(
         anyhow::bail!("ffmpeg video remux failed");
     }
     Ok(())
-}
-
-async fn wav_duration(path: &str) -> crate::error::Result<f64> {
-    let output = tokio::process::Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "csv=p=0",
-            path,
-        ])
-        .output()
-        .await?;
-    if !output.status.success() {
-        anyhow::bail!(
-            "ffprobe failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let d: f64 = s.parse()?;
-    Ok(d)
 }
 
 use crate::bot::download_telegram_file as download_file;

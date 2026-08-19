@@ -1,9 +1,9 @@
 //! Telegram handler and pipeline worker for the package format converter feature (`pkg`).
 
-use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
@@ -18,21 +18,24 @@ use super::validate::{MAX_INPUT_FILE_BYTES, validate_package};
 use crate::bot::constants::{CB_PKG_CANCEL, CB_PKG_JOBCANCEL, CB_TOOLS_PKG};
 use crate::bot::transfer::AsyncTelegramApiMetered;
 use crate::bot::{download_telegram_file, send_text_md};
+use crate::common::cpu_broker::CpuBrokerGuard;
+use crate::common::dir::TempDirGuard;
+use crate::common::format::format_clock;
+use crate::common::keyboard::job_cancel_keyboard as shared_job_cancel_keyboard;
+use crate::common::ticker::ProgressTicker;
 use crate::database::postgresql::PostgresDatabase;
-use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
+use crate::emoji::panel::{btn_icon, btn_icon_success};
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, t, tf};
 use crate::log::next_trace_id;
-use crate::moebius::cpu::{acquire_cpu, is_user_cpu_busy, pin_current_thread, release_cpu};
 use crate::rank::{self, quota::QuotaKind, types::Rank};
 
-static ACTIVE_PKG_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+use crate::common::job::JobRegistry;
 
-fn remove_active_pkg_job(user_id: i64) {
-    if let Ok(mut jobs) = ACTIVE_PKG_JOBS.lock() {
-        jobs.remove(&user_id);
-    }
+static ACTIVE_PKG_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
+
+pub fn cancel_pkg_job(user_id: i64) -> bool {
+    ACTIVE_PKG_JOBS.cancel(&user_id)
 }
 
 pub const STAGE_DOWNLOADING: u8 = 0;
@@ -65,13 +68,7 @@ fn cancel_keyboard() -> InlineKeyboardMarkup {
 }
 
 fn job_cancel_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon_danger(
-            &t("pkg.cancel_btn"),
-            CB_PKG_JOBCANCEL,
-            "cancel",
-        )]])
-        .build()
+    shared_job_cancel_keyboard(&t("pkg.cancel_btn"), CB_PKG_JOBCANCEL, "cancel")
 }
 
 fn convert_choice_keyboard(src: PkgFormat) -> InlineKeyboardMarkup {
@@ -253,11 +250,7 @@ pub async fn handle_pkg_file(
 pub async fn handle_pkg_jobcancel(user_id: i64, api: &Bot, chat_id: i64, message_id: i32) {
     let trace_id = next_trace_id();
     log_ev!("pkgconvert", trace_id, "job_cancel_clicked", "user_id" => user_id);
-    if let Ok(mut jobs) = ACTIVE_PKG_JOBS.lock() {
-        if let Some(flag) = jobs.remove(&user_id) {
-            flag.store(true, Ordering::Relaxed);
-        }
-    }
+    cancel_pkg_job(user_id);
     let params = EditMessageTextParams::builder()
         .chat_id(chat_id)
         .message_id(message_id)
@@ -350,7 +343,7 @@ pub async fn handle_pkg_callback(
             return;
         }
 
-        if is_user_cpu_busy(user_id).await {
+        if CpuBrokerGuard::is_user_busy(user_id).await {
             let _ = send_text_md(api, chat_id, &t("active_job_running")).await;
             return;
         }
@@ -395,27 +388,15 @@ pub async fn handle_pkg_callback(
             Err(_) => message_id,
         };
 
-        let cancel_flag = Arc::new(AtomicBool::new(false));
-        if let Ok(mut jobs) = ACTIVE_PKG_JOBS.lock() {
-            jobs.insert(user_id, cancel_flag.clone());
-        }
+        let cancel_flag = ACTIVE_PKG_JOBS.register(user_id);
 
-        let timer_running = Arc::new(AtomicBool::new(true));
-        let timer_flag = timer_running.clone();
-        let timer_cancel = cancel_flag.clone();
         let timer_stage = stage.clone();
-        let api_timer = api.clone();
-
-        let timer_handle = crate::app::spawn_user_task(async move {
-            let started = Instant::now();
-            let mut last = String::new();
-            while timer_flag.load(Ordering::Relaxed) && !timer_cancel.load(Ordering::Relaxed) {
-                tokio::time::sleep(Duration::from_secs(3)).await;
-                if !timer_flag.load(Ordering::Relaxed) || timer_cancel.load(Ordering::Relaxed) {
-                    break;
-                }
-
-                let elapsed_str = format_clock(started.elapsed().as_secs());
+        let ticker_handle = ProgressTicker::new(api, chat_id, progress_msg_id)
+            .interval(Duration::from_secs(3))
+            .with_cancel_flag(cancel_flag.clone())
+            .with_keyboard(job_cancel_keyboard())
+            .spawn(move |elapsed| {
+                let elapsed_str = format_clock(elapsed.as_secs());
                 let text_raw = match timer_stage.get() {
                     STAGE_DOWNLOADING => t("pkg.stage.downloading"),
                     STAGE_VALIDATING => t("pkg.stage.validating"),
@@ -423,23 +404,8 @@ pub async fn handle_pkg_callback(
                     STAGE_UPLOADING => t("pkg.stage.uploading"),
                     _ => t("pkg.stage.converting"),
                 };
-
-                let text = apply_premium_to_md(&text_raw);
-                if text == last {
-                    continue;
-                }
-                last = text.clone();
-
-                let params = EditMessageTextParams::builder()
-                    .chat_id(chat_id)
-                    .message_id(progress_msg_id)
-                    .text(&text)
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .reply_markup(job_cancel_keyboard())
-                    .build();
-                let _ = api_timer.edit_message_text(&params).await;
-            }
-        });
+                Some(apply_premium_to_md(&text_raw))
+            });
 
         let api_worker = api.clone();
         let db_worker = database.clone();
@@ -459,8 +425,7 @@ pub async fn handle_pkg_callback(
                 db_worker,
                 fm_worker,
                 cancel_flag,
-                timer_running,
-                timer_handle,
+                ticker_handle,
                 stage,
             )
             .await;
@@ -484,14 +449,14 @@ async fn run_pkg_worker(
     database: Option<PostgresDatabase>,
     flow_manager: FlowManager,
     cancel: Arc<AtomicBool>,
-    timer_running: Arc<AtomicBool>,
-    timer_handle: tokio::task::JoinHandle<()>,
+    ticker: crate::common::ProgressTickerHandle,
     stage: Arc<PkgJobStage>,
 ) {
+    let _job_guard = ACTIVE_PKG_JOBS.guard(user_id);
+
     macro_rules! stop_timer {
         () => {{
-            timer_running.store(false, Ordering::Relaxed);
-            remove_active_pkg_job(user_id);
+            ticker.stop();
         }};
     }
 
@@ -523,25 +488,18 @@ async fn run_pkg_worker(
         }};
     }
 
-struct TempDirGuard(std::path::PathBuf);
-impl Drop for TempDirGuard {
-    fn drop(&mut self) {
-        if self.0.exists() {
-            let _ = std::fs::remove_dir_all(&self.0);
+    let dir_guard = match TempDirGuard::create("pkgconvert", trace_id) {
+        Ok(g) => g,
+        Err(e) => {
+            log_ev!("pkgconvert", trace_id, "mkdir_failed", "err" => format!("{e}"));
+            stop_timer!();
+            refund!("mkdir_failed");
+            let _ = send_text_md(&api, chat_id, &t("pkg.error.system_error")).await;
+            re_arm!();
+            return;
         }
-    }
-}
-
-    let work_dir = std::env::temp_dir().join(format!("pkgconvert_{trace_id}"));
-    if let Err(e) = std::fs::create_dir_all(&work_dir) {
-        log_ev!("pkgconvert", trace_id, "mkdir_failed", "err" => format!("{e}"));
-        stop_timer!();
-        refund!("mkdir_failed");
-        let _ = send_text_md(&api, chat_id, &t("pkg.error.system_error")).await;
-        re_arm!();
-        return;
-    }
-    let _dir_guard = TempDirGuard(work_dir.clone());
+    };
+    let work_dir = dir_guard.path().to_path_buf();
 
     // 1. Download Stage
     stage.set(STAGE_DOWNLOADING);
@@ -549,7 +507,6 @@ impl Drop for TempDirGuard {
         log_ev!("pkgconvert", trace_id, "cancelled_before_download");
         stop_timer!();
         refund!("cancelled");
-        std::fs::remove_dir_all(&work_dir).ok();
         return;
     }
 
@@ -560,7 +517,6 @@ impl Drop for TempDirGuard {
             log_ev!("pkgconvert", trace_id, "download_failed", "err" => format!("{e}"));
             stop_timer!();
             refund!("download_failed");
-            std::fs::remove_dir_all(&work_dir).ok();
             let _ = send_text_md(&api, chat_id, &t("pkg.error.system_error")).await;
             re_arm!();
             return;
@@ -574,7 +530,6 @@ impl Drop for TempDirGuard {
         log_ev!("pkgconvert", trace_id, "cancelled_before_validation");
         stop_timer!();
         refund!("cancelled");
-        std::fs::remove_dir_all(&work_dir).ok();
         return;
     }
 
@@ -585,7 +540,6 @@ impl Drop for TempDirGuard {
         log_ev!("pkgconvert", trace_id, "magic_mismatch", "filename" => &filename);
         stop_timer!();
         refund!("magic_mismatch");
-        std::fs::remove_dir_all(&work_dir).ok();
         let _ = send_text_md(&api, chat_id, &t("pkg.error.format_mismatch")).await;
         re_arm!();
         return;
@@ -595,7 +549,6 @@ impl Drop for TempDirGuard {
         log_ev!("pkgconvert", trace_id, "validation_failed", "err" => format!("{e}"));
         stop_timer!();
         refund!("validation_failed");
-        std::fs::remove_dir_all(&work_dir).ok();
 
         let err_key = match e {
             super::validate::ValidateError::TooLarge(_) => "pkg.error.archive_too_large",
@@ -622,13 +575,12 @@ impl Drop for TempDirGuard {
     }
 
     // 3. CPU Broker & Worker Conversion Stage
-    let cores = acquire_cpu(user_id, trace_id).await;
+    let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "pkg").await;
     if cancel.load(Ordering::Relaxed) {
         log_ev!("pkgconvert", trace_id, "cancelled_after_cpu_acquire");
-        release_cpu(cores, trace_id).await;
+        cpu_guard.release().await;
         stop_timer!();
         refund!("cancelled");
-        std::fs::remove_dir_all(&work_dir).ok();
         return;
     }
 
@@ -636,10 +588,12 @@ impl Drop for TempDirGuard {
     let cancel_worker = cancel.clone();
     let work_dir_worker = work_dir.clone();
     let input_path_worker = input_path.clone();
-    let cores_worker = cores.clone();
+    let guard_cores = cpu_guard.cores().to_vec();
 
     let convert_res = tokio::task::spawn_blocking(move || {
-        pin_current_thread(&cores_worker, trace_id);
+        if !guard_cores.is_empty() {
+            crate::moebius::cpu::pin_current_thread(&guard_cores, trace_id);
+        }
         run_convert_sync(
             &work_dir_worker,
             &input_path_worker,
@@ -652,9 +606,8 @@ impl Drop for TempDirGuard {
     })
     .await;
 
-    release_cpu(cores, trace_id).await;
+    cpu_guard.release().await;
     stop_timer!();
-    timer_handle.await.ok();
 
     if cancel.load(Ordering::Relaxed) {
         log_ev!("pkgconvert", trace_id, "cancelled_post_convert");
@@ -788,15 +741,29 @@ impl Drop for TempDirGuard {
     re_arm!();
 }
 
-fn format_clock(secs: u64) -> String {
-    if secs >= 3600 {
-        format!(
-            "{:02}:{:02}:{:02}",
-            secs / 3600,
-            (secs % 3600) / 60,
-            secs % 60
-        )
-    } else {
-        format!("{:02}:{:02}", secs / 60, secs % 60)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pkgconvert_cancel_lifecycle() {
+        let user_id = 999_888_001;
+        let flag = ACTIVE_PKG_JOBS.register(user_id);
+        assert!(ACTIVE_PKG_JOBS.is_active(&user_id));
+        assert!(!flag.load(Ordering::SeqCst));
+
+        // cancel job
+        let cancelled = cancel_pkg_job(user_id);
+        assert!(cancelled);
+        assert!(flag.load(Ordering::SeqCst));
+        assert!(!ACTIVE_PKG_JOBS.is_active(&user_id));
+
+        // guard drop unregister test
+        let user_id_2 = 999_888_002;
+        let (flag2, _guard) = ACTIVE_PKG_JOBS.register_with_guard(user_id_2);
+        assert!(ACTIVE_PKG_JOBS.is_active(&user_id_2));
+        assert!(!flag2.load(Ordering::SeqCst));
+        drop(_guard);
+        assert!(!ACTIVE_PKG_JOBS.is_active(&user_id_2));
     }
 }

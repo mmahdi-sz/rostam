@@ -14,12 +14,13 @@ use super::calc::{calculate_target_bitrate_kbps, compute_vmaf_score, format_eta_
 use super::session::{CompressSession, clear_session};
 use super::ui::send_compress_prompt_new_msg;
 use crate::bot::constants::CB_STUDIO_COMPRESS_JOBCANCEL;
+use crate::common::cpu_broker::CpuBrokerGuard;
 use crate::emoji::panel::btn_icon_danger;
 use crate::emoji::FlowManager;
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
 use crate::log::next_trace_id;
-use crate::moebius::cpu::{acquire_cpu, pin_current_thread, release_cpu, trim_memory};
-use crate::studio::pipeline::{TempDirGuard, register_active_job, remove_active_job};
+use crate::moebius::cpu::trim_memory;
+use crate::studio::pipeline::{TempDirGuard, job_guard, register_active_job};
 
 pub async fn start_compression_job(
     api: &Bot,
@@ -29,7 +30,7 @@ pub async fn start_compression_job(
     session: CompressSession,
     flow_manager: &FlowManager,
 ) {
-    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+    if CpuBrokerGuard::is_user_busy(user_id).await {
         let _ = crate::bot::send_text_md(api, chat_id, &t("active_job_running")).await;
         return;
     }
@@ -44,6 +45,7 @@ pub async fn start_compression_job(
     let api = api.clone();
 
     crate::app::spawn_user_task(async move {
+        let _job_guard = job_guard(user_id);
         let cancel_kb = InlineKeyboardMarkup::builder()
             .inline_keyboard(vec![vec![btn_icon_danger(
                 &t("studio.compress.cancel_btn"),
@@ -64,7 +66,7 @@ pub async fn start_compression_job(
         let _ = api.edit_message_text(&params).await;
 
         if cancel_flag.load(Ordering::Relaxed) {
-            remove_active_job(user_id);
+
             clear_session(user_id).await;
             let _ =
                 crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
@@ -75,7 +77,7 @@ pub async fn start_compression_job(
         let work_dir = std::env::temp_dir().join(format!("studio_comp_run_{trace_id}_{user_id}"));
         if let Err(e) = std::fs::create_dir_all(&work_dir) {
             log_ev!("studio_compress", trace_id, "mkdir_failed", "=>" => format!("fail err={e}"));
-            remove_active_job(user_id);
+
             let _ = crate::bot::send_text_md(
                 &api,
                 chat_id,
@@ -100,7 +102,7 @@ pub async fn start_compression_job(
             Ok(res) => res,
             Err(e) => {
                 log_ev!("studio_compress", trace_id, "download_failed", "=>" => format!("fail err={e}"));
-                remove_active_job(user_id);
+    
                 let _ = crate::bot::send_text_md(
                     &api,
                     chat_id,
@@ -124,7 +126,7 @@ pub async fn start_compression_job(
         let download_secs = download_start.elapsed().as_secs();
 
         if cancel_flag.load(Ordering::Relaxed) {
-            remove_active_job(user_id);
+
             clear_session(user_id).await;
             let _ =
                 crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
@@ -133,16 +135,16 @@ pub async fn start_compression_job(
         }
 
         // Acquire CPU broker
-        let cores = acquire_cpu(user_id, trace_id).await;
-        let threads_arg = if !cores.is_empty() {
-            cores.len().to_string()
+        let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "studio_compress").await;
+        let threads_arg = if !cpu_guard.cores().is_empty() {
+            cpu_guard.cores().len().to_string()
         } else {
             "2".to_string()
         };
 
         if cancel_flag.load(Ordering::Relaxed) {
-            release_cpu(cores, trace_id).await;
-            remove_active_job(user_id);
+            cpu_guard.release().await;
+
             clear_session(user_id).await;
             let _ =
                 crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
@@ -235,14 +237,16 @@ pub async fn start_compression_job(
         let input_path = input_file.clone();
         let output_path = output_file.clone();
         let vcodec_str = vcodec_flag.to_string();
-        let cores_clone = cores.clone();
+        let cores_clone = cpu_guard.cores().to_vec();
         let cancel_flag_inner = cancel_flag.clone();
         let progress_pct_inner = progress_pct.clone();
         let duration_secs = session.duration_secs;
         let threads_arg_inner = threads_arg.clone();
 
         let run_res = tokio::task::spawn_blocking(move || {
-            pin_current_thread(&cores_clone, trace_id);
+            if !cores_clone.is_empty() {
+                crate::moebius::cpu::pin_current_thread(&cores_clone, trace_id);
+            }
 
             let mut cmd = std::process::Command::new(crate::config::ffmpeg_path());
             cmd.args([
@@ -333,12 +337,12 @@ pub async fn start_compression_job(
         .await;
 
         stop_ticker.store(true, Ordering::Relaxed);
-        release_cpu(cores, trace_id).await;
+        cpu_guard.release().await;
 
         let compress_secs = job_start.elapsed().as_secs();
 
         if cancel_flag.load(Ordering::Relaxed) {
-            remove_active_job(user_id);
+
             clear_session(user_id).await;
             let _ =
                 crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
@@ -353,7 +357,7 @@ pub async fn start_compression_job(
 
         if !ffmpeg_ok || !output_file.exists() {
             log_ev!("studio_compress", trace_id, "ffmpeg_failed", "=>" => "fail");
-            remove_active_job(user_id);
+
             let _ = crate::bot::send_text_md(
                 &api,
                 chat_id,
@@ -433,7 +437,6 @@ pub async fn start_compression_job(
             None,
         )
         .await;
-        remove_active_job(user_id);
         clear_session(user_id).await;
 
         if let Err(e) = send_res {

@@ -14,34 +14,14 @@ use frankenstein::{
 use tokio::process::Command;
 
 use crate::bot::{audio_separation_keyboard, sp_cancel_keyboard};
+use crate::common::cpu_broker::CpuBrokerGuard;
+use crate::common::dir::TempDirGuard;
 use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
-use crate::moebius::cpu::{acquire_cpu, release_cpu};
 use crate::spotify::cancel::{SpotifyUnregisterGuard, register_spotify_cancel};
 use crate::spotify::client::fetch_spotify_track;
 use crate::spotify::search::find_best_youtube_match;
 use crate::spotify::tagging::apply_id3_tags;
-
-struct SpotifyWorkDirGuard {
-    dir: PathBuf,
-    trace_id: u64,
-}
-
-impl Drop for SpotifyWorkDirGuard {
-    fn drop(&mut self) {
-        let dir = self.dir.clone();
-        let trace_id = self.trace_id;
-        tokio::spawn(async move {
-            if dir.exists() {
-                if let Err(e) = tokio::fs::remove_dir_all(&dir).await {
-                    log_ev!("sp", trace_id, "dir_cleanup_err", "err" => e.to_string());
-                } else {
-                    log_ev!("sp", trace_id, "dir_cleanup_ok", "path" => dir.display().to_string());
-                }
-            }
-        });
-    }
-}
 
 pub async fn handle_spotify_url(
     api: &Bot,
@@ -62,10 +42,7 @@ pub async fn handle_spotify_url(
     tokio::fs::create_dir_all(&job_dir)
         .await
         .context("Failed creating Spotify work directory")?;
-    let _dir_guard = SpotifyWorkDirGuard {
-        dir: job_dir.clone(),
-        trace_id,
-    };
+    let _dir_guard = TempDirGuard::from_path(job_dir.clone());
 
     // Send initial ticker message
     let start_text = apply_premium_to_md(&t("spotify.starting"));
@@ -218,18 +195,18 @@ pub async fn handle_spotify_url(
     );
     edit_status(dl_msg).await;
 
-    let cores = acquire_cpu(user_id, trace_id).await;
+    let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "sp").await;
     let mp3_path = job_dir.join("track.mp3");
     let dl_ok = run_yt_dlp_audio(
         &job_dir,
         "track",
         &match_cand.webpage_url,
-        &cores,
+        cpu_guard.cores(),
         trace_id,
         &stop_flag,
     )
     .await;
-    release_cpu(cores, trace_id).await;
+    cpu_guard.release().await;
 
     match dl_ok {
         DlOutcome::Ok => {}

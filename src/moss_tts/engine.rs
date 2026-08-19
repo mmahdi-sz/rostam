@@ -55,8 +55,8 @@ pub async fn run_tts_engine(
     log_ev!("tts", trace_id, "engine_start", "text_len" => text.len());
 
     // Acquire CPU core allocation from CPU Broker
-    let cores = crate::moebius::cpu::acquire_cpu(user_id, trace_id).await;
-    log_ev!("tts", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
+    let mut cpu_guard = crate::common::CpuBrokerGuard::acquire(user_id, trace_id, "tts").await;
+    log_ev!("tts", trace_id, "cpu_acquired", "cores" => format!("{:?}", cpu_guard.cores()));
 
     let start_time = Instant::now();
     let total_frames = (text.chars().count() * 8).clamp(40, 400);
@@ -68,7 +68,7 @@ pub async fn run_tts_engine(
 
         // Cancel before actual synthesis: release CPU and return without creating files.
         if cancel.load(Ordering::Relaxed) {
-            crate::moebius::cpu::release_cpu(cores, trace_id).await;
+            cpu_guard.release().await;
             log_ev!("tts", trace_id, "engine_cancelled", "frame" => current_frame);
             return Err("cancelled".to_string());
         }
@@ -106,7 +106,7 @@ pub async fn run_tts_engine(
     }
 
     // Release CPU allocation back to broker
-    crate::moebius::cpu::release_cpu(cores, trace_id).await;
+    cpu_guard.release().await;
 
     let output_wav_or_mp3 = format!("downloads/tts_{}_{}.wav", trace_id, rand::random::<u64>());
     let output_ogg = output_wav_or_mp3

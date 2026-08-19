@@ -7,10 +7,12 @@ use frankenstein::{
     methods::SendDocumentParams,
 };
 
+use crate::common::cpu_broker::CpuBrokerGuard;
+use crate::common::dir::TempDirGuard;
 use crate::i18n::{entities_for_text, t, tf};
 use crate::surge_dl::client::{fetch_detail, find_job_id_by_url, list_surge_job_ids, run_surge_add};
 use crate::surge_dl::types::{
-    DirCleanupGuard, DOWNLOAD_TIMEOUT_SECS, MAX_PART_BYTES, POLL_INTERVAL_SECS,
+    DOWNLOAD_TIMEOUT_SECS, MAX_PART_BYTES, POLL_INTERVAL_SECS,
 };
 use crate::surge_dl::ui::{build_bar, edit_status, fmt_bytes, fmt_speed, show_sent_menu};
 
@@ -33,7 +35,7 @@ pub(crate) async fn run_surge_download(
         crate::config::surge_downloads_root()
     );
     let dir_path = PathBuf::from(&dir);
-    let _cleanup_guard = DirCleanupGuard(dir_path);
+    let _cleanup_guard = TempDirGuard::from_path(dir_path);
 
     if let Err(e) = tokio::fs::create_dir_all(&dir).await {
         log_ev!("surge_dl", trace_id, "mkdir_failed", "=>" => format!("fail err={e}"));
@@ -222,7 +224,7 @@ pub(crate) async fn send_split_file(
     let archive_base = path.with_file_name(format!("{stem}.archive.rar"));
     log_ev!("surge_dl", trace_id, "rar_spawn", "archive" => archive_base.display());
 
-    let cores = acquire_cpu(user_id, trace_id).await;
+    let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "surge_dl").await;
 
     let mut cmd = tokio::process::Command::new("rar");
     cmd.arg("a")
@@ -236,7 +238,7 @@ pub(crate) async fn send_split_file(
     let mut child = cmd.spawn()?;
     let status =
         tokio::time::timeout(Duration::from_secs(DOWNLOAD_TIMEOUT_SECS), child.wait()).await??;
-    release_cpu(cores, trace_id).await;
+    cpu_guard.release().await;
 
     if !status.success() {
         return Err(format!("rar exit {status}").into());
@@ -261,13 +263,14 @@ pub(crate) async fn send_split_file(
         if !caption_entities.is_empty() {
             params.caption_entities = Some(caption_entities);
         }
-        send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        let status_mid = message_id;
+        let _ = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
             api,
             "sendDocument",
             &params,
             part,
             chat_id,
-            message_id,
+            status_mid,
             "transfer.stage.sending_document",
             None,
         )
@@ -278,75 +281,23 @@ pub(crate) async fn send_split_file(
     Ok(())
 }
 
-pub(crate) async fn list_rar_parts(
-    archive_base: &Path,
-) -> Result<Vec<PathBuf>, Box<dyn std::error::Error + Send + Sync>> {
-    let dir = archive_base.parent().ok_or("no parent dir")?;
+async fn list_rar_parts(archive_base: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
+    let mut parts = Vec::new();
+    let parent = archive_base.parent().unwrap_or_else(|| Path::new("."));
     let stem = archive_base
         .file_stem()
         .and_then(|s| s.to_str())
-        .ok_or("no stem")?;
-    let prefix = format!("{stem}.part");
-    let mut parts = Vec::new();
-    let mut entries = tokio::fs::read_dir(dir).await?;
-    while let Some(entry) = entries.next_entry().await? {
+        .unwrap_or("archive");
+    let mut dir = tokio::fs::read_dir(parent).await?;
+    while let Some(entry) = dir.next_entry().await? {
         let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.starts_with(&prefix) && name.ends_with(".rar") {
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with(stem)
+            && (name_str.ends_with(".rar") || name_str.contains(".part"))
+        {
             parts.push(entry.path());
         }
     }
-    parts.sort_by_key(|p| {
-        p.file_name()
-            .and_then(|n| n.to_str())
-            .and_then(|s| {
-                let part_str = s.rsplit(".part").next()?;
-                part_str.split('.').next()?.parse::<u32>().ok()
-            })
-            .unwrap_or(0)
-    });
+    parts.sort();
     Ok(parts)
-}
-
-pub(crate) async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
-    let client = crate::http::client();
-    let res = client
-        .post("http://127.0.0.1:6589/cpu/acquire")
-        .form(&[
-            ("user_id", user_id.to_string()),
-            ("is_vip", "false".to_string()),
-        ])
-        .timeout(Duration::from_secs(120))
-        .send()
-        .await;
-    match res {
-        Ok(r) => {
-            let json: serde_json::Value = r.json().await.unwrap_or_default();
-            let cores: Vec<i32> = json
-                .get("cores")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
-            log_ev!("surge_dl", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
-            cores
-        }
-        Err(e) => {
-            log_ev!("surge_dl", trace_id, "cpu_acquire_failed", "=>" => format!("fail err={e}"));
-            vec![]
-        }
-    }
-}
-
-pub(crate) async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
-    if cores.is_empty() {
-        return;
-    }
-    let client = crate::http::client();
-    let body = serde_json::json!({ "cores": cores });
-    let r = client
-        .post("http://127.0.0.1:6589/cpu/release")
-        .json(&body)
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await;
-    log_ev!("surge_dl", trace_id, "cpu_released", "cores" => format!("{cores:?}"), "=>" => if r.is_ok() { "ok" } else { "fail" });
 }

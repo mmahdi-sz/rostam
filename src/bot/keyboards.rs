@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::constants::*;
 use crate::emoji::panel::{
-    btn_icon, btn_icon_danger, btn_icon_plain, btn_icon_primary, btn_icon_success,
+    btn_icon, btn_icon_plain, btn_icon_primary, btn_icon_success,
 };
 use crate::i18n::{apply_premium_to_md, t};
 
@@ -448,13 +448,7 @@ pub async fn edit_to_start_menu(
 }
 
 pub fn cancel_keyboard_with_cb(label: &str, callback_data: &str) -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon_danger(
-            label,
-            callback_data,
-            "cancel",
-        )]])
-        .build()
+    crate::common::job_cancel_keyboard(label, callback_data, "cancel")
 }
 
 pub fn sp_cancel_keyboard() -> InlineKeyboardMarkup {

@@ -102,6 +102,37 @@ impl<K: Eq + Hash + Clone + 'static> JobRegistry<K, Arc<AtomicBool>> {
     }
 }
 
+// ── Specialized implementation for tokio::sync::Notify cancellation tokens ──
+
+impl<K: Eq + Hash + Clone + 'static> JobRegistry<K, Arc<tokio::sync::Notify>> {
+    /// Registers a new Notify token for `key` and returns the Arc<Notify>.
+    pub fn register_notify(&self, key: K) -> Arc<tokio::sync::Notify> {
+        let notify = Arc::new(tokio::sync::Notify::new());
+        self.register_custom(key, notify.clone());
+        notify
+    }
+
+    /// Registers a new Notify token for `key` and returns both the token and an RAII unregister guard.
+    pub fn register_notify_with_guard(
+        &'static self,
+        key: K,
+    ) -> (Arc<tokio::sync::Notify>, JobGuard<K, Arc<tokio::sync::Notify>>) {
+        let notify = self.register_notify(key.clone());
+        let guard = self.guard(key);
+        (notify, guard)
+    }
+
+    /// Signals cancellation by calling notify_one() and removing the entry. Returns whether an active job was found.
+    pub fn cancel_notify(&self, key: &K) -> bool {
+        if let Some(notify) = self.unregister(key) {
+            notify.notify_one();
+            true
+        } else {
+            false
+        }
+    }
+}
+
 /// RAII Guard that unregisters the job from the registry when dropped.
 pub struct JobGuard<K: Eq + Hash + Clone + 'static = i64, V: Clone + 'static = Arc<AtomicBool>> {
     registry: &'static JobRegistry<K, V>,
@@ -223,5 +254,34 @@ mod tests {
             let user_id = 200_000 + i;
             assert!(!TEST_REGISTRY.is_active(&user_id));
         }
+    }
+
+    #[tokio::test]
+    async fn test_notify_job_registry() {
+        static NOTIFY_REG: LazyLock<JobRegistry<u64, Arc<tokio::sync::Notify>>> =
+            LazyLock::new(JobRegistry::new);
+
+        let req_id = 500_001u64;
+        let notify = NOTIFY_REG.register_notify(req_id);
+        assert!(NOTIFY_REG.is_active(&req_id));
+
+        // Cancellation should trigger notify_one
+        let mut notified_fut = std::pin::pin!(notify.notified());
+        let cancelled = NOTIFY_REG.cancel_notify(&req_id);
+        assert!(cancelled);
+        assert!(!NOTIFY_REG.is_active(&req_id));
+
+        // Ensure notify fired
+        tokio::time::timeout(std::time::Duration::from_millis(50), notified_fut.as_mut())
+            .await
+            .expect("notify must fire on cancel");
+
+        // Test guard drop unregisters
+        let req_id_2 = 500_002u64;
+        {
+            let (_n2, _guard) = NOTIFY_REG.register_notify_with_guard(req_id_2);
+            assert!(NOTIFY_REG.is_active(&req_id_2));
+        }
+        assert!(!NOTIFY_REG.is_active(&req_id_2));
     }
 }

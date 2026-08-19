@@ -23,15 +23,13 @@ use crate::bot::constants::{
     CB_STUDIO_EXTRACT, CB_STUDIO_EXTRACT_CANCEL, CB_STUDIO_EXTRACT_JOBCANCEL,
 };
 use crate::bot::transfer::AsyncTelegramApiMetered;
+use crate::common::cpu_broker::CpuBrokerGuard;
 use crate::emoji::panel::btn_icon_danger;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
 use crate::log::next_trace_id;
-use crate::moebius::cpu::{
-    acquire_cpu, is_user_cpu_busy, pin_current_thread, release_cpu, trim_memory,
-};
 use crate::studio::pipeline::{
-    TempDirGuard, register_active_job, remove_active_job, spawn_download_ticker,
+    TempDirGuard, job_guard, register_active_job, spawn_download_ticker,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -228,7 +226,7 @@ pub async fn handle_video_upload(
     }
 
     // Anti-spam concurrency check
-    if is_user_cpu_busy(user_id).await {
+    if CpuBrokerGuard::is_user_busy(user_id).await {
         log_ev!("studio_extract", trace_id, "user_busy_blocked", "user_id" => user_id);
         let _ = crate::bot::send_text_md(api, chat_id, &t("moebius.active_job_running")).await;
         crate::studio::send_studio_menu_new_msg(api, chat_id, user_id, flow_manager).await;
@@ -268,6 +266,7 @@ pub async fn handle_video_upload(
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
     register_active_job(user_id, cancel_flag.clone());
+    let _job_guard = job_guard(user_id);
 
     // Send initial status message
     let initial_status_text = apply_premium_to_md(&tf(
@@ -285,7 +284,7 @@ pub async fn handle_video_upload(
         Ok(m) => m,
         Err(e) => {
             log_ev!("studio_extract", trace_id, "status_send_failed", "=>" => format!("fail err={e}"));
-            remove_active_job(user_id);
+
             crate::studio::send_studio_menu_new_msg(api, chat_id, user_id, flow_manager).await;
             return;
         }
@@ -314,7 +313,7 @@ pub async fn handle_video_upload(
         Err(e) => {
             stop_dl_ticker.store(true, Ordering::Relaxed);
             log_ev!("studio_extract", trace_id, "download_failed", "=>" => format!("fail err={e}"));
-            remove_active_job(user_id);
+
             let _ = api
                 .delete_message(
                     &DeleteMessageParams::builder()
@@ -344,7 +343,7 @@ pub async fn handle_video_upload(
     }
 
     if cancel_flag.load(Ordering::Relaxed) {
-        remove_active_job(user_id);
+
         let _ = api
             .delete_message(
                 &DeleteMessageParams::builder()
@@ -374,7 +373,7 @@ pub async fn handle_video_upload(
         Ok(s) => s,
         Err(e) => {
             log_ev!("studio_extract", trace_id, "ffprobe_failed", "=>" => format!("fail err={e}"));
-            remove_active_job(user_id);
+
             let _ = api
                 .delete_message(
                     &DeleteMessageParams::builder()
@@ -393,7 +392,7 @@ pub async fn handle_video_upload(
 
     if streams.is_empty() {
         log_ev!("studio_extract", trace_id, "no_extractable_streams", "user_id" => user_id);
-        remove_active_job(user_id);
+
         let _ = api
             .delete_message(
                 &DeleteMessageParams::builder()
@@ -419,11 +418,11 @@ pub async fn handle_video_upload(
     log_ev!("studio_extract", trace_id, "streams_discovered", "audio" => audio_count, "sub" => sub_count);
 
     // Acquire CPU broker
-    let cores = acquire_cpu(user_id, trace_id).await;
+    let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "studio_extract").await;
 
     if cancel_flag.load(Ordering::Relaxed) {
-        release_cpu(cores, trace_id).await;
-        remove_active_job(user_id);
+        cpu_guard.release().await;
+
         let _ = api
             .delete_message(
                 &DeleteMessageParams::builder()
@@ -523,9 +522,11 @@ pub async fn handle_video_upload(
         });
     }
 
-    let cores_for_thread = cores.clone();
+    let cores_for_thread = cpu_guard.cores().to_vec();
     let extract_res = tokio::task::spawn_blocking(move || {
-        pin_current_thread(&cores_for_thread, trace_id);
+        if !cores_for_thread.is_empty() {
+            crate::moebius::cpu::pin_current_thread(&cores_for_thread, trace_id);
+        }
 
         let mut ffmpeg_args = vec![
             "-v".to_string(),
@@ -579,14 +580,13 @@ pub async fn handle_video_upload(
     .await;
 
     stop_extract_ticker.store(true, Ordering::Relaxed);
-    release_cpu(cores, trace_id).await;
-    trim_memory();
+    cpu_guard.release().await;
 
     let extracted_outputs = match extract_res {
         Ok(Ok(outs)) => outs,
         Ok(Err(e)) => {
             log_ev!("studio_extract", trace_id, "extraction_error", "=>" => format!("fail err={e}"));
-            remove_active_job(user_id);
+
             let _ = api
                 .delete_message(
                     &DeleteMessageParams::builder()
@@ -611,7 +611,7 @@ pub async fn handle_video_upload(
         }
         Err(e) => {
             log_ev!("studio_extract", trace_id, "join_error", "=>" => format!("fail err={e}"));
-            remove_active_job(user_id);
+
             let _ = api
                 .delete_message(
                     &DeleteMessageParams::builder()
@@ -629,7 +629,6 @@ pub async fn handle_video_upload(
     };
 
     if cancel_flag.load(Ordering::Relaxed) {
-        remove_active_job(user_id);
         let _ = api
             .delete_message(
                 &DeleteMessageParams::builder()
@@ -748,7 +747,6 @@ pub async fn handle_video_upload(
         crate::stats::record_event_user(user_id, "studio_extract", "file_sent", "ok", 1).await;
     }
 
-    remove_active_job(user_id);
     let _ = api
         .delete_message(
             &DeleteMessageParams::builder()

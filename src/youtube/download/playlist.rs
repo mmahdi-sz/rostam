@@ -13,7 +13,7 @@ use crate::i18n::{entities_for_text, t, tf};
 use crate::stats;
 use crate::youtube::trace::log_trace;
 
-use super::cancel::{UnregisterGuard, unregister_cancel};
+use super::cancel::cancel_guard;
 use super::helpers::{
     cleanup_dir, fetch_thumbnail, maybe_send_non_h264_notice, pick_largest_file, quality_label_for,
     sanitize_video_filename,
@@ -31,6 +31,7 @@ pub(crate) async fn run_playlist_download(
     status_message_id: i32,
     _cancel: Arc<Notify>,
 ) {
+    let _cancel_guard = cancel_guard(request_id);
     let Some(mut req) = super::store::take_request(request_id) else {
         edit_status(
             &api,
@@ -39,10 +40,8 @@ pub(crate) async fn run_playlist_download(
             t("youtube.download.request_expired"),
         )
         .await;
-        unregister_cancel(request_id);
         return;
     };
-    let _cancel_guard = UnregisterGuard(request_id);
     let trace_id = req.trace_id;
     let user_id = req.user_id.unwrap_or(0);
     let stats_job_id = stats::record_download_start(user_id, "youtube").await;

@@ -277,13 +277,7 @@ pub fn cancel_only_keyboard() -> InlineKeyboardMarkup {
 
 /// Cancel button on progress message — cancels active job.
 pub fn job_cancel_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon_danger(
-            &t("fc.cancel_button"),
-            "fc:jobcancel",
-            "cancel",
-        )]])
-        .build()
+    crate::common::job_cancel_keyboard(&t("fc.cancel_button"), "fc:jobcancel", "cancel")
 }
 
 pub fn done_inline_keyboard() -> InlineKeyboardMarkup {

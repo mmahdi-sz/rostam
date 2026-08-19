@@ -477,11 +477,7 @@ pub(super) async fn handle_callback(
                     .build(),
             )
             .await;
-        if let Ok(jobs) = crate::pdfcompress::ACTIVE_PDF_JOBS.lock() {
-            if let Some(cancel) = jobs.get(&(cb_user_id as i64)) {
-                cancel.store(true, std::sync::atomic::Ordering::Relaxed);
-            }
-        }
+        crate::pdfcompress::cancel_pdf_job(cb_user_id as i64);
         return Ok(());
     }
 

@@ -1,13 +1,13 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::atomic::Ordering;
+use std::sync::LazyLock;
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     input_file::{FileUpload, InputFile},
     methods::{EditMessageTextParams, SendMessageParams, SendPhotoParams},
-    types::{ChatId, InlineKeyboardButton, InlineKeyboardMarkup, Message},
+    types::{ChatId, InlineKeyboardMarkup, Message},
 };
 
 use super::engine::run_deoldify_colorize;
@@ -20,25 +20,18 @@ use crate::rank;
 use crate::rank::quota::{QuotaKind, refund_usage, reserve_usage};
 use crate::stats;
 
-/// Cancel flag per user so the "Cancel" button on status message works.
-static ACTIVE_DEOLDIFY_JOBS: LazyLock<Mutex<std::collections::HashMap<i64, Arc<AtomicBool>>>> =
-    LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+use crate::common::job::JobRegistry;
 
-fn remove_active_deoldify_job(user_id: i64) {
-    if let Ok(mut jobs) = ACTIVE_DEOLDIFY_JOBS.lock() {
-        jobs.remove(&user_id);
-    }
+/// Cancel flag per user so the "Cancel" button on status message works.
+static ACTIVE_DEOLDIFY_JOBS: LazyLock<JobRegistry<i64>> =
+    LazyLock::new(JobRegistry::new);
+
+pub fn cancel_deoldify_job(user_id: i64) -> bool {
+    ACTIVE_DEOLDIFY_JOBS.cancel(&user_id)
 }
 
 pub fn deoldify_cancel_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![
-            InlineKeyboardButton::builder()
-                .text(&t("deoldify.cancel_button"))
-                .callback_data(CB_DEOLDIFY_CANCEL)
-                .build(),
-        ]])
-        .build()
+    crate::common::job_cancel_keyboard(&t("deoldify.cancel_button"), CB_DEOLDIFY_CANCEL, "cancel")
 }
 
 pub async fn enter_deoldify(
@@ -75,7 +68,7 @@ pub async fn handle_deoldify_image(
     flow_manager: &FlowManager,
     database: Option<PostgresDatabase>,
 ) {
-    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+    if crate::common::CpuBrokerGuard::is_user_busy(user_id).await {
         let _ = crate::bot::send_text(api, message.chat.id, &t("active_job_running")).await;
         return;
     }
@@ -210,51 +203,25 @@ pub async fn handle_deoldify_image(
     };
 
     // Cancel flag + elapsed time ticker on status message
-    let cancel_flag = Arc::new(AtomicBool::new(false));
-    if let Ok(mut jobs) = ACTIVE_DEOLDIFY_JOBS.lock() {
-        jobs.insert(user_id, cancel_flag.clone());
-    }
-    let timer_running = Arc::new(AtomicBool::new(true));
-    let timer_flag = timer_running.clone();
-    let timer_cancel = cancel_flag.clone();
-    let api_timer = api.clone();
-    let status_msg_id = status_msg.message_id;
-    let timer_handle = crate::app::spawn_user_task(async move {
-        let started = std::time::Instant::now();
-        while timer_flag.load(Ordering::Relaxed) && !timer_cancel.load(Ordering::Relaxed) {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            if !timer_flag.load(Ordering::Relaxed) || timer_cancel.load(Ordering::Relaxed) {
-                break;
-            }
-            let secs = started.elapsed().as_secs();
+    let cancel_flag = ACTIVE_DEOLDIFY_JOBS.register(user_id);
+    let _job_guard = ACTIVE_DEOLDIFY_JOBS.guard(user_id);
+    let ticker_handle = crate::common::ProgressTicker::new(api, chat_id, status_msg.message_id)
+        .with_cancel_flag(cancel_flag.clone())
+        .with_keyboard(deoldify_cancel_keyboard())
+        .spawn(|elapsed| {
+            let secs = elapsed.as_secs();
             let text = tf(
                 "deoldify.preparing",
                 &[("elapsed", &format!("{:02}:{:02}", secs / 60, secs % 60))],
             );
-            let params = EditMessageTextParams::builder()
-                .chat_id(chat_id)
-                .message_id(status_msg_id)
-                .text(&apply_premium_to_md(&text))
-                .parse_mode(ParseMode::MarkdownV2)
-                .reply_markup(deoldify_cancel_keyboard())
-                .build();
-            let _ = api_timer.edit_message_text(&params).await;
-        }
-    });
+            Some(apply_premium_to_md(&text))
+        });
 
     let work_dir = format!("downloads/deoldify_{user_id}_{trace_id}");
     let _ = std::fs::create_dir_all(&work_dir);
 
     let input_path = PathBuf::from(format!("{work_dir}/input.jpg"));
     let output_path = PathBuf::from(format!("{work_dir}/output.jpg"));
-
-    // Stop ticker + release cancel flag on exit
-    macro_rules! stop_timer {
-        () => {{
-            timer_running.store(false, Ordering::Relaxed);
-            remove_active_deoldify_job(user_id);
-        }};
-    }
 
     let stats_job_id = stats::record_download_start(user_id, "deoldify").await;
 
@@ -263,7 +230,7 @@ pub async fn handle_deoldify_image(
         match crate::bot::files::download_telegram_file(api, &file_id, &input_path).await {
             Ok(res) => res,
             Err(e) => {
-                stop_timer!();
+                ticker_handle.stop();
                 log_ev!("deoldify", trace_id, "download_failed", "err" => format!("{e:?}"));
                 let _ = api
                     .delete_message(
@@ -302,8 +269,7 @@ pub async fn handle_deoldify_image(
 
     // Run DeOldify Colorizer
     let process_res = run_deoldify_colorize(&input_path, &output_path, 24, user_id, trace_id).await;
-    stop_timer!();
-    let _ = timer_handle.await;
+    ticker_handle.stop();
 
     // User clicked cancel mid-job: discard result and refund quota.
     if cancel_flag.load(Ordering::Relaxed) {
@@ -452,11 +418,7 @@ pub async fn handle_deoldify_cancel(
     log_ev!("deoldify", trace_id, "cancelled", "user_id" => user_id);
 
     // Cancel active job as well as flow state
-    if let Ok(mut jobs) = ACTIVE_DEOLDIFY_JOBS.lock() {
-        if let Some(flag) = jobs.remove(&user_id) {
-            flag.store(true, Ordering::Relaxed);
-        }
-    }
+    cancel_deoldify_job(user_id);
 
     flow_manager.set(user_id, FlowState::Idle);
 
@@ -470,4 +432,31 @@ pub async fn handle_deoldify_cancel(
         .build();
 
     let _ = api.edit_message_text(&params).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deoldify_cancel_lifecycle() {
+        let user_id = 999_888_003;
+        let flag = ACTIVE_DEOLDIFY_JOBS.register(user_id);
+        assert!(ACTIVE_DEOLDIFY_JOBS.is_active(&user_id));
+        assert!(!flag.load(Ordering::SeqCst));
+
+        // simulate cancel
+        let cancelled = cancel_deoldify_job(user_id);
+        assert!(cancelled);
+        assert!(flag.load(Ordering::SeqCst));
+        assert!(!ACTIVE_DEOLDIFY_JOBS.is_active(&user_id));
+
+        // guard drop unregister test
+        let user_id_2 = 999_888_004;
+        let (flag2, _guard) = ACTIVE_DEOLDIFY_JOBS.register_with_guard(user_id_2);
+        assert!(ACTIVE_DEOLDIFY_JOBS.is_active(&user_id_2));
+        assert!(!flag2.load(Ordering::SeqCst));
+        drop(_guard);
+        assert!(!ACTIVE_DEOLDIFY_JOBS.is_active(&user_id_2));
+    }
 }

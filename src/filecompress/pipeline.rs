@@ -8,22 +8,24 @@ use std::time::Duration;
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
-    methods::{DeleteMessageParams, EditMessageTextParams, SendDocumentParams, SendMessageParams},
+    methods::{DeleteMessageParams, SendDocumentParams, SendMessageParams},
     types::ReplyMarkup,
 };
 
 use super::config::CompressConfig;
 use super::engine::{CompressError, run_compress};
-use super::handle::{ACTIVE_FC_JOBS, remove_active_fc_job};
+use super::handle::ACTIVE_FC_JOBS;
 use super::progress::{done_inline_keyboard, job_cancel_keyboard, render_progress, JobProgress};
 use crate::bot::{download_telegram_file, send_text_with_back};
+use crate::common::cpu_broker::CpuBrokerGuard;
+use crate::common::dir::TempDirGuard;
+use crate::common::format::fmt_bytes;
+use crate::common::ticker::ProgressTicker;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::flow::CompressFileEntry;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, t, tf};
 use crate::rank::{self, quota::QuotaKind};
-
-const SEP_BASE: &str = "http://127.0.0.1:6589";
 
 #[allow(clippy::too_many_arguments)]
 pub async fn start_compression_task(
@@ -37,7 +39,7 @@ pub async fn start_compression_task(
     database: &Option<PostgresDatabase>,
     flow_manager: &FlowManager,
 ) {
-    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+    if CpuBrokerGuard::is_user_busy(user_id).await {
         let _ = crate::bot::send_text_md(api, chat_id, &t("active_job_running")).await;
         return;
     }
@@ -178,42 +180,19 @@ pub async fn start_compression_task(
     };
 
     // Cancel flag + staged progress ticker on the status message
-    let cancel_flag = Arc::new(AtomicBool::new(false));
-    if let Ok(mut jobs) = ACTIVE_FC_JOBS.lock() {
-        jobs.insert(user_id, cancel_flag.clone());
-    }
-    let timer_running = Arc::new(AtomicBool::new(true));
-    let timer_flag = timer_running.clone();
-    let timer_cancel = cancel_flag.clone();
+    let cancel_flag = ACTIVE_FC_JOBS.register(user_id);
     let timer_progress = progress.clone();
-    let api_timer = api.clone();
-    let timer_handle = crate::app::spawn_user_task(async move {
-        let started = std::time::Instant::now();
-        let mut last = String::new();
-        while timer_flag.load(Ordering::Relaxed) && !timer_cancel.load(Ordering::Relaxed) {
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            if !timer_flag.load(Ordering::Relaxed) || timer_cancel.load(Ordering::Relaxed) {
-                break;
-            }
+    let ticker_handle = ProgressTicker::new(api, chat_id, progress_msg)
+        .interval(Duration::from_secs(3))
+        .with_cancel_flag(cancel_flag.clone())
+        .with_keyboard(job_cancel_keyboard())
+        .spawn(move |elapsed| {
             let text = apply_premium_to_md(&render_progress(
                 &timer_progress,
-                started.elapsed().as_secs(),
+                elapsed.as_secs(),
             ));
-            // Telegram rejects an edit that changes nothing; skip the round-trip.
-            if text == last {
-                continue;
-            }
-            last = text.clone();
-            let params = EditMessageTextParams::builder()
-                .chat_id(chat_id)
-                .message_id(progress_msg)
-                .text(&text)
-                .parse_mode(ParseMode::MarkdownV2)
-                .reply_markup(job_cancel_keyboard())
-                .build();
-            let _ = api_timer.edit_message_text(&params).await;
-        }
-    });
+            Some(text)
+        });
 
     let api_clone = api.clone();
     let db_clone = database.clone();
@@ -230,8 +209,7 @@ pub async fn start_compression_task(
             db_clone,
             fm,
             cancel_flag,
-            timer_running,
-            timer_handle,
+            ticker_handle,
             progress,
         )
         .await;
@@ -250,16 +228,15 @@ async fn run_filecompress_worker(
     database: Option<PostgresDatabase>,
     flow_manager: FlowManager,
     cancel_flag: Arc<AtomicBool>,
-    timer_running: Arc<AtomicBool>,
-    timer_handle: tokio::task::JoinHandle<()>,
+    ticker: crate::common::ProgressTickerHandle,
     progress: Arc<JobProgress>,
 ) {
+    let _job_guard = ACTIVE_FC_JOBS.guard(user_id);
     let job_started = std::time::Instant::now();
-    // Stop ticker + release cancel flag on exit
+    // Stop ticker on exit
     macro_rules! stop_timer {
         () => {{
-            timer_running.store(false, Ordering::Relaxed);
-            remove_active_fc_job(user_id);
+            ticker.stop();
         }};
     }
 
@@ -313,15 +290,18 @@ async fn run_filecompress_worker(
         }};
     }
 
-    let work_dir = std::env::temp_dir().join(format!("filecompress_{trace_id}"));
-    if let Err(e) = std::fs::create_dir_all(&work_dir) {
-        crate::log_ev!("filecompress", trace_id, "mkdir_failed", "err" => format!("{e}"));
-        stop_timer!();
-        refund!("mkdir_failed");
-        let _ = send_text_with_back(&api, chat_id, &t("fc.error.compress_failed")).await;
-        re_arm_flow!();
-        return;
-    }
+    let dir_guard = match TempDirGuard::create("filecompress", trace_id) {
+        Ok(g) => g,
+        Err(e) => {
+            crate::log_ev!("filecompress", trace_id, "mkdir_failed", "err" => format!("{e}"));
+            stop_timer!();
+            refund!("mkdir_failed");
+            let _ = send_text_with_back(&api, chat_id, &t("fc.error.compress_failed")).await;
+            re_arm_flow!();
+            return;
+        }
+    };
+    let work_dir = dir_guard.path().to_path_buf();
 
     let mut local_input_paths = Vec::new();
     let stats_job_id = crate::stats::record_download_start(user_id, "filecompress").await;
@@ -332,7 +312,6 @@ async fn run_filecompress_worker(
             crate::log_ev!("filecompress", trace_id, "cancelled_during_download", "idx" => idx);
             stop_timer!();
             refund!("cancelled");
-            std::fs::remove_dir_all(&work_dir).ok();
             return;
         }
         let local_path = work_dir.join(&entry.filename);
@@ -343,7 +322,6 @@ async fn run_filecompress_worker(
                 crate::log_ev!("filecompress", trace_id, "download_failed", "err" => format!("{e}"));
                 stop_timer!();
                 refund!("download_failed");
-                std::fs::remove_dir_all(&work_dir).ok();
                 let _ = send_text_with_back(&api, chat_id, &t("fc.error.download_failed")).await;
                 re_arm_flow!();
                 return;
@@ -363,11 +341,10 @@ async fn run_filecompress_worker(
         crate::log_ev!("filecompress", trace_id, "cancelled_before_engine", "user_id" => user_id);
         stop_timer!();
         refund!("cancelled");
-        std::fs::remove_dir_all(&work_dir).ok();
         return;
     }
 
-    let cores = acquire_cpu(user_id, trace_id).await;
+    let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "filecompress").await;
     let timeout = Duration::from_secs(1800); // 30 minutes max
 
     // Downloads and the broker queue are behind us; the ETA clock starts here.
@@ -378,22 +355,20 @@ async fn run_filecompress_worker(
         &config,
         &local_input_paths,
         timeout,
-        &cores,
+        &cpu_guard.cores(),
         trace_id,
         &cancel_flag,
         &progress,
     )
     .await;
 
-    release_cpu(cores, trace_id).await;
+    cpu_guard.release().await;
     stop_timer!();
-    let _ = timer_handle.await;
 
     // User clicked cancel mid-job: discard output and refund quota.
     if cancel_flag.load(Ordering::Relaxed) {
         crate::log_ev!("filecompress", trace_id, "cancelled_mid_job", "user_id" => user_id);
         refund!("cancelled");
-        std::fs::remove_dir_all(&work_dir).ok();
         return;
     }
 
@@ -574,67 +549,6 @@ async fn run_filecompress_worker(
                 prompt_msg_id: m.result.message_id,
             },
         );
-    }
-}
-
-async fn acquire_cpu(user_id: i64, trace_id: u64) -> Vec<i32> {
-    let client = crate::http::client();
-    for attempt in 0..3u8 {
-        let res = client
-            .post(format!("{SEP_BASE}/cpu/acquire"))
-            .form(&[
-                ("user_id", user_id.to_string()),
-                ("is_vip", "false".to_string()),
-            ])
-            .timeout(Duration::from_secs(120))
-            .send()
-            .await;
-        match res {
-            Ok(r) => {
-                let json: serde_json::Value = r.json().await.unwrap_or_default();
-                let cores: Vec<i32> = json
-                    .get("cores")
-                    .and_then(|v| serde_json::from_value(v.clone()).ok())
-                    .unwrap_or_default();
-                crate::log_ev!("filecompress", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
-                return cores;
-            }
-            Err(e) => {
-                if attempt < 2 {
-                    crate::log_ev!("filecompress", trace_id, "cpu_acquire_retry", "attempt" => (attempt + 1), "err" => format!("{e}"));
-                    tokio::time::sleep(Duration::from_secs(3)).await;
-                } else {
-                    crate::log_ev!("filecompress", trace_id, "cpu_acquire_failed", "err" => format!("{e}"));
-                    return vec![];
-                }
-            }
-        }
-    }
-    vec![]
-}
-
-async fn release_cpu(cores: Vec<i32>, trace_id: u64) {
-    if cores.is_empty() {
-        return;
-    }
-    let client = crate::http::client();
-    let body = serde_json::json!({ "cores": cores });
-    let r = client
-        .post(format!("{SEP_BASE}/cpu/release"))
-        .json(&body)
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await;
-    crate::log_ev!("filecompress", trace_id, "cpu_released", "cores" => format!("{cores:?}"), "=>" => if r.is_ok() { "ok" } else { "fail" });
-}
-
-fn fmt_bytes(bytes: u64) -> String {
-    const MB: f64 = 1024.0 * 1024.0;
-    let mb = bytes as f64 / MB;
-    if mb >= 1024.0 {
-        format!("{:.2} GB", mb / 1024.0)
-    } else {
-        format!("{mb:.1} MB")
     }
 }
 

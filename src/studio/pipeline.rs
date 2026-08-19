@@ -3,68 +3,38 @@
 //! Provides RAII cleanup guards, active job cancellation registries, and shared
 //! job progress tracking for future Studio tools (crop, watermark, format conversion, trim).
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{
-    Arc, LazyLock, Mutex,
+    Arc, LazyLock,
     atomic::{AtomicBool, Ordering},
 };
 
-/// RAII guard for temporary directories created during Studio operations.
-/// Guarantees directory removal on drop across all exit paths (normal return, error, cancel, panic).
-#[derive(Debug)]
-pub struct TempDirGuard {
-    path: PathBuf,
-}
+pub use crate::common::dir::TempDirGuard;
 
-impl TempDirGuard {
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
-    }
-
-    #[allow(dead_code)]
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for TempDirGuard {
-    fn drop(&mut self) {
-        if self.path.exists() {
-            let _ = std::fs::remove_dir_all(&self.path);
-        }
-    }
-}
+use crate::common::job::{JobGuard, JobRegistry};
 
 /// Global registry of active Studio jobs, mapping `user_id -> cancel_flag`.
-static ACTIVE_STUDIO_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+pub static ACTIVE_STUDIO_JOBS: LazyLock<JobRegistry<i64>> =
+    LazyLock::new(JobRegistry::new);
 
 /// Registers a cancel flag for a user's Studio job.
 pub fn register_active_job(user_id: i64, cancel_flag: Arc<AtomicBool>) {
-    if let Ok(mut jobs) = ACTIVE_STUDIO_JOBS.lock() {
-        jobs.insert(user_id, cancel_flag);
-    }
+    ACTIVE_STUDIO_JOBS.register_custom(user_id, cancel_flag);
+}
+
+/// Creates an RAII unregistration guard for a user's Studio job.
+pub fn job_guard(user_id: i64) -> JobGuard<i64> {
+    ACTIVE_STUDIO_JOBS.guard(user_id)
 }
 
 /// Removes and returns the cancel flag for a user's Studio job.
 pub fn remove_active_job(user_id: i64) -> Option<Arc<AtomicBool>> {
-    if let Ok(mut jobs) = ACTIVE_STUDIO_JOBS.lock() {
-        jobs.remove(&user_id)
-    } else {
-        None
-    }
+    ACTIVE_STUDIO_JOBS.unregister(&user_id)
 }
 
 /// Signals cancellation for a user's active Studio job.
 pub fn cancel_active_job(user_id: i64) -> bool {
-    if let Ok(mut jobs) = ACTIVE_STUDIO_JOBS.lock() {
-        if let Some(flag) = jobs.remove(&user_id) {
-            flag.store(true, Ordering::Relaxed);
-            return true;
-        }
-    }
-    false
+    ACTIVE_STUDIO_JOBS.cancel(&user_id)
 }
 
 /// Returns the job cancel keyboard for a supported Studio domain.
@@ -218,11 +188,24 @@ mod tests {
         let flag = Arc::new(AtomicBool::new(false));
         register_active_job(uid, flag.clone());
 
-        assert!(!flag.load(Ordering::Relaxed));
+        assert!(ACTIVE_STUDIO_JOBS.is_active(&uid));
+        assert!(!flag.load(Ordering::SeqCst));
         let cancelled = cancel_active_job(uid);
         assert!(cancelled);
-        assert!(flag.load(Ordering::Relaxed));
+        assert!(flag.load(Ordering::SeqCst));
+        assert!(!ACTIVE_STUDIO_JOBS.is_active(&uid));
         assert!(remove_active_job(uid).is_none());
+
+        // Test JobGuard auto-unregisters on drop
+        let uid_guard = 987654322;
+        let flag2 = Arc::new(AtomicBool::new(false));
+        register_active_job(uid_guard, flag2.clone());
+        assert!(ACTIVE_STUDIO_JOBS.is_active(&uid_guard));
+        {
+            let _guard = job_guard(uid_guard);
+            assert!(ACTIVE_STUDIO_JOBS.is_active(&uid_guard));
+        }
+        assert!(!ACTIVE_STUDIO_JOBS.is_active(&uid_guard));
     }
 
     fn rand_id() -> u64 {

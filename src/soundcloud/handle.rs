@@ -17,23 +17,13 @@ use id3::{Tag, TagLike};
 use tokio::process::Command;
 
 use crate::bot::{audio_separation_keyboard, sc_cancel_keyboard};
+use crate::common::cpu_broker::CpuBrokerGuard;
+use crate::common::dir::TempDirGuard;
 use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
-use crate::moebius::cpu::{acquire_cpu, release_cpu};
 use crate::soundcloud::cancel::{SoundcloudUnregisterGuard, register_soundcloud_cancel};
 use crate::soundcloud::fetch::{SoundcloudTrackMeta, fetch_soundcloud_meta};
 use crate::spotify::handle::format_spotify_release_date;
-
-struct WorkDirGuard(PathBuf);
-
-impl Drop for WorkDirGuard {
-    fn drop(&mut self) {
-        let path = self.0.clone();
-        tokio::spawn(async move {
-            let _ = tokio::fs::remove_dir_all(&path).await;
-        });
-    }
-}
 
 pub async fn handle_soundcloud_url(
     api: &Bot,
@@ -56,7 +46,7 @@ pub async fn handle_soundcloud_url(
     tokio::fs::create_dir_all(&job_dir)
         .await
         .context("Failed to create SoundCloud work directory")?;
-    let _dir_guard = WorkDirGuard(job_dir.clone());
+    let _dir_guard = TempDirGuard::from_path(job_dir.clone());
 
     // ── STAGE 1: Status Message & Ticker Setup ──────────────────────────────
     let start_text = apply_premium_to_md(&t("soundcloud.starting"));
@@ -321,8 +311,8 @@ pub async fn download_soundcloud_audio(
     trace_id: u64,
     cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> anyhow::Result<PathBuf> {
-    let cores = acquire_cpu(user_id, trace_id).await;
-    log_ev!("sc", trace_id, "cpu_acquired", "cores" => format!("{cores:?}"));
+    let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "sc").await;
+    log_ev!("sc", trace_id, "cpu_acquired", "cores" => format!("{:?}", cpu_guard.cores()));
 
     let output_template = job_dir.join(format!("{stem}.%(ext)s"));
     let target_mp3 = job_dir.join(format!("{stem}.mp3"));
@@ -344,7 +334,7 @@ pub async fn download_soundcloud_audio(
     let mut child = match spawned {
         Ok(c) => c,
         Err(e) => {
-            release_cpu(cores, trace_id).await;
+            cpu_guard.release().await;
             log_ev!("sc", trace_id, "download_audio_fail", "err" => e.to_string());
             return Err(anyhow::anyhow!("Failed to spawn yt-dlp: {e}"));
         }
@@ -354,7 +344,7 @@ pub async fn download_soundcloud_audio(
         if cancel_flag.load(Ordering::Relaxed) {
             let _ = child.start_kill();
             let _ = child.wait().await;
-            release_cpu(cores, trace_id).await;
+            cpu_guard.release().await;
             log_ev!("sc", trace_id, "download_audio_cancelled", "=>" => "cancel");
             return Err(anyhow::anyhow!("cancelled"));
         }
@@ -365,8 +355,8 @@ pub async fn download_soundcloud_audio(
         }
     };
 
-    log_ev!("sc", trace_id, "cpu_released", "cores" => format!("{cores:?}"));
-    release_cpu(cores, trace_id).await;
+    log_ev!("sc", trace_id, "cpu_released", "cores" => format!("{:?}", cpu_guard.cores()));
+    cpu_guard.release().await;
 
     match dl_result {
         Ok(status) if status.success() && target_mp3.exists() => {

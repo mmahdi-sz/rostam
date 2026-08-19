@@ -4,7 +4,7 @@ use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     methods::{DeleteMessageParams, EditMessageTextParams, SendDocumentParams, SendMessageParams},
-    types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyMarkup},
+    types::{InlineKeyboardMarkup, Message, ReplyMarkup},
 };
 
 use super::engine::run_nobg;
@@ -20,14 +20,7 @@ use crate::rank::{
 use crate::stats;
 
 pub fn nobg_cancel_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![
-            InlineKeyboardButton::builder()
-                .text(&t("nobg.cancel_button"))
-                .callback_data(CB_NOBG_CANCEL)
-                .build(),
-        ]])
-        .build()
+    crate::common::job_cancel_keyboard(&t("nobg.cancel_button"), CB_NOBG_CANCEL, "cancel")
 }
 
 pub async fn enter_nobg(
@@ -81,7 +74,7 @@ pub async fn handle_nobg_image(
     flow_manager: &FlowManager,
     database: Option<PostgresDatabase>,
 ) {
-    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+    if crate::common::CpuBrokerGuard::is_user_busy(user_id).await {
         let _ = crate::bot::send_text(api, message.chat.id, &t("active_job_running")).await;
         return;
     }

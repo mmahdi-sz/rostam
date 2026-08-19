@@ -23,28 +23,9 @@ pub async fn probe_audio_duration(
 ) -> u64 {
     let tmp_probe = tmp_dir.join("probe_audio");
     std::fs::write(&tmp_probe, audio_bytes).unwrap_or(());
-    let audio_duration_secs = if let Some(tmp_probe_str) = tmp_probe.to_str() {
-        let probe = tokio::process::Command::new("ffprobe")
-            .args([
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "csv=p=0",
-                tmp_probe_str,
-            ])
-            .output()
-            .await;
-        probe
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .and_then(|s| s.trim().parse::<f64>().ok())
-            .map(|d| d.ceil() as u64)
-            .unwrap_or(0)
-    } else {
-        0
-    };
+    let audio_duration_secs = crate::common::ffmpeg::probe_duration(&tmp_probe)
+        .await
+        .unwrap_or(0);
     std::fs::remove_file(&tmp_probe).ok();
     log_trace(
         trace_id,

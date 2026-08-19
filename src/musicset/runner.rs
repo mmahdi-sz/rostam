@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
@@ -14,40 +14,18 @@ use frankenstein::{
     methods::{DeleteMessageParams, SendAudioParams, SendDocumentParams},
 };
 
+use crate::common::cpu_broker::CpuBrokerGuard;
+use crate::common::dir::TempDirGuard;
+use crate::common::format::format_clock;
+use crate::common::ticker::ProgressTicker;
 use crate::database::postgresql::PostgresDatabase;
 use crate::filecompress::config::{CompressAlgo, CompressConfig, CompressFmt};
 use crate::filecompress::engine::run_compress;
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
-use crate::moebius::cpu::{acquire_cpu, release_cpu};
 use crate::musicset::{
-    MS_SPLIT_MB, MsUnregisterGuard, PendingSet, SetItems, edit_status, job_cancel_keyboard,
-    register_cancel, send_status,
+    MS_SPLIT_MB, PendingSet, SetItems, edit_status, job_cancel_keyboard, register_cancel,
+    send_status,
 };
-
-/// Work directory cleanup guard on any exit path.
-struct WorkDirGuard {
-    dir: PathBuf,
-    trace_id: u64,
-}
-
-impl Drop for WorkDirGuard {
-    fn drop(&mut self) {
-        let dir = self.dir.clone();
-        let trace_id = self.trace_id;
-        tokio::spawn(async move {
-            if dir.exists() {
-                if let Err(e) = tokio::fs::remove_dir_all(&dir).await {
-                    log_ev!("ms", trace_id, "dir_cleanup_err", "err" => e.to_string());
-                }
-            }
-        });
-    }
-}
-
-fn mmss(d: Duration) -> String {
-    let s = d.as_secs();
-    format!("{:02}:{:02}", s / 60, s % 60)
-}
 
 /// Readable title from SoundCloud URL fallback.
 fn sc_slug(url: &str) -> String {
@@ -96,8 +74,7 @@ pub async fn run_set_job(
     status_msg_id: i32,
     database: Option<PostgresDatabase>,
 ) {
-    let cancel = register_cancel(user_id);
-    let _cancel_guard = MsUnregisterGuard(user_id);
+    let (cancel, _cancel_guard) = register_cancel(user_id);
 
     let root = if pending.domain == "sp" {
         crate::config::spotify_download_root()
@@ -115,10 +92,7 @@ pub async fn run_set_job(
         }
         return;
     }
-    let _dir_guard = WorkDirGuard {
-        dir: job_dir.clone(),
-        trace_id,
-    };
+    let _dir_guard = TempDirGuard::from_path(job_dir.clone());
 
     let total = pending.len();
     log_ev!("ms", trace_id, "job_start", "tracks" => total, "mode" => if zip_mode { "zip" } else { "one" });
@@ -141,63 +115,44 @@ pub async fn run_set_job(
     let done_idx = Arc::new(AtomicUsize::new(0));
     // Current track title written by main loop before download.
     let cur_name = Arc::new(Mutex::new(String::from("...")));
-    let tick_stop = Arc::new(AtomicBool::new(false));
-    let ticker = crate::app::spawn_user_task({
-        let api = api.clone();
-        let done_idx = done_idx.clone();
-        let cur_name = cur_name.clone();
-        let tick_stop = tick_stop.clone();
-        let title = md_escape(&pending.title);
-        let started = Instant::now();
-        async move {
-            loop {
-                tokio::time::sleep(Duration::from_secs(3)).await;
-                if tick_stop.load(Ordering::Relaxed) {
-                    break;
-                }
-                let name = cur_name
-                    .lock()
-                    .map(|g| g.clone())
-                    .unwrap_or_else(|_| String::from("..."));
-                let text = tf(
-                    "musicset.progress",
-                    &[
-                        ("title", &title),
-                        (
-                            "i",
-                            &(done_idx.load(Ordering::Relaxed) + 1)
-                                .min(total)
-                                .to_string(),
-                        ),
-                        ("n", &total.to_string()),
-                        ("name", &md_escape(&name)),
-                        ("elapsed", &md_escape(&mmss(started.elapsed()))),
-                    ],
-                );
-                edit_status(
-                    &api,
-                    chat_id,
-                    status_msg_id,
-                    &text,
-                    Some(job_cancel_keyboard()),
-                )
-                .await;
-            }
-        }
-    });
+    let ticker_done_idx = done_idx.clone();
+    let ticker_cur_name = cur_name.clone();
+    let title = md_escape(&pending.title);
 
-    macro_rules! stop_ticker {
-        () => {{
-            tick_stop.store(true, Ordering::Relaxed);
-        }};
-    }
+    let ticker_handle = ProgressTicker::new(&api, chat_id, status_msg_id)
+        .interval(Duration::from_secs(3))
+        .with_cancel_flag(cancel.clone())
+        .with_keyboard(job_cancel_keyboard())
+        .spawn(move |elapsed| {
+            let name = ticker_cur_name
+                .lock()
+                .map(|g| g.clone())
+                .unwrap_or_else(|_| String::from("..."));
+            let text = tf(
+                "musicset.progress",
+                &[
+                    ("title", &title),
+                    (
+                        "i",
+                        &(ticker_done_idx.load(Ordering::Relaxed) + 1)
+                            .min(total)
+                            .to_string(),
+                    ),
+                    ("n", &total.to_string()),
+                    ("name", &md_escape(&name)),
+                    ("elapsed", &md_escape(&format_clock(elapsed.as_secs()))),
+                ],
+            );
+            Some(apply_premium_to_md(&text))
+        });
 
     // Spotify acquires CPU core for the entire queue; SoundCloud reserves per track.
-    let cores = if pending.domain == "sp" {
-        acquire_cpu(user_id, trace_id).await
+    let mut cpu_guard = if pending.domain == "sp" {
+        Some(CpuBrokerGuard::acquire(user_id, trace_id, "musicset").await)
     } else {
-        Vec::new()
+        None
     };
+    let cores = cpu_guard.as_ref().map(|g| g.cores().to_vec()).unwrap_or_default();
 
     let mut ready: Vec<Track> = Vec::new();
     let mut failed = 0usize;
@@ -267,16 +222,17 @@ pub async fn run_set_job(
         done_idx.store(idx + 1, Ordering::Relaxed);
     }
 
-    if !cores.is_empty() && !zip_mode {
-        release_cpu(cores.clone(), trace_id).await;
+    if !zip_mode {
+        if let Some(mut g) = cpu_guard.take() {
+            g.release().await;
+        }
     }
 
     if cancelled {
-        if !cores.is_empty() && zip_mode {
-            release_cpu(cores, trace_id).await;
+        if let Some(mut g) = cpu_guard.take() {
+            g.release().await;
         }
-        stop_ticker!();
-        let _ = ticker.await;
+        ticker_handle.stop();
         log_ev!("ms", trace_id, "job_cancelled", "=>" => "cancel", "done" => done_idx.load(Ordering::Relaxed));
         delete_status(&api, chat_id, status_msg_id).await;
         // Uses MarkdownV2 with pre-escaped i18n text.
@@ -286,11 +242,10 @@ pub async fn run_set_job(
     }
 
     if zip_mode {
-        let cores = if cores.is_empty() {
-            acquire_cpu(user_id, trace_id).await
-        } else {
-            cores
-        };
+        if cpu_guard.is_none() {
+            cpu_guard = Some(CpuBrokerGuard::acquire(user_id, trace_id, "musicset").await);
+        }
+        let cores = cpu_guard.as_ref().map(|g| g.cores().to_vec()).unwrap_or_default();
         edit_status(
             &api,
             chat_id,
@@ -303,10 +258,11 @@ pub async fn run_set_job(
             &api, chat_id, user_id, trace_id, &job_dir, &ready, &cancel, &cores, &database,
         )
         .await;
-        release_cpu(cores, trace_id).await;
+        if let Some(mut g) = cpu_guard.take() {
+            g.release().await;
+        }
         if !ok {
-            stop_ticker!();
-            let _ = ticker.await;
+            ticker_handle.stop();
             delete_status(&api, chat_id, status_msg_id).await;
             send_status(&api, chat_id, &t("musicset.zip_failed")).await;
             let _ = crate::bot::send_start_menu(&api, chat_id).await;
@@ -314,8 +270,7 @@ pub async fn run_set_job(
         }
     }
 
-    stop_ticker!();
-    let _ = ticker.await;
+    ticker_handle.stop();
 
     let uploaded = total - failed;
     log_ev!("ms", trace_id, "job_done", "=>" => "ok", "uploaded" => uploaded, "failed" => failed);

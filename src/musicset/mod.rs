@@ -7,7 +7,7 @@
 pub mod runner;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use frankenstein::client_reqwest::Bot;
@@ -72,9 +72,11 @@ struct StoredPendingSet {
 static PENDING_SETS: LazyLock<Mutex<HashMap<(i64, i32), StoredPendingSet>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+use crate::common::job::{JobGuard, JobRegistry};
+
 /// Active job cancellation flag for progress message cancel button.
-static ACTIVE_MS_JOBS: LazyLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static ACTIVE_MS_JOBS: LazyLock<JobRegistry<i64>> =
+    LazyLock::new(JobRegistry::new);
 
 /// Stores new set and purges old offers for the same user.
 pub fn put_pending(user_id: i64, message_id: i32, set: PendingSet) {
@@ -96,37 +98,13 @@ pub fn take_pending(user_id: i64, message_id: i32) -> Option<PendingSet> {
     }
 }
 
-pub fn register_cancel(user_id: i64) -> Arc<AtomicBool> {
-    let flag = Arc::new(AtomicBool::new(false));
-    if let Ok(mut jobs) = ACTIVE_MS_JOBS.lock() {
-        jobs.insert(user_id, flag.clone());
-    }
-    flag
-}
-
-/// Removes from registry on any exit path.
-pub struct MsUnregisterGuard(pub i64);
-
-impl Drop for MsUnregisterGuard {
-    fn drop(&mut self) {
-        if let Ok(mut jobs) = ACTIVE_MS_JOBS.lock() {
-            jobs.remove(&self.0);
-        }
-    }
+pub fn register_cancel(user_id: i64) -> (Arc<AtomicBool>, JobGuard<i64>) {
+    ACTIVE_MS_JOBS.register_with_guard(user_id)
 }
 
 /// Returns `true` if job was active for user and cancel flag was set.
 pub fn cancel_job(user_id: i64) -> bool {
-    let Ok(jobs) = ACTIVE_MS_JOBS.lock() else {
-        return false;
-    };
-    match jobs.get(&user_id) {
-        Some(flag) => {
-            flag.store(true, Ordering::SeqCst);
-            true
-        }
-        None => false,
-    }
+    ACTIVE_MS_JOBS.cancel(&user_id)
 }
 
 #[derive(Debug, Clone)]
@@ -238,13 +216,7 @@ pub fn mode_keyboard() -> frankenstein::types::InlineKeyboardMarkup {
 }
 
 pub fn job_cancel_keyboard() -> frankenstein::types::InlineKeyboardMarkup {
-    frankenstein::types::InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![crate::emoji::panel::btn_icon_danger(
-            &t("musicset.btn_cancel"),
-            CB_MS_JOBCANCEL,
-            "cancel",
-        )]])
-        .build()
+    crate::common::job_cancel_keyboard(&t("musicset.btn_cancel"), CB_MS_JOBCANCEL, "cancel")
 }
 
 /// Fetches track list and prompts for upload mode choice.
@@ -398,4 +370,31 @@ pub(crate) async fn edit_status(
         .build();
     params.reply_markup = kb;
     let _ = api.edit_message_text(&params).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn test_musicset_cancel_lifecycle() {
+        let user_id = 999_888_004;
+        let (flag, _guard) = register_cancel(user_id);
+        assert!(!flag.load(Ordering::SeqCst));
+
+        // cancel job
+        let cancelled = cancel_job(user_id);
+        assert!(cancelled);
+        assert!(flag.load(Ordering::SeqCst));
+
+        // unregister guard drop test
+        let user_id_2 = 999_888_005;
+        {
+            let (_flag2, _guard) = register_cancel(user_id_2);
+            assert!(ACTIVE_MS_JOBS.is_active(&user_id_2));
+        }
+        assert!(!cancel_job(user_id_2));
+        assert!(!ACTIVE_MS_JOBS.is_active(&user_id_2));
+    }
 }
