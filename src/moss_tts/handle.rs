@@ -87,11 +87,22 @@ pub async fn enter_tts(
     log_ev!("tts", trace_id, "enter_tts", "user_id" => user_id, "chat_id" => chat_id);
 
     if let Some(db) = &database {
-        let user_rank = rank::effective_rank(db.client(), user_id).await;
+        let (user_rank, used) = {
+            let client = match db.get().await {
+                Ok(c) => c,
+                Err(e) => {
+                    log_ev!("tts", trace_id, "quota_checkout", "err" => format!("{e}"), "=>" => "fail");
+                    flow_manager.set(user_id, FlowState::Idle);
+                    return;
+                }
+            };
+            let user_rank = rank::effective_rank(&client, user_id).await;
+            let used = get_usage(&client, user_id, QuotaKind::TtsWeekly, 7 * 86400)
+                .await
+                .unwrap_or(0) as u64;
+            (user_rank, used)
+        };
         let limit = user_rank.tts_weekly_secs();
-        let used = get_usage(db.client(), user_id, QuotaKind::TtsWeekly, 7 * 86400)
-            .await
-            .unwrap_or(0) as u64;
 
         if used >= limit {
             log_ev!("tts", trace_id, "quota_check", "used" => used, "limit" => limit, "=>" => "blocked");
@@ -175,18 +186,31 @@ pub async fn handle_tts_text(
     // Reserve usage before work based on estimated speech duration. Cap check applies to projected usage.
     let mut reserved = false;
     if let Some(db) = &database {
-        let user_rank = rank::effective_rank(db.client(), user_id).await;
+        let (user_rank, reserve_res) = {
+            let client = match db.get().await {
+                Ok(c) => c,
+                Err(e) => {
+                    log_ev!("tts", trace_id, "quota_checkout", "err" => format!("{e}"), "=>" => "fail");
+                    crate::rank::paywall::quota_db_error(api, chat_id, "tts", &format!("{e}")).await;
+                    flow_manager.set(user_id, FlowState::Idle);
+                    return;
+                }
+            };
+            let user_rank = rank::effective_rank(&client, user_id).await;
+            let limit = user_rank.tts_weekly_secs();
+            let res = reserve_usage(
+                &client,
+                user_id,
+                QuotaKind::TtsWeekly,
+                est_secs,
+                7 * 86400,
+                limit as i64,
+            )
+            .await;
+            (user_rank, res)
+        };
         let limit = user_rank.tts_weekly_secs();
-        match reserve_usage(
-            db.client(),
-            user_id,
-            QuotaKind::TtsWeekly,
-            est_secs,
-            7 * 86400,
-            limit as i64,
-        )
-        .await
-        {
+        match reserve_res {
             Ok(Some(used_after)) => {
                 reserved = true;
                 log_ev!("tts", trace_id, "quota_reserved", "used" => used_after, "limit" => limit, "est" => est_secs);
@@ -223,17 +247,19 @@ pub async fn handle_tts_text(
             if reserved {
                 if let Some(db) = &database {
                     log_ev!("tts", trace_id, "quota_refund", "why" => $why);
-                    if let Err(e) = refund_usage(
-                        db.client(),
-                        user_id,
-                        QuotaKind::TtsWeekly,
-                        est_secs,
-                        7 * 86400,
-                    )
-                    .await
-                    {
-                        log_ev!("tts", trace_id, "quota_refund", "err" => format!("{e}"), "=>" => "fail");
-                        stats::record_error_global("tts", "quota_refund_failed").await;
+                    if let Ok(client) = db.get().await {
+                        if let Err(e) = refund_usage(
+                            &client,
+                            user_id,
+                            QuotaKind::TtsWeekly,
+                            est_secs,
+                            7 * 86400,
+                        )
+                        .await
+                        {
+                            log_ev!("tts", trace_id, "quota_refund", "err" => format!("{e}"), "=>" => "fail");
+                            stats::record_error_global("tts", "quota_refund_failed").await;
+                        }
                     }
                 }
             }

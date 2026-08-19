@@ -69,7 +69,7 @@ pub async fn test_callback(Json(payload): Json<Value>) -> axum::response::Respon
         database: None,
         flow_manager: FlowManager::new(),
         rate_limit_tx,
-        user_last_update: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        user_last_update: Arc::new(dashmap::DashMap::new()),
     };
 
     let user = User::builder()

@@ -1,11 +1,18 @@
 mod cancel;
-mod helpers;
+pub mod cpu;
+pub mod helpers;
+pub mod notice;
+pub mod playlist;
 pub mod progress;
 mod runner;
+pub mod sanitize;
 mod selection_helpers;
+pub mod single;
 mod split;
 mod status;
 mod store;
+pub mod stream;
+pub mod subtitle;
 pub mod types;
 mod upload;
 

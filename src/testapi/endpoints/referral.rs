@@ -58,14 +58,28 @@ pub async fn test_referral_spend(Json(req): Json<ReferralSpendReq>) -> Json<Refe
             db: "unavailable".to_string(),
         });
     };
-    let client = db.client();
+    let client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            return Json(ReferralSpendResp {
+                ok: false,
+                tier: req.tier,
+                required_points: required as i32,
+                remaining_points: req.points,
+                days_added: 0,
+                message: format!("db checkout failed: {e}"),
+                granted_rank: None,
+                db: "unavailable".to_string(),
+            });
+        }
+    };
 
     // Seed referrals following standard sweep structure.
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let _ = purge_spend(client, SPEND_UID).await;
+    let _ = purge_spend(&client, SPEND_UID).await;
     if req.points > 0 {
         let n = req.points as i64;
         if let Err(e) = client
@@ -92,9 +106,9 @@ pub async fn test_referral_spend(Json(req): Json<ReferralSpendReq>) -> Json<Refe
     let trace = crate::log::next_trace_id();
     let message = crate::rank::panel::process_claim(database, SPEND_UID, required, trace).await;
 
-    let spent = crate::referral::total_spent_points(client, SPEND_UID).await;
-    let total = crate::referral::count_referrals(client, SPEND_UID).await;
-    let rank_row = crate::rank::store::get_user_rank(client, SPEND_UID)
+    let spent = crate::referral::total_spent_points(&client, SPEND_UID).await;
+    let total = crate::referral::count_referrals(&client, SPEND_UID).await;
+    let rank_row = crate::rank::store::get_user_rank(&client, SPEND_UID)
         .await
         .ok()
         .flatten();
@@ -105,7 +119,7 @@ pub async fn test_referral_spend(Json(req): Json<ReferralSpendReq>) -> Json<Refe
         .map(|exp| crate::rank::types::ceil_div((exp - now).max(0), 86_400) as i32)
         .unwrap_or(0);
 
-    let _ = purge_spend(client, SPEND_UID).await;
+    let _ = purge_spend(&client, SPEND_UID).await;
 
     Json(ReferralSpendResp {
         // Success: rank stored and points deducted.

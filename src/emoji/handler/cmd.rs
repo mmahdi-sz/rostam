@@ -78,7 +78,14 @@ pub async fn handle_se_command(
         let _ = send_text(api, chat_id, &t("emoji.db_required")).await;
         return;
     };
-    let client = db.client();
+    let client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[emoji_cmd trace={trace_id} event=checkout_failed err={e}]");
+            let _ = send_text(api, chat_id, &t("emoji.db_required")).await;
+            return;
+        }
+    };
 
     // Collect pairs: (selector, alias)
     let tokens: Vec<&str> = rest.split_whitespace().collect();
@@ -102,7 +109,7 @@ pub async fn handle_se_command(
 
     for (selector, alias) in &pairs {
         let alias_value = if *alias == "-" { None } else { Some(*alias) };
-        match emoji_store::set_item_alias(client, user_id, selector, alias_value).await {
+        match emoji_store::set_item_alias(&client, user_id, selector, alias_value).await {
             Ok(true) => {
                 eprintln!(
                     "[emoji_cmd trace={trace_id} event=se_done] selector={selector:?} alias={alias_value:?}"

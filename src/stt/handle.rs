@@ -60,8 +60,12 @@ pub async fn enter_stt_config(
     log_actor_id!("stt", trace_id, user_id, "clicked" => "ai:stt");
 
     let denoise_default = if let Some(db) = database.as_ref() {
-        let user_rank = rank::effective_rank(db.client(), user_id).await;
-        user_rank.stt_denoise_default()
+        if let Ok(client) = db.get().await {
+            let user_rank = rank::effective_rank(&client, user_id).await;
+            user_rank.stt_denoise_default()
+        } else {
+            false
+        }
     } else {
         false
     };
@@ -121,21 +125,23 @@ pub async fn handle_stt_callback(
             // Paywall — Accurate model requires Sohrab rank or higher
             if size == SttModelSize::Large {
                 if let Some(db) = database.as_ref() {
-                    let user_rank = rank::effective_rank(db.client(), user_id).await;
-                    if !user_rank.can_stt_accurate() {
-                        log_trace(
-                            trace_id,
-                            "stt_accurate_paywall",
-                            &format!("user_id={user_id} rank={}", user_rank.as_str()),
-                        );
-                        crate::rank::paywall::block_feature(
-                            api,
-                            chat_id,
-                            &t("stt.accurate_feature_name"),
-                            rank::types::Rank::Sohrab,
-                        )
-                        .await;
-                        return true;
+                    if let Ok(client) = db.get().await {
+                        let user_rank = rank::effective_rank(&client, user_id).await;
+                        if !user_rank.can_stt_accurate() {
+                            log_trace(
+                                trace_id,
+                                "stt_accurate_paywall",
+                                &format!("user_id={user_id} rank={}", user_rank.as_str()),
+                            );
+                            crate::rank::paywall::block_feature(
+                                api,
+                                chat_id,
+                                &t("stt.accurate_feature_name"),
+                                rank::types::Rank::Sohrab,
+                            )
+                            .await;
+                            return true;
+                        }
                     }
                 }
             }
@@ -189,21 +195,23 @@ pub async fn handle_stt_callback(
             // Paywall — Denoise requires Sohrab rank or higher
             if !config.denoise {
                 if let Some(db) = database.as_ref() {
-                    let user_rank = rank::effective_rank(db.client(), user_id).await;
-                    if !user_rank.can_stt_denoise() {
-                        log_trace(
-                            trace_id,
-                            "stt_denoise_paywall",
-                            &format!("user_id={user_id} rank={}", user_rank.as_str()),
-                        );
-                        crate::rank::paywall::block_feature(
-                            api,
-                            chat_id,
-                            &crate::i18n::t("stt.denoise_feature_name"),
-                            rank::types::Rank::Sohrab,
-                        )
-                        .await;
-                        return true;
+                    if let Ok(client) = db.get().await {
+                        let user_rank = rank::effective_rank(&client, user_id).await;
+                        if !user_rank.can_stt_denoise() {
+                            log_trace(
+                                trace_id,
+                                "stt_denoise_paywall",
+                                &format!("user_id={user_id} rank={}", user_rank.as_str()),
+                            );
+                            crate::rank::paywall::block_feature(
+                                api,
+                                chat_id,
+                                &crate::i18n::t("stt.denoise_feature_name"),
+                                rank::types::Rank::Sohrab,
+                            )
+                            .await;
+                            return true;
+                        }
                     }
                 }
             }
@@ -288,8 +296,8 @@ pub async fn handle_stt_callback(
 }
 
 /// Converts audio to 16kHz mono 16-bit PCM WAV using ffmpeg.
-fn convert_to_wav(input: &str, output: &str) -> anyhow::Result<()> {
-    let status = std::process::Command::new("ffmpeg")
+async fn convert_to_wav(input: &str, output: &str) -> anyhow::Result<()> {
+    let status = tokio::process::Command::new("ffmpeg")
         .args([
             "-y",
             "-i",
@@ -305,6 +313,7 @@ fn convert_to_wav(input: &str, output: &str) -> anyhow::Result<()> {
             output,
         ])
         .status()
+        .await
         .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?;
 
     if !status.success() {
@@ -437,14 +446,7 @@ pub async fn handle_stt_audio(
     // ── Stage 2: Convert to WAV ──
     edit_status(api, chat_id, status_msg_id, &t("stt.stage_converting")).await;
 
-    let input_str_owned = input_str.to_string();
-    let wav_str_owned = wav_str.to_string();
-    if let Err(e) = tokio::task::spawn_blocking(move || {
-        convert_to_wav(&input_str_owned, &wav_str_owned).map_err(|e| e.to_string())
-    })
-    .await
-    .unwrap_or_else(|e| Err(e.to_string()))
-    {
+    if let Err(e) = convert_to_wav(input_str, wav_str).await {
         remove_active_stt_job(user_id);
         log_trace(trace_id, "stt_convert_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
@@ -463,7 +465,7 @@ pub async fn handle_stt_audio(
         return;
     }
 
-    let audio_duration = wav_duration(wav_str).unwrap_or(0.0);
+    let audio_duration = wav_duration(wav_str).await.unwrap_or(0.0);
     let duration_secs = audio_duration.ceil() as u64;
 
     // Quota reservation
@@ -474,16 +476,30 @@ pub async fn handle_stt_audio(
     let mut reserved = false;
     let mut reserve_secs: i64 = 0;
     if let Some(db) = database.as_ref() {
-        let user_rank = rank::effective_rank(db.client(), user_id).await;
-        let (daily_limit_opt, weekly_limit_opt) = match config.model_size {
-            SttModelSize::Large => (
-                user_rank.stt_accurate_daily_secs(),
-                user_rank.stt_accurate_weekly_secs(),
-            ),
-            SttModelSize::Small => (
-                user_rank.stt_fast_daily_secs(),
-                user_rank.stt_fast_weekly_secs(),
-            ),
+        let (user_rank, daily_limit_opt, weekly_limit_opt) = {
+            let client = match db.get().await {
+                Ok(c) => c,
+                Err(e) => {
+                    remove_active_stt_job(user_id);
+                    log_trace(trace_id, "stt_quota_checkout", &format!("err={e} => fail"));
+                    delete_status(api, chat_id, status_msg_id).await;
+                    clean_up(&work_dir);
+                    crate::rank::paywall::quota_db_error(api, chat_id, "stt", &format!("{e}")).await;
+                    return;
+                }
+            };
+            let user_rank = rank::effective_rank(&client, user_id).await;
+            let (d_lim, w_lim) = match config.model_size {
+                SttModelSize::Large => (
+                    user_rank.stt_accurate_daily_secs(),
+                    user_rank.stt_accurate_weekly_secs(),
+                ),
+                SttModelSize::Small => (
+                    user_rank.stt_fast_daily_secs(),
+                    user_rank.stt_fast_weekly_secs(),
+                ),
+            };
+            (user_rank, d_lim, w_lim)
         };
         let (daily_key, weekly_key, daily_limit_key, weekly_limit_key, file_key) =
             match config.model_size {
@@ -510,12 +526,17 @@ pub async fn handle_stt_audio(
 
             macro_rules! deny {
                 ($event:expr) => {{
-                    let d_used = get_usage(db.client(), user_id, daily_kind, 86400)
-                        .await
-                        .unwrap_or(0) as u64;
-                    let w_used = get_usage(db.client(), user_id, weekly_kind, 7 * 86400)
-                        .await
-                        .unwrap_or(0) as u64;
+                    let (d_used, w_used) = if let Ok(client) = db.get().await {
+                        let d = get_usage(&client, user_id, daily_kind, 86400)
+                            .await
+                            .unwrap_or(0) as u64;
+                        let w = get_usage(&client, user_id, weekly_kind, 7 * 86400)
+                            .await
+                            .unwrap_or(0) as u64;
+                        (d, w)
+                    } else {
+                        (0, 0)
+                    };
                     let d_rem = daily_limit.saturating_sub(d_used);
                     let w_rem = weekly_limit.saturating_sub(w_used);
                     let (key, ph, val) = if d_rem == 0 {
@@ -561,16 +582,47 @@ pub async fn handle_stt_audio(
                 }};
             }
 
-            match reserve_usage(
-                db.client(),
-                user_id,
-                daily_kind,
-                reserve_secs,
-                86400,
-                daily_limit as i64,
-            )
-            .await
-            {
+            let weekly_limit_i64 = weekly_limit.min(i64::MAX as u64) as i64;
+            let (daily_res, weekly_res) = {
+                let client = match db.get().await {
+                    Ok(c) => c,
+                    Err(e) => db_fail!(e),
+                };
+                let d_res = reserve_usage(
+                    &client,
+                    user_id,
+                    daily_kind,
+                    reserve_secs,
+                    86400,
+                    daily_limit as i64,
+                )
+                .await;
+                let w_res = if matches!(d_res, Ok(Some(_))) {
+                    let w = reserve_usage(
+                        &client,
+                        user_id,
+                        weekly_kind,
+                        reserve_secs,
+                        7 * 86400,
+                        weekly_limit_i64,
+                    )
+                    .await;
+                    if !matches!(w, Ok(Some(_))) {
+                        if let Err(e) =
+                            refund_usage(&client, user_id, daily_kind, reserve_secs, 86400).await
+                        {
+                            log_trace(trace_id, "stt_quota_refund_failed", &e.to_string());
+                            crate::stats::record_error_global("stt", &format!("refund_failed: {e}")).await;
+                        }
+                    }
+                    Some(w)
+                } else {
+                    None
+                };
+                (d_res, w_res)
+            };
+
+            match daily_res {
                 Ok(Some(used)) => log_trace(
                     trace_id,
                     "stt_quota_reserved_daily",
@@ -580,34 +632,18 @@ pub async fn handle_stt_audio(
                 Err(e) => db_fail!(e),
             }
 
-            let weekly_limit_i64 = weekly_limit.min(i64::MAX as u64) as i64;
-            match reserve_usage(
-                db.client(),
-                user_id,
-                weekly_kind,
-                reserve_secs,
-                7 * 86400,
-                weekly_limit_i64,
-            )
-            .await
-            {
-                Ok(Some(used)) => {
-                    reserved = true;
-                    log_trace(
-                        trace_id,
-                        "stt_quota_reserved_weekly",
-                        &format!("used={used} limit={weekly_limit}"),
-                    );
-                }
-                Ok(None) => {
-                    let _ =
-                        refund_usage(db.client(), user_id, daily_kind, reserve_secs, 86400).await;
-                    deny!("stt_quota_weekly");
-                }
-                Err(e) => {
-                    let _ =
-                        refund_usage(db.client(), user_id, daily_kind, reserve_secs, 86400).await;
-                    db_fail!(e);
+            if let Some(w_res) = weekly_res {
+                match w_res {
+                    Ok(Some(used)) => {
+                        reserved = true;
+                        log_trace(
+                            trace_id,
+                            "stt_quota_reserved_weekly",
+                            &format!("used={used} limit={weekly_limit}"),
+                        );
+                    }
+                    Ok(None) => deny!("stt_quota_weekly"),
+                    Err(e) => db_fail!(e),
                 }
             }
         }
@@ -618,12 +654,14 @@ pub async fn handle_stt_audio(
             if reserved {
                 if let Some(db) = database.as_ref() {
                     log_trace(trace_id, "stt_quota_refund", &format!("why={}", $why));
-                    for (kind, window) in [(daily_kind, 86400), (weekly_kind, 7 * 86400)] {
-                        if let Err(e) =
-                            refund_usage(db.client(), user_id, kind, reserve_secs, window).await
-                        {
-                            log_trace(trace_id, "stt_quota_refund", &format!("err={e} => fail"));
-                            crate::stats::record_error_global("stt", "quota_refund_failed").await;
+                    if let Ok(client) = db.get().await {
+                        for (kind, window) in [(daily_kind, 86400), (weekly_kind, 7 * 86400)] {
+                            if let Err(e) =
+                                refund_usage(&client, user_id, kind, reserve_secs, window).await
+                            {
+                                log_trace(trace_id, "stt_quota_refund", &format!("err={e} => fail"));
+                                crate::stats::record_error_global("stt", "quota_refund_failed").await;
+                            }
                         }
                     }
                 }
@@ -855,8 +893,8 @@ pub async fn send_stt_ready_prompt(api: &Bot, chat_id: i64, config: &SttConfig) 
     let _ = api.send_message(&params).await;
 }
 
-fn wav_duration(path: &str) -> anyhow::Result<f64> {
-    let output = std::process::Command::new("ffprobe")
+async fn wav_duration(path: &str) -> anyhow::Result<f64> {
+    let output = tokio::process::Command::new("ffprobe")
         .args([
             "-v",
             "error",
@@ -866,7 +904,8 @@ fn wav_duration(path: &str) -> anyhow::Result<f64> {
             "csv=p=0",
             path,
         ])
-        .output()?;
+        .output()
+        .await?;
     if !output.status.success() {
         anyhow::bail!(
             "ffprobe failed: {}",
@@ -874,7 +913,8 @@ fn wav_duration(path: &str) -> anyhow::Result<f64> {
         );
     }
     let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(s.parse()?)
+    let d: f64 = s.parse()?;
+    Ok(d)
 }
 
 fn clean_up(dir: &std::path::Path) {

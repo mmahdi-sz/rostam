@@ -1,4 +1,4 @@
-use tokio_postgres::Client;
+use tokio_postgres::{Client, GenericClient};
 
 use crate::rank::types::Rank;
 
@@ -131,7 +131,7 @@ fn classify(inserted: i64, consumed: i64) -> RedeemOutcome {
 
 /// Atomically redeems code for user.
 pub async fn mark_redeemed(
-    client: &Client,
+    client: &(impl GenericClient + ?Sized),
     code: &str,
     user_id: i64,
 ) -> Result<RedeemOutcome, tokio_postgres::Error> {
@@ -188,10 +188,47 @@ pub async fn mark_redeemed(
     Ok(outcome)
 }
 
-/// Deletes code and its redemptions (lazy expiration).
-pub async fn delete_code(client: &Client, code: &str) -> Result<(), tokio_postgres::Error> {
+/// Active codes list for admin panel.
+#[allow(dead_code)]
+pub async fn list_active_codes(
+    client: &Client,
+) -> Result<Vec<RedeemCodeRow>, tokio_postgres::Error> {
+    let rows = client
+        .query(
+            "SELECT rank, duration_days, max_uses, used_count, expires_at
+             FROM redeem_codes
+             WHERE expires_at IS NULL OR expires_at > EXTRACT(EPOCH FROM NOW())::BIGINT
+             ORDER BY expires_at ASC NULLS LAST",
+            &[],
+        )
+        .await?;
+
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            let rank_str: String = row.get(0);
+            let rank = Rank::from_str(&rank_str)?;
+            Some(RedeemCodeRow {
+                rank,
+                duration_days: row.get(1),
+                max_uses: row.get(2),
+                used_count: row.get(3),
+                expires_at: row.get(4),
+            })
+        })
+        .collect())
+}
+
+/// Deletes specific code.
+pub async fn delete_code(
+    client: &Client,
+    code: &str,
+) -> Result<(), tokio_postgres::Error> {
     client
-        .execute("DELETE FROM redeem_redemptions WHERE code = $1", &[&code])
+        .execute(
+            "DELETE FROM redeem_redemptions WHERE code = $1",
+            &[&code],
+        )
         .await?;
     client
         .execute("DELETE FROM redeem_codes WHERE code = $1", &[&code])
@@ -200,21 +237,22 @@ pub async fn delete_code(client: &Client, code: &str) -> Result<(), tokio_postgr
 }
 
 /// Sweeps expired codes. Returns count of deleted codes.
-pub async fn sweep_expired(client: &Client) -> Result<u64, tokio_postgres::Error> {
+pub async fn sweep_expired(client: &mut Client) -> Result<u64, tokio_postgres::Error> {
     let now = now_epoch();
-    client
-        .execute(
-            "DELETE FROM redeem_redemptions WHERE code IN
-                (SELECT code FROM redeem_codes WHERE expires_at IS NOT NULL AND expires_at < $1)",
-            &[&now],
-        )
-        .await?;
-    let n = client
+    let txn = client.transaction().await?;
+    txn.execute(
+        "DELETE FROM redeem_redemptions WHERE code IN
+            (SELECT code FROM redeem_codes WHERE expires_at IS NOT NULL AND expires_at < $1)",
+        &[&now],
+    )
+    .await?;
+    let n = txn
         .execute(
             "DELETE FROM redeem_codes WHERE expires_at IS NOT NULL AND expires_at < $1",
             &[&now],
         )
         .await?;
+    txn.commit().await?;
     Ok(n)
 }
 
@@ -294,7 +332,7 @@ mod tests {
         let mut set = tokio::task::JoinSet::new();
         for i in 0..12i64 {
             let client = client.clone();
-            set.spawn(async move { mark_redeemed(&client, CODE, BASE_UID - i).await });
+            set.spawn(async move { mark_redeemed(&*client, CODE, BASE_UID - i).await });
         }
         let mut consumed = 0;
         let mut already = 0;
@@ -338,7 +376,7 @@ mod tests {
         let mut set = tokio::task::JoinSet::new();
         for _ in 0..2 {
             let client = client.clone();
-            set.spawn(async move { mark_redeemed(&client, CODE, BASE_UID).await });
+            set.spawn(async move { mark_redeemed(&*client, CODE, BASE_UID).await });
         }
         let mut consumed = 0;
         let mut already = 0;

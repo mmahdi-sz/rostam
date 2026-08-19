@@ -108,6 +108,11 @@ pub async fn run_set_job(
     if let Err(e) = tokio::fs::create_dir_all(&job_dir).await {
         log_ev!("ms", trace_id, "workdir_fail", "err" => e.to_string());
         crate::stats::record_error_global("musicset", format!("workdir: {e}")).await;
+        if status_msg_id > 0 {
+            edit_status(&api, chat_id, status_msg_id, &t("musicset.io_error"), None).await;
+        } else {
+            let _ = send_status(&api, chat_id, &t("musicset.io_error")).await;
+        }
         return;
     }
     let _dir_guard = WorkDirGuard {
@@ -431,8 +436,10 @@ async fn add_traffic(database: &Option<PostgresDatabase>, user_id: i64, path: &s
         .await
         .map(|m| m.len() as i64)
         .unwrap_or(0);
-    if let Some(first_up) = crate::rank::quota::get_first_upload_at(db.client(), user_id).await {
-        let _ = crate::rank::quota::add_traffic(db.client(), user_id, size, first_up).await;
+    if let Ok(client) = db.get().await {
+        if let Some(first_up) = crate::rank::quota::get_first_upload_at(&client, user_id).await {
+            let _ = crate::rank::quota::add_traffic(&client, user_id, size, first_up).await;
+        }
     }
 }
 

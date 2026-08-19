@@ -12,5 +12,5 @@ pub struct AppState {
     pub database: Option<PostgresDatabase>,
     pub flow_manager: FlowManager,
     pub rate_limit_tx: UnboundedSender<CookieSource>,
-    pub user_last_update: Arc<Mutex<std::collections::HashMap<i64, std::time::Instant>>>,
+    pub user_last_update: Arc<dashmap::DashMap<i64, std::time::Instant>>,
 }

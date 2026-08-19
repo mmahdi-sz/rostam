@@ -1,31 +1,21 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock};
 
-static ACTIVE_DENOISE_JOBS: OnceLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> = OnceLock::new();
+use crate::common::job::JobRegistry;
 
-fn active_denoise_jobs() -> &'static Mutex<HashMap<i64, Arc<AtomicBool>>> {
-    ACTIVE_DENOISE_JOBS.get_or_init(|| Mutex::new(HashMap::new()))
-}
+static ACTIVE_DENOISE_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 pub fn register_denoise_cancel(user_id: i64) -> Arc<AtomicBool> {
-    let flag = Arc::new(AtomicBool::new(false));
-    crate::sync_util::lock_or_recover(active_denoise_jobs()).insert(user_id, flag.clone());
-    flag
+    ACTIVE_DENOISE_JOBS.register(user_id)
 }
 
 pub fn unregister_denoise_cancel(user_id: i64) {
-    crate::sync_util::lock_or_recover(active_denoise_jobs()).remove(&user_id);
+    ACTIVE_DENOISE_JOBS.unregister(&user_id);
 }
 
 pub fn cancel_denoise_job(user_id: i64) -> bool {
-    if let Some(flag) = crate::sync_util::lock_or_recover(active_denoise_jobs()).remove(&user_id) {
-        flag.store(true, Ordering::SeqCst);
-        true
-    } else {
-        false
-    }
+    ACTIVE_DENOISE_JOBS.cancel(&user_id)
 }
 
 pub struct DenoiseUnregisterGuard(pub i64);
@@ -258,17 +248,7 @@ pub async fn handle_denoise_audio(
     );
 
     // 2. Convert to 48kHz mono 16-bit PCM WAV (DeepFilterNet optimal sample rate)
-    // Blocking (std::process::Command) — run on the blocking thread pool.
-    let convert_res = {
-        let inp = input_str.to_string();
-        let outp = wav_str.to_string();
-        tokio::task::spawn_blocking(move || {
-            convert_to_wav(&inp, &outp, 48000).map_err(|e| e.to_string())
-        })
-        .await
-        .unwrap_or_else(|e| Err(format!("convert task panicked: {e}")))
-    };
-    if let Err(e) = convert_res {
+    if let Err(e) = convert_to_wav(input_str, wav_str, 48000).await {
         log_trace(trace_id, "denoise_convert_failed", &format!("err={e}"));
         crate::stats::record_event_user(user_id, "denoise", "", "fail", 0).await;
         crate::stats::record_error_global("denoise", &format!("convert failed: {e}")).await;
@@ -279,7 +259,7 @@ pub async fn handle_denoise_audio(
     log_trace(trace_id, "denoise_converted", "");
 
     // Determine audio duration from WAV header
-    let audio_duration = wav_duration(wav_str).unwrap_or(0.0);
+    let audio_duration = wav_duration(wav_str).await.unwrap_or(0.0);
     let duration_secs = audio_duration.ceil() as u64;
 
     // Reserve quota upfront (check-then-deduct previously allowed dual race calls).
@@ -290,9 +270,21 @@ pub async fn handle_denoise_audio(
     let reserve_secs = duration_secs.max(1) as i64;
     let mut reserved = false;
     if let Some(db) = database.as_ref() {
-        let user_rank = rank::effective_rank(db.client(), user_id).await;
-        let daily_limit = user_rank.denoise_daily_secs();
-        let weekly_limit = user_rank.denoise_weekly_secs();
+        let (user_rank, daily_limit, weekly_limit) = {
+            let client = match db.get().await {
+                Ok(c) => c,
+                Err(e) => {
+                    log_trace(trace_id, "denoise_quota_checkout", &format!("err={e} => fail"));
+                    clean_up(&work_dir);
+                    crate::rank::paywall::quota_db_error(api, chat_id, "denoise", &format!("{e}")).await;
+                    return;
+                }
+            };
+            let user_rank = rank::effective_rank(&client, user_id).await;
+            let d_lim = user_rank.denoise_daily_secs();
+            let w_lim = user_rank.denoise_weekly_secs();
+            (user_rank, d_lim, w_lim)
+        };
 
         // fail closed — notify user on DB error
         macro_rules! db_fail {
@@ -313,12 +305,17 @@ pub async fn handle_denoise_audio(
         // Reservation only signals failure, so read usage here only on deny path.
         macro_rules! deny {
             ($event:expr) => {{
-                let d_used = get_usage(db.client(), user_id, QuotaKind::DenoiseDaily, 86400)
-                    .await
-                    .unwrap_or(0) as u64;
-                let w_used = get_usage(db.client(), user_id, QuotaKind::DenoiseWeekly, 7 * 86400)
-                    .await
-                    .unwrap_or(0) as u64;
+                let (d_used, w_used) = if let Ok(client) = db.get().await {
+                    let d = get_usage(&client, user_id, QuotaKind::DenoiseDaily, 86400)
+                        .await
+                        .unwrap_or(0) as u64;
+                    let w = get_usage(&client, user_id, QuotaKind::DenoiseWeekly, 7 * 86400)
+                        .await
+                        .unwrap_or(0) as u64;
+                    (d, w)
+                } else {
+                    (0, 0)
+                };
                 let d_rem = daily_limit.saturating_sub(d_used);
                 let w_rem = weekly_limit.saturating_sub(w_used);
                 let (rank_key, user_key, ph, val) = if d_rem == 0 {
@@ -361,16 +358,46 @@ pub async fn handle_denoise_audio(
             }};
         }
 
-        match reserve_usage(
-            db.client(),
-            user_id,
-            QuotaKind::DenoiseDaily,
-            reserve_secs,
-            86400,
-            daily_limit as i64,
-        )
-        .await
-        {
+        let (daily_res, weekly_res) = {
+            let client = match db.get().await {
+                Ok(c) => c,
+                Err(e) => db_fail!(e),
+            };
+            let d_res = reserve_usage(
+                &client,
+                user_id,
+                QuotaKind::DenoiseDaily,
+                reserve_secs,
+                86400,
+                daily_limit as i64,
+            )
+            .await;
+            let w_res = if matches!(d_res, Ok(Some(_))) {
+                let w = reserve_usage(
+                    &client,
+                    user_id,
+                    QuotaKind::DenoiseWeekly,
+                    reserve_secs,
+                    7 * 86400,
+                    weekly_limit as i64,
+                )
+                .await;
+                if !matches!(w, Ok(Some(_))) {
+                    if let Err(e) =
+                        refund_usage(&client, user_id, QuotaKind::DenoiseDaily, reserve_secs, 86400).await
+                    {
+                        log_trace(trace_id, "denoise_quota_refund_failed", &e.to_string());
+                        crate::stats::record_error_global("denoise", &format!("refund_failed: {e}")).await;
+                    }
+                }
+                Some(w)
+            } else {
+                None
+            };
+            (d_res, w_res)
+        };
+
+        match daily_res {
             Ok(Some(used)) => log_trace(
                 trace_id,
                 "denoise_quota_reserved_daily",
@@ -380,45 +407,18 @@ pub async fn handle_denoise_audio(
             Err(e) => db_fail!(e),
         }
 
-        match reserve_usage(
-            db.client(),
-            user_id,
-            QuotaKind::DenoiseWeekly,
-            reserve_secs,
-            7 * 86400,
-            weekly_limit as i64,
-        )
-        .await
-        {
-            Ok(Some(used)) => {
-                reserved = true;
-                log_trace(
-                    trace_id,
-                    "denoise_quota_reserved_weekly",
-                    &format!("used={used} limit={weekly_limit}"),
-                );
-            }
-            Ok(None) => {
-                let _ = refund_usage(
-                    db.client(),
-                    user_id,
-                    QuotaKind::DenoiseDaily,
-                    reserve_secs,
-                    86400,
-                )
-                .await;
-                deny!("denoise_quota_weekly");
-            }
-            Err(e) => {
-                let _ = refund_usage(
-                    db.client(),
-                    user_id,
-                    QuotaKind::DenoiseDaily,
-                    reserve_secs,
-                    86400,
-                )
-                .await;
-                db_fail!(e);
+        if let Some(w_res) = weekly_res {
+            match w_res {
+                Ok(Some(used)) => {
+                    reserved = true;
+                    log_trace(
+                        trace_id,
+                        "denoise_quota_reserved_weekly",
+                        &format!("used={used} limit={weekly_limit}"),
+                    );
+                }
+                Ok(None) => deny!("denoise_quota_weekly"),
+                Err(e) => db_fail!(e),
             }
         }
     }
@@ -429,20 +429,22 @@ pub async fn handle_denoise_audio(
             if reserved {
                 if let Some(db) = database.as_ref() {
                     log_trace(trace_id, "denoise_quota_refund", &format!("why={}", $why));
-                    for (kind, window) in [
-                        (QuotaKind::DenoiseDaily, 86400),
-                        (QuotaKind::DenoiseWeekly, 7 * 86400),
-                    ] {
-                        if let Err(e) =
-                            refund_usage(db.client(), user_id, kind, reserve_secs, window).await
-                        {
-                            log_trace(
-                                trace_id,
-                                "denoise_quota_refund",
-                                &format!("err={e} => fail"),
-                            );
-                            crate::stats::record_error_global("denoise", "quota_refund_failed")
-                                .await;
+                    if let Ok(client) = db.get().await {
+                        for (kind, window) in [
+                            (QuotaKind::DenoiseDaily, 86400),
+                            (QuotaKind::DenoiseWeekly, 7 * 86400),
+                        ] {
+                            if let Err(e) =
+                                refund_usage(&client, user_id, kind, reserve_secs, window).await
+                            {
+                                log_trace(
+                                    trace_id,
+                                    "denoise_quota_refund",
+                                    &format!("err={e} => fail"),
+                                );
+                                crate::stats::record_error_global("denoise", "quota_refund_failed")
+                                    .await;
+                            }
                         }
                     }
                 }
@@ -554,21 +556,11 @@ pub async fn handle_denoise_audio(
         }
     };
 
-    // 4. Convert back to original format — blocking, run on thread pool.
-    let reconvert_res = {
-        let inp = denoised_str.to_string();
-        let outp = output_str.to_string();
-        let orig_inp = input_str.to_string();
-        let ext = orig_ext.clone();
-        tokio::task::spawn_blocking(move || {
-            if is_video {
-                convert_from_wav_video(&orig_inp, &inp, &outp).map_err(|e| e.to_string())
-            } else {
-                convert_from_wav(&inp, &outp, &ext).map_err(|e| e.to_string())
-            }
-        })
-        .await
-        .unwrap_or_else(|e| Err(format!("reconvert task panicked: {e}")))
+    // 4. Convert back to original format
+    let reconvert_res = if is_video {
+        convert_from_wav_video(input_str, denoised_str, output_str).await
+    } else {
+        convert_from_wav(denoised_str, output_str, &orig_ext).await
     };
     if let Err(e) = reconvert_res {
         log_trace(trace_id, "denoise_reconvert_failed", &format!("err={e}"));
@@ -780,8 +772,8 @@ fn mime_to_ext(mime: &str) -> String {
     .to_string()
 }
 
-fn convert_to_wav(input: &str, output: &str, sample_rate: u32) -> crate::error::Result<()> {
-    let output = std::process::Command::new("ffmpeg")
+async fn convert_to_wav(input: &str, output: &str, sample_rate: u32) -> crate::error::Result<()> {
+    let output = tokio::process::Command::new("ffmpeg")
         .args([
             "-y",
             "-i",
@@ -797,6 +789,7 @@ fn convert_to_wav(input: &str, output: &str, sample_rate: u32) -> crate::error::
             output,
         ])
         .output()
+        .await
         .map_err(|e| anyhow::anyhow!("ffmpeg spawn failed: {e}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -805,13 +798,14 @@ fn convert_to_wav(input: &str, output: &str, sample_rate: u32) -> crate::error::
     Ok(())
 }
 
-fn convert_from_wav(input: &str, output: &str, ext: &str) -> crate::error::Result<()> {
+async fn convert_from_wav(input: &str, output: &str, ext: &str) -> crate::error::Result<()> {
     let status = match ext {
-        "ogg" => std::process::Command::new("ffmpeg")
+        "ogg" => tokio::process::Command::new("ffmpeg")
             .args(["-y", "-i", input, "-c:a", "libopus", "-b:a", "32k", output])
             .status()
+            .await
             .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?,
-        "mp3" => std::process::Command::new("ffmpeg")
+        "mp3" => tokio::process::Command::new("ffmpeg")
             .args([
                 "-y",
                 "-i",
@@ -823,27 +817,31 @@ fn convert_from_wav(input: &str, output: &str, ext: &str) -> crate::error::Resul
                 output,
             ])
             .status()
+            .await
             .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?,
-        "m4a" => std::process::Command::new("ffmpeg")
+        "m4a" => tokio::process::Command::new("ffmpeg")
             .args(["-y", "-i", input, "-c:a", "aac", "-b:a", "128k", output])
             .status()
+            .await
             .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?,
-        "flac" => std::process::Command::new("ffmpeg")
+        "flac" => tokio::process::Command::new("ffmpeg")
             .args(["-y", "-i", input, "-c:a", "flac", output])
             .status()
+            .await
             .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?,
-        "webm" => std::process::Command::new("ffmpeg")
+        "webm" => tokio::process::Command::new("ffmpeg")
             .args(["-y", "-i", input, "-c:a", "libopus", output])
             .status()
+            .await
             .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?,
         // wav: just copy the denoised wav
         "wav" => {
-            std::fs::copy(input, output)?;
+            tokio::fs::copy(input, output).await?;
             return Ok(());
         }
         _ => {
             // fallback: copy wav as-is
-            std::fs::copy(input, output)?;
+            tokio::fs::copy(input, output).await?;
             return Ok(());
         }
     };
@@ -853,12 +851,12 @@ fn convert_from_wav(input: &str, output: &str, ext: &str) -> crate::error::Resul
     Ok(())
 }
 
-fn convert_from_wav_video(
+async fn convert_from_wav_video(
     video_input: &str,
     wav_input: &str,
     output_video: &str,
 ) -> crate::error::Result<()> {
-    let status = std::process::Command::new("ffmpeg")
+    let status = tokio::process::Command::new("ffmpeg")
         .args([
             "-y",
             "-i",
@@ -879,6 +877,7 @@ fn convert_from_wav_video(
             output_video,
         ])
         .status()
+        .await
         .map_err(|e| anyhow::anyhow!("ffmpeg video remux failed: {e}"))?;
     if !status.success() {
         anyhow::bail!("ffmpeg video remux failed");
@@ -886,8 +885,8 @@ fn convert_from_wav_video(
     Ok(())
 }
 
-fn wav_duration(path: &str) -> crate::error::Result<f64> {
-    let output = std::process::Command::new("ffprobe")
+async fn wav_duration(path: &str) -> crate::error::Result<f64> {
+    let output = tokio::process::Command::new("ffprobe")
         .args([
             "-v",
             "error",
@@ -897,7 +896,8 @@ fn wav_duration(path: &str) -> crate::error::Result<f64> {
             "csv=p=0",
             path,
         ])
-        .output()?;
+        .output()
+        .await?;
     if !output.status.success() {
         anyhow::bail!(
             "ffprobe failed: {}",
@@ -905,7 +905,8 @@ fn wav_duration(path: &str) -> crate::error::Result<f64> {
         );
     }
     let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(s.parse()?)
+    let d: f64 = s.parse()?;
+    Ok(d)
 }
 
 use crate::bot::download_telegram_file as download_file;
@@ -962,5 +963,29 @@ mod tests {
     #[test]
     fn test_escape_md() {
         assert_eq!(escape_md("hello_world"), "hello\\_world");
+    }
+
+    #[test]
+    fn test_denoise_cancel_lifecycle() {
+        let user_id = 999_123_456;
+        let flag = register_denoise_cancel(user_id);
+        assert!(!flag.load(Ordering::SeqCst));
+
+        // Cancel job
+        let cancelled = cancel_denoise_job(user_id);
+        assert!(cancelled);
+        assert!(flag.load(Ordering::SeqCst));
+
+        // Second cancel should return false since it's already removed
+        assert!(!cancel_denoise_job(user_id));
+
+        // Unregister
+        let flag2 = register_denoise_cancel(user_id);
+        assert!(!flag2.load(Ordering::SeqCst));
+        {
+            let _guard = DenoiseUnregisterGuard(user_id);
+        }
+        // Guard drop unregisters it
+        assert!(!cancel_denoise_job(user_id));
     }
 }

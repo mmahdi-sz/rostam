@@ -25,8 +25,15 @@ pub fn bot_api_base_url() -> Option<String> {
     config_value("BOT_API_BASE_URL")
 }
 
+#[allow(dead_code)]
 pub fn database_url() -> Option<String> {
     config_value("DATABASE_URL")
+}
+
+pub fn database_pool_size() -> usize {
+    config_value("DATABASE_POOL_SIZE")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or_else(|| if dev_mode() { 16 } else { 24 })
 }
 
 pub fn dev_mode() -> bool {

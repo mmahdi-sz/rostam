@@ -15,6 +15,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 frankenstein = { version = "0.50", features = ["client-reqwest", "trait-async"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "time", "sync", "signal"] }
 tokio-postgres = "0.7"
+deadpool-postgres = { version = "0.14", features = ["serde"] }
 refinery = { version = "0.8", features = ["tokio-postgres"] }
 prometheus = { version = "0.13", features = ["process"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -53,6 +54,7 @@ zstd = "0.13"
 flate2 = "1.0"
 lzma-rs = "0.3"
 rpm = "0.27"
+dashmap = "6"
 
 
 

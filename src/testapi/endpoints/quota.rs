@@ -66,7 +66,16 @@ pub async fn test_quota(Json(req): Json<QuotaReq>) -> axum::response::Response {
         )
             .into_response();
     };
-    let client = db.client();
+    let client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                format!("db checkout failed: {e}"),
+            )
+                .into_response();
+        }
+    };
 
     let mut resp = QuotaResp {
         ok: true,
@@ -81,7 +90,7 @@ pub async fn test_quota(Json(req): Json<QuotaReq>) -> axum::response::Response {
     match req.action.as_str() {
         "reserve" => {
             match reserve_usage(
-                client,
+                &client,
                 req.user_id,
                 kind,
                 req.amount,
@@ -103,7 +112,7 @@ pub async fn test_quota(Json(req): Json<QuotaReq>) -> axum::response::Response {
         }
         "refund" => {
             if let Err(e) =
-                refund_usage(client, req.user_id, kind, req.amount, req.window_secs).await
+                refund_usage(&client, req.user_id, kind, req.amount, req.window_secs).await
             {
                 resp.ok = false;
                 resp.error = Some(format!("{e}"));
@@ -119,7 +128,7 @@ pub async fn test_quota(Json(req): Json<QuotaReq>) -> axum::response::Response {
         }
     }
 
-    resp.used = get_usage(client, req.user_id, kind, req.window_secs)
+    resp.used = get_usage(&client, req.user_id, kind, req.window_secs)
         .await
         .ok();
 

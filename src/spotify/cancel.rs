@@ -1,32 +1,22 @@
 //! Per-user cancellation registry for active Spotify download jobs.
 
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, LazyLock};
 
-static ACTIVE_SPOTIFY_JOBS: OnceLock<Mutex<HashMap<i64, Arc<AtomicBool>>>> = OnceLock::new();
+use crate::common::job::JobRegistry;
 
-fn active_spotify_jobs() -> &'static Mutex<HashMap<i64, Arc<AtomicBool>>> {
-    ACTIVE_SPOTIFY_JOBS.get_or_init(|| Mutex::new(HashMap::new()))
-}
+static ACTIVE_SPOTIFY_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 pub fn register_spotify_cancel(user_id: i64) -> Arc<AtomicBool> {
-    let flag = Arc::new(AtomicBool::new(false));
-    crate::sync_util::lock_or_recover(active_spotify_jobs()).insert(user_id, flag.clone());
-    flag
+    ACTIVE_SPOTIFY_JOBS.register(user_id)
 }
 
 pub fn unregister_spotify_cancel(user_id: i64) {
-    crate::sync_util::lock_or_recover(active_spotify_jobs()).remove(&user_id);
+    ACTIVE_SPOTIFY_JOBS.unregister(&user_id);
 }
 
 pub fn cancel_spotify_job(user_id: i64) -> bool {
-    if let Some(flag) = crate::sync_util::lock_or_recover(active_spotify_jobs()).remove(&user_id) {
-        flag.store(true, Ordering::SeqCst);
-        true
-    } else {
-        false
-    }
+    ACTIVE_SPOTIFY_JOBS.cancel(&user_id)
 }
 
 pub struct SpotifyUnregisterGuard(pub i64);

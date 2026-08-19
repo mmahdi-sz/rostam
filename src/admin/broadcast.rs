@@ -6,9 +6,6 @@ use frankenstein::{
     methods::{CopyMessageParams, ForwardMessageParams, PinChatMessageParams},
     types::InlineKeyboardMarkup,
 };
-use std::sync::Arc;
-use tokio_postgres::Client;
-
 use crate::bot::constants::*;
 use crate::emoji::flow::BroadcastMode;
 use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
@@ -129,7 +126,7 @@ pub fn format_broadcast_completed_report(
 
 pub fn spawn_broadcast_job(
     api: Bot,
-    db_client: Option<Arc<Client>>,
+    database: Option<crate::database::postgresql::PostgresDatabase>,
     admin_chat_id: i64,
     mode: BroadcastMode,
     pin: bool,
@@ -142,10 +139,14 @@ pub fn spawn_broadcast_job(
         let trace = crate::log::next_trace_id();
         crate::log_actor_id!("broadcast", trace, admin_chat_id, "job" => "start");
 
-        let user_ids = if let Some(ref client) = db_client {
-            get_broadcast_user_ids(client, only_active, limit)
-                .await
-                .unwrap_or_default()
+        let user_ids = if let Some(ref db) = database {
+            if let Ok(client) = db.get().await {
+                get_broadcast_user_ids(&client, only_active, limit)
+                    .await
+                    .unwrap_or_default()
+            } else {
+                vec![admin_chat_id]
+            }
         } else {
             vec![admin_chat_id]
         };

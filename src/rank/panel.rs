@@ -85,9 +85,15 @@ async fn build_main_text(
     db: &crate::database::postgresql::PostgresDatabase,
     user_id: i64,
 ) -> String {
-    let client = db.client();
-    let rank = super::effective_rank(client, user_id).await;
-    let rank_row = get_user_rank(client, user_id).await.ok().flatten();
+    let client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[panel event=db_get_failed err={e}]");
+            return t("panel.unavailable");
+        }
+    };
+    let rank = super::effective_rank(&client, user_id).await;
+    let rank_row = get_user_rank(&client, user_id).await.ok().flatten();
     let expires_at = rank_row.as_ref().and_then(|r| r.expires_at);
 
     let expiry_line = match expires_at {
@@ -96,13 +102,13 @@ async fn build_main_text(
     };
 
     // Traffic
-    let daily_used = quota::get_daily_traffic(client, user_id).await.unwrap_or(0) as u64;
+    let daily_used = quota::get_daily_traffic(&client, user_id).await.unwrap_or(0) as u64;
     let daily_limit = rank.daily_traffic_bytes();
     let daily_left = daily_limit.saturating_sub(daily_used);
 
-    let first_upload = quota::get_first_upload_at(client, user_id).await;
+    let first_upload = quota::get_first_upload_at(&client, user_id).await;
     let monthly_used = if let Some(fu) = first_upload {
-        quota::get_monthly_traffic(client, user_id, fu)
+        quota::get_monthly_traffic(&client, user_id, fu)
             .await
             .unwrap_or(0) as u64
     } else {
@@ -179,17 +185,23 @@ async fn build_more_text(
     db: &crate::database::postgresql::PostgresDatabase,
     user_id: i64,
 ) -> String {
-    let client = db.client();
-    let rank = super::effective_rank(client, user_id).await;
+    let client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[panel event=db_get_failed err={e}]");
+            return t("panel.unavailable");
+        }
+    };
+    let rank = super::effective_rank(&client, user_id).await;
 
     let week = 7 * 86400_i64;
     let day = 86400_i64;
 
     // Fast STT
-    let stt_fast_d = quota::get_usage(client, user_id, quota::QuotaKind::SttFastDaily, day)
+    let stt_fast_d = quota::get_usage(&client, user_id, quota::QuotaKind::SttFastDaily, day)
         .await
         .unwrap_or(0) as u64;
-    let stt_fast_w = quota::get_usage(client, user_id, quota::QuotaKind::SttFastWeekly, week)
+    let stt_fast_w = quota::get_usage(&client, user_id, quota::QuotaKind::SttFastWeekly, week)
         .await
         .unwrap_or(0) as u64;
     let stt_fast_d_lim = rank.stt_fast_daily_secs().unwrap_or(0);
@@ -197,10 +209,10 @@ async fn build_more_text(
     let stt_fast_allowed = rank.stt_fast_daily_secs().is_some();
 
     // Accurate STT
-    let stt_acc_d = quota::get_usage(client, user_id, quota::QuotaKind::SttAccurateDaily, day)
+    let stt_acc_d = quota::get_usage(&client, user_id, quota::QuotaKind::SttAccurateDaily, day)
         .await
         .unwrap_or(0) as u64;
-    let stt_acc_w = quota::get_usage(client, user_id, quota::QuotaKind::SttAccurateWeekly, week)
+    let stt_acc_w = quota::get_usage(&client, user_id, quota::QuotaKind::SttAccurateWeekly, week)
         .await
         .unwrap_or(0) as u64;
     let stt_acc_d_lim = rank.stt_accurate_daily_secs().unwrap_or(0);
@@ -208,33 +220,33 @@ async fn build_more_text(
     let stt_acc_allowed = rank.stt_accurate_daily_secs().is_some();
 
     // Denoise
-    let dn_d = quota::get_usage(client, user_id, quota::QuotaKind::DenoiseDaily, day)
+    let dn_d = quota::get_usage(&client, user_id, quota::QuotaKind::DenoiseDaily, day)
         .await
         .unwrap_or(0) as u64;
-    let dn_w = quota::get_usage(client, user_id, quota::QuotaKind::DenoiseWeekly, week)
+    let dn_w = quota::get_usage(&client, user_id, quota::QuotaKind::DenoiseWeekly, week)
         .await
         .unwrap_or(0) as u64;
     let dn_d_lim = rank.denoise_daily_secs();
     let dn_w_lim = rank.denoise_weekly_secs();
 
     // Separation
-    let sep_d = quota::get_usage(client, user_id, quota::QuotaKind::SeparationDaily, day)
+    let sep_d = quota::get_usage(&client, user_id, quota::QuotaKind::SeparationDaily, day)
         .await
         .unwrap_or(0) as u64;
-    let sep_w = quota::get_usage(client, user_id, quota::QuotaKind::SeparationWeekly, week)
+    let sep_w = quota::get_usage(&client, user_id, quota::QuotaKind::SeparationWeekly, week)
         .await
         .unwrap_or(0) as u64;
     let sep_d_lim = rank.separation_daily_secs();
     let sep_w_lim = rank.separation_weekly_secs();
 
     // Upscale
-    let up2 = quota::get_usage(client, user_id, quota::QuotaKind::Upscale2xWeekly, week)
+    let up2 = quota::get_usage(&client, user_id, quota::QuotaKind::Upscale2xWeekly, week)
         .await
         .unwrap_or(0) as u64;
-    let up3 = quota::get_usage(client, user_id, quota::QuotaKind::Upscale3xWeekly, week)
+    let up3 = quota::get_usage(&client, user_id, quota::QuotaKind::Upscale3xWeekly, week)
         .await
         .unwrap_or(0) as u64;
-    let up4 = quota::get_usage(client, user_id, quota::QuotaKind::Upscale4xWeekly, week)
+    let up4 = quota::get_usage(&client, user_id, quota::QuotaKind::Upscale4xWeekly, week)
         .await
         .unwrap_or(0) as u64;
     let up2_lim = rank.upscale_weekly_quota(2) as u64;
@@ -242,19 +254,19 @@ async fn build_more_text(
     let up4_lim = rank.upscale_weekly_quota(4) as u64;
 
     // NoBg
-    let nobg = quota::get_usage(client, user_id, quota::QuotaKind::NobgWeekly, week)
+    let nobg = quota::get_usage(&client, user_id, quota::QuotaKind::NobgWeekly, week)
         .await
         .unwrap_or(0) as u64;
     let nobg_lim = rank.nobg_weekly_quota() as u64;
 
     // DeOldify
-    let deoldify = quota::get_usage(client, user_id, quota::QuotaKind::DeoldifyWeekly, week)
+    let deoldify = quota::get_usage(&client, user_id, quota::QuotaKind::DeoldifyWeekly, week)
         .await
         .unwrap_or(0) as u64;
     let deoldify_lim = rank.deoldify_weekly_quota() as u64;
 
     // TTS
-    let tts = quota::get_usage(client, user_id, quota::QuotaKind::TtsWeekly, week)
+    let tts = quota::get_usage(&client, user_id, quota::QuotaKind::TtsWeekly, week)
         .await
         .unwrap_or(0) as u64;
     let tts_lim = rank.tts_weekly_secs();
@@ -374,11 +386,14 @@ pub async fn send_referral(
         .await;
 
     let (count, available, pending) = if let Some(db) = database {
-        let client = db.client();
-        let total = crate::referral::count_referrals(client, user_id).await;
-        let spent = crate::referral::total_spent_points(client, user_id).await;
-        let pending = crate::referral::count_pending(client, user_id).await;
-        (total, total - spent, pending)
+        if let Ok(client) = db.get().await {
+            let total = crate::referral::count_referrals(&client, user_id).await;
+            let spent = crate::referral::total_spent_points(&client, user_id).await;
+            let pending = crate::referral::count_pending(&client, user_id).await;
+            (total, total - spent, pending)
+        } else {
+            (0, 0, 0)
+        }
     } else {
         (0, 0, 0)
     };
@@ -451,10 +466,16 @@ pub(crate) async fn process_claim(
         log_ev!("referral", trace_id, "claim", "=>" => "no_db");
         return t("panel.unavailable");
     };
-    let client = db.client();
+    let mut client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            log_ev!("referral", trace_id, "claim", "=>" => "no_conn", "err" => e);
+            return t("panel.unavailable");
+        }
+    };
 
-    let total = crate::referral::count_referrals(client, user_id).await;
-    let spent = crate::referral::total_spent_points(client, user_id).await;
+    let total = crate::referral::count_referrals(&client, user_id).await;
+    let spent = crate::referral::total_spent_points(&client, user_id).await;
     let available = total - spent;
     log_ev!("referral", trace_id, "points_check",
         "total" => total, "spent" => spent, "available" => available, "needed" => threshold);
@@ -471,7 +492,7 @@ pub(crate) async fn process_claim(
     }
 
     log_ev!("referral", trace_id, "plan_activation_enter");
-    match crate::referral::plan_activation(client, user_id, tier_rank).await {
+    match crate::referral::plan_activation(&client, user_id, tier_rank).await {
         crate::referral::ActivationPlan::Reject => {
             log_ev!("referral", trace_id, "downgrade_check", "=>" => "rejected");
             t("referral.activate_downgrade")
@@ -482,15 +503,23 @@ pub(crate) async fn process_claim(
         }
         crate::referral::ActivationPlan::Apply { rank, expires_at } => {
             log_ev!("referral", trace_id, "rank_apply_enter", "rank" => rank.as_str(), "expires_at" => expires_at);
+            let txn = match client.transaction().await {
+                Ok(t) => t,
+                Err(e) => {
+                    log_ev!("referral", trace_id, "rank_apply", "=>" => "tx_start_fail", "err" => e);
+                    return t("redeem.apply_error");
+                }
+            };
             if let Err(e) =
-                crate::rank::store::set_user_rank(client, user_id, rank, Some(expires_at)).await
+                crate::rank::store::set_user_rank(&*txn, user_id, rank, Some(expires_at)).await
             {
+                let _ = txn.rollback().await;
                 log_ev!("referral", trace_id, "rank_apply", "=>" => "fail", "err" => e);
                 return t("redeem.apply_error");
             }
-            // Maintain order: set rank first, then deduct points.
+            // Maintain order: set rank first, then deduct points in the same transaction.
             match crate::referral::record_activation(
-                client,
+                &*txn,
                 user_id,
                 rank,
                 threshold as i64,
@@ -498,10 +527,20 @@ pub(crate) async fn process_claim(
             )
             .await
             {
-                Ok(true) => log_ev!("referral", trace_id, "rank_apply", "=>" => "ok"),
-                // Concurrent second click: rank already applied by first request; logged separately in trace.
-                Ok(false) => log_ev!("referral", trace_id, "rank_apply", "=>" => "ok_no_debit"),
+                Ok(true) => {
+                    if let Err(e) = txn.commit().await {
+                        log_ev!("referral", trace_id, "rank_apply", "=>" => "commit_fail", "err" => e);
+                        return t("redeem.apply_error");
+                    }
+                    log_ev!("referral", trace_id, "rank_apply", "=>" => "ok");
+                }
+                // Concurrent second click: rollback so rank is not applied without debit
+                Ok(false) => {
+                    let _ = txn.rollback().await;
+                    log_ev!("referral", trace_id, "rank_apply", "=>" => "ok_no_debit");
+                }
                 Err(e) => {
+                    let _ = txn.rollback().await;
                     log_ev!("referral", trace_id, "rank_apply", "=>" => "debit_fail", "err" => e);
                     return t("redeem.apply_error");
                 }

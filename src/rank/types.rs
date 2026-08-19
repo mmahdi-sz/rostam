@@ -417,6 +417,28 @@ mod tests {
     }
 
     #[test]
+    fn test_pkgconvert_limits() {
+        assert_eq!(Rank::Dalavar.pkgconvert_daily_count(), 0);
+        assert_eq!(Rank::Sohrab.pkgconvert_daily_count(), 0);
+        assert_eq!(Rank::Sepahbod.pkgconvert_daily_count(), 5);
+        assert_eq!(Rank::Esfandyar.pkgconvert_daily_count(), 20);
+        assert_eq!(Rank::Rostam.pkgconvert_daily_count(), 20);
+
+        assert_eq!(Rank::Dalavar.pkgconvert_next_rank(), Some(Rank::Sepahbod));
+        assert_eq!(Rank::Sepahbod.pkgconvert_next_rank(), Some(Rank::Esfandyar));
+        assert_eq!(Rank::Esfandyar.pkgconvert_next_rank(), None);
+    }
+
+    #[test]
+    fn test_min_for_quality() {
+        assert_eq!(Rank::min_for_quality(480), Rank::Dalavar);
+        assert_eq!(Rank::min_for_quality(720), Rank::Sepahbod);
+        assert_eq!(Rank::min_for_quality(1080), Rank::Sepahbod);
+        assert_eq!(Rank::min_for_quality(1440), Rank::Esfandyar);
+        assert_eq!(Rank::min_for_quality(2160), Rank::Esfandyar);
+    }
+
+    #[test]
     fn test_ceil_div() {
         assert_eq!(ceil_div(10, 3), 4);
         assert_eq!(ceil_div(9, 3), 3);

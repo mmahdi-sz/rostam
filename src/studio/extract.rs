@@ -125,11 +125,12 @@ pub async fn enter_extract_prompt(
 }
 
 /// Discovers audio and subtitle streams using `ffprobe`.
-pub fn probe_media_streams(video_path: &Path) -> anyhow::Result<Vec<ExtractedStreamInfo>> {
-    let output = std::process::Command::new(crate::config::ffprobe_path())
+pub async fn probe_media_streams(video_path: &Path) -> anyhow::Result<Vec<ExtractedStreamInfo>> {
+    let output = tokio::process::Command::new(crate::config::ffprobe_path())
         .args(["-v", "error", "-show_streams", "-of", "json"])
         .arg(video_path)
         .output()
+        .await
         .map_err(|e| anyhow::anyhow!("failed to execute ffprobe: {e}"))?;
 
     if !output.status.success() {
@@ -369,7 +370,7 @@ pub async fn handle_video_upload(
     let _ = api.edit_message_text(&edit_params).await;
 
     // Discover media streams
-    let streams = match probe_media_streams(&input_path) {
+    let streams = match probe_media_streams(&input_path).await {
         Ok(s) => s,
         Err(e) => {
             log_ev!("studio_extract", trace_id, "ffprobe_failed", "=>" => format!("fail err={e}"));

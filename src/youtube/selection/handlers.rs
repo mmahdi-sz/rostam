@@ -183,24 +183,26 @@ async fn handle_sub_toggle(
 
     // Rank check: subtitle feature.
     if let (Some(uid), Some(db)) = (req.user_id, database.as_ref()) {
-        let user_rank = rank::effective_rank(db.client(), uid).await;
-        if !user_rank.can_subtitle_mux() {
-            log_trace(
-                trace_id,
-                "sub_paywall",
-                &format!("user_id={uid} rank={}", user_rank.as_str()),
-            );
-            answer(api, cq, "").await;
-            if let Some(msg) = extract_message(cq) {
-                crate::rank::paywall::block_feature(
-                    api,
-                    msg.chat.id,
-                    &crate::i18n::t("youtube.subtitle_feature"),
-                    rank::types::Rank::Sepahbod,
-                )
-                .await;
+        if let Ok(client) = db.get().await {
+            let user_rank = rank::effective_rank(&client, uid).await;
+            if !user_rank.can_subtitle_mux() {
+                log_trace(
+                    trace_id,
+                    "sub_paywall",
+                    &format!("user_id={uid} rank={}", user_rank.as_str()),
+                );
+                answer(api, cq, "").await;
+                if let Some(msg) = extract_message(cq) {
+                    crate::rank::paywall::block_feature(
+                        api,
+                        msg.chat.id,
+                        &crate::i18n::t("youtube.subtitle_feature"),
+                        rank::types::Rank::Sepahbod,
+                    )
+                    .await;
+                }
+                return;
             }
-            return;
         }
     }
 
@@ -266,24 +268,26 @@ async fn handle_sub_mode_toggle(
     if new_mode == SubtitleMode::File
         && let (Some(uid), Some(db)) = (req.user_id, database.as_ref())
     {
-        let user_rank = rank::effective_rank(db.client(), uid).await;
-        if !user_rank.can_subtitle_file() {
-            log_trace(
-                trace_id,
-                "sub_file_paywall",
-                &format!("user_id={uid} rank={}", user_rank.as_str()),
-            );
-            answer(api, cq, "").await;
-            if let Some(msg) = extract_message(cq) {
-                crate::rank::paywall::block_feature(
-                    api,
-                    msg.chat.id,
-                    &crate::i18n::t("youtube.subtitle_file_feature"),
-                    rank::types::Rank::Sepahbod,
-                )
-                .await;
+        if let Ok(client) = db.get().await {
+            let user_rank = rank::effective_rank(&client, uid).await;
+            if !user_rank.can_subtitle_file() {
+                log_trace(
+                    trace_id,
+                    "sub_file_paywall",
+                    &format!("user_id={uid} rank={}", user_rank.as_str()),
+                );
+                answer(api, cq, "").await;
+                if let Some(msg) = extract_message(cq) {
+                    crate::rank::paywall::block_feature(
+                        api,
+                        msg.chat.id,
+                        &crate::i18n::t("youtube.subtitle_file_feature"),
+                        rank::types::Rank::Sepahbod,
+                    )
+                    .await;
+                }
+                return;
             }
-            return;
         }
     }
 
@@ -291,24 +295,26 @@ async fn handle_sub_mode_toggle(
     if new_mode == SubtitleMode::Hardsub
         && let (Some(uid), Some(db)) = (req.user_id, database.as_ref())
     {
-        let user_rank = rank::effective_rank(db.client(), uid).await;
-        if !user_rank.can_subtitle_hardcode() {
-            log_trace(
-                trace_id,
-                "sub_hardsub_paywall",
-                &format!("user_id={uid} rank={}", user_rank.as_str()),
-            );
-            answer(api, cq, "").await;
-            if let Some(msg) = extract_message(cq) {
-                crate::rank::paywall::block_feature(
-                    api,
-                    msg.chat.id,
-                    &crate::i18n::t("youtube.subtitle_hardsub_feature"),
-                    rank::types::Rank::Esfandyar,
-                )
-                .await;
+        if let Ok(client) = db.get().await {
+            let user_rank = rank::effective_rank(&client, uid).await;
+            if !user_rank.can_subtitle_hardcode() {
+                log_trace(
+                    trace_id,
+                    "sub_hardsub_paywall",
+                    &format!("user_id={uid} rank={}", user_rank.as_str()),
+                );
+                answer(api, cq, "").await;
+                if let Some(msg) = extract_message(cq) {
+                    crate::rank::paywall::block_feature(
+                        api,
+                        msg.chat.id,
+                        &crate::i18n::t("youtube.subtitle_hardsub_feature"),
+                        rank::types::Rank::Esfandyar,
+                    )
+                    .await;
+                }
+                return;
             }
-            return;
         }
     }
 
@@ -452,17 +458,15 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<
 
     // Check user rank & traffic quotas (daily + monthly) before starting download.
     if let Some(uid) = req.user_id {
-        let fallback_db = if database.is_none() {
-            crate::stats::get_db_client().await
+        let client_opt = if let Some(db) = database.as_ref() {
+            db.get().await.ok()
+        } else if let Some(pool) = crate::stats::get_pool() {
+            pool.get().await.ok()
         } else {
             None
         };
-        let client_ref: Option<&tokio_postgres::Client> = match database.as_ref() {
-            Some(db) => Some(db.client()),
-            None => fallback_db.as_deref(),
-        };
-        if let Some(client) = client_ref {
-            let user_rank = rank::effective_rank(client, uid).await;
+        if let Some(client) = client_opt {
+            let user_rank = rank::effective_rank(&client, uid).await;
 
             // Check quality resolution rank paywall
             if let Some(max) = user_rank.max_yt_quality()
@@ -487,13 +491,13 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<
             let estimated = estimate_bytes(&req, &selection);
             let daily_limit = user_rank.daily_traffic_bytes();
             let monthly_limit = user_rank.monthly_traffic_bytes();
-            let first_upload_at = rank::quota::get_first_upload_at(client, uid)
+            let first_upload_at = rank::quota::get_first_upload_at(&client, uid)
                 .await
                 .unwrap_or_else(now_epoch);
-            let daily_used = rank::quota::get_daily_traffic(client, uid)
+            let daily_used = rank::quota::get_daily_traffic(&client, uid)
                 .await
                 .unwrap_or(0) as u64;
-            let monthly_used = rank::quota::get_monthly_traffic(client, uid, first_upload_at)
+            let monthly_used = rank::quota::get_monthly_traffic(&client, uid, first_upload_at)
                 .await
                 .unwrap_or(0) as u64;
             let daily_remaining = daily_limit.saturating_sub(daily_used);

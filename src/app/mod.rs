@@ -69,9 +69,9 @@ pub async fn run() -> anyhow::Result<()> {
 
     let database = if let Some(database_url) = config::config_value("DATABASE_URL") {
         let db = init_database(&mut cookie_pool, &database_url).await;
-        if db.is_some() {
-            init_emoji_cache(&database_url).await;
-            spawn_redeem_sweeper(&database_url);
+        if let Some(ref db_inst) = db {
+            init_emoji_cache(db_inst).await;
+            spawn_redeem_sweeper(db_inst.clone());
         }
         db
     } else {
@@ -105,9 +105,7 @@ pub async fn run() -> anyhow::Result<()> {
         database,
         flow_manager: FlowManager::new(),
         rate_limit_tx,
-        user_last_update: std::sync::Arc::new(tokio::sync::Mutex::new(
-            std::collections::HashMap::new(),
-        )),
+        user_last_update: std::sync::Arc::new(dashmap::DashMap::new()),
     };
 
     crate::health::mark_healthy();

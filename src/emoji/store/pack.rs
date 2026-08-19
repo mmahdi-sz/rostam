@@ -87,13 +87,7 @@ pub async fn set_default_pack(
 ) -> Result<(), tokio_postgres::Error> {
     client
         .execute(
-            "UPDATE emoji_packs SET is_default = FALSE WHERE owner_user_id = $1",
-            &[&owner],
-        )
-        .await?;
-    client
-        .execute(
-            "UPDATE emoji_packs SET is_default = TRUE WHERE id = $1 AND owner_user_id = $2",
+            "UPDATE emoji_packs SET is_default = (id = $1) WHERE owner_user_id = $2",
             &[&pack_id, &owner],
         )
         .await?;

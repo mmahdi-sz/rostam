@@ -1,129 +1,62 @@
-use std::{
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::time::Duration;
 
-use tokio_postgres::{Client, NoTls};
+use deadpool_postgres::{Config, ManagerConfig, Object, Pool, PoolConfig, RecyclingMethod, Runtime, Timeouts};
+use tokio_postgres::NoTls;
 
-use crate::cookie_pool::{CookiePoolSnapshot, CookieSource, CooldownEntry};
+use crate::config;
+use crate::cookie_pool::{CookiePoolSnapshot, CooldownEntry};
+
+pub mod cookie_pool;
 
 #[derive(Clone)]
 pub struct PostgresDatabase {
-    client: Arc<Client>,
+    pool: Pool,
 }
 
 impl PostgresDatabase {
-    pub async fn connect(database_url: &str) -> Result<Self, tokio_postgres::Error> {
-        let (client, connection) = tokio_postgres::connect(database_url, NoTls).await?;
+    pub async fn connect(database_url: &str) -> anyhow::Result<Self> {
+        let pool = create_pool(database_url)?;
 
-        tokio::spawn(async move {
-            if let Err(error) = connection.await {
-                eprintln!("postgres connection failed: {error}");
-            }
-        });
+        // Run Refinery migrations on startup using a temporary pooled connection
+        {
+            let mut client = pool.get().await.map_err(|e| anyhow::anyhow!("failed to checkout migration connection from pool: {e}"))?;
+            Self::init_schema(&mut *client).await?;
+        }
 
-        let mut client = client;
-        Self::init_schema(&mut client).await?;
-
-        let database = Self {
-            client: Arc::new(client),
-        };
-        Ok(database)
+        Ok(Self { pool })
     }
 
-    pub fn client(&self) -> &Client {
-        &self.client
+    pub async fn get(&self) -> Result<Object, deadpool_postgres::PoolError> {
+        self.pool.get().await
     }
 
-    pub fn client_arc(&self) -> Arc<Client> {
-        self.client.clone()
+    pub fn pool(&self) -> &Pool {
+        &self.pool
     }
 
-    pub async fn save_snapshot(
-        &self,
-        snapshot: &CookiePoolSnapshot,
-    ) -> Result<(), tokio_postgres::Error> {
-        self.save_available_cookies(&snapshot.available_cookies)
-            .await?;
-        self.save_last_used(snapshot.last_used_cookie.as_deref())
-            .await?;
-        self.save_cooldowns(&snapshot.cooldown_list).await?;
-        Ok(())
+    pub async fn save_snapshot(&self, snapshot: &CookiePoolSnapshot) -> anyhow::Result<()> {
+        let client = self.get().await.map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
+        cookie_pool::save_snapshot(&client, snapshot).await.map_err(|e| anyhow::anyhow!("{e}"))
     }
 
-    pub async fn load_state(
-        &self,
-    ) -> Result<(Option<String>, Vec<CooldownEntry>), tokio_postgres::Error> {
-        self.cleanup_expired_cooldowns().await?;
-
-        let last_used_cookie = self
-            .client
-            .query_opt(
-                "SELECT last_used_cookie FROM cookie_pool_state WHERE id = TRUE",
-                &[],
-            )
-            .await?
-            .and_then(|row| row.get::<_, Option<String>>(0));
-
-        let cooldown_rows = self
-            .client
-            .query(
-                "SELECT cookie_id, expire_at_epoch FROM cookie_pool_cooldowns ORDER BY expire_at_epoch ASC LIMIT 20",
-                &[],
-            )
-            .await?;
-
-        let cooldowns = cooldown_rows
-            .into_iter()
-            .filter_map(|row| {
-                let cookie_id = row.get::<_, String>(0);
-                let expire_at_epoch = row.get::<_, i64>(1);
-                let expire_at = system_time_from_epoch(expire_at_epoch)?;
-
-                Some(CooldownEntry {
-                    cookie_id,
-                    expire_at,
-                })
-            })
-            .collect();
-
-        Ok((last_used_cookie, cooldowns))
+    pub async fn load_state(&self) -> anyhow::Result<(Option<String>, Vec<CooldownEntry>)> {
+        let client = self.get().await.map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
+        cookie_pool::load_state(&client).await.map_err(|e| anyhow::anyhow!("{e}"))
     }
 
-    pub async fn save_last_used(
-        &self,
-        cookie_id: Option<&str>,
-    ) -> Result<(), tokio_postgres::Error> {
-        self.client
-            .execute(
-                "INSERT INTO cookie_pool_state (id, last_used_cookie, updated_at_epoch)
-                 VALUES (TRUE, $1, $2)
-                 ON CONFLICT (id) DO UPDATE SET
-                    last_used_cookie = EXCLUDED.last_used_cookie,
-                    updated_at_epoch = EXCLUDED.updated_at_epoch",
-                &[&cookie_id, &now_epoch()],
-            )
-            .await?;
-
-        Ok(())
+    #[allow(dead_code)]
+    pub async fn save_last_used(&self, cookie_id: Option<&str>) -> anyhow::Result<()> {
+        let client = self.get().await.map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
+        cookie_pool::save_last_used(&client, cookie_id).await.map_err(|e| anyhow::anyhow!("{e}"))
     }
 
-    pub async fn save_cooldown(&self, entry: &CooldownEntry) -> Result<(), tokio_postgres::Error> {
-        self.client
-            .execute(
-                "INSERT INTO cookie_pool_cooldowns (cookie_id, expire_at_epoch)
-                 VALUES ($1, $2)
-                 ON CONFLICT (cookie_id) DO UPDATE SET
-                    expire_at_epoch = EXCLUDED.expire_at_epoch",
-                &[&entry.cookie_id, &epoch_from_system_time(entry.expire_at)],
-            )
-            .await?;
-
-        Ok(())
+    #[allow(dead_code)]
+    pub async fn save_cooldown(&self, entry: &CooldownEntry) -> anyhow::Result<()> {
+        let client = self.get().await.map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
+        cookie_pool::save_cooldown(&client, entry).await.map_err(|e| anyhow::anyhow!("{e}"))
     }
 
-    async fn init_schema(client: &mut Client) -> Result<(), tokio_postgres::Error> {
+    async fn init_schema(client: &mut tokio_postgres::Client) -> anyhow::Result<()> {
         mod embedded {
             use refinery::embed_migrations;
             embed_migrations!("migrations");
@@ -138,107 +71,28 @@ impl PostgresDatabase {
             }
             Err(e) => {
                 eprintln!("[db event=refinery_migration_failed] err={e}");
+                return Err(anyhow::anyhow!("refinery migration failed: {e}"));
             }
         }
 
         Ok(())
     }
-
-    async fn save_available_cookies(
-        &self,
-        cookies: &[CookieSource],
-    ) -> Result<(), tokio_postgres::Error> {
-        for cookie in cookies {
-            self.client
-                .execute(
-                    "INSERT INTO cookie_pool_cookies
-                        (cookie_id, profile_name, profile_dir, cookies_file, updated_at_epoch)
-                     VALUES ($1, $2, $3, $4, $5)
-                     ON CONFLICT (cookie_id) DO UPDATE SET
-                        profile_name = EXCLUDED.profile_name,
-                        profile_dir = EXCLUDED.profile_dir,
-                        cookies_file = EXCLUDED.cookies_file,
-                        updated_at_epoch = EXCLUDED.updated_at_epoch",
-                    &[
-                        &cookie.id,
-                        &cookie.profile_name,
-                        &path_to_string(&cookie.profile_dir),
-                        &path_to_string(&cookie.cookies_sqlite),
-                        &now_epoch(),
-                    ],
-                )
-                .await?;
-        }
-
-        Ok(())
-    }
-
-    async fn save_cooldowns(
-        &self,
-        cooldowns: &[CooldownEntry],
-    ) -> Result<(), tokio_postgres::Error> {
-        self.cleanup_expired_cooldowns().await?;
-
-        for cooldown in cooldowns {
-            self.save_cooldown(cooldown).await?;
-        }
-
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub async fn get_user_lang(&self, user_id: i64) -> Option<String> {
-        self.client
-            .query_opt(
-                "SELECT language FROM stats_users WHERE user_id = $1",
-                &[&user_id],
-            )
-            .await
-            .ok()
-            .flatten()
-            .and_then(|row| row.get::<_, Option<String>>(0))
-    }
-
-    #[allow(dead_code)]
-    pub async fn set_user_lang(&self, user_id: i64, lang: &str) {
-        let _ = self
-            .client
-            .execute(
-                "INSERT INTO stats_users (user_id, first_seen, last_seen, language)
-             VALUES ($1, NOW(), NOW(), $2)
-             ON CONFLICT (user_id) DO UPDATE SET language = $2",
-                &[&user_id, &lang],
-            )
-            .await;
-    }
-
-    async fn cleanup_expired_cooldowns(&self) -> Result<(), tokio_postgres::Error> {
-        self.client
-            .execute(
-                "DELETE FROM cookie_pool_cooldowns WHERE expire_at_epoch <= $1",
-                &[&now_epoch()],
-            )
-            .await?;
-
-        Ok(())
-    }
 }
 
-fn path_to_string(path: &PathBuf) -> String {
-    path.to_string_lossy().into_owned()
-}
+fn create_pool(database_url: &str) -> anyhow::Result<Pool> {
+    let mut cfg = Config::new();
+    cfg.url = Some(database_url.to_string());
+    cfg.manager = Some(ManagerConfig {
+        recycling_method: RecyclingMethod::Fast,
+    });
+    let mut pool_cfg = PoolConfig::new(config::database_pool_size());
+    pool_cfg.timeouts = Timeouts {
+        wait: Some(Duration::from_millis(2000)),
+        create: Some(Duration::from_millis(3000)),
+        recycle: Some(Duration::from_millis(1000)),
+    };
+    cfg.pool = Some(pool_cfg);
 
-fn now_epoch() -> i64 {
-    epoch_from_system_time(SystemTime::now())
-}
-
-fn epoch_from_system_time(time: SystemTime) -> i64 {
-    time.duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(0)
-}
-
-fn system_time_from_epoch(epoch: i64) -> Option<SystemTime> {
-    let epoch = u64::try_from(epoch).ok()?;
-    Some(UNIX_EPOCH + Duration::from_secs(epoch))
+    let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
+    Ok(pool)
 }

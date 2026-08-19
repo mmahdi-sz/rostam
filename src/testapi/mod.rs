@@ -164,6 +164,23 @@ pub async fn run() -> anyhow::Result<()> {
         )
         .route("/test/pkg/convert", post(endpoints::pkg::test_pkg_convert))
         .route("/test/pkg/ux", post(endpoints::pkg::test_pkg_ux))
+        .route("/test/fj/gate", post(endpoints::force_join::test_fj_gate))
+        .route(
+            "/test/fj/admin/menu",
+            post(endpoints::force_join::test_fj_admin_menu),
+        )
+        .route(
+            "/test/fj/admin/locks",
+            post(endpoints::force_join::test_fj_admin_locks),
+        )
+        .route(
+            "/test/fj/admin/manage",
+            post(endpoints::force_join::test_fj_admin_manage),
+        )
+        .route(
+            "/test/fj/admin/toggle_mode",
+            post(endpoints::force_join::test_fj_admin_toggle_mode),
+        )
         // Catch-all for outgoing frankenstein calls
         .route(
             "/bot{token}/{method}",

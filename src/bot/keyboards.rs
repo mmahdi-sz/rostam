@@ -399,7 +399,11 @@ pub async fn edit_to_leaderboard(
     database: Option<&crate::database::postgresql::PostgresDatabase>,
 ) -> crate::error::Result<()> {
     let top_referrers = if let Some(db) = database {
-        crate::referral::get_top_referrers(db.client(), 10).await
+        if let Ok(client) = db.get().await {
+            crate::referral::get_top_referrers(&*client, 10).await
+        } else {
+            Vec::new()
+        }
     } else {
         Vec::new()
     };
@@ -443,24 +447,22 @@ pub async fn edit_to_start_menu(
     Ok(())
 }
 
-pub fn sp_cancel_keyboard() -> InlineKeyboardMarkup {
+pub fn cancel_keyboard_with_cb(label: &str, callback_data: &str) -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
         .inline_keyboard(vec![vec![btn_icon_danger(
-            &t("spotify.cancel_button"),
-            CB_SP_CANCEL,
+            label,
+            callback_data,
             "cancel",
         )]])
         .build()
 }
 
+pub fn sp_cancel_keyboard() -> InlineKeyboardMarkup {
+    cancel_keyboard_with_cb(&t("spotify.cancel_button"), CB_SP_CANCEL)
+}
+
 pub fn sc_cancel_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon_danger(
-            &t("soundcloud.cancel_button"),
-            CB_SC_CANCEL,
-            "cancel",
-        )]])
-        .build()
+    cancel_keyboard_with_cb(&t("soundcloud.cancel_button"), CB_SC_CANCEL)
 }
 
 pub fn audio_separation_keyboard() -> InlineKeyboardMarkup {

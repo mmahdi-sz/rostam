@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use tokio_postgres::Client;
+use tokio_postgres::{Client, GenericClient};
 
 use crate::emoji::smart_name::base_smart_name;
 
@@ -8,30 +8,35 @@ use super::types::{ImportResult, ParsedSql};
 
 pub async fn execute_replace(
     parsed: &ParsedSql,
-    client: &Client,
+    client: &mut Client,
     owner: i64,
 ) -> Result<ImportResult, tokio_postgres::Error> {
-    client
-        .execute(
-            "DELETE FROM emoji_packs WHERE owner_user_id = $1",
-            &[&owner],
-        )
-        .await?;
-    insert_parsed(parsed, client, owner, false).await
+    let txn = client.transaction().await?;
+    txn.execute(
+        "DELETE FROM emoji_packs WHERE owner_user_id = $1",
+        &[&owner],
+    )
+    .await?;
+    let res = insert_parsed(parsed, &txn, owner, false).await?;
+    txn.commit().await?;
+    Ok(res)
 }
 
 pub async fn execute_merge(
     parsed: &ParsedSql,
-    client: &Client,
+    client: &mut Client,
     owner: i64,
     skip_duplicates: bool,
 ) -> Result<ImportResult, tokio_postgres::Error> {
-    insert_parsed(parsed, client, owner, skip_duplicates).await
+    let txn = client.transaction().await?;
+    let res = insert_parsed(parsed, &txn, owner, skip_duplicates).await?;
+    txn.commit().await?;
+    Ok(res)
 }
 
 async fn insert_parsed(
     parsed: &ParsedSql,
-    client: &Client,
+    client: &(impl GenericClient + ?Sized),
     owner: i64,
     skip_duplicates: bool,
 ) -> Result<ImportResult, tokio_postgres::Error> {
@@ -107,7 +112,7 @@ async fn insert_parsed(
 }
 
 async fn allocate_smart_name(
-    client: &Client,
+    client: &(impl GenericClient + ?Sized),
     owner: i64,
     fallback: &str,
 ) -> Result<String, tokio_postgres::Error> {

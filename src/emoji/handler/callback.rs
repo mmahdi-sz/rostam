@@ -63,7 +63,14 @@ pub async fn handle_emoji_callback(
         let _ = send_text(api, chat_id, &t("emoji.db_required")).await;
         return;
     };
-    let client = db.client();
+    let mut client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[emoji_cb trace={trace_id} event=checkout_failed err={e}]");
+            let _ = send_text(api, chat_id, &t("emoji.db_required")).await;
+            return;
+        }
+    };
 
     match data {
         d if d == CB_ADD => {
@@ -105,11 +112,11 @@ pub async fn handle_emoji_callback(
         }
         d if d == CB_LIST => {
             eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_LIST");
-            send_emoji_list(api, chat_id, message_id, user_id, client, trace_id).await;
+            send_emoji_list(api, chat_id, message_id, user_id, &*client, trace_id).await;
         }
         d if d == CB_PACKS || d == CB_DELETE_PACK_MENU => {
             eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_PACKS data={d:?}");
-            show_packs_menu(api, chat_id, message_id, user_id, client, trace_id).await;
+            show_packs_menu(api, chat_id, message_id, user_id, &*client, trace_id).await;
         }
         d if d == CB_IMPORT => {
             eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_IMPORT");
@@ -129,7 +136,7 @@ pub async fn handle_emoji_callback(
         }
         d if d == CB_EXPORT => {
             eprintln!("[emoji_cb trace={trace_id} event=route] handler=CB_EXPORT");
-            match emoji_store::export_user_sql(client, user_id).await {
+            match emoji_store::export_user_sql(&*client, user_id).await {
                 Err(e) => {
                     eprintln!("[emoji_cb trace={trace_id} event=export_failed] err={e}");
                     let _ = send_text(api, chat_id, &t("emoji.export_failed")).await;
@@ -235,7 +242,7 @@ pub async fn handle_emoji_callback(
                 eprintln!(
                     "[emoji_cb trace={trace_id} event=route] handler=CB_LIST_PAGE page={page}"
                 );
-                edit_emoji_list_page(api, chat_id, message_id, user_id, client, page, trace_id)
+                edit_emoji_list_page(api, chat_id, message_id, user_id, &*client, page, trace_id)
                     .await;
             }
         }
@@ -247,7 +254,7 @@ pub async fn handle_emoji_callback(
                 eprintln!(
                     "[emoji_cb trace={trace_id} event=route] handler=CB_PACK_OPEN pack_id={pack_id}"
                 );
-                show_pack_detail(api, chat_id, message_id, user_id, pack_id, client, trace_id)
+                show_pack_detail(api, chat_id, message_id, user_id, pack_id, &*client, trace_id)
                     .await;
             }
         }
@@ -259,7 +266,7 @@ pub async fn handle_emoji_callback(
                 eprintln!(
                     "[emoji_cb trace={trace_id} event=route] handler=CB_SET_DEFAULT pack_id={pack_id}"
                 );
-                match emoji_store::set_default_pack(client, user_id, pack_id).await {
+                match emoji_store::set_default_pack(&*client, user_id, pack_id).await {
                     Ok(_) => eprintln!(
                         "[emoji_cb trace={trace_id} event=set_default_ok] pack_id={pack_id}"
                     ),
@@ -267,7 +274,7 @@ pub async fn handle_emoji_callback(
                         "[emoji_cb trace={trace_id} event=set_default_failed] pack_id={pack_id} err={e}"
                     ),
                 }
-                show_pack_detail(api, chat_id, message_id, user_id, pack_id, client, trace_id)
+                show_pack_detail(api, chat_id, message_id, user_id, pack_id, &*client, trace_id)
                     .await;
             }
         }
@@ -302,7 +309,7 @@ pub async fn handle_emoji_callback(
                 eprintln!(
                     "[emoji_cb trace={trace_id} event=route] handler=CB_DELETE_PACK_CONFIRM pack_id={pack_id}"
                 );
-                let name = emoji_store::list_packs(client, user_id)
+                let name = emoji_store::list_packs(&*client, user_id)
                     .await
                     .ok()
                     .and_then(|packs| packs.into_iter().find(|p| p.id == pack_id))
@@ -333,13 +340,13 @@ pub async fn handle_emoji_callback(
                 eprintln!(
                     "[emoji_cb trace={trace_id} event=route] handler=CB_DELETE_PACK_EXECUTE pack_id={pack_id}"
                 );
-                let name = emoji_store::list_packs(client, user_id)
+                let name = emoji_store::list_packs(&*client, user_id)
                     .await
                     .ok()
                     .and_then(|packs| packs.into_iter().find(|p| p.id == pack_id))
                     .map(|p| p.name)
                     .unwrap_or_default();
-                match emoji_store::delete_pack(client, user_id, pack_id).await {
+                match emoji_store::delete_pack(&*client, user_id, pack_id).await {
                     Ok(_) => eprintln!(
                         "[emoji_cb trace={trace_id} event=delete_pack_ok] pack_id={pack_id} name={name:?}"
                     ),
@@ -400,7 +407,7 @@ pub async fn handle_emoji_callback(
             if let FlowState::AwaitingPackChoice { collected } = flow_manager.get(user_id) {
                 let total_pages = emoji_panel::pending_total_pages(collected.len());
                 let summary = emoji_panel::format_pending_emojis(&collected, &[], 0);
-                let packs = emoji_store::list_packs(client, user_id)
+                let packs = emoji_store::list_packs(&*client, user_id)
                     .await
                     .unwrap_or_default();
                 eprintln!(
@@ -434,7 +441,7 @@ pub async fn handle_emoji_callback(
                 if let FlowState::AwaitingPackChoice { collected } = flow_manager.get(user_id) {
                     let total_pages = emoji_panel::pending_total_pages(collected.len());
                     let text = emoji_panel::format_pending_emojis(&collected, &[], page);
-                    let packs = emoji_store::list_packs(client, user_id)
+                    let packs = emoji_store::list_packs(&*client, user_id)
                         .await
                         .unwrap_or_default();
                     let params = EditMessageTextParams::builder()
@@ -471,7 +478,7 @@ pub async fn handle_emoji_callback(
                     );
                     flow_manager.clear(user_id);
                     add_emojis_to_pack(
-                        api, chat_id, &collected, pack_id, user_id, client, trace_id,
+                        api, chat_id, &collected, pack_id, user_id, &*client, trace_id,
                     )
                     .await;
                 } else {
@@ -505,9 +512,9 @@ pub async fn handle_emoji_callback(
                 parsed.items.len()
             );
             let result = if d == CB_IMPORT_REPLACE {
-                emoji_import::execute_replace(&parsed, client, user_id).await
+                emoji_import::execute_replace(&parsed, &mut client, user_id).await
             } else {
-                emoji_import::execute_merge(&parsed, client, user_id, d == CB_IMPORT_SMART).await
+                emoji_import::execute_merge(&parsed, &mut client, user_id, d == CB_IMPORT_SMART).await
             };
             match result {
                 Ok(r) => {

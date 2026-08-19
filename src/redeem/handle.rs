@@ -225,7 +225,15 @@ async fn do_generate(
     };
 
     let code = random_code();
-    if let Err(e) = store::create_code(db.client(), &code, rank, days, uses, created_by).await {
+    let client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[redeem event=checkout_failed err={e}]");
+            let _ = send_text(api, chat_id, &t("redeem.gen_error")).await;
+            return;
+        }
+    };
+    if let Err(e) = store::create_code(&client, &code, rank, days, uses, created_by).await {
         eprintln!("[redeem event=create_failed code={code} err={e}]");
         let _ = send_text(api, chat_id, &t("redeem.gen_error")).await;
         return;
@@ -327,9 +335,16 @@ pub async fn handle_redeem(
         send_with_back(api, chat_id, &t("redeem.invalid")).await;
         return false;
     };
-    let client = db.client();
+    let mut client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[redeem event=get_conn_failed err={e}]");
+            send_with_back(api, chat_id, &t("redeem.invalid")).await;
+            return false;
+        }
+    };
 
-    let row = match store::get_code(client, code).await {
+    let row = match store::get_code(&client, code).await {
         Ok(Some(r)) => r,
         Ok(None) => {
             eprintln!("[redeem event=redeem_invalid user_id={user_id} code={code}]");
@@ -346,14 +361,17 @@ pub async fn handle_redeem(
     // Lazy expiration check
     if let Some(exp) = row.expires_at {
         if now_epoch() > exp {
-            let _ = store::delete_code(client, code).await;
+            if let Err(e) = store::delete_code(&client, code).await {
+                eprintln!("[redeem event=delete_expired_failed code={code} err={e}]");
+                crate::stats::record_error_global("redeem", &format!("delete_expired_failed: {e}")).await;
+            }
             eprintln!("[redeem event=redeem_expired user_id={user_id} code={code}]");
             send_with_back(api, chat_id, &t("redeem.invalid")).await;
             return false;
         }
     }
 
-    match store::get_user_redemption(client, code, user_id).await {
+    match store::get_user_redemption(&client, code, user_id).await {
         Ok(Some(ts)) => {
             eprintln!("[redeem event=already_used user_id={user_id} code={code}]");
             let msg = tf("redeem.consumed", &[("datetime", &datetime_fa(ts))]);
@@ -369,7 +387,7 @@ pub async fn handle_redeem(
     }
 
     let (apply_rank, apply_expires, apply_total) =
-        match plan_redeem(client, user_id, row.rank, row.duration_days).await {
+        match plan_redeem(&client, user_id, row.rank, row.duration_days).await {
             Plan::Reject => {
                 eprintln!(
                     "[redeem event=downgrade_reject user_id={user_id} code={code} code_rank={}]",
@@ -385,11 +403,21 @@ pub async fn handle_redeem(
             } => (rank, expires_at, total_days),
         };
 
-    match store::mark_redeemed(client, code, user_id).await {
+    let txn = match client.transaction().await {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("[redeem event=tx_start_failed err={e}]");
+            send_with_back(api, chat_id, &t("redeem.invalid")).await;
+            return false;
+        }
+    };
+
+    match store::mark_redeemed(&*txn, code, user_id).await {
         Ok(store::RedeemOutcome::Consumed) => {}
         Ok(store::RedeemOutcome::AlreadyRedeemed) => {
+            let _ = txn.rollback().await;
             eprintln!("[redeem event=already_used user_id={user_id} code={code}]");
-            let ts = store::get_user_redemption(client, code, user_id)
+            let ts = store::get_user_redemption(&client, code, user_id)
                 .await
                 .ok()
                 .flatten()
@@ -399,8 +427,9 @@ pub async fn handle_redeem(
             return false;
         }
         Ok(store::RedeemOutcome::Exhausted) => {
+            let _ = txn.rollback().await;
             eprintln!("[redeem event=exhausted user_id={user_id} code={code}]");
-            let last = store::get_last_redemption(client, code)
+            let last = store::get_last_redemption(&client, code)
                 .await
                 .ok()
                 .flatten()
@@ -410,6 +439,7 @@ pub async fn handle_redeem(
             return false;
         }
         Err(e) => {
+            let _ = txn.rollback().await;
             eprintln!("[redeem event=mark_failed code={code} err={e}]");
             send_with_back(api, chat_id, &t("redeem.invalid")).await;
             return false;
@@ -417,9 +447,16 @@ pub async fn handle_redeem(
     }
 
     if let Err(e) =
-        crate::rank::store::set_user_rank(client, user_id, apply_rank, apply_expires).await
+        crate::rank::store::set_user_rank(&*txn, user_id, apply_rank, apply_expires).await
     {
+        let _ = txn.rollback().await;
         eprintln!("[redeem event=apply_failed user_id={user_id} code={code} err={e}]");
+        let _ = send_text(api, chat_id, &t("redeem.apply_error")).await;
+        return false;
+    }
+
+    if let Err(e) = txn.commit().await {
+        eprintln!("[redeem event=commit_failed user_id={user_id} code={code} err={e}]");
         let _ = send_text(api, chat_id, &t("redeem.apply_error")).await;
         return false;
     }

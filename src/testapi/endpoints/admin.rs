@@ -56,8 +56,12 @@ pub async fn test_admin_stats_section(
     let known_section = crate::admin::section(&req.section).is_some();
     let (rendered_text, html) = match &database {
         Some(db) => {
-            let view = crate::admin::render_section(db.client(), &req.section).await;
-            (view.text, view.html)
+            if let Ok(client) = db.get().await {
+                let view = crate::admin::render_section(&client, &req.section).await;
+                (view.text, view.html)
+            } else {
+                (crate::i18n::t("admin.db_missing"), false)
+            }
         }
         None => (crate::i18n::t("admin.db_missing"), false),
     };

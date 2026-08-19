@@ -348,18 +348,18 @@ mod tests {
         let Some(db_url) = crate::config::database_url() else {
             panic!("DATABASE_URL not resolvable from .env — run from the crate root");
         };
-        let (client, conn) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls)
+        let db = crate::database::postgresql::PostgresDatabase::connect(&db_url)
             .await
             .expect("dev DB must be reachable");
-        tokio::spawn(async move {
-            let _ = conn.await;
-        });
-        let client: &'static tokio_postgres::Client = Box::leak(Box::new(client));
-        crate::stats::init(client);
+        crate::stats::init(db.pool().clone());
 
         // Real path: function invoked by handlers on unexpected error.
         crate::stats::record_error_global(FEATURE, &format!("download failed: {raw}")).await;
 
+        // Allow batch flusher to write to database
+        tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+
+        let client = db.get().await.expect("checkout client from pool");
         let row = client
             .query_one(
                 "SELECT message FROM stats_errors WHERE feature = $1 ORDER BY id DESC LIMIT 1",

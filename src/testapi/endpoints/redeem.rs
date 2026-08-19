@@ -43,7 +43,7 @@ pub async fn test_redeem_apply(Json(req): Json<RedeemApplyReq>) -> axum::respons
     };
 
     let database = crate::testapi::state::db().await;
-    let db_status = if database.is_some() {
+    let _db_status = if database.is_some() {
         "connected"
     } else {
         "unavailable"
@@ -57,9 +57,18 @@ pub async fn test_redeem_apply(Json(req): Json<RedeemApplyReq>) -> axum::respons
             )
                 .into_response();
         };
-        let client = db.client();
+        let client = match db.get().await {
+            Ok(c) => c,
+            Err(e) => {
+                return (
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    format!("db checkout failed: {e}"),
+                )
+                    .into_response();
+            }
+        };
         // Clean start for seed run.
-        if let Err(e) = purge(client, &code, user_id).await {
+        if let Err(e) = purge(&client, &code, user_id).await {
             return (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 format!("seed cleanup failed: {e}"),
@@ -67,7 +76,7 @@ pub async fn test_redeem_apply(Json(req): Json<RedeemApplyReq>) -> axum::respons
                 .into_response();
         }
         if let Err(e) = crate::redeem::store::create_code(
-            client,
+            &client,
             &code,
             rank,
             duration_days,
@@ -84,71 +93,89 @@ pub async fn test_redeem_apply(Json(req): Json<RedeemApplyReq>) -> axum::respons
         }
     }
 
-    let api = Bot::new_url(format!(
-        "http://127.0.0.1:{}/bot",
-        std::env::var("TESTAPI_PORT").unwrap_or_else(|_| "14379".to_string())
-    ));
-
     let traces = Arc::new(Mutex::new(Vec::new()));
     let stats = Arc::new(Mutex::new(Vec::new()));
     let i18n_keys = Arc::new(Mutex::new(Vec::new()));
     let emojis = Arc::new(Mutex::new(Vec::new()));
 
-    let ok = CAPTURED_TRACES
-        .scope(traces.clone(), async {
+    let bot = Bot::new("123456:TESTAPI_DUMMY_TOKEN");
+
+    let (ok, db_status) = CAPTURED_TRACES
+        .scope(traces.clone(), {
+            let stats = stats.clone();
+            let i18n_keys = i18n_keys.clone();
+            let emojis = emojis.clone();
             CAPTURED_STATS
-                .scope(stats.clone(), async {
+                .scope(stats, {
                     RESOLVED_I18N_KEYS
-                        .scope(i18n_keys.clone(), async {
+                        .scope(i18n_keys, {
                             CAPTURED_EMOJIS
-                                .scope(emojis.clone(), async {
-                                    // Invoke real deep-link handler.
-                                    crate::redeem::handle::handle_redeem(
-                                        &api,
-                                        user_id,
-                                        user_id,
-                                        "TestApi",
-                                        Some("testapi"),
-                                        &code,
-                                        database,
-                                    )
-                                    .await
+                                .scope(emojis, async {
+                                    match database {
+                                        Some(db) => {
+                                            let db_opt = Some(db.clone());
+                                            let res = crate::redeem::handle::handle_redeem(
+                                                &bot,
+                                                user_id,
+                                                user_id,
+                                                "Test",
+                                                None,
+                                                &code,
+                                                &db_opt,
+                                            )
+                                            .await;
+                                            (res, "connected".to_string())
+                                        }
+                                        None => {
+                                            let res = crate::redeem::handle::handle_redeem(
+                                                &bot,
+                                                user_id,
+                                                user_id,
+                                                "Test",
+                                                None,
+                                                &code,
+                                                &None,
+                                            )
+                                            .await;
+                                            (res, "unavailable".to_string())
+                                        }
+                                    }
                                 })
-                                .await
                         })
-                        .await
                 })
-                .await
         })
         .await;
 
     // Fetch database state post-execution.
     let (used_count, redemption_rows, user_rank) = match database {
         Some(db) => {
-            let client = db.client();
-            let used = client
-                .query_opt(
-                    "SELECT used_count FROM redeem_codes WHERE code = $1",
-                    &[&code],
-                )
-                .await
-                .ok()
-                .flatten()
-                .map(|r| r.get::<_, i32>(0));
-            let rows: i64 = client
-                .query_one(
-                    "SELECT count(*) FROM redeem_redemptions WHERE code = $1",
-                    &[&code],
-                )
-                .await
-                .map(|r| r.get(0))
-                .unwrap_or(-1);
-            let rank = crate::rank::store::get_user_rank(client, user_id)
-                .await
-                .ok()
-                .flatten()
-                .map(|r| json!({ "rank": r.rank.as_str(), "expires_at": r.expires_at }));
-            (used, rows, rank)
+            if let Ok(client) = db.get().await {
+                let used = client
+                    .query_opt(
+                        "SELECT used_count FROM redeem_codes WHERE code = $1",
+                        &[&code],
+                    )
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|r| r.get::<_, i32>(0));
+                let rows: i64 = client
+                    .query_one(
+                        "SELECT count(*) FROM redeem_redemptions WHERE code = $1",
+                        &[&code],
+                    )
+                    .await
+                    .map(|r| r.get(0))
+                    .unwrap_or(-1);
+                let rank = crate::rank::store::get_user_rank(&client, user_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|r| json!({ "rank": r.rank.as_str(), "expires_at": r.expires_at }));
+                (used, rows, rank)
+            } else {
+                (None, -1, None)
+            }
         }
         None => (None, -1, None),
     };
@@ -164,8 +191,10 @@ pub async fn test_redeem_apply(Json(req): Json<RedeemApplyReq>) -> axum::respons
 
     if req.cleanup.unwrap_or(false) {
         if let Some(db) = database {
-            if let Err(e) = purge(db.client(), &code, user_id).await {
-                eprintln!("[testapi] redeem cleanup failed: {e}");
+            if let Ok(client) = db.get().await {
+                if let Err(e) = purge(&client, &code, user_id).await {
+                    eprintln!("[testapi] redeem cleanup failed: {e}");
+                }
             }
         }
     }

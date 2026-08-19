@@ -37,6 +37,7 @@ mod log;
 mod admin;
 mod app;
 mod bot;
+pub mod common;
 mod config;
 mod cookie_pool;
 mod database;

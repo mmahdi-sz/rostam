@@ -275,12 +275,14 @@ pub async fn handle_soundcloud_url(
             crate::stats::record_event_global("soundcloud", "download", "ok", 1).await;
 
             if let Some(db) = database {
-                if let Some(first_up) =
-                    crate::rank::quota::get_first_upload_at(db.client(), user_id).await
-                {
-                    let _ =
-                        crate::rank::quota::add_traffic(db.client(), user_id, file_size, first_up)
-                            .await;
+                if let Ok(client) = db.get().await {
+                    if let Some(first_up) =
+                        crate::rank::quota::get_first_upload_at(&client, user_id).await
+                    {
+                        let _ =
+                            crate::rank::quota::add_traffic(&client, user_id, file_size, first_up)
+                                .await;
+                    }
                 }
             }
 
@@ -335,7 +337,7 @@ pub async fn download_soundcloud_audio(
         .arg(&output_template)
         .arg(sc_url)
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
         .kill_on_drop(true)
         .spawn();
 

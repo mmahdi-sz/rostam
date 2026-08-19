@@ -210,19 +210,23 @@ async fn handle_resolution_callback(
 
     // Check user rank via DB.
     if let Some(uid) = request.user_id {
-        let fallback_db = if database.is_none() {
-            crate::stats::get_db_client().await
+        let user_rank = if let Some(db) = database.as_ref() {
+            if let Ok(client) = db.get().await {
+                rank::effective_rank(&client, uid).await
+            } else {
+                crate::rank::types::Rank::Dalavar
+            }
+        } else if let Some(pool) = crate::stats::get_pool() {
+            if let Ok(client) = pool.get().await {
+                rank::effective_rank(&client, uid).await
+            } else {
+                crate::rank::types::Rank::Dalavar
+            }
         } else {
-            None
+            crate::rank::types::Rank::Dalavar
         };
-        let client_ref: Option<&tokio_postgres::Client> = match database.as_ref() {
-            Some(db) => Some(db.client()),
-            None => fallback_db.as_deref(),
-        };
-        if let Some(client) = client_ref {
-            let user_rank = rank::effective_rank(client, uid).await;
-            if let Some(max) = user_rank.max_yt_quality()
-                && height > max
+        if let Some(max) = user_rank.max_yt_quality()
+            && height > max
             {
                 log_trace(
                     trace_id,
@@ -238,7 +242,6 @@ async fn handle_resolution_callback(
                 crate::rank::paywall::block_limit(api, message.chat.id, &limit, min_rank).await;
                 return true;
             }
-        }
     }
 
     enter_selection_menu(api, request_id, height, message.chat.id, message.message_id).await;

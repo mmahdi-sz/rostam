@@ -1220,6 +1220,7 @@
             "zip_failed": "⚠️ *ساخت آرشیو فشرده ناموفق بود\\.*",
             "done": "✅ *{title}*\n🎵 *{n} ترک ارسال شد\\.* \\(ناموفق: {failed}\\)",
             "cancelled": "❌ *دانلود آلبوم/پلی‌لیست لغو شد\\.*",
+            "io_error": "⚠️ *خطا در ایجاد فضای موقت پردازش سرور\\.*",
             "expired": "⚠️ *این درخواست منقضی شده\\. لینک را دوباره بفرست\\.*"
         },
         "studio": {
@@ -2634,6 +2635,7 @@
             "zip_failed": "⚠️ *Failed to build the archive\\.*",
             "done": "✅ *{title}*\n🎵 *{n} tracks sent\\.* \\(failed: {failed}\\)",
             "cancelled": "❌ *Album/playlist download was cancelled\\.*",
+            "io_error": "⚠️ *Failed to create temporary processing directory on server\\.*",
             "expired": "⚠️ *This request expired\\. Send the link again\\.*"
         },
         "studio": {
@@ -4022,6 +4024,7 @@
             "zip_failed": "⚠️ *Creazione archivio non riuscita\\.*",
             "done": "✅ *{title}*\n🎵 *{n} tracce inviate\\.* \\(non riuscite: {failed}\\)",
             "cancelled": "❌ *Download album/playlist annullato\\.*",
+            "io_error": "⚠️ *Impossibile creare la cartella temporanea del server\\.*",
             "expired": "⚠️ *Richiesta scaduta\\. Invia di nuovo il link\\.*"
         },
         "studio": {
@@ -5410,6 +5413,7 @@
             "zip_failed": "⚠️ *Не удалось создать архив\\.*",
             "done": "✅ *{title}*\n🎵 *Отправлено треков: {n}\\.* \\(ошибок: {failed}\\)",
             "cancelled": "❌ *Загрузка альбома/плейлиста отменена\\.*",
+            "io_error": "⚠️ *Не удалось создать временный каталог на сервере\\.*",
             "expired": "⚠️ *Запрос устарел\\. Отправьте ссылку снова\\.*"
         },
         "studio": {

@@ -106,7 +106,6 @@ pub async fn handle_addemoji_link(
         let _ = send_text(api, chat_id, &crate::i18n::t("emoji.db_required")).await;
         return;
     };
-    let client = db.client();
 
     let mut new_emojis = fetch_pack_emojis(api, pack_name, trace_id).await;
     if new_emojis.is_empty() {
@@ -120,6 +119,15 @@ pub async fn handle_addemoji_link(
         return;
     }
 
+    let client = match db.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[emoji_add trace={trace_id} event=checkout_failed err={e}]");
+            let _ = send_text(api, chat_id, &crate::i18n::t("emoji.db_required")).await;
+            return;
+        }
+    };
+
     let existing = match flow_manager.get(user_id) {
         FlowState::AwaitingEmojis { collected } => collected,
         FlowState::AwaitingPackChoice { collected } => collected,
@@ -131,7 +139,7 @@ pub async fn handle_addemoji_link(
     );
 
     let incoming = new_emojis.len();
-    let duplicates = filter_duplicates(client, user_id, &mut new_emojis, &existing).await;
+    let duplicates = filter_duplicates(&*client, user_id, &mut new_emojis, &existing).await;
     eprintln!(
         "[emoji_add trace={trace_id} event=dedup] incoming={incoming} \
          after_dedup={} dups={}",
@@ -150,7 +158,7 @@ pub async fn handle_addemoji_link(
 
     let total_pages = emoji_panel::pending_total_pages(collected.len());
     let text = emoji_panel::format_pending_emojis(&collected, &duplicates, 0);
-    let packs = emoji_store::list_packs(client, user_id)
+    let packs = emoji_store::list_packs(&*client, user_id)
         .await
         .unwrap_or_default();
     eprintln!(

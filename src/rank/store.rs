@@ -1,4 +1,4 @@
-use tokio_postgres::Client;
+use tokio_postgres::{Client, GenericClient};
 
 use super::types::Rank;
 
@@ -33,7 +33,7 @@ pub async fn get_user_rank(
 }
 
 pub async fn set_user_rank(
-    client: &Client,
+    client: &(impl GenericClient + ?Sized),
     user_id: i64,
     rank: Rank,
     expires_at: Option<i64>,

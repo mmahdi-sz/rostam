@@ -25,7 +25,6 @@ pub async fn handle_emoji_flow_message(
         eprintln!("[emoji_msg trace={trace_id} event=no_db] user_id={user_id} chat_id={chat_id}");
         return false;
     };
-    let client = db.client();
     let state = flow_manager.get(user_id);
 
     eprintln!(
@@ -44,13 +43,20 @@ pub async fn handle_emoji_flow_message(
                 "[emoji_msg trace={trace_id} event=handler_call] handler=flow_emojis collected={}",
                 collected.len()
             );
+            let client = match db.get().await {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[emoji_msg trace={trace_id} event=checkout_failed] err={e}");
+                    return false;
+                }
+            };
             flow_emojis::handle(
                 api,
                 message,
                 chat_id,
                 user_id,
                 flow_manager,
-                client,
+                &client,
                 trace_id,
                 collected,
             )
@@ -61,13 +67,20 @@ pub async fn handle_emoji_flow_message(
                 "[emoji_msg trace={trace_id} event=handler_call] handler=flow_pack_choice collected={}",
                 collected.len()
             );
+            let client = match db.get().await {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[emoji_msg trace={trace_id} event=checkout_failed] err={e}");
+                    return false;
+                }
+            };
             flow_pack_choice::handle(
                 api,
                 message,
                 chat_id,
                 user_id,
                 flow_manager,
-                client,
+                &client,
                 trace_id,
                 collected,
             )
@@ -77,13 +90,20 @@ pub async fn handle_emoji_flow_message(
             eprintln!(
                 "[emoji_msg trace={trace_id} event=handler_call] handler=flow_misc::pack_alias pack_id={pack_id}"
             );
+            let client = match db.get().await {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[emoji_msg trace={trace_id} event=checkout_failed] err={e}");
+                    return false;
+                }
+            };
             flow_misc::handle_pack_alias(
                 api,
                 message,
                 chat_id,
                 user_id,
                 flow_manager,
-                client,
+                &client,
                 trace_id,
                 pack_id,
             )
@@ -91,13 +111,20 @@ pub async fn handle_emoji_flow_message(
         }
         FlowState::AwaitingImportFile => {
             eprintln!("[emoji_msg trace={trace_id} event=handler_call] handler=flow_import::file");
+            let client = match db.get().await {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[emoji_msg trace={trace_id} event=checkout_failed] err={e}");
+                    return false;
+                }
+            };
             flow_import::handle_import_file(
                 api,
                 message,
                 chat_id,
                 user_id,
                 flow_manager,
-                client,
+                &client,
                 trace_id,
             )
             .await

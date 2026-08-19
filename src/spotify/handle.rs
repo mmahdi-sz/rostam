@@ -362,12 +362,14 @@ pub async fn handle_spotify_url(
             crate::stats::record_event_global("spotify", "download", "ok", 1).await;
 
             if let Some(db) = database {
-                if let Some(first_up) =
-                    crate::rank::quota::get_first_upload_at(db.client(), user_id).await
-                {
-                    let _ =
-                        crate::rank::quota::add_traffic(db.client(), user_id, file_size, first_up)
-                            .await;
+                if let Ok(client) = db.get().await {
+                    if let Some(first_up) =
+                        crate::rank::quota::get_first_upload_at(&client, user_id).await
+                    {
+                        let _ =
+                            crate::rank::quota::add_traffic(&client, user_id, file_size, first_up)
+                                .await;
+                    }
                 }
             }
 
@@ -426,8 +428,8 @@ pub async fn run_yt_dlp_audio(
         .arg("-o")
         .arg(&out_template)
         .arg(webpage_url)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .kill_on_drop(true)
         .spawn()
     {

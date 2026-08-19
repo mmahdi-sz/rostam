@@ -115,18 +115,31 @@ pub async fn handle_nobg_image(
     // ── Reserve weekly rank quota (atomic: check + debit in one statement) ──
     let mut reserved = false;
     if let Some(db) = database.as_ref() {
-        let user_rank = rank::effective_rank(db.client(), user_id).await;
+        let (user_rank, reserve_res) = {
+            let client = match db.get().await {
+                Ok(c) => c,
+                Err(e) => {
+                    log_ev!("feynobg", trace_id, "quota_checkout", "err" => format!("{e}"), "=>" => "fail");
+                    crate::rank::paywall::quota_db_error(api, chat_id, "feynobg", &format!("{e}")).await;
+                    flow_manager.set(user_id, FlowState::Idle);
+                    return;
+                }
+            };
+            let user_rank = rank::effective_rank(&client, user_id).await;
+            let limit = user_rank.nobg_weekly_quota();
+            let res = reserve_usage(
+                &client,
+                user_id,
+                QuotaKind::NobgWeekly,
+                1,
+                7 * 86400,
+                limit as i64,
+            )
+            .await;
+            (user_rank, res)
+        };
         let limit = user_rank.nobg_weekly_quota();
-        match reserve_usage(
-            db.client(),
-            user_id,
-            QuotaKind::NobgWeekly,
-            1,
-            7 * 86400,
-            limit as i64,
-        )
-        .await
-        {
+        match reserve_res {
             Ok(Some(used_after)) => {
                 reserved = true;
                 log_ev!("feynobg", trace_id, "quota_reserved", "used" => used_after, "limit" => limit);
@@ -168,12 +181,14 @@ pub async fn handle_nobg_image(
             if reserved {
                 if let Some(db) = database.as_ref() {
                     log_ev!("feynobg", trace_id, "quota_refund", "why" => $why);
-                    if let Err(e) =
-                        refund_usage(db.client(), user_id, QuotaKind::NobgWeekly, 1, 7 * 86400)
-                            .await
-                    {
-                        log_ev!("feynobg", trace_id, "quota_refund", "err" => format!("{e}"), "=>" => "fail");
-                        stats::record_error_global("feynobg", "quota_refund_failed").await;
+                    if let Ok(client) = db.get().await {
+                        if let Err(e) =
+                            refund_usage(&client, user_id, QuotaKind::NobgWeekly, 1, 7 * 86400)
+                                .await
+                        {
+                            log_ev!("feynobg", trace_id, "quota_refund", "err" => format!("{e}"), "=>" => "fail");
+                            stats::record_error_global("feynobg", "quota_refund_failed").await;
+                        }
                     }
                 }
             }

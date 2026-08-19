@@ -317,10 +317,32 @@ pub async fn handle_pkg_callback(
             let _ = send_text_md(api, chat_id, &t("pkg.error.system_error")).await;
             return;
         };
-        let db_client = db.client();
-
-        let rank = rank::effective_rank(db_client, user_id).await;
-        let daily_limit = rank.pkgconvert_daily_count();
+        let (rank, daily_limit, reserve_res) = {
+            let client = match db.get().await {
+                Ok(c) => c,
+                Err(e) => {
+                    log_ev!("pkgconvert", trace_id, "quota_checkout", "err" => format!("{e}"), "=>" => "fail");
+                    let _ = send_text_md(api, chat_id, &t("pkg.error.system_error")).await;
+                    return;
+                }
+            };
+            let rank = rank::effective_rank(&client, user_id).await;
+            let daily_limit = rank.pkgconvert_daily_count();
+            let res = if daily_limit > 0 {
+                rank::quota::reserve_usage(
+                    &client,
+                    user_id,
+                    QuotaKind::PkgConvertDaily,
+                    1,
+                    86400,
+                    daily_limit as i64,
+                )
+                .await
+            } else {
+                Ok(None)
+            };
+            (rank, daily_limit, res)
+        };
 
         if daily_limit == 0 {
             log_ev!("pkgconvert", trace_id, "paywall_blocked", "rank" => rank.as_str());
@@ -333,16 +355,7 @@ pub async fn handle_pkg_callback(
             return;
         }
 
-        match rank::quota::reserve_usage(
-            db_client,
-            user_id,
-            QuotaKind::PkgConvertDaily,
-            1,
-            86400,
-            daily_limit as i64,
-        )
-        .await
-        {
+        match reserve_res {
             Ok(Some(used)) => {
                 log_ev!("pkgconvert", trace_id, "quota_reserved", "used" => used, "limit" => daily_limit);
             }
@@ -486,14 +499,20 @@ async fn run_pkg_worker(
         ($why:expr) => {
             if let Some(db) = database.as_ref() {
                 log_ev!("pkgconvert", trace_id, "quota_refund", "why" => $why);
-                let _ = rank::quota::refund_usage(
-                    db.client(),
-                    user_id,
-                    QuotaKind::PkgConvertDaily,
-                    1,
-                    86400,
-                )
-                .await;
+                if let Ok(client) = db.get().await {
+                    if let Err(e) = rank::quota::refund_usage(
+                        &client,
+                        user_id,
+                        QuotaKind::PkgConvertDaily,
+                        1,
+                        86400,
+                    )
+                    .await
+                    {
+                        log_ev!("pkgconvert", trace_id, "quota_refund", "err" => format!("{e}"), "=>" => "fail");
+                        crate::stats::record_error_global("pkgconvert", "quota_refund_failed").await;
+                    }
+                }
             }
         };
     }
@@ -504,6 +523,15 @@ async fn run_pkg_worker(
         }};
     }
 
+struct TempDirGuard(std::path::PathBuf);
+impl Drop for TempDirGuard {
+    fn drop(&mut self) {
+        if self.0.exists() {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+}
+
     let work_dir = std::env::temp_dir().join(format!("pkgconvert_{trace_id}"));
     if let Err(e) = std::fs::create_dir_all(&work_dir) {
         log_ev!("pkgconvert", trace_id, "mkdir_failed", "err" => format!("{e}"));
@@ -513,6 +541,7 @@ async fn run_pkg_worker(
         re_arm!();
         return;
     }
+    let _dir_guard = TempDirGuard(work_dir.clone());
 
     // 1. Download Stage
     stage.set(STAGE_DOWNLOADING);

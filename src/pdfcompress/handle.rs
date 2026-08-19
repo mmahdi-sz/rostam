@@ -624,7 +624,7 @@ async fn run_gs(
         .arg(format!("-sOutputFile={}", output.display()))
         .arg(input)
         .stdout(Stdio::null())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::null());
 
     #[cfg(unix)]
     unsafe {

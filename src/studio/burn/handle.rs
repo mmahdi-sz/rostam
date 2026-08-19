@@ -1,31 +1,25 @@
-//! Hardsub subtitle burning module for Photo & Video Magic Studio (`studio_burn`).
-//!
-//! Handles subtitle detection (SRT, ASS/SSA, WebVTT), ASS native style preservation vs SRT/VTT
-//! force_style, background video ingestion with a live download ticker, brokered ffmpeg execution
-//! with `-progress pipe:1`, cancel-aware waiting, and re-arming back to the burn prompt.
-//!
-//! Inputs are copied to fixed in-work-dir names (`input.<ext>`, `sub.<ext>`) so neither the
-//! filesystem path nor the ffmpeg filtergraph ever carries a user-controlled string.
+//! Telegram request handling, paywall gating, input ingestion, and burn execution orchestration.
 
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::Ordering,
 };
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     input_file::{FileUpload, InputFile},
     methods::{DeleteMessageParams, EditMessageTextParams, SendMessageParams, SendVideoParams},
-    types::{InlineKeyboardMarkup, Message, ReplyMarkup},
+    types::{Message, ReplyMarkup},
 };
 
+use crate::bot::files::download_telegram_file;
+use crate::bot::send_text_md;
 use crate::bot::transfer::send_file_with_upload_ticker;
-use crate::bot::{files::download_telegram_file, send_text_md};
 use crate::database::postgresql::PostgresDatabase;
-use crate::emoji::{FlowManager, FlowState, panel::btn_icon_danger};
+use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
 use crate::log::next_trace_id;
 use crate::moebius::cpu::{
@@ -33,329 +27,21 @@ use crate::moebius::cpu::{
 };
 use crate::rank::{effective_rank, paywall::block_feature, types::Rank};
 use crate::stats::{record_error_global, record_event_global, record_event_user};
+use crate::studio::compress::format_eta_hms;
+use crate::studio::is_video_message_metadata;
+use crate::studio::pipeline::{TempDirGuard, remove_active_job, spawn_download_ticker};
+use crate::studio::trim;
 use crate::validation::sanitize_filename;
 
-use super::compress::format_eta_hms;
-use super::pipeline::{
-    TempDirGuard, register_active_job, remove_active_job, spawn_download_ticker,
+use super::runner::{
+    extract_thumbnail, read_log_tail, run_ffmpeg_burn, split_video_into_parts, upload_part_count,
 };
-
-/// Hardsub re-encode is CPU-bound; anything longer would hold a broker slot for hours.
-pub const MAX_BURN_DURATION_SECS: u64 = 7200;
-/// Telegram Bot API upload ceiling.
-pub const MAX_UPLOAD_BYTES: u64 = 2000 * 1024 * 1024;
-/// Minimum gap between burn ticker edits (Telegram rejects faster edit rates).
-const TICKER_MIN_INTERVAL: Duration = Duration::from_secs(3);
-
-pub const DEFAULT_SUBTITLE_FONT: &str = "Arial";
-pub const DEFAULT_SUBTITLE_FONTSIZE: u32 = 18;
-pub const DEFAULT_SUBTITLE_PRIMARY_COLOR: &str = "&H00FFFFFF";
-pub const DEFAULT_SUBTITLE_OUTLINE_COLOR: &str = "&H00000000";
-pub const DEFAULT_SUBTITLE_BORDER_STYLE: u32 = 1;
-pub const DEFAULT_SUBTITLE_OUTLINE: u32 = 2;
-pub const DEFAULT_SUBTITLE_SHADOW: u32 = 1;
-pub const DEFAULT_SUBTITLE_ALIGNMENT: u32 = 2;
-
-pub fn build_force_style_arg() -> String {
-    format!(
-        "Fontname={DEFAULT_SUBTITLE_FONT},Fontsize={DEFAULT_SUBTITLE_FONTSIZE},\
-         PrimaryColour={DEFAULT_SUBTITLE_PRIMARY_COLOR},OutlineColour={DEFAULT_SUBTITLE_OUTLINE_COLOR},\
-         BorderStyle={DEFAULT_SUBTITLE_BORDER_STYLE},Outline={DEFAULT_SUBTITLE_OUTLINE},\
-         Shadow={DEFAULT_SUBTITLE_SHADOW},Alignment={DEFAULT_SUBTITLE_ALIGNMENT}"
-    )
-}
-
-/// Escapes one value for an *unquoted* ffmpeg filtergraph argument. ffmpeg parses the
-/// filtergraph itself, so shell quoting rules do not apply: every character that would
-/// terminate or split the argument takes a single backslash.
-pub fn escape_filter_value(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    for c in value.chars() {
-        if matches!(c, '\\' | '\'' | ':' | ',' | ';' | '=' | '[' | ']') {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
-}
-
-pub fn escape_ffmpeg_filter_path(path: &Path) -> String {
-    escape_filter_value(&path.to_string_lossy())
-}
-
-/// Builds the `-vf` argument: ASS keeps its own styling, SRT/VTT get the forced default style.
-pub fn build_filter_arg(format: SubtitleFormat, sub_path: &Path) -> String {
-    let path = escape_ffmpeg_filter_path(sub_path);
-    match format {
-        SubtitleFormat::Ass => format!("ass=filename={path}"),
-        SubtitleFormat::Srt | SubtitleFormat::Vtt => format!(
-            "subtitles=filename={path}:force_style={}",
-            escape_filter_value(&build_force_style_arg())
-        ),
-    }
-}
-
-/// Video encoder args matched to the source codec. Hardsub always re-encodes, and re-encoding an
-/// AV1/HEVC source with libx264 inflates the file 2-3x at the same visual quality — a 900 MB AV1
-/// input came back over the 2000 MB upload cap. CRF values are per-encoder scales, each roughly
-/// equivalent to x264 CRF 22. Unknown/absent codec falls back to x264 (widest Telegram support).
-/// ponytail: no 10-bit handling — pix_fmt is only forced on the x264 path, elsewhere ffmpeg keeps
-/// the source format.
-pub fn video_encoder_args(source_codec: &str) -> Vec<&'static str> {
-    match source_codec.trim().to_ascii_lowercase().as_str() {
-        "av1" => vec!["-c:v", "libsvtav1", "-preset", "9", "-crf", "32"],
-        "hevc" | "h265" => vec!["-c:v", "libx265", "-preset", "medium", "-crf", "26"],
-        "vp9" => vec![
-            "-c:v",
-            "libvpx-vp9",
-            "-crf",
-            "32",
-            "-b:v",
-            "0",
-            "-row-mt",
-            "1",
-        ],
-        _ => vec![
-            "-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p",
-        ],
-    }
-}
-
-/// How many pieces an oversized output must be cut into to fit under the upload cap. Always ≥2 —
-/// this is only called once the output is known to be over the cap.
-pub fn upload_part_count(output_bytes: u64, cap_bytes: u64) -> u64 {
-    if cap_bytes == 0 {
-        return 2;
-    }
-    output_bytes.div_ceil(cap_bytes).max(2)
-}
-
-/// Segment length that cuts `total_duration` into `parts` roughly equal pieces.
-pub fn split_segment_secs(total_duration: u64, parts: u64) -> u64 {
-    (total_duration / parts.max(1)).max(1)
-}
-
-/// Splits a finished video into `parts` roughly equal pieces by duration. Stream-copies, so there
-/// is no second re-encode. Segment cuts land on keyframes, so part sizes are only approximate —
-/// the caller must still check every part against the upload cap.
-/// ponytail: remux only (I/O bound, no filters), so it stays off the CPU broker.
-fn split_video_into_parts(
-    ffmpeg_bin: &Path,
-    input: &Path,
-    work_dir: &Path,
-    total_duration: u64,
-    parts: u64,
-) -> Result<Vec<PathBuf>, String> {
-    let segment_secs = split_segment_secs(total_duration, parts);
-    let pattern = work_dir.join("part_%02d.mp4");
-
-    let out = std::process::Command::new(ffmpeg_bin)
-        .args(["-y", "-hide_banner", "-nostdin", "-i"])
-        .arg(input)
-        .args([
-            "-c",
-            "copy",
-            "-map",
-            "0",
-            "-f",
-            "segment",
-            "-segment_time",
-            &segment_secs.to_string(),
-            "-reset_timestamps",
-            "1",
-        ])
-        .arg(&pattern)
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(|e| format!("ffmpeg segment spawn failed: {e}"))?;
-
-    if !out.status.success() {
-        let tail = String::from_utf8_lossy(&out.stderr);
-        let tail: String = tail
-            .chars()
-            .rev()
-            .take(400)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
-        return Err(format!("ffmpeg segment failed: {tail}"));
-    }
-
-    let mut found: Vec<PathBuf> = std::fs::read_dir(work_dir)
-        .map_err(|e| format!("read work dir failed: {e}"))?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("part_") && n.ends_with(".mp4"))
-        })
-        .collect();
-    found.sort();
-
-    if found.is_empty() {
-        return Err("segment produced no parts".to_string());
-    }
-    Ok(found)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SubtitleFormat {
-    Srt,
-    Ass,
-    Vtt,
-}
-
-impl SubtitleFormat {
-    /// Extension used for the copy stored inside the work dir.
-    pub fn ext(&self) -> &'static str {
-        match self {
-            SubtitleFormat::Srt => "srt",
-            SubtitleFormat::Ass => "ass",
-            SubtitleFormat::Vtt => "vtt",
-        }
-    }
-}
-
-pub fn detect_subtitle_format(filename: &str) -> Option<SubtitleFormat> {
-    let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
-    match ext.as_str() {
-        "srt" => Some(SubtitleFormat::Srt),
-        "ass" | "ssa" => Some(SubtitleFormat::Ass),
-        "vtt" => Some(SubtitleFormat::Vtt),
-        _ => None,
-    }
-}
-
-pub fn convert_vtt_to_srt(vtt_path: &Path, srt_path: &Path) -> anyhow::Result<()> {
-    let output = std::process::Command::new(crate::config::ffmpeg_path())
-        .args(["-y", "-hide_banner", "-nostdin", "-i"])
-        .arg(vtt_path)
-        .arg(srt_path)
-        .output()
-        .map_err(|e| anyhow::anyhow!("failed to execute ffmpeg for vtt conversion: {e}"))?;
-
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("vtt conversion failed: {err}");
-    }
-    Ok(())
-}
-
-pub fn cancel_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon_danger(
-            &t("studio.burn.cancel_btn"),
-            crate::bot::constants::CB_STUDIO_BURN_CANCEL,
-            "cancel",
-        )]])
-        .build()
-}
-
-pub fn job_cancel_keyboard() -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::builder()
-        .inline_keyboard(vec![vec![btn_icon_danger(
-            &t("studio.burn.cancel_btn"),
-            crate::bot::constants::CB_STUDIO_BURN_JOBCANCEL,
-            "cancel",
-        )]])
-        .build()
-}
-
-#[derive(Debug, Clone)]
-pub struct VideoInputInfo {
-    /// Sanitized name used only for display/caption, never as a path component.
-    pub display_name: String,
-    pub total_bytes: u64,
-    pub local_path: PathBuf,
-}
-
-#[derive(Debug, Clone)]
-pub struct SubtitleInputInfo {
-    pub format: SubtitleFormat,
-    pub local_path: PathBuf,
-}
-
-#[derive(Debug)]
-pub struct BurnSession {
-    pub user_id: i64,
-    pub chat_id: i64,
-    pub status_msg_id: i32,
-    pub work_dir: PathBuf,
-    pub video_info: Option<VideoInputInfo>,
-    pub subtitle_info: Option<SubtitleInputInfo>,
-    pub cancel_flag: Arc<AtomicBool>,
-    pub dl_stop_flag: Option<Arc<AtomicBool>>,
-    /// Set once the video download finished successfully.
-    pub video_ready: bool,
-    /// Set once the burn job has been handed off, so it can never start twice.
-    pub job_started: bool,
-}
-
-/// Claims the right to start the burn job. Both ingest paths call it; exactly one wins.
-fn try_claim_job(session: &Arc<Mutex<BurnSession>>) -> bool {
-    let Ok(mut s) = session.lock() else {
-        return false;
-    };
-    if s.video_ready && s.subtitle_info.is_some() && !s.job_started {
-        s.job_started = true;
-        return true;
-    }
-    false
-}
-
-fn stop_download_ticker(session: &Arc<Mutex<BurnSession>>) {
-    if let Ok(mut s) = session.lock() {
-        if let Some(flag) = s.dl_stop_flag.take() {
-            flag.store(true, Ordering::Relaxed);
-        }
-    }
-}
-
-/// Tears a session down: stops the ticker, signals cancel, drops the registry entry and work dir.
-pub fn abort_session(session: &Arc<Mutex<BurnSession>>) {
-    stop_download_ticker(session);
-    let (user_id, work_dir) = {
-        let Ok(s) = session.lock() else { return };
-        s.cancel_flag.store(true, Ordering::Relaxed);
-        (s.user_id, s.work_dir.clone())
-    };
-    remove_active_job(user_id);
-    if work_dir.exists() {
-        let _ = std::fs::remove_dir_all(&work_dir);
-    }
-}
-
-/// Creates the work dir plus a registered session for a fresh burn flow.
-fn new_session(
-    user_id: i64,
-    chat_id: i64,
-    status_msg_id: i32,
-    trace_id: u64,
-) -> Option<Arc<Mutex<BurnSession>>> {
-    let work_dir = std::env::temp_dir().join(format!("studio_burn_{trace_id}_{user_id}"));
-    if let Err(e) = std::fs::create_dir_all(&work_dir) {
-        log_ev!("studio_burn", trace_id, "mkdir_failed", "=>" => format!("fail err={e}"));
-        return None;
-    }
-
-    let cancel_flag = Arc::new(AtomicBool::new(false));
-    register_active_job(user_id, cancel_flag.clone());
-
-    Some(Arc::new(Mutex::new(BurnSession {
-        user_id,
-        chat_id,
-        status_msg_id,
-        work_dir,
-        video_info: None,
-        subtitle_info: None,
-        cancel_flag,
-        dl_stop_flag: None,
-        video_ready: false,
-        job_started: false,
-    })))
-}
+use super::session::{
+    BurnSession, SubtitleInputInfo, VideoInputInfo, abort_session, cancel_keyboard,
+    job_cancel_keyboard, new_session, stop_download_ticker, try_claim_job,
+};
+use super::subtitle::{SubtitleFormat, build_filter_arg, convert_vtt_to_srt, detect_subtitle_format};
+use super::{MAX_BURN_DURATION_SECS, MAX_UPLOAD_BYTES};
 
 /// Enters the Hardsub Burn prompt, setting `FlowState::AwaitingStudioBurnInput`.
 pub async fn enter_burn_prompt(
@@ -384,7 +70,13 @@ pub async fn enter_burn_prompt(
         return;
     };
 
-    let rank = effective_rank(db.client(), user_id).await;
+    let rank = if let Ok(client) = db.get().await {
+        effective_rank(&client, user_id).await
+    } else {
+        log_ev!("studio_burn", trace_id, "rank_check_checkout_failed", "=>" => "blocked");
+        let _ = send_text_md(api, chat_id, &t("studio.burn.error.burn_failed")).await;
+        return;
+    };
     if rank.weight() < Rank::Esfandyar.weight() {
         log_ev!("studio_burn", trace_id, "paywall_blocked", "rank" => rank.as_str());
         record_event_user(user_id, "studio_burn", "paywall", "blocked", 1).await;
@@ -426,7 +118,7 @@ pub async fn enter_burn_prompt(
 }
 
 /// Re-arms the burn flow after a job ends: same prompt, same settings, as a new message.
-async fn rearm_burn_prompt(api: &Bot, chat_id: i64, user_id: i64, flow_manager: &FlowManager) {
+pub async fn rearm_burn_prompt(api: &Bot, chat_id: i64, user_id: i64, flow_manager: &FlowManager) {
     let trace_id = next_trace_id();
     log_ev!("studio_burn", trace_id, "rearm", "user_id" => user_id);
 
@@ -449,12 +141,16 @@ async fn rearm_burn_prompt(api: &Bot, chat_id: i64, user_id: i64, flow_manager: 
 
     match new_session(user_id, chat_id, sent.message_id, trace_id) {
         Some(session) => flow_manager.set(user_id, FlowState::AwaitingStudioBurnInput { session }),
-        None => flow_manager.clear(user_id),
+        None => {
+            record_error_global("studio_burn", "rearm work dir creation failed").await;
+            let _ = send_text_md(api, chat_id, &t("studio.burn.error.burn_failed")).await;
+            flow_manager.clear(user_id);
+        }
     }
 }
 
 /// Deletes the status message, reports `text`, drops the job entry and re-arms the flow.
-async fn finish_with_error(
+pub async fn finish_with_error(
     api: &Bot,
     flow_manager: &FlowManager,
     chat_id: i64,
@@ -511,7 +207,7 @@ pub async fn handle_input_message(
         return;
     }
 
-    if super::is_video_message_metadata(message) {
+    if is_video_message_metadata(message) {
         handle_video_input(
             api,
             message,
@@ -530,7 +226,7 @@ pub async fn handle_input_message(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn handle_video_input(
+pub async fn handle_video_input(
     api: &Bot,
     message: &Message,
     user_id: i64,
@@ -664,7 +360,7 @@ async fn handle_video_input(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn handle_subtitle_input(
+pub async fn handle_subtitle_input(
     api: &Bot,
     message: &Message,
     user_id: i64,
@@ -797,7 +493,7 @@ pub async fn execute_burn_job(
         return;
     }
 
-    let meta = match super::trim::run_ffprobe(&v_info.local_path) {
+    let meta = match trim::run_ffprobe(&v_info.local_path).await {
         Ok(m) => m,
         Err(e) => {
             log_ev!("studio_burn", trace_id, "ffprobe_failed", "=>" => format!("fail err={e}"));
@@ -831,7 +527,7 @@ pub async fn execute_burn_job(
 
     let final_sub_path = if s_info.format == SubtitleFormat::Vtt {
         let converted = work_dir.join("sub_converted.srt");
-        if let Err(e) = convert_vtt_to_srt(&s_info.local_path, &converted) {
+        if let Err(e) = convert_vtt_to_srt(&s_info.local_path, &converted).await {
             log_ev!("studio_burn", trace_id, "vtt_convert_failed", "=>" => format!("fail err={e}"));
             record_error_global("studio_burn", format!("vtt conversion failed: {e}")).await;
             record_event_user(user_id, "studio_burn", "burn", "fail", 1).await;
@@ -1063,7 +759,7 @@ pub async fn execute_burn_job(
             .await;
 
         let thumb_path = work_dir.join(format!("thumb_{idx}.jpg"));
-        extract_thumbnail(part_path, &thumb_path);
+        extract_thumbnail(part_path, &thumb_path).await;
 
         let caption = if total_parts > 1 {
             apply_premium_to_md(&tf(
@@ -1095,7 +791,7 @@ pub async fn execute_burn_job(
             .supports_streaming(true)
             .build();
 
-        if let Ok(out_meta) = super::trim::run_ffprobe(part_path) {
+        if let Ok(out_meta) = trim::run_ffprobe(part_path).await {
             if out_meta.width > 0 {
                 params.width = Some(out_meta.width);
             }
@@ -1127,8 +823,8 @@ pub async fn execute_burn_job(
         )
         .await;
 
-        if let Err(e) = send_res {
-            upload_err = Some(format!("part {}/{total_parts}: {e}", idx + 1));
+        if let Err(send_error) = send_res {
+            upload_err = Some(format!("part {}/{total_parts}: {send_error}", idx + 1));
             break;
         }
     }
@@ -1158,265 +854,4 @@ pub async fn execute_burn_job(
 
     remove_active_job(user_id);
     rearm_burn_prompt(api, chat_id, user_id, &flow_manager).await;
-}
-
-/// Runs ffmpeg to completion. The stdout `-progress` reader lives on its own thread so the
-/// cancel check never waits on a line that a stalled ffmpeg will not print.
-#[allow(clippy::too_many_arguments)]
-fn run_ffmpeg_burn(
-    ffmpeg_bin: &Path,
-    input: &Path,
-    filter_arg: &str,
-    threads_arg: &str,
-    source_codec: &str,
-    output: &Path,
-    log_path: &Path,
-    total_duration: u64,
-    job_start: Instant,
-    cancel: &Arc<AtomicBool>,
-    tick_tx: tokio::sync::watch::Sender<String>,
-) -> Result<(), String> {
-    let log_file =
-        std::fs::File::create(log_path).map_err(|e| format!("ffmpeg log create failed: {e}"))?;
-
-    let mut child = std::process::Command::new(ffmpeg_bin)
-        .args(["-y", "-hide_banner", "-nostdin", "-i"])
-        .arg(input)
-        .args(["-map", "0:v:0", "-map", "0:a:0?", "-vf", filter_arg])
-        .args(video_encoder_args(source_codec))
-        .args([
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-movflags",
-            "+faststart",
-            "-threads",
-            threads_arg,
-            "-progress",
-            "pipe:1",
-        ])
-        .arg(output)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::from(log_file))
-        .spawn()
-        .map_err(|e| format!("ffmpeg spawn failed: {e}"))?;
-
-    let stdout = child.stdout.take();
-    let reader = std::thread::spawn(move || {
-        use std::io::{BufRead, BufReader};
-        let Some(out) = stdout else { return };
-        let mut current_us = 0u64;
-        let mut speed_str = "1.0x".to_string();
-        let mut last_pct = u64::MAX;
-        let mut last_edit = Instant::now() - TICKER_MIN_INTERVAL;
-
-        for line in BufReader::new(out).lines().map_while(Result::ok) {
-            if let Some(val) = line.strip_prefix("out_time_us=") {
-                current_us = val.trim().parse::<u64>().unwrap_or(0);
-            } else if let Some(val) = line.strip_prefix("speed=") {
-                speed_str = val.trim().to_string();
-            } else if line.starts_with("progress=") {
-                let current_secs = current_us / 1_000_000;
-                let pct = ((current_secs * 100) / total_duration).min(100);
-                if pct == last_pct && last_edit.elapsed() < TICKER_MIN_INTERVAL {
-                    continue;
-                }
-                last_pct = pct;
-                last_edit = Instant::now();
-
-                let speed_num = speed_str
-                    .trim_end_matches('x')
-                    .parse::<f64>()
-                    .unwrap_or(0.0);
-                let eta_secs = if speed_num > 0.0 && total_duration > current_secs {
-                    ((total_duration - current_secs) as f64 / speed_num) as u64
-                } else {
-                    0
-                };
-
-                let text = apply_premium_to_md(&tf(
-                    "studio.burn.status_burning",
-                    &[
-                        (
-                            "elapsed",
-                            &md_escape(&format_eta_hms(job_start.elapsed().as_secs())),
-                        ),
-                        ("pct", &pct.to_string()),
-                        ("speed", &md_escape(&speed_str)),
-                        ("eta", &md_escape(&format_eta_hms(eta_secs))),
-                    ],
-                ));
-                let _ = tick_tx.send(text);
-            }
-        }
-    });
-
-    let mut cancelled = false;
-    let mut wait_err: Option<String> = None;
-    let status = loop {
-        if cancel.load(Ordering::Relaxed) {
-            cancelled = true;
-            let _ = child.kill();
-            break None;
-        }
-        match child.try_wait() {
-            Ok(Some(s)) => break Some(s),
-            Ok(None) => std::thread::sleep(Duration::from_millis(300)),
-            Err(e) => {
-                wait_err = Some(format!("try_wait failed: {e}"));
-                let _ = child.kill();
-                break None;
-            }
-        }
-    };
-
-    // Always reap, or a cancelled burn leaves a zombie behind.
-    let _ = child.wait();
-    let _ = reader.join();
-
-    if cancelled {
-        return Err("cancelled".to_string());
-    }
-    if let Some(e) = wait_err {
-        return Err(e);
-    }
-    match status {
-        Some(s) if s.success() => Ok(()),
-        Some(s) => Err(format!("ffmpeg exited with {:?}", s.code())),
-        None => Err("ffmpeg produced no exit status".to_string()),
-    }
-}
-
-fn extract_thumbnail(video: &Path, thumb: &Path) {
-    let _ = std::process::Command::new(crate::config::ffmpeg_path())
-        .args([
-            "-y",
-            "-hide_banner",
-            "-nostdin",
-            "-ss",
-            "00:00:00.500",
-            "-i",
-        ])
-        .arg(video)
-        .args(["-vframes", "1", "-q:v", "3"])
-        .arg(thumb)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-}
-
-/// Last 400 chars of ffmpeg's stderr log — enough to name the real failure in one log line.
-fn read_log_tail(log_path: &Path) -> String {
-    let raw = std::fs::read_to_string(log_path).unwrap_or_default();
-    let cleaned = raw.replace('\n', " ").trim().to_string();
-    let chars: Vec<char> = cleaned.chars().collect();
-    if chars.len() <= 400 {
-        cleaned
-    } else {
-        chars[chars.len() - 400..].iter().collect()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_detect_subtitle_format() {
-        assert_eq!(
-            detect_subtitle_format("movie.srt"),
-            Some(SubtitleFormat::Srt)
-        );
-        assert_eq!(
-            detect_subtitle_format("movie.ASS"),
-            Some(SubtitleFormat::Ass)
-        );
-        assert_eq!(
-            detect_subtitle_format("movie.ssa"),
-            Some(SubtitleFormat::Ass)
-        );
-        assert_eq!(
-            detect_subtitle_format("movie.vtt"),
-            Some(SubtitleFormat::Vtt)
-        );
-        assert_eq!(detect_subtitle_format("movie.txt"), None);
-    }
-
-    #[test]
-    fn test_escape_ffmpeg_filter_path_uses_filtergraph_rules() {
-        // Not shell rules: ffmpeg parses the filtergraph itself, so a single backslash is correct.
-        let p = Path::new("/tmp/dir:with_colon/sub'file.ass");
-        assert_eq!(
-            escape_ffmpeg_filter_path(p),
-            "/tmp/dir\\:with_colon/sub\\'file.ass"
-        );
-        assert_eq!(escape_filter_value("a,b=c[d];e"), "a\\,b\\=c\\[d\\]\\;e");
-        assert_eq!(escape_filter_value("back\\slash"), "back\\\\slash");
-    }
-
-    #[test]
-    fn test_upload_part_count_covers_oversized_output() {
-        const CAP: u64 = MAX_UPLOAD_BYTES;
-        // 2402 MB output: halved, both pieces land under the cap.
-        assert_eq!(upload_part_count(2402 * 1024 * 1024, CAP), 2);
-        // Just over the cap still halves rather than failing.
-        assert_eq!(upload_part_count(CAP + 1, CAP), 2);
-        // Far over the cap needs more than two pieces, or a "half" would still be unsendable.
-        assert_eq!(upload_part_count(5000 * 1024 * 1024, CAP), 3);
-        assert_eq!(upload_part_count(20_000 * 1024 * 1024, CAP), 10);
-        // Every piece must fit: bytes/parts is never above the cap.
-        for mb in [2001u64, 2402, 3999, 4001, 9000, 40_000] {
-            let bytes = mb * 1024 * 1024;
-            let parts = upload_part_count(bytes, CAP);
-            assert!(parts >= 2, "{mb} MB must be split");
-            assert!(
-                bytes.div_ceil(parts) <= CAP,
-                "{mb} MB in {parts} parts still exceeds the cap"
-            );
-        }
-        // Never divides by zero.
-        assert_eq!(upload_part_count(1, 0), 2);
-    }
-
-    #[test]
-    fn test_video_encoder_args_matches_source_codec() {
-        // An AV1 source must not come back as x264 — that is what blew the 2000 MB upload cap.
-        assert_eq!(video_encoder_args("av1")[1], "libsvtav1");
-        assert_eq!(video_encoder_args("AV1")[1], "libsvtav1");
-        assert_eq!(video_encoder_args("hevc")[1], "libx265");
-        assert_eq!(video_encoder_args("h265")[1], "libx265");
-        assert_eq!(video_encoder_args("vp9")[1], "libvpx-vp9");
-        // Fallback keeps the widest-compatibility encoder.
-        assert_eq!(video_encoder_args("h264")[1], "libx264");
-        assert_eq!(video_encoder_args("unknown")[1], "libx264");
-        assert_eq!(video_encoder_args("")[1], "libx264");
-        // pix_fmt is only forced on the x264 path.
-        assert!(video_encoder_args("h264").contains(&"yuv420p"));
-        assert!(!video_encoder_args("av1").contains(&"yuv420p"));
-    }
-
-    #[test]
-    fn test_build_filter_arg_escapes_force_style() {
-        let ass = build_filter_arg(SubtitleFormat::Ass, Path::new("/tmp/w/sub.ass"));
-        assert_eq!(ass, "ass=filename=/tmp/w/sub.ass");
-
-        let srt = build_filter_arg(SubtitleFormat::Srt, Path::new("/tmp/w/sub.srt"));
-        assert!(srt.starts_with("subtitles=filename=/tmp/w/sub.srt:force_style="));
-        // Style separators must be escaped or ffmpeg reads them as extra filter options.
-        let style = srt.split("force_style=").nth(1).unwrap();
-        assert!(!style.contains("\\\\,"), "no double-escaping");
-        assert!(srt.contains("\\,Fontsize"));
-        assert!(srt.contains("Fontname\\=Arial"));
-    }
-
-    #[test]
-    fn test_subtitle_ext_is_fixed_and_safe() {
-        // Work-dir names never derive from user input, so traversal cannot happen.
-        assert_eq!(SubtitleFormat::Srt.ext(), "srt");
-        assert_eq!(SubtitleFormat::Ass.ext(), "ass");
-        assert_eq!(SubtitleFormat::Vtt.ext(), "vtt");
-        assert_eq!(sanitize_filename("../../etc/passwd"), "....etcpasswd");
-    }
 }

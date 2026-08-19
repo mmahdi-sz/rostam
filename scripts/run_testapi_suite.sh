@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+export NO_PROXY="127.0.0.1,localhost"
+export no_proxy="127.0.0.1,localhost"
+
 PORT=${TESTAPI_PORT:-14379}
 BASE_URL="http://127.0.0.1:$PORT"
 
@@ -868,6 +871,117 @@ if [ "$(echo "$RES_PKG_UX" | jq -r '.target_buttons | length')" != "2" ]; then e
 if [ "$(echo "$RES_PKG_UX" | jq -r '.detected_text_len < 4096')" != "true" ]; then echo "Fail: pkg ux length: $RES_PKG_UX"; exit 1; fi
 
 echo "✅ Package Converter tests passed!"
+
+echo ""
+echo "=== Running Force Join Tests ==="
+
+echo "Testing /test/fj/gate (master toggle OFF -> allowed)"
+RES_FJ_G1=$(curl -s -X POST "$BASE_URL/test/fj/gate" -H "Content-Type: application/json" -d '{"enabled": false}')
+if [ "$(echo "$RES_FJ_G1" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_FJ_G1" | jq -r '.allowed')" != "true" ]; then
+    echo "Fail: fj gate master toggle off: $RES_FJ_G1"; exit 1;
+fi
+
+echo "Testing /test/fj/gate (master toggle ON with 0 locks -> allowed)"
+RES_FJ_G2=$(curl -s -X POST "$BASE_URL/test/fj/gate" -H "Content-Type: application/json" -d '{"enabled": true, "setup_mandatory_lock": false}')
+if [ "$(echo "$RES_FJ_G2" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_FJ_G2" | jq -r '.allowed')" != "true" ]; then
+    echo "Fail: fj gate master toggle on 0 locks: $RES_FJ_G2"; exit 1;
+fi
+
+echo "Testing /test/fj/gate (mandatory lock not joined -> locked out)"
+RES_FJ_G3=$(curl -s -X POST "$BASE_URL/test/fj/gate" -H "Content-Type: application/json" -d '{"enabled": true, "setup_mandatory_lock": true, "simulated_membership": "left"}')
+if [ "$(echo "$RES_FJ_G3" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_FJ_G3" | jq -r '.allowed')" != "false" ]; then
+    echo "Fail: fj gate mandatory lock not joined: $RES_FJ_G3"; exit 1;
+fi
+if [ "$(echo "$RES_FJ_G3" | jq -r '.check_button_cb')" != "fj:check" ]; then
+    echo "Fail: fj gate missing check_button_cb: $RES_FJ_G3"; exit 1;
+fi
+if [ "$(echo "$RES_FJ_G3" | jq -r '.rendered_locked_text | length > 0')" != "true" ]; then
+    echo "Fail: fj gate missing locked text: $RES_FJ_G3"; exit 1;
+fi
+
+echo "Testing /test/fj/gate (check button click when not joined -> alert toast)"
+RES_FJ_G4=$(curl -s -X POST "$BASE_URL/test/fj/gate" -H "Content-Type: application/json" -d '{"enabled": true, "setup_mandatory_lock": true, "simulated_membership": "left", "is_check_btn": true, "live": true}')
+if [ "$(echo "$RES_FJ_G4" | jq -r '.allowed')" != "false" ] || [ "$(echo "$RES_FJ_G4" | jq -r '.alert_toast | length > 0')" != "true" ]; then
+    echo "Fail: fj gate check btn not joined: $RES_FJ_G4"; exit 1;
+fi
+
+echo "Testing /test/fj/gate (mandatory lock joined -> allowed)"
+RES_FJ_G5=$(curl -s -X POST "$BASE_URL/test/fj/gate" -H "Content-Type: application/json" -d '{"enabled": true, "setup_mandatory_lock": true, "simulated_membership": "member"}')
+if [ "$(echo "$RES_FJ_G5" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_FJ_G5" | jq -r '.allowed')" != "true" ]; then
+    echo "Fail: fj gate mandatory lock joined: $RES_FJ_G5"; exit 1;
+fi
+
+echo "Testing /test/fj/admin/menu"
+RES_FJ_M1=$(curl -s -X POST "$BASE_URL/test/fj/admin/menu" -H "Content-Type: application/json" -d '{"enabled": true}')
+if [ "$(echo "$RES_FJ_M1" | jq -r '.ok')" != "true" ]; then echo "Fail: fj admin menu: $RES_FJ_M1"; exit 1; fi
+if [ "$(echo "$RES_FJ_M1" | jq -r '.status_button_cb')" != "fj:toggle" ]; then echo "Fail: fj admin menu toggle cb: $RES_FJ_M1"; exit 1; fi
+if [ "$(echo "$RES_FJ_M1" | jq -r '.view_button_cb')" != "fj:view" ]; then echo "Fail: fj admin menu view cb: $RES_FJ_M1"; exit 1; fi
+
+echo "Testing /test/fj/admin/locks (empty state)"
+RES_FJ_L1=$(curl -s -X POST "$BASE_URL/test/fj/admin/locks" -H "Content-Type: application/json" -d '{"simulate_empty": true}')
+if [ "$(echo "$RES_FJ_L1" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_FJ_L1" | jq -r '.is_empty')" != "true" ]; then
+    echo "Fail: fj admin locks empty: $RES_FJ_L1"; exit 1;
+fi
+if [ "$(echo "$RES_FJ_L1" | jq -r '.add_new_cb')" != "fj:add" ]; then echo "Fail: fj admin locks add cb: $RES_FJ_L1"; exit 1; fi
+
+echo "Testing /test/fj/admin/locks (populated list)"
+RES_FJ_L2=$(curl -s -X POST "$BASE_URL/test/fj/admin/locks" -H "Content-Type: application/json" -d '{"simulate_empty": false}')
+if [ "$(echo "$RES_FJ_L2" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_FJ_L2" | jq -r '.lock_count')" != "2" ]; then
+    echo "Fail: fj admin locks populated: $RES_FJ_L2"; exit 1;
+fi
+if [ "$(echo "$RES_FJ_L2" | jq -r '.manage_buttons | length')" != "2" ]; then
+    echo "Fail: fj admin locks manage buttons: $RES_FJ_L2"; exit 1;
+fi
+
+echo "Testing /test/fj/admin/manage"
+RES_FJ_MG=$(curl -s -X POST "$BASE_URL/test/fj/admin/manage" -H "Content-Type: application/json" -d '{"link": "https://t.me/test_ch", "mode": "mandatory", "member_cap": 500, "expires_in_days": 30, "already_joined": 20, "joined_via_link": 35}')
+if [ "$(echo "$RES_FJ_MG" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_FJ_MG" | jq -r '.lock_found')" != "true" ]; then
+    echo "Fail: fj admin manage: $RES_FJ_MG"; exit 1;
+fi
+if [ "$(echo "$RES_FJ_MG" | jq -r '.stats.already_joined')" != "20" ] || [ "$(echo "$RES_FJ_MG" | jq -r '.stats.joined_via_link')" != "35" ]; then
+    echo "Fail: fj admin manage stats: $RES_FJ_MG"; exit 1;
+fi
+if [[ ! "$(echo "$RES_FJ_MG" | jq -r '.buttons.mode_cb')" == "fj:mode:"* ]]; then
+    echo "Fail: fj admin manage mode cb: $RES_FJ_MG"; exit 1;
+fi
+
+echo "Testing /test/fj/admin/toggle_mode (NotFound)"
+RES_FJ_T1=$(curl -s -X POST "$BASE_URL/test/fj/admin/toggle_mode" -H "Content-Type: application/json" -d '{"scenario": "not_found"}')
+if [ "$(echo "$RES_FJ_T1" | jq -r '.result')" != "NotFound" ] || [ "$(echo "$RES_FJ_T1" | jq -r '.is_error')" != "true" ]; then
+    echo "Fail: fj toggle_mode not found: $RES_FJ_T1"; exit 1;
+fi
+
+echo "Testing /test/fj/admin/toggle_mode (NoChatId)"
+RES_FJ_T2=$(curl -s -X POST "$BASE_URL/test/fj/admin/toggle_mode" -H "Content-Type: application/json" -d '{"scenario": "no_chat_id"}')
+if [ "$(echo "$RES_FJ_T2" | jq -r '.result')" != "NoChatId" ] || [ "$(echo "$RES_FJ_T2" | jq -r '.is_error')" != "true" ]; then
+    echo "Fail: fj toggle_mode no chat id: $RES_FJ_T2"; exit 1;
+fi
+
+echo "Testing /test/fj/admin/toggle_mode (BotNotAdmin - Fail-Closed at setup time)"
+RES_FJ_T3=$(curl -s -X POST "$BASE_URL/test/fj/admin/toggle_mode" -H "Content-Type: application/json" -d '{"scenario": "bot_not_admin"}')
+if [ "$(echo "$RES_FJ_T3" | jq -r '.result')" != "BotNotAdmin" ] || [ "$(echo "$RES_FJ_T3" | jq -r '.is_error')" != "true" ]; then
+    echo "Fail: fj toggle_mode bot not admin: $RES_FJ_T3"; exit 1;
+fi
+if [ "$(echo "$RES_FJ_T3" | jq -r '.error_message | length > 0')" != "true" ]; then
+    echo "Fail: fj toggle_mode bot not admin error message: $RES_FJ_T3"; exit 1;
+fi
+
+echo "Testing /test/fj/admin/toggle_mode (Ok -> mandatory)"
+RES_FJ_T4=$(curl -s -X POST "$BASE_URL/test/fj/admin/toggle_mode" -H "Content-Type: application/json" -d '{"scenario": "ok"}')
+if [ "$(echo "$RES_FJ_T4" | jq -r '.result')" != "Ok" ] || [ "$(echo "$RES_FJ_T4" | jq -r '.is_error')" != "false" ]; then
+    echo "Fail: fj toggle_mode ok: $RES_FJ_T4"; exit 1;
+fi
+if [ "$(echo "$RES_FJ_T4" | jq -r '.resulting_mode')" != "mandatory" ]; then
+    echo "Fail: fj toggle_mode resulting mode mandatory: $RES_FJ_T4"; exit 1;
+fi
+
+echo "Testing /test/fj/admin/toggle_mode (Ok -> toggle to optional)"
+RES_FJ_T5=$(curl -s -X POST "$BASE_URL/test/fj/admin/toggle_mode" -H "Content-Type: application/json" -d '{"scenario": "toggle_to_optional"}')
+if [ "$(echo "$RES_FJ_T5" | jq -r '.result')" != "Ok" ] || [ "$(echo "$RES_FJ_T5" | jq -r '.resulting_mode')" != "optional" ]; then
+    echo "Fail: fj toggle_mode toggle to optional: $RES_FJ_T5"; exit 1;
+fi
+
+echo "✅ Force Join tests passed!"
 
 echo "✅ Extended TestAPI Endpoint Suite passed!"
 

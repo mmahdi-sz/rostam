@@ -385,9 +385,22 @@ pub async fn handle_upscale_image(
     let quota_kind = upscale_quota_kind(scale_factor);
     let mut reserved = false;
     if let Some(db) = database.as_ref() {
-        let user_rank = rank::effective_rank(db.client(), user_id).await;
+        let (user_rank, reserve_res) = {
+            let client = match db.get().await {
+                Ok(c) => c,
+                Err(e) => {
+                    log_ev!("upscale", trace_id, "quota_checkout", "err" => format!("{e}"), "=>" => "fail");
+                    crate::rank::paywall::quota_db_error(api, chat_id, "upscale", &format!("{e}")).await;
+                    return;
+                }
+            };
+            let user_rank = rank::effective_rank(&client, user_id).await;
+            let limit = user_rank.upscale_weekly_quota(scale_factor);
+            let res = reserve_usage(&client, user_id, quota_kind, 1, 7 * 86400, limit as i64).await;
+            (user_rank, res)
+        };
         let limit = user_rank.upscale_weekly_quota(scale_factor);
-        match reserve_usage(db.client(), user_id, quota_kind, 1, 7 * 86400, limit as i64).await {
+        match reserve_res {
             Ok(Some(used_after)) => {
                 reserved = true;
                 log_ev!("upscale", trace_id, "quota_reserved", "used" => used_after, "limit" => limit);
@@ -426,11 +439,13 @@ pub async fn handle_upscale_image(
             if reserved {
                 if let Some(db) = database.as_ref() {
                     log_ev!("upscale", trace_id, "quota_refund", "why" => $why);
-                    if let Err(e) =
-                        refund_usage(db.client(), user_id, quota_kind, 1, 7 * 86400).await
-                    {
-                        log_ev!("upscale", trace_id, "quota_refund", "err" => format!("{e}"), "=>" => "fail");
-                        crate::stats::record_error_global("upscale", "quota_refund_failed").await;
+                    if let Ok(client) = db.get().await {
+                        if let Err(e) =
+                            refund_usage(&client, user_id, quota_kind, 1, 7 * 86400).await
+                        {
+                            log_ev!("upscale", trace_id, "quota_refund", "err" => format!("{e}"), "=>" => "fail");
+                            crate::stats::record_error_global("upscale", "quota_refund_failed").await;
+                        }
                     }
                 }
             }
@@ -764,7 +779,8 @@ fn run_upscale(
             "-m",
             MODEL_DIR,
         ])
-        .stderr(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
         .spawn()
         .map_err(|e| format!("spawn: {e}"))?;
 

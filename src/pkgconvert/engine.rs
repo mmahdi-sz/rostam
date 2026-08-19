@@ -222,7 +222,7 @@ pub fn spawn_bwrap(
     std::process::Command::new("/usr/bin/bwrap")
         .args(&bwrap_args)
         .current_dir(work_dir)
-        .stdout(Stdio::piped())
+        .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
 }
@@ -254,12 +254,22 @@ pub fn run_convert_sync(
             std::process::Command::new(&cmd)
                 .args(&args)
                 .current_dir(work_dir)
-                .stdout(Stdio::piped())
+                .stdout(Stdio::null())
                 .stderr(Stdio::piped())
                 .spawn()
                 .map_err(|err| ConvertError::SpawnFailed(err.to_string()))?
         }
     };
+
+    // Actively drain stderr in a background thread to prevent pipe deadlock on >64KB output
+    let stderr_thread = child.stderr.take().map(|mut pipe| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            use std::io::Read;
+            let _ = pipe.read_to_end(&mut buf);
+            buf
+        })
+    });
 
     let t0 = Instant::now();
     let status_res = loop {
@@ -269,18 +279,27 @@ pub fn run_convert_sync(
                 if cancel.load(Ordering::Relaxed) {
                     let _ = child.kill();
                     let _ = child.wait();
+                    if let Some(handle) = stderr_thread {
+                        let _ = handle.join();
+                    }
                     log_ev!("pkgconvert", trace_id, "convert_killed", "reason" => "cancelled");
                     return Err(ConvertError::Cancelled);
                 }
                 if t0.elapsed() >= timeout {
                     let _ = child.kill();
                     let _ = child.wait();
+                    if let Some(handle) = stderr_thread {
+                        let _ = handle.join();
+                    }
                     log_ev!("pkgconvert", trace_id, "convert_killed", "reason" => "timeout");
                     return Err(ConvertError::Timeout);
                 }
                 std::thread::sleep(Duration::from_millis(200));
             }
             Err(e) => {
+                if let Some(handle) = stderr_thread {
+                    let _ = handle.join();
+                }
                 return Err(ConvertError::ProcessFailed {
                     exit_code: -1,
                     stderr: e.to_string(),
@@ -290,15 +309,8 @@ pub fn run_convert_sync(
     };
 
     let status = status_res?;
-    let stderr_bytes = child
-        .stderr
-        .take()
-        .map(|mut pipe| {
-            let mut buf = Vec::new();
-            use std::io::Read;
-            let _ = pipe.read_to_end(&mut buf);
-            buf
-        })
+    let stderr_bytes = stderr_thread
+        .and_then(|handle| handle.join().ok())
         .unwrap_or_default();
 
     let stderr = String::from_utf8_lossy(&stderr_bytes).to_string();
@@ -385,5 +397,52 @@ mod tests {
             select_tool(PkgFormat::Pacman, TargetFmt::Deb),
             ConversionTool::Fpm
         );
+    }
+
+    #[test]
+    fn test_large_stderr_drain_no_deadlock() {
+        // Linux default pipe buffer is 64KB (65536 bytes).
+        // Writing 128KB to stderr without active draining causes child to deadlock.
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "head -c 131072 /dev/zero | tr '\\0' 'E' >&2; exit 1"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn sh");
+
+        let stderr_thread = child.stderr.take().map(|mut pipe| {
+            std::thread::spawn(move || {
+                let mut buf = Vec::new();
+                use std::io::Read;
+                let _ = pipe.read_to_end(&mut buf);
+                buf
+            })
+        });
+
+        let t0 = Instant::now();
+        let timeout = Duration::from_secs(5);
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) => {
+                    if t0.elapsed() >= timeout {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        panic!("Child process deadlocked on piped stderr >64KB!");
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(e) => panic!("try_wait failed: {e}"),
+            }
+        };
+
+        let stderr_bytes = stderr_thread
+            .and_then(|handle| handle.join().ok())
+            .unwrap_or_default();
+
+        assert!(!status.success());
+        assert_eq!(stderr_bytes.len(), 131072);
+        assert_eq!(stderr_bytes[0], b'E');
+        assert_eq!(stderr_bytes[131071], b'E');
     }
 }

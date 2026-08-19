@@ -1,6 +1,8 @@
 //! Statistics, database metric logging, user tracking, and error reporting.
 
+mod flusher;
 mod query;
+
 #[allow(unused_imports)]
 pub use query::{
     BroadcastCounts, FeatureStats, Periods, count_recent_errors, fmt_bytes, fmt_secs,
@@ -9,19 +11,20 @@ pub use query::{
     get_user_stats,
 };
 
+use deadpool_postgres::Pool;
+use flusher::{TelemetryFlusher, TelemetryMsg};
 use redis::aio::MultiplexedConnection;
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock, RwLock as StdRwLock};
-use tokio::sync::{OnceCell, RwLock as TokioRwLock};
+use std::sync::{OnceLock, RwLock as StdRwLock};
+use tokio::sync::OnceCell;
 use tokio_postgres::Client;
 
 use crate::config;
 use crate::rank::quota::add_traffic;
 
-// ── global client & URL ──────────────────────────────────────────────────────
-static DB: OnceLock<&'static Client> = OnceLock::new();
-static DB_URL: OnceLock<String> = OnceLock::new();
-static DB_CLIENT: OnceLock<Arc<TokioRwLock<Option<Arc<Client>>>>> = OnceLock::new();
+// ── global pool & flusher ───────────────────────────────────────────────────
+static POOL: OnceLock<Pool> = OnceLock::new();
+static FLUSHER: OnceLock<TelemetryFlusher> = OnceLock::new();
 static LANG_CACHE: OnceLock<StdRwLock<HashMap<i64, String>>> = OnceLock::new();
 static REDIS_CONN: OnceCell<MultiplexedConnection> = OnceCell::const_new();
 
@@ -40,51 +43,14 @@ async fn redis_conn() -> Option<MultiplexedConnection> {
         .cloned()
 }
 
-pub fn init(client: &'static Client) {
-    let _ = DB.set(client);
+pub fn init(pool: Pool) {
+    let flusher = TelemetryFlusher::new(pool.clone());
+    let _ = FLUSHER.set(flusher);
+    let _ = POOL.set(pool);
 }
 
-pub async fn get_db_client() -> Option<Arc<Client>> {
-    let url = DB_URL.get().cloned().or_else(config::database_url)?;
-    let lock = DB_CLIENT.get_or_init(|| Arc::new(TokioRwLock::new(None)));
-
-    {
-        let guard = lock.read().await;
-        if let Some(ref client) = *guard {
-            if !client.is_closed() {
-                return Some(client.clone());
-            }
-        }
-    }
-
-    let mut guard = lock.write().await;
-    if let Some(ref client) = *guard {
-        if !client.is_closed() {
-            return Some(client.clone());
-        }
-    }
-
-    match tokio_postgres::connect(&url, tokio_postgres::NoTls).await {
-        Ok((client, conn)) => {
-            tokio::spawn(async move {
-                if let Err(e) = conn.await {
-                    eprintln!("[postgres event=connection_closed] {e}");
-                }
-            });
-            let client_arc = Arc::new(client);
-            *guard = Some(client_arc.clone());
-            println!("[postgres event=reconnected_successfully]");
-            Some(client_arc)
-        }
-        Err(e) => {
-            eprintln!("[postgres event=reconnect_failed] err={e}");
-            None
-        }
-    }
-}
-
-fn db() -> Option<&'static Client> {
-    DB.get().copied().filter(|c| !c.is_closed())
+pub fn get_pool() -> Option<&'static Pool> {
+    POOL.get()
 }
 
 // ── language ──────────────────────────────────────────────────────────────────
@@ -115,7 +81,8 @@ pub async fn get_user_language(user_id: i64) -> Option<String> {
     }
 
     // 3. PostgreSQL Database
-    let client = get_db_client().await?;
+    let pool = get_pool()?;
+    let client = pool.get().await.ok()?;
     let lang: Option<String> = client
         .query_opt(
             "SELECT language FROM stats_users WHERE user_id = $1",
@@ -154,9 +121,8 @@ pub async fn set_user_language(user_id: i64, lang: &str) {
     }
 
     // 3. PostgreSQL Database
-    let Some(client) = get_db_client().await else {
-        return;
-    };
+    let Some(pool) = get_pool() else { return };
+    let Ok(client) = pool.get().await else { return };
     let r = client
         .execute(
             "INSERT INTO stats_users (user_id, first_seen, last_seen, language)
@@ -174,8 +140,9 @@ pub async fn set_user_language(user_id: i64, lang: &str) {
 
 /// Records user in stats. Returns `true` if first time seen (used to gate referral attribution).
 pub async fn record_user_global(user_id: i64, username: Option<&str>) -> bool {
-    let Some(client) = db() else { return false };
-    record_user(client, user_id, username).await
+    let Some(pool) = get_pool() else { return false };
+    let Ok(client) = pool.get().await else { return false };
+    record_user(&client, user_id, username).await
 }
 
 #[cfg(feature = "testapi")]
@@ -204,16 +171,14 @@ pub async fn record_event_global(feature: &str, action: &str, status: &str, amou
         }
     });
 
-    let Some(client) = db() else { return };
-    let r = client
-        .execute(
-            "INSERT INTO stats_events (user_id, feature, action, status, amount)
-         VALUES ($1, $2, $3, $4, $5)",
-            &[&0i64, &feature, &action, &status, &amount],
-        )
-        .await;
-    if let Err(e) = r {
-        eprintln!("[stats event=record_event_failed] feature={feature} action={action} err={e}");
+    if let Some(flusher) = FLUSHER.get() {
+        flusher.send(TelemetryMsg::Event {
+            user_id: 0,
+            feature: feature.to_string(),
+            action: action.to_string(),
+            status: status.to_string(),
+            amount,
+        });
     }
 }
 
@@ -243,16 +208,14 @@ pub async fn record_event_user(
         }
     });
 
-    let Some(client) = db() else { return };
-    let r = client
-        .execute(
-            "INSERT INTO stats_events (user_id, feature, action, status, amount)
-         VALUES ($1, $2, $3, $4, $5)",
-            &[&user_id, &feature, &action, &status, &amount],
-        )
-        .await;
-    if let Err(e) = r {
-        eprintln!("[stats event=record_event_failed] feature={feature} action={action} err={e}");
+    if let Some(flusher) = FLUSHER.get() {
+        flusher.send(TelemetryMsg::Event {
+            user_id,
+            feature: feature.to_string(),
+            action: action.to_string(),
+            status: status.to_string(),
+            amount,
+        });
     }
 }
 
@@ -264,17 +227,14 @@ pub async fn record_error_global(feature: &str, message: impl std::fmt::Display)
         .with_label_values(&[feature])
         .inc();
 
-    let Some(client) = db() else { return };
     let msg_str = message.to_string();
     let trimmed: String = crate::log::redact(&msg_str).chars().take(500).collect();
-    let r = client
-        .execute(
-            "INSERT INTO stats_errors (feature, message) VALUES ($1, $2)",
-            &[&feature, &trimmed],
-        )
-        .await;
-    if let Err(e) = r {
-        eprintln!("[stats event=record_error_failed] feature={feature} err={e}");
+
+    if let Some(flusher) = FLUSHER.get() {
+        flusher.send(TelemetryMsg::Error {
+            feature: feature.to_string(),
+            message: trimmed,
+        });
     }
 }
 
@@ -301,7 +261,8 @@ pub async fn record_user(client: &Client, user_id: i64, username: Option<&str>) 
 /// Seen before? Gates referral attribution, which runs before `record_user`
 /// and before the language/force-join gates.
 pub async fn user_seen(user_id: i64) -> bool {
-    let Some(client) = db() else { return false };
+    let Some(pool) = get_pool() else { return false };
+    let Ok(client) = pool.get().await else { return false };
     client
         .query_opt("SELECT 1 FROM stats_users WHERE user_id = $1", &[&user_id])
         .await
@@ -310,7 +271,8 @@ pub async fn user_seen(user_id: i64) -> bool {
 }
 
 pub async fn mark_user_blocked_global(user_id: i64) {
-    let Some(client) = db() else { return };
+    let Some(pool) = get_pool() else { return };
+    let Ok(client) = pool.get().await else { return };
     let _ = client
         .execute(
             "UPDATE stats_users SET is_blocked = TRUE, blocked_at = NOW() WHERE user_id = $1",
@@ -320,7 +282,8 @@ pub async fn mark_user_blocked_global(user_id: i64) {
 }
 
 pub async fn record_download_start(user_id: i64, feature: &str) -> Option<i64> {
-    let client = db()?;
+    let pool = get_pool()?;
+    let client = pool.get().await.ok()?;
     let row = client
         .query_opt(
             "INSERT INTO stats_downloads (user_id, feature) VALUES ($1, $2) RETURNING id",
@@ -346,7 +309,8 @@ pub async fn record_download_done(
     bitrate: Option<i64>,
     speed_bps: Option<i64>,
 ) {
-    let Some(client) = db() else { return };
+    let Some(pool) = get_pool() else { return };
+    let Ok(client) = pool.get().await else { return };
     let r = client.execute(
         "UPDATE stats_downloads SET bytes_downloaded = $1, duration = $2, bitrate = $3, download_speed_bps = $5 WHERE id = $4",
         &[&bytes_downloaded, &duration, &bitrate, &job_id, &speed_bps],
@@ -363,7 +327,8 @@ pub async fn record_upload_done(
     speed_bps: Option<i64>,
     file_count: Option<i32>,
 ) {
-    let Some(client) = db() else { return };
+    let Some(pool) = get_pool() else { return };
+    let Ok(client) = pool.get().await else { return };
 
     let r = client
         .execute(
@@ -396,7 +361,7 @@ pub async fn record_upload_done(
         _ => now_epoch,
     };
 
-    if let Err(e) = add_traffic(client, user_id, bytes_uploaded, first_upload_at).await {
+    if let Err(e) = add_traffic(&client, user_id, bytes_uploaded, first_upload_at).await {
         eprintln!("[stats event=add_traffic_failed] user_id={user_id} err={e}");
     }
 }

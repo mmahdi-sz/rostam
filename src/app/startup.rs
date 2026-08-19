@@ -88,10 +88,8 @@ pub async fn init_database(
             if let Err(e) = database.save_snapshot(&cookie_pool.snapshot()).await {
                 eprintln!("failed to save cookie pool snapshot: {e}");
             }
-            // init stats with client
-            let client_ref: &'static tokio_postgres::Client =
-                unsafe { &*(database.client() as *const _) };
-            stats::init(client_ref);
+            // init stats with pool safely
+            stats::init(database.pool().clone());
             crate::rank::prices::load();
             println!("PostgreSQL cookie pool storage is enabled.");
             Some(database)
@@ -103,59 +101,60 @@ pub async fn init_database(
     }
 }
 
-pub async fn init_emoji_cache(database_url: &str) {
+pub async fn init_emoji_cache(database: &PostgresDatabase) {
     let Some(admin_id) = config::admin_user_id() else {
         println!("ADMIN_USER_ID not set; emoji cache disabled.");
         return;
     };
-    let Ok((client, conn)) = tokio_postgres::connect(database_url, tokio_postgres::NoTls).await
-    else {
-        eprintln!("emoji cache: failed initial DB connection");
-        return;
+    let client = match database.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("emoji cache: failed initial DB connection: {e}");
+            return;
+        }
     };
-    tokio::spawn(conn);
 
     let initial = emoji::cache::load_from_db(&client, admin_id).await;
     let cache_arc = Arc::new(RwLock::new(initial));
     let _ = emoji::cache::CACHE.set(cache_arc.clone());
     println!("Emoji cache loaded for admin user {admin_id}.");
 
-    let db_url = database_url.to_string();
+    let db = database.clone();
     tokio::spawn(async move {
-        let Ok((refresh_client, refresh_conn)) =
-            tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await
-        else {
-            eprintln!("emoji cache refresh: failed to connect");
-            return;
-        };
-        tokio::spawn(refresh_conn);
         loop {
             tokio::time::sleep(Duration::from_secs(300)).await;
-            let fresh = emoji::cache::load_from_db(&refresh_client, admin_id).await;
-            *cache_arc.write().await = fresh;
-            println!("Emoji cache refreshed.");
+            match db.get().await {
+                Ok(client) => {
+                    let fresh = emoji::cache::load_from_db(&client, admin_id).await;
+                    *cache_arc.write().await = fresh;
+                    println!("Emoji cache refreshed.");
+                }
+                Err(e) => {
+                    eprintln!("emoji cache refresh: failed to get DB connection: {e}");
+                }
+            }
         }
     });
 }
 
 /// Periodic cleanup of expired gift codes (7-day sliding ttl). Runs hourly.
-pub fn spawn_redeem_sweeper(database_url: &str) {
-    let db_url = database_url.to_string();
+pub fn spawn_redeem_sweeper(database: PostgresDatabase) {
     tokio::spawn(async move {
-        let Ok((client, conn)) = tokio_postgres::connect(&db_url, tokio_postgres::NoTls).await
-        else {
-            eprintln!("[redeem event=sweeper_connect_failed]");
-            crate::stats::record_error_global("redeem_sweeper", "DB connect failed").await;
-            return;
-        };
-        tokio::spawn(conn);
         loop {
-            match crate::redeem::store::sweep_expired(&client).await {
-                Ok(n) if n > 0 => eprintln!("[redeem event=sweep_done removed={n}]"),
-                Ok(_) => {}
+            match database.get().await {
+                Ok(mut client) => {
+                    match crate::redeem::store::sweep_expired(&mut client).await {
+                        Ok(n) if n > 0 => eprintln!("[redeem event=sweep_done removed={n}]"),
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln!("[redeem event=sweep_failed err={e}]");
+                            crate::stats::record_error_global("redeem_sweeper", &e.to_string()).await;
+                        }
+                    }
+                }
                 Err(e) => {
-                    eprintln!("[redeem event=sweep_failed err={e}]");
-                    crate::stats::record_error_global("redeem_sweeper", &e.to_string()).await;
+                    eprintln!("[redeem event=sweeper_checkout_failed err={e}]");
+                    crate::stats::record_error_global("redeem_sweeper", &format!("checkout failed: {e}")).await;
                 }
             }
             tokio::time::sleep(Duration::from_secs(3600)).await;
