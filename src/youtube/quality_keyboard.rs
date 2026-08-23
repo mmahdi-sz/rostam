@@ -53,6 +53,7 @@ pub async fn send_quality_prompt(
     chat_id: i64,
     user_id: Option<i64>,
     cookie_spec: &str,
+    cookie_pool: Option<Arc<tokio::sync::Mutex<crate::cookie_pool::CookiePool>>>,
     info: &VideoInfo,
 ) -> crate::error::Result<()> {
     let options = quality_options(info);
@@ -77,6 +78,7 @@ pub async fn send_quality_prompt(
         user_id,
         webpage_url: info.webpage_url.clone(),
         cookie_spec: cookie_spec.to_string(),
+        cookie_pool,
         title: info.title.clone(),
         channel: info.channel.clone(),
         duration: info.duration,

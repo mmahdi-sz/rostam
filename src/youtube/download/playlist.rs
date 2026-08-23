@@ -134,6 +134,8 @@ pub(crate) async fn run_playlist_download(
     let mut sent = 0usize;
     // (video_num, title, reason) for failed video deliveries
     let mut failures: Vec<(usize, String, String)> = Vec::new();
+    let mut current_cookie_spec = req.cookie_spec.clone();
+    let mut cancel_fut = std::pin::pin!(_cancel.notified());
 
     for (idx, item) in req.playlist_items.iter().enumerate() {
         let video_num = idx + 1;
@@ -160,19 +162,35 @@ pub(crate) async fn run_playlist_download(
         // Build video URL
         let video_url = format!("https://www.youtube.com/watch?v={}", item.id);
 
+        let res = tokio::select! {
+            _ = &mut cancel_fut => {
+                log_trace(trace_id, "playlist_cancelled", "user cancelled playlist download");
+                edit_status(&api, status_chat_id, status_message_id, t("youtube.download.cancelled")).await;
+                let _ = api
+                    .unpin_chat_message(
+                        &UnpinChatMessageParams::builder()
+                            .chat_id(status_chat_id)
+                            .message_id(status_message_id)
+                            .build(),
+                    )
+                    .await;
+                return;
+            }
+            dl_res = download_single_playlist_item_with_retry(
+                &api,
+                &video_url,
+                &req,
+                &selection,
+                &item.title,
+                video_num,
+                total_videos,
+                trace_id,
+                &mut current_cookie_spec,
+            ) => dl_res,
+        };
+
         // Download and send single video to chat
-        match download_single_playlist_item(
-            &api,
-            &video_url,
-            &req,
-            &selection,
-            &item.title,
-            video_num,
-            total_videos,
-            trace_id,
-        )
-        .await
-        {
+        match res {
             Ok(bytes) => {
                 sent += 1;
                 if let Some(job_id) = stats_job_id {
@@ -260,9 +278,7 @@ pub(crate) async fn run_playlist_download(
     }
 }
 
-/// Downloads a playlist video in a separate directory, sends it to user, and cleans up.
-/// `Ok(bytes)` = successful upload; `Err(reason)` = failure reason for user report.
-async fn download_single_playlist_item(
+async fn download_single_playlist_item_with_retry(
     api: &Bot,
     video_url: &str,
     req: &YoutubeRequest,
@@ -271,7 +287,94 @@ async fn download_single_playlist_item(
     video_num: usize,
     total_videos: usize,
     trace_id: u64,
+    current_cookie_spec: &mut String,
 ) -> Result<u64, String> {
+    let mut tried: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let max_attempts = if let Some(cookie_pool) = req.cookie_pool.as_ref() {
+        let mut pool = cookie_pool.lock().await;
+        pool.status().available_cookies.max(1)
+    } else {
+        1
+    };
+
+    for attempt in 0..max_attempts {
+        let cookie_spec = current_cookie_spec.clone();
+        match download_single_playlist_item_attempt(
+            api,
+            video_url,
+            req,
+            selection,
+            item_title,
+            video_num,
+            total_videos,
+            trace_id,
+            &cookie_spec,
+        )
+        .await
+        {
+            Ok(bytes) => return Ok(bytes),
+            Err((classification, raw_err)) => {
+                log_trace(
+                    trace_id,
+                    "playlist_item_cookie_attempt_failed",
+                    &format!(
+                        "num={video_num} attempt={attempt} url={video_url} err={raw_err}"
+                    ),
+                );
+
+                let Some(cookie_pool) = req.cookie_pool.as_ref() else {
+                    return Err(raw_err);
+                };
+
+                match classification {
+                    crate::youtube::YtdlpErrorClassification::RateLimited => {
+                        let mut pool = cookie_pool.lock().await;
+                        pool.mark_last_rate_limited();
+                        crate::stats::record_event_global("cookie", "429", "rate_limit", 0).await;
+                        if let Some(next) = pool.next_cookie() {
+                            if !tried.contains(&next.id) {
+                                tried.insert(next.id.clone());
+                                *current_cookie_spec = next.yt_dlp_browser_spec;
+                                continue;
+                            }
+                        }
+                        return Err(raw_err);
+                    }
+                    crate::youtube::YtdlpErrorClassification::BadCookie(_)
+                    | crate::youtube::YtdlpErrorClassification::AgeRestricted(_) => {
+                        let mut pool = cookie_pool.lock().await;
+                        if let Some(next) = pool.next_cookie() {
+                            if !tried.contains(&next.id) {
+                                tried.insert(next.id.clone());
+                                *current_cookie_spec = next.yt_dlp_browser_spec;
+                                continue;
+                            }
+                        }
+                        return Err(raw_err);
+                    }
+                    _ => {
+                        // Unrecoverable errors (e.g. MembersOnly or network dead)
+                        return Err(raw_err);
+                    }
+                }
+            }
+        }
+    }
+
+    Err(t("youtube.download.playlist.reason_no_format"))
+}
+
+async fn download_single_playlist_item_attempt(
+    api: &Bot,
+    video_url: &str,
+    req: &YoutubeRequest,
+    selection: &Selection,
+    item_title: &str,
+    video_num: usize,
+    total_videos: usize,
+    trace_id: u64,
+    cookie_spec: &str,
+) -> Result<u64, (crate::youtube::YtdlpErrorClassification, String)> {
     let height = selection.height;
     let codec = selection.codec;
 
@@ -286,7 +389,10 @@ async fn download_single_playlist_item(
             "playlist_item_mkdir_failed",
             &format!("url={video_url} err={e}"),
         );
-        return Err(e.to_string());
+        return Err((
+            crate::youtube::YtdlpErrorClassification::Other(e.to_string()),
+            e.to_string(),
+        ));
     }
 
     // Use height/codec format selector instead of fixed format_id to select format per video.
@@ -307,7 +413,7 @@ async fn download_single_playlist_item(
     cmd.arg("--js-runtimes")
         .arg(format!("deno:{}", crate::config::deno_path()))
         .arg("--cookies-from-browser")
-        .arg(&req.cookie_spec)
+        .arg(cookie_spec)
         .arg("--extractor-args")
         .arg("youtubetab:skip=authcheck")
         .arg("--no-warnings")
@@ -348,17 +454,22 @@ async fn download_single_playlist_item(
                 &format!("url={video_url} error={e}"),
             );
             cleanup_dir(&dir, trace_id).await;
-            return Err(e.to_string());
+            return Err((
+                crate::youtube::YtdlpErrorClassification::Other(e.to_string()),
+                e.to_string(),
+            ));
         }
     };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let lower = stderr.to_ascii_lowercase();
-        let reason = if lower.contains("members-only") || lower.contains("join this channel") {
-            t("youtube.download.playlist.reason_members_only")
-        } else {
-            stderr
+        let classification = crate::youtube::classify_ytdlp_stderr(&stderr);
+        let reason = match &classification {
+            crate::youtube::YtdlpErrorClassification::MembersOnly => {
+                t("youtube.download.playlist.reason_members_only")
+            }
+            crate::youtube::YtdlpErrorClassification::AgeRestricted(msg) => msg.clone(),
+            _ => stderr
                 .lines()
                 .rev()
                 .find(|l| !l.trim().is_empty())
@@ -370,7 +481,7 @@ async fn download_single_playlist_item(
                         l.to_string()
                     }
                 })
-                .unwrap_or_else(|| t("youtube.download.playlist.reason_no_format"))
+                .unwrap_or_else(|| t("youtube.download.playlist.reason_no_format")),
         };
         log_trace(
             trace_id,
@@ -378,8 +489,8 @@ async fn download_single_playlist_item(
             &format!("url={video_url} reason={reason}"),
         );
         cleanup_dir(&dir, trace_id).await;
-        return Err(reason);
-    }
+        return Err((classification, reason));
+    };
 
     // Output file: from after_move:filepath line or largest file in directory
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -398,7 +509,11 @@ async fn download_single_playlist_item(
             &format!("url={video_url}"),
         );
         cleanup_dir(&dir, trace_id).await;
-        return Err(t("youtube.download.playlist.reason_no_file"));
+        let err = t("youtube.download.playlist.reason_no_file");
+        return Err((
+            crate::youtube::YtdlpErrorClassification::Other(err.clone()),
+            err,
+        ));
     };
 
     if selection.subtitle_mode == SubtitleMode::Embedded && !selection.subtitle_langs.is_empty() {
@@ -499,7 +614,11 @@ async fn download_single_playlist_item(
                 "playlist_item_upload_failed",
                 &format!("num={video_num} err={e}"),
             );
-            Err(e.to_string())
+            let err_str = e.to_string();
+            Err((
+                crate::youtube::YtdlpErrorClassification::Other(err_str.clone()),
+                err_str,
+            ))
         }
     }
 }

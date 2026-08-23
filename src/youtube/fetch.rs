@@ -10,6 +10,68 @@ use super::types::{
 
 const FETCH_TIMEOUT: Duration = Duration::from_secs(60);
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum YtdlpErrorClassification {
+    RateLimited,
+    BadCookie(String),
+    AgeRestricted(String),
+    MembersOnly,
+    Other(String),
+}
+
+pub fn classify_ytdlp_stderr(stderr: &str) -> YtdlpErrorClassification {
+    let lower = stderr.to_ascii_lowercase();
+
+    if lower.contains("http error 429") || lower.contains("too many requests") {
+        return YtdlpErrorClassification::RateLimited;
+    }
+    if lower.contains("members-only") || lower.contains("join this channel") {
+        return YtdlpErrorClassification::MembersOnly;
+    }
+    if lower.contains("sign in to confirm your age")
+        || lower.contains("inappropriate for some users")
+        || lower.contains("age-restricted")
+    {
+        let msg = stderr
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("Sign in to confirm your age")
+            .trim();
+        return YtdlpErrorClassification::AgeRestricted(msg.to_string());
+    }
+    if lower.contains("no such table: moz_cookies")
+        || lower.contains("database is locked")
+        || lower.contains("could not find cookies")
+        || lower.contains("could not find firefox cookies")
+        || lower.contains("cookies database")
+        || lower.contains("unable to open database file")
+        || lower.contains("no cookies found")
+        || lower.contains("the page needs to be reloaded")
+        || lower.contains("confirm you're not a robot")
+        || lower.contains("confirm you’re not a robot")
+        || lower.contains("sign in to confirm")
+        || lower.contains("sign in to confirm you’re not a bot")
+        || lower.contains("sign in to confirm you're not a bot")
+    {
+        let msg = stderr
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("bad cookie")
+            .trim();
+        return YtdlpErrorClassification::BadCookie(msg.to_string());
+    }
+
+    let msg = stderr
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("unknown error")
+        .trim();
+    YtdlpErrorClassification::Other(msg.to_string())
+}
+
 pub async fn fetch_video_info(
     trace_id: u64,
     url: &str,
@@ -68,49 +130,44 @@ pub async fn fetch_video_info(
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let lower = stderr.to_ascii_lowercase();
-
-    if lower.contains("http error 429") || lower.contains("too many requests") {
-        log_trace(
-            trace_id,
-            "yt_dlp_rate_limited",
-            stderr.lines().last().unwrap_or(""),
-        );
-        return Err(FetchError::RateLimited);
-    }
-    if lower.contains("no such table: moz_cookies")
-        || lower.contains("database is locked")
-        || lower.contains("could not find cookies")
-        || lower.contains("could not find firefox cookies")
-        || lower.contains("cookies database")
-        || lower.contains("unable to open database file")
-        || lower.contains("no cookies found")
-        || lower.contains("the page needs to be reloaded")
-        || lower.contains("confirm you're not a robot")
-        || lower.contains("confirm you’re not a robot")
-        || lower.contains("sign in to confirm")
-    {
-        log_trace(
-            trace_id,
-            "yt_dlp_bad_cookie",
-            stderr.lines().last().unwrap_or(""),
-        );
-        return Err(FetchError::BadCookie(
-            stderr.lines().last().unwrap_or("").to_string(),
-        ));
-    }
-
-    if !output.status.success() {
-        log_trace(
-            trace_id,
-            "yt_dlp_other_error",
-            stderr.lines().last().unwrap_or(""),
-        );
-        return Err(FetchError::Other(format!(
-            "yt-dlp exited with status {}: {}",
-            output.status,
-            stderr.lines().last().unwrap_or("").to_string()
-        )));
+    match classify_ytdlp_stderr(&stderr) {
+        YtdlpErrorClassification::RateLimited => {
+            log_trace(
+                trace_id,
+                "yt_dlp_rate_limited",
+                stderr.lines().last().unwrap_or(""),
+            );
+            return Err(FetchError::RateLimited);
+        }
+        YtdlpErrorClassification::BadCookie(msg) | YtdlpErrorClassification::AgeRestricted(msg) => {
+            log_trace(
+                trace_id,
+                "yt_dlp_bad_cookie",
+                stderr.lines().last().unwrap_or(&msg),
+            );
+            return Err(FetchError::BadCookie(msg));
+        }
+        YtdlpErrorClassification::MembersOnly => {
+            log_trace(
+                trace_id,
+                "yt_dlp_members_only",
+                stderr.lines().last().unwrap_or(""),
+            );
+            return Err(FetchError::Other("members-only".to_string()));
+        }
+        YtdlpErrorClassification::Other(msg) => {
+            if !output.status.success() {
+                log_trace(
+                    trace_id,
+                    "yt_dlp_other_error",
+                    stderr.lines().last().unwrap_or(&msg),
+                );
+                return Err(FetchError::Other(format!(
+                    "yt-dlp exited with status {}: {}",
+                    output.status, msg
+                )));
+            }
+        }
     }
 
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
@@ -562,3 +619,36 @@ fn codec_summary(video_formats: &[VideoFormatOption]) -> String {
         .collect::<Vec<_>>()
         .join(",")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_classify_age_restriction() {
+        let stderr = "ERROR: [youtube] sgHbCZyBrgU: Sign in to confirm your age. This video may be inappropriate for some users.";
+        assert!(matches!(
+            classify_ytdlp_stderr(stderr),
+            YtdlpErrorClassification::AgeRestricted(_)
+        ));
+    }
+
+    #[test]
+    fn test_classify_429() {
+        let stderr = "HTTP Error 429: Too Many Requests";
+        assert_eq!(
+            classify_ytdlp_stderr(stderr),
+            YtdlpErrorClassification::RateLimited
+        );
+    }
+
+    #[test]
+    fn test_classify_bad_cookie() {
+        let stderr = "ERROR: [youtube] The page needs to be reloaded.";
+        assert!(matches!(
+            classify_ytdlp_stderr(stderr),
+            YtdlpErrorClassification::BadCookie(_)
+        ));
+    }
+}
+

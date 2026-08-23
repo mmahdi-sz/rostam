@@ -73,6 +73,7 @@ pub struct YoutubeRequest {
     pub user_id: Option<i64>,
     pub webpage_url: String,
     pub cookie_spec: String,
+    pub cookie_pool: Option<Arc<tokio::sync::Mutex<crate::cookie_pool::CookiePool>>>,
     pub title: String,
     pub channel: String,
     pub duration: Option<u64>,

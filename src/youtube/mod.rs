@@ -14,7 +14,9 @@ pub mod translator;
 mod types;
 
 pub use extract::extract_youtube_urls;
+pub use fetch::{YtdlpErrorClassification, classify_ytdlp_stderr};
 pub use format::escape_markdown_v2;
 pub use handle::handle_youtube_url;
 pub use quality_keyboard::handle_quality_callback;
 // ponytail: log_trace/next_trace_id no longer re-exported — callers use crate::log directly.
+

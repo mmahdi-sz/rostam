@@ -288,6 +288,7 @@ pub async fn handle_youtube_url(
                     chat_id,
                     user_id,
                     &cookie.yt_dlp_browser_spec,
+                    Some(cookie_pool.clone()),
                     &info,
                 )
                 .await

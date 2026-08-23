@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.5.1] - 2026-08-23
+
+### Added
+- **YouTube Playlist Multi-Cookie Rotation & Resilient Retry (`src/youtube/download/playlist.rs`, `src/youtube/fetch.rs`)**:
+  - Implemented automatic per-item cookie rotation and retry loop for YouTube playlist downloads (`download_single_playlist_item_with_retry`).
+  - Added centralized yt-dlp error classifier (`classify_ytdlp_stderr` / `YtdlpErrorClassification`) detecting HTTP 429 (`RateLimited`), Age Restrictions (`AgeRestricted`), Expired/Invalid Sessions (`BadCookie`), and Members-Only videos (`MembersOnly`).
+  - Videos encountering age restrictions or invalid sessions now automatically cycle through non-cooldown Firefox profiles in `CookiePool` instead of failing the playlist.
+  - Successfully validated cookies are preserved across subsequent items to minimize rotation overhead.
+  - Integrated asynchronous job cancellation (`_cancel.notified()`) directly inside the playlist download loop.
+- **Deno JS Runtime System Integration**:
+  - Added global `/usr/local/bin/deno` symlink and execution permissions ensuring `yt-dlp` resolves YouTube signature solving and `n` challenges reliably across all services.
+
 ## [2.5.0] - 2026-08-19
 
 ### Added
