@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.5.3] - 2026-08-29
+
+### Fixed
+- **Direct YouTube URL Extraction in Text/Caption Dispatcher (`src/app/dispatch/text.rs`, `src/app/dispatch/flow.rs`, `src/youtube/extract.rs`)**:
+  - Fixed message dispatcher to extract embedded YouTube links directly from multi-line text and media captions (`extract_youtube_urls`) instead of failing on non-URL text wrapper strings in `detect_social_platform`.
+  - Added fallback to `message.caption` for forwarded posts and media items containing YouTube, Spotify, or SoundCloud URLs.
+  - Added unit test `test_extract_from_multiline_persian_post` verifying accurate extraction of `youtu.be` links from multi-line Persian posts with query parameters.
+
 ## [2.5.2] - 2026-08-29
 
 ### Fixed

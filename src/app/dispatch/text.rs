@@ -28,7 +28,7 @@ pub(super) async fn handle_message(
         ..
     } = state;
     let user_id = message.from.as_ref().map(|u| u.id as i64);
-    let msg_text = message.text.as_deref().unwrap_or("");
+    let msg_text = message.text.as_deref().or(message.caption.as_deref()).unwrap_or("");
     if let Some(u) = message.from.as_ref() {
         let trace_id = crate::log::next_trace_id();
         log_actor!("dispatch", trace_id, u, "msg" => msg_text.chars().take(40).collect::<String>());
@@ -43,7 +43,7 @@ pub(super) async fn handle_message(
 
     // Step 1: addemoji link detection
     if let Some(uid) = user_id {
-        if let Some(text) = message.text.as_deref() {
+        if let Some(text) = message.text.as_deref().or(message.caption.as_deref()) {
             if !text.trim_start().starts_with('/') {
                 if let Some(pack_name) = emoji_handler::extract_addemoji_pack_name(text) {
                     emoji_handler::handle_addemoji_link(
@@ -62,7 +62,7 @@ pub(super) async fn handle_message(
     }
 
     // Step 2: /start always clears flow (+ deep-link payload: redeem<CODE>)
-    if let (Some(uid), Some(text)) = (user_id, message.text.as_deref()) {
+    if let (Some(uid), Some(text)) = (user_id, message.text.as_deref().or(message.caption.as_deref())) {
         if let Some(rest) = text.strip_prefix("/start") {
             flow_manager.clear(uid);
             let payload = rest.trim();
@@ -92,7 +92,7 @@ pub(super) async fn handle_message(
     }
 
     // Step 3: "Cancel operation" reply keyboard when Idle
-    if let (Some(uid), Some(text)) = (user_id, message.text.as_deref()) {
+    if let (Some(uid), Some(text)) = (user_id, message.text.as_deref().or(message.caption.as_deref())) {
         if text.contains(&crate::i18n::t("emoji.cancel_button"))
             && matches!(flow_manager.get(uid), FlowState::Idle)
         {
@@ -109,7 +109,7 @@ pub(super) async fn handle_message(
     }
 
     // Step 5: command dispatch
-    if let Some(text) = message.text.as_deref() {
+    if let Some(text) = message.text.as_deref().or(message.caption.as_deref()) {
         let cmd = text.split('@').next().unwrap_or(text);
         eprintln!("[dispatch event=cmd] user_id={user_id:?} cmd={cmd:?}");
         if cmd == "/ref" || cmd == "/referral" {
@@ -250,47 +250,46 @@ pub(super) async fn handle_message(
                         return Ok(());
                     }
 
+                    let yt_urls = extract_youtube_urls(text);
+                    if let Some(target_url) = yt_urls.into_iter().next() {
+                        let trace_id = next_trace_id();
+                        log_trace(
+                            trace_id,
+                            "route_youtube_url",
+                            &format!(
+                                "user_id={uid} chat_id={} url={target_url}",
+                                message.chat.id
+                            ),
+                        );
+                        let api2 = api.clone();
+                        let chat_id2 = message.chat.id;
+                        let msg_id2 = message.message_id;
+                        let pool2 = cookie_pool.clone();
+                        let db2 = database.clone();
+                        let rl_tx2 = rate_limit_tx.clone();
+                        crate::app::spawn_user_task(async move {
+                            if let Err(e) = handle_youtube_url(
+                                &api2,
+                                chat_id2,
+                                msg_id2,
+                                Some(uid),
+                                trace_id,
+                                &target_url,
+                                pool2,
+                                &db2,
+                                &rl_tx2,
+                            )
+                            .await
+                            {
+                                crate::stats::record_error_global("youtube", e).await;
+                            }
+                        });
+                        return Ok(());
+                    }
+
                     if let Some(platform) = crate::surge_dl::detect_social_platform(text) {
                         if platform == "youtube" {
-                            let urls = extract_youtube_urls(text);
-                            let target_url = if !urls.is_empty() {
-                                urls[0].to_string()
-                            } else {
-                                text.trim().to_string()
-                            };
-                            let trace_id = next_trace_id();
-                            log_trace(
-                                trace_id,
-                                "route_youtube_url",
-                                &format!(
-                                    "user_id={uid} chat_id={} url={target_url}",
-                                    message.chat.id
-                                ),
-                            );
-                            let api2 = api.clone();
-                            let chat_id2 = message.chat.id;
-                            let msg_id2 = message.message_id;
-                            let pool2 = cookie_pool.clone();
-                            let db2 = database.clone();
-                            let rl_tx2 = rate_limit_tx.clone();
-                            crate::app::spawn_user_task(async move {
-                                if let Err(e) = handle_youtube_url(
-                                    &api2,
-                                    chat_id2,
-                                    msg_id2,
-                                    Some(uid),
-                                    trace_id,
-                                    &target_url,
-                                    pool2,
-                                    &db2,
-                                    &rl_tx2,
-                                )
-                                .await
-                                {
-                                    crate::stats::record_error_global("youtube", e).await;
-                                }
-                            });
-                            return Ok(());
+                            // Handled above
                         } else if platform == "spotify" {
                             let api2 = api.clone();
                             let chat_id2 = message.chat.id;

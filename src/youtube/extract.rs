@@ -147,4 +147,12 @@ mod tests {
         assert_eq!(urls.len(), 1);
         assert!(urls[0].starts_with("https://"));
     }
+
+    #[test]
+    fn test_extract_from_multiline_persian_post() {
+        let msg = "احتمالا شما هم روزانه کلی اخبار مربوط به هوش مصنوعی و ایجنت ها می بینین...\nhttps://youtu.be/eicAD-UOn-c?si=cnW_EFA_n4KQRh9v\n#هوش_مصنوعی";
+        let urls = extract_youtube_urls(msg);
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0], "https://youtu.be/eicAD-UOn-c");
+    }
 }

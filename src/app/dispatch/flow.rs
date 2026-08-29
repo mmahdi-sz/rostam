@@ -488,14 +488,8 @@ pub(super) async fn handle_flow_message(
                 return Ok(true);
             }
 
-            let platform = crate::surge_dl::detect_social_platform(txt);
-            if platform == Some("youtube") {
-                let urls = extract_youtube_urls(txt);
-                let target_url = if !urls.is_empty() {
-                    urls[0].to_string()
-                } else {
-                    txt.to_string()
-                };
+            let yt_urls = extract_youtube_urls(txt);
+            if let Some(target_url) = yt_urls.into_iter().next() {
                 let api2 = api.clone();
                 let chat_id2 = message.chat.id;
                 let msg_id2 = message.message_id;
@@ -520,6 +514,11 @@ pub(super) async fn handle_flow_message(
                     }
                 });
                 return Ok(true);
+            }
+
+            let platform = crate::surge_dl::detect_social_platform(txt);
+            if platform == Some("youtube") {
+                // Handled above
             } else if platform == Some("spotify") {
                 let api2 = api.clone();
                 let chat_id2 = message.chat.id;
