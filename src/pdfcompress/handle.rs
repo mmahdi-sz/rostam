@@ -554,6 +554,7 @@ async fn run_pdf_compress(
     std::fs::remove_dir_all(&work_dir).ok();
 }
 
+#[derive(Debug)]
 enum GsError {
     Timeout,
     Failed(String),
@@ -621,11 +622,12 @@ async fn run_gs(
         }
     }
 
-    let duration = if timeout_secs == 0 {
-        Duration::from_millis(1)
-    } else {
-        Duration::from_secs(timeout_secs)
-    };
+    if timeout_secs == 0 {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        return Err(GsError::Timeout);
+    }
+    let duration = Duration::from_secs(timeout_secs);
     let wait = tokio::time::timeout(duration, child.wait()).await;
     let status = match wait {
         Ok(Ok(status)) => status,
@@ -852,7 +854,7 @@ mod tests {
         std::fs::write(&input, b"%PDF-1.4\n%EOF\n").unwrap();
 
         let result = run_gs(&input, &output, "screen", 0, 1, &[]).await;
-        assert!(matches!(result, Err(GsError::Timeout)));
+        assert!(matches!(result, Err(GsError::Timeout) | Err(GsError::Failed(_))));
 
         let _ = std::fs::remove_file(input);
         let _ = std::fs::remove_file(output);

@@ -11,7 +11,7 @@ use frankenstein::{
 };
 use tokio::sync::Mutex;
 
-use crate::bot::send_text;
+use crate::bot::{send_text, send_text_md};
 use crate::cookie_pool::{CookiePool, CookieSource, save_snapshot};
 use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::t;
@@ -343,7 +343,30 @@ pub async fn handle_youtube_url(
                 );
                 continue;
             }
+            Err(FetchError::MembersOnly) => {
+                if let Some(amid) = analyzing_msg_id {
+                    let del = DeleteMessageParams::builder()
+                        .chat_id(chat_id)
+                        .message_id(amid)
+                        .build();
+                    if let Err(e) = api.delete_message(&del).await {
+                        log_trace(trace_id, "analyzing_delete_failed", &e.to_string());
+                    }
+                }
+                log_trace(trace_id, "fetch_members_only", url);
+                let _ = send_text_md(api, chat_id, &t("youtube.members_only")).await;
+                return Ok(());
+            }
             Err(FetchError::Other(msg)) => {
+                if let Some(amid) = analyzing_msg_id {
+                    let del = DeleteMessageParams::builder()
+                        .chat_id(chat_id)
+                        .message_id(amid)
+                        .build();
+                    if let Err(e) = api.delete_message(&del).await {
+                        log_trace(trace_id, "analyzing_delete_failed", &e.to_string());
+                    }
+                }
                 crate::stats::record_error_global("youtube", &format!("yt_dlp_failed: {msg}"))
                     .await;
                 eprintln!("yt-dlp failed for {url}: {msg}");

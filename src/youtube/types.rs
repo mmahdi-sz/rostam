@@ -87,5 +87,6 @@ pub struct VideoFormatOption {
 pub enum FetchError {
     RateLimited,
     BadCookie(String),
+    MembersOnly,
     Other(String),
 }

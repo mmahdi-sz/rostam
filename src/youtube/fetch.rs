@@ -25,7 +25,12 @@ pub fn classify_ytdlp_stderr(stderr: &str) -> YtdlpErrorClassification {
     if lower.contains("http error 429") || lower.contains("too many requests") {
         return YtdlpErrorClassification::RateLimited;
     }
-    if lower.contains("members-only") || lower.contains("join this channel") {
+    if lower.contains("members-only")
+        || lower.contains("join this channel")
+        || lower.contains("subscriber_only")
+        || lower.contains("only available to members")
+        || lower.contains("this video is available to this channel's members")
+    {
         return YtdlpErrorClassification::MembersOnly;
     }
     if lower.contains("sign in to confirm your age")
@@ -153,7 +158,7 @@ pub async fn fetch_video_info(
                 "yt_dlp_members_only",
                 stderr.lines().last().unwrap_or(""),
             );
-            return Err(FetchError::Other("members-only".to_string()));
+            return Err(FetchError::MembersOnly);
         }
         YtdlpErrorClassification::Other(msg) => {
             if !output.status.success() {
@@ -172,6 +177,19 @@ pub async fn fetch_video_info(
 
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| FetchError::Other(format!("failed to parse yt-dlp json: {e}")))?;
+
+    let availability = json
+        .get("availability")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if availability == "subscriber_only" || availability == "premium_only" {
+        log_trace(
+            trace_id,
+            "yt_dlp_members_only",
+            &format!("availability={availability}"),
+        );
+        return Err(FetchError::MembersOnly);
+    }
 
     // Detect whether playlist or single video.
     let is_playlist = json
@@ -228,16 +246,26 @@ pub async fn fetch_video_info(
         .map(|s| s.to_string())
         .filter(|s| !s.trim().is_empty());
     let mut video_formats = extract_video_formats(&json);
-    if video_formats.is_empty() && !is_playlist && !yt_dlp_browser_spec.is_empty() {
-        log_trace(
-            trace_id,
-            "yt_dlp_zero_formats_with_cookie",
-            &format!("cookie_spec={yt_dlp_browser_spec}"),
-        );
-        return Err(FetchError::BadCookie(format!(
-            "0 formats extracted with cookie {}",
-            yt_dlp_browser_spec
-        )));
+    if video_formats.is_empty() && !is_playlist {
+        if availability == "subscriber_only" || availability == "premium_only" {
+            log_trace(
+                trace_id,
+                "yt_dlp_members_only",
+                &format!("availability={availability}"),
+            );
+            return Err(FetchError::MembersOnly);
+        }
+        if !yt_dlp_browser_spec.is_empty() {
+            log_trace(
+                trace_id,
+                "yt_dlp_zero_formats_with_cookie",
+                &format!("cookie_spec={yt_dlp_browser_spec}"),
+            );
+            return Err(FetchError::BadCookie(format!(
+                "0 formats extracted with cookie {}",
+                yt_dlp_browser_spec
+            )));
+        }
     }
     let mut available_heights = available_heights(&video_formats);
 
@@ -649,6 +677,21 @@ mod tests {
             classify_ytdlp_stderr(stderr),
             YtdlpErrorClassification::BadCookie(_)
         ));
+    }
+
+    #[test]
+    fn test_classify_members_only() {
+        let stderr1 = "ERROR: [youtube] exFKSLjcE1c: Join this channel to get access to members-only content like this video, and other exclusive perks.";
+        assert_eq!(
+            classify_ytdlp_stderr(stderr1),
+            YtdlpErrorClassification::MembersOnly
+        );
+
+        let stderr2 = "ERROR: [youtube] xyz: This video is only available to members of this channel.";
+        assert_eq!(
+            classify_ytdlp_stderr(stderr2),
+            YtdlpErrorClassification::MembersOnly
+        );
     }
 }
 

@@ -113,7 +113,7 @@ fn discover_from_profiles_ini(root: &Path) -> Vec<CookieSource> {
     let mut path = String::new();
     let mut is_relative = true;
 
-    for line in contents.lines().map(str::trim).chain([""]) {
+    for line in contents.lines().map(str::trim) {
         if line.starts_with('[') {
             push_profile(root, &mut profiles, &name, &path, is_relative);
             name.clear();
@@ -131,6 +131,7 @@ fn discover_from_profiles_ini(root: &Path) -> Vec<CookieSource> {
             _ => {}
         }
     }
+    push_profile(root, &mut profiles, &name, &path, is_relative);
 
     profiles
 }

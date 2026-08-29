@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.5.2] - 2026-08-29
+
+### Fixed
+- **YouTube Members-Only Video Detection & False Alarm Prevention (`src/youtube/fetch.rs`, `src/youtube/handle.rs`, `config/i18n.json`)**:
+  - Implemented early detection for subscriber-only and members-only YouTube videos via `"availability": "subscriber_only"` / `"premium_only"` in yt-dlp JSON extraction.
+  - Added specialized `FetchError::MembersOnly` error variant and updated `classify_ytdlp_stderr` to detect member-restricted error patterns across yt-dlp versions.
+  - Prevented member-restricted videos from exhausting the entire Firefox cookie pool and falsely triggering global admin outage alerts (`cookie_retry_exhausted`).
+  - Added localized `youtube.members_only` user notice across all 4 supported languages (`fa`, `en`, `it`, `ru`).
+  - Added unit test coverage (`test_classify_members_only`) for members-only error parsing.
+
 ## [2.5.1] - 2026-08-23
 
 ### Added
