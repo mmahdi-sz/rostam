@@ -552,6 +552,12 @@ async fn download_single_playlist_item_attempt(
     } else {
         path
     };
+    let duration_secs = crate::common::ffmpeg::probe_duration(std::path::Path::new(&path))
+        .await
+        .ok();
+    let duration_str = duration_secs
+        .map(crate::youtube::format::format_duration)
+        .unwrap_or_else(|| "-".to_string());
     let bot_username = crate::config::bot_username().to_string();
     let width = total_videos.to_string().len();
     let caption = tf(
@@ -563,6 +569,7 @@ async fn download_single_playlist_item_attempt(
             ("quality", &quality_label),
             ("codec", &codec_name),
             ("bitrate", &bitrate_str),
+            ("duration", &duration_str),
             ("sub_tag", sub_tag),
             ("username", &bot_username),
             ("url", video_url),
@@ -577,7 +584,7 @@ async fn download_single_playlist_item_attempt(
             caption,
             caption_entities,
             height,
-            None,
+            duration_secs,
         );
         let progress = crate::bot::transfer::TransferProgress::new(0);
         crate::bot::transfer::send_params_metered::<

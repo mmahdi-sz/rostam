@@ -501,6 +501,10 @@ pub(crate) async fn run_download(
             )
             .await;
 
+            let duration_str = req
+                .duration
+                .map(crate::youtube::format::format_duration)
+                .unwrap_or_else(|| "-".to_string());
             let bot_username = crate::config::bot_username().to_string();
             let caption = tf(
                 "youtube.download.caption_part",
@@ -509,6 +513,7 @@ pub(crate) async fn run_download(
                     ("quality", &quality_label),
                     ("codec", &codec_name),
                     ("bitrate", &bitrate_str),
+                    ("duration", &duration_str),
                     ("sub_tag", sub_tag),
                     ("part", &part_num.to_string()),
                     ("total", &total.to_string()),
@@ -611,6 +616,10 @@ pub(crate) async fn run_download(
             t("youtube.download.uploading"),
         )
         .await;
+        let duration_str = req
+            .duration
+            .map(crate::youtube::format::format_duration)
+            .unwrap_or_else(|| "-".to_string());
         let bot_username = crate::config::bot_username().to_string();
         let caption = tf(
             "youtube.download.caption",
@@ -619,6 +628,7 @@ pub(crate) async fn run_download(
                 ("quality", &quality_label),
                 ("codec", &codec_name),
                 ("bitrate", &bitrate_str),
+                ("duration", &duration_str),
                 ("sub_tag", sub_tag),
                 ("username", &bot_username),
                 ("url", &req.webpage_url),

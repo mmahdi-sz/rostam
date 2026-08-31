@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.5.7] - 2026-08-31
+
+### Added
+- **Video Duration Added to YouTube Download Captions (`src/youtube/download/single.rs`, `src/youtube/download/playlist.rs`, `config/i18n.json`)**:
+  - Added video duration display (`{duration}`) to YouTube single video, multi-part, and playlist video download captions (e.g. `📺 HD | 720p | H.264 / AVC | 173 kbps | 12:34`).
+  - Integrated `probe_duration` for accurate playlist item duration probing and video container parameter metadata.
+  - Updated all 4 supported language templates (`fa`, `en`, `it`, `ru`) in `config/i18n.json`.
+
 ## [2.5.6] - 2026-08-31
 
 ### Added

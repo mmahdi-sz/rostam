@@ -631,8 +631,8 @@
                 "failed": "❌ دانلود ناموفق بود: {error}",
                 "upload_failed": "❌ ارسال فایل ناموفق بود: {error}",
                 "request_expired": "این درخواست منقضی شده. لطفاً لینک را دوباره بفرستید.",
-                "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps{sub_tag}\n🔗 LINK: {url}\n🤖 @{username}",
-                "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps{sub_tag}\n📦 قسمت {part} از {total}\n🔗 LINK: {url}\n🤖 @{username}",
+                "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps | {duration}{sub_tag}\n🔗 LINK: {url}\n🤖 @{username}",
+                "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps | {duration}{sub_tag}\n📦 قسمت {part} از {total}\n🔗 LINK: {url}\n🤖 @{username}",
                 "cancel_button": "لغو دانلود",
                 "cancelled": "❌ دانلود لغو شد.",
                 "non_h264_notice": "💡 این ویدیو با کدک {codec} جهت دسترسی به کمترین حجم به صورت فایل ارسال شد. برای پخش آن می‌توانید از پلیرهایی مثل VLC یا MX Player استفاده کنید.\n\nجهت دانلود VLC ترجیحاً با VPN روشن روی دکمه‌های زیر بزنید👇",
@@ -652,7 +652,7 @@
                     "part_line": "part {sent}/{total}",
                     "reason_no_format": "کیفیت انتخاب‌شده برای این ویدیو موجود نیست",
                     "reason_no_file": "فایلی تولید نشد",
-                    "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps{sub_tag}\n🔗 LINK: {url}\n🤖 @{username}",
+                    "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps | {duration}{sub_tag}\n🔗 LINK: {url}\n🤖 @{username}",
                     "reason_members_only": "ویدیوی ویژه‌ی اعضای کانال — قابل دانلود نیست"
                 }
             },
@@ -2023,8 +2023,8 @@
                 "failed": "❌ Download failed: {error}",
                 "upload_failed": "❌ Failed to send file: {error}",
                 "request_expired": "This request has expired. Please send the link again.",
-                "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n🔗 LINK: {url}\n🤖 @{username}",
-                "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 Part {part} of {total}\n🔗 LINK: {url}\n🤖 @{username}",
+                "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps | {duration}{sub_tag}\n🔗 LINK: {url}\n🤖 @{username}",
+                "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps | {duration}{sub_tag}\n📦 Part {part} of {total}\n🔗 LINK: {url}\n🤖 @{username}",
                 "cancel_button": "Cancel Download",
                 "cancelled": "❌ Download cancelled.",
                 "non_h264_notice": "💡 Sent as a file with {codec} codec for maximum compression and smallest size. To play it, use players like VLC or MX Player.\n\nTo download VLC, preferably turn on VPN and click the buttons below👇",
@@ -2044,7 +2044,7 @@
                     "part_line": "part {sent}/{total}",
                     "reason_no_format": "Selected quality is not available for this video",
                     "reason_no_file": "No file was produced",
-                    "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps\n🔗 LINK: {url}\n🤖 @{username}",
+                    "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps | {duration}{sub_tag}\n🔗 LINK: {url}\n🤖 @{username}",
                     "reason_members_only": "Members-only video — cannot be downloaded"
                 }
             },
@@ -3441,8 +3441,8 @@
                 "failed": "❌ Download fallito: {error}",
                 "upload_failed": "❌ Invio file fallito: {error}",
                 "request_expired": "Questa richiesta è scaduta. Invia di nuovo il link.",
-                "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n🔗 LINK: {url}\n🤖 @{username}",
-                "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 Parte {part} di {total}\n🔗 LINK: {url}\n🤖 @{username}",
+                "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps | {duration}{sub_tag}\n🔗 LINK: {url}\n🤖 @{username}",
+                "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps | {duration}{sub_tag}\n📦 Parte {part} di {total}\n🔗 LINK: {url}\n🤖 @{username}",
                 "cancel_button": "Annulla Download",
                 "cancelled": "❌ Download annullato.",
                 "non_h264_notice": "💡 Inviato come file con codec {codec} per la massima compressione. Usa VLC o MX Player per riprodurlo.\n\nPer scaricare VLC, usa preferibilmente una VPN e clicca sui pulsanti sottostanti👇",
@@ -3462,7 +3462,7 @@
                     "part_line": "part {sent}/{total}",
                     "reason_no_format": "La qualità selezionata non è disponibile per questo video",
                     "reason_no_file": "Nessun file prodotto",
-                    "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps\n🔗 LINK: {url}\n🤖 @{username}",
+                    "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps | {duration}{sub_tag}\n🔗 LINK: {url}\n🤖 @{username}",
                     "reason_members_only": "Video riservato ai membri — impossibile scaricare"
                 }
             },
@@ -4833,8 +4833,8 @@
                 "failed": "❌ Download failed: {error}",
                 "upload_failed": "❌ Failed to send file: {error}",
                 "request_expired": "This request has expired. Please send the link again.",
-                "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n🔗 LINK: {url}\n🤖 @{username}",
-                "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps\n📦 Part {part} of {total}\n🔗 LINK: {url}\n🤖 @{username}",
+                "caption": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps | {duration}{sub_tag}\n🔗 LINK: {url}\n🤖 @{username}",
+                "caption_part": "🎬 {title}\n📺 {quality} | {codec} | {bitrate} kbps | {duration}{sub_tag}\n📦 Part {part} of {total}\n🔗 LINK: {url}\n🤖 @{username}",
                 "cancel_button": "Cancel Download",
                 "cancelled": "❌ Download cancelled.",
                 "non_h264_notice": "💡 Sent as a file with {codec} codec for maximum compression and smallest size. To play it, use players like VLC or MX Player.\n\nTo download VLC, preferably turn on VPN and click the buttons below👇",
@@ -4854,7 +4854,7 @@
                     "part_line": "part {sent}/{total}",
                     "reason_no_format": "Selected quality is not available for this video",
                     "reason_no_file": "No file was produced",
-                    "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps\n🔗 LINK: {url}\n🤖 @{username}",
+                    "caption": "🎬 {title}\npart {part}/{total}\n📺 {quality} | {codec} | {bitrate} kbps | {duration}{sub_tag}\n🔗 LINK: {url}\n🤖 @{username}",
                     "reason_members_only": "Members-only video — cannot be downloaded"
                 }
             },
