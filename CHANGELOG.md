@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.5.6] - 2026-08-31
+
+### Added
+- **Dedicated YouTube Playlist Caption & Clean Preview Layout (`src/youtube/format.rs`, `src/youtube/handle.rs`, `config/i18n.json`)**:
+  - Implemented specialized playlist preview card layout displaying playlist icon (`🗂`), title, channel name, video count (`🔢`), view count, and direct link.
+  - Eliminated empty missing fields (`-` for duration, likes, date) for playlist URLs.
+  - Added `playlist_label` and `video_count_label` across all 4 supported languages (`fa`, `en`, `it`, `ru`).
+  - Streamlined playlist UX by skipping redundant individual description text chunk messages.
+  - Added unit test coverage `test_build_caption_playlist` verifying playlist caption structure.
+
 ## [2.5.5] - 2026-08-31
 
 ### Fixed

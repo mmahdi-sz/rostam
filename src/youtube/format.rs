@@ -85,6 +85,35 @@ pub fn build_caption(info: &VideoInfo) -> String {
     let missing = escape_markdown_v2(&t("youtube.caption.missing"));
     let title = escape_markdown_v2(&info.title);
     let channel = escape_markdown_v2(&info.channel);
+    let url = info.webpage_url.replace(')', "%29").replace('\\', "");
+    let link_text = escape_markdown_v2(&t("youtube.caption.link_text"));
+    let channel_label = escape_markdown_v2(&t("youtube.caption.channel_label"));
+
+    if info.is_playlist {
+        let count = info.playlist_item_count.unwrap_or(info.playlist_items.len());
+        let count_str = escape_markdown_v2(&format_count(count as u64));
+        let count_label = escape_markdown_v2(&t("youtube.caption.video_count_label"));
+        let views = info
+            .view_count
+            .map(format_count)
+            .map(|s| escape_markdown_v2(&s));
+
+        let views_line = if let Some(v) = views {
+            let views_label = escape_markdown_v2(&t("youtube.caption.views_label"));
+            format!("\n👁 *{views_label}* {v}")
+        } else {
+            String::new()
+        };
+
+        let raw = format!(
+            "🗂 *{title}*\n\n\
+             👤 *{channel_label}* {channel}\n\
+             🔢 *{count_label}* {count_str}{views_line}\n\n\
+             🔗 [{link_text}]({url})"
+        );
+        return apply_premium_to_md(&raw);
+    }
+
     let duration = info
         .duration
         .map(format_duration)
@@ -106,14 +135,11 @@ pub fn build_caption(info: &VideoInfo) -> String {
         .map(format_upload_date)
         .map(|s| escape_markdown_v2(&s))
         .unwrap_or_else(|| missing.clone());
-    let url = info.webpage_url.replace(')', "%29").replace('\\', "");
 
-    let channel_label = escape_markdown_v2(&t("youtube.caption.channel_label"));
     let duration_label = escape_markdown_v2(&t("youtube.caption.duration_label"));
     let views_label = escape_markdown_v2(&t("youtube.caption.views_label"));
     let likes_label = escape_markdown_v2(&t("youtube.caption.likes_label"));
     let date_label = escape_markdown_v2(&t("youtube.caption.date_label"));
-    let link_text = escape_markdown_v2(&t("youtube.caption.link_text"));
 
     let raw = format!(
         "🎬 *{title}*\n\n\
@@ -205,5 +231,32 @@ mod tests {
         let chunks = build_description_blockquotes(desc);
         assert_eq!(chunks.len(), 1);
         assert!(chunks[0].contains("Line 1"));
+    }
+
+    #[test]
+    fn test_build_caption_playlist() {
+        let info = VideoInfo {
+            title: "English Playlist".to_string(),
+            channel: "Teacher John".to_string(),
+            duration: None,
+            view_count: Some(15000),
+            like_count: None,
+            upload_date: None,
+            thumbnail: None,
+            webpage_url: "https://www.youtube.com/playlist?list=PL123".to_string(),
+            description: None,
+            available_heights: vec![],
+            video_formats: vec![],
+            audio_languages: vec![],
+            subtitle_languages: vec![],
+            is_playlist: true,
+            playlist_item_count: Some(25),
+            playlist_items: vec![],
+        };
+        let caption = build_caption(&info);
+        assert!(caption.contains("🗂"));
+        assert!(caption.contains("Teacher John"));
+        assert!(caption.contains("25"));
+        assert!(caption.contains("15,000"));
     }
 }

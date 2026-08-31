@@ -613,6 +613,8 @@
                 "likes_label": "لایک:",
                 "date_label": "تاریخ:",
                 "link_text": "لینک",
+                "playlist_label": "پلی‌لیست:",
+                "video_count_label": "تعداد ویدیوها:",
                 "missing": "-"
             },
             "download": {
@@ -2003,6 +2005,8 @@
                 "likes_label": "Likes:",
                 "date_label": "Date:",
                 "link_text": "Link",
+                "playlist_label": "Playlist:",
+                "video_count_label": "Videos Count:",
                 "missing": "-"
             },
             "download": {
@@ -3419,6 +3423,8 @@
                 "likes_label": "Mi piace:",
                 "date_label": "Data:",
                 "link_text": "Link",
+                "playlist_label": "Playlist:",
+                "video_count_label": "Numero di video:",
                 "missing": "-"
             },
             "download": {
@@ -4803,12 +4809,14 @@
                 }
             },
             "caption": {
-                "channel_label": "Channel:",
-                "duration_label": "Duration:",
-                "views_label": "Views:",
-                "likes_label": "Likes:",
-                "date_label": "Date:",
-                "link_text": "Link",
+                "channel_label": "Канал:",
+                "duration_label": "Длительность:",
+                "views_label": "Просмотры:",
+                "likes_label": "Лайки:",
+                "date_label": "Дата:",
+                "link_text": "Ссылка",
+                "playlist_label": "Плейлист:",
+                "video_count_label": "Количество видео:",
                 "missing": "-"
             },
             "download": {
