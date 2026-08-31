@@ -86,11 +86,14 @@ pub async fn download_telegram_file_metered(
     if file_path.starts_with('/') {
         let allowed_prefix = std::env::var("TELEGRAM_LOCAL_STORAGE_DIR")
             .unwrap_or_else(|_| "/var/lib/telegram-bot-api".to_string());
+        let allowed_canonical = std::path::Path::new(&allowed_prefix)
+            .canonicalize()
+            .unwrap_or_else(|_| std::path::PathBuf::from(&allowed_prefix));
         let canonical = std::path::Path::new(&file_path).canonicalize().ok();
-        let is_safe = canonical
-            .as_ref()
-            .map_or(false, |p| p.starts_with(&allowed_prefix))
-            || file_path.starts_with(&allowed_prefix);
+        let is_safe = canonical.as_ref().map_or(false, |p| {
+            p.starts_with(&allowed_prefix) || p.starts_with(&allowed_canonical)
+        }) || file_path.starts_with(&allowed_prefix)
+            || file_path.starts_with(allowed_canonical.to_str().unwrap_or(""));
         if !is_safe {
             return Err("file path outside allowed local directory".into());
         }

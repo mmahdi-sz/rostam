@@ -87,12 +87,17 @@ pub async fn fetch_video_info(
         "fetch_start",
         &format!("url={url} cookie_spec={yt_dlp_browser_spec}"),
     );
-    let child = Command::new("yt-dlp")
-        .arg("--js-runtimes")
+    let is_playlist_url = url.contains("list=") || url.contains("/playlist");
+    let mut cmd = Command::new("yt-dlp");
+    cmd.arg("--js-runtimes")
         .arg(format!("deno:{}", crate::config::deno_path()))
         .arg("--cookies-from-browser")
         .arg(yt_dlp_browser_spec)
-        .arg("--dump-single-json")
+        .arg("--dump-single-json");
+    if is_playlist_url {
+        cmd.arg("--flat-playlist");
+    }
+    let child = cmd
         .arg("--no-download")
         .arg("--no-warnings")
         .arg(url)

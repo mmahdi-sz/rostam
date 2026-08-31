@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.5.5] - 2026-08-31
+
+### Fixed
+- **Playlist Fast Flat-Extraction & Symlink Local Storage Path Resolution (`src/youtube/fetch.rs`, `src/bot/files.rs`)**:
+  - Added smart conditional `--flat-playlist` in `fetch_video_info` for playlist URLs (`list=` / `/playlist`), preventing yt-dlp 60-second timeouts on large playlists while maintaining full quality format extraction for single videos.
+  - Resolved `file path outside allowed local directory` errors on user media uploads by canonicalizing both `allowed_prefix` and `file_path` across symlinked storage paths (`/mnt/data` -> `/data`).
+
 ## [2.5.4] - 2026-08-31
 
 ### Fixed
