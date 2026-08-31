@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.5.4] - 2026-08-31
+
+### Fixed
+- **YouTube Single Video Full Format Extraction & Deno JS Challenge Solver (`src/youtube/fetch.rs`, systemd/env)**:
+  - Removed erroneous `--flat-playlist`, `--ignore-no-formats-error`, and `youtubetab:skip=authcheck` flags from `fetch_video_info`, ensuring yt-dlp extracts complete playable video stream formats instead of only storyboard preview images.
+  - Resolved Deno JS runtime challenge solving across production and dev services, preventing false-positive cookie rotation cycling and spurious cookie exhaustion alerts (`cookie_retry_exhausted`).
+
 ## [2.5.3] - 2026-08-29
 
 ### Fixed
