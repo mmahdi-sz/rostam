@@ -39,7 +39,14 @@ jobs:
       - name: Build
         run: cargo build --verbose
       - name: Unit tests
-        run: cargo test --verbose
+        run: |
+          cargo test --verbose 2>&1 | tee /tmp/test.log || {
+            grep -E "(FAILED|panicked at)" /tmp/test.log | head -n 30 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            tail -n 100 /tmp/test.log
+            exit 1
+          }
 
   security:
     name: Security Audit
