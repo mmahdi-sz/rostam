@@ -717,10 +717,20 @@ fn run_upscale(
             "-m",
             MODEL_DIR,
         ])
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
         .spawn()
         .map_err(|e| format!("spawn: {e}"))?;
+
+    let stderr_reader = child.stderr.take().map(|mut r| {
+        std::thread::spawn(move || {
+            use std::io::Read;
+            let mut buf = Vec::new();
+            let _ = std::io::copy(&mut (&mut r).take(4096), &mut buf);
+            let _ = std::io::copy(&mut r, &mut std::io::sink());
+            String::from_utf8_lossy(&buf).to_string()
+        })
+    });
 
     if !cores.is_empty() {
         pin_pid_to_cores(Some(child.id()), cores, trace_id);
@@ -730,6 +740,9 @@ fn run_upscale(
         if cancel.load(Ordering::Relaxed) {
             child.kill().ok();
             child.wait().ok();
+            if let Some(h) = stderr_reader {
+                let _ = h.join();
+            }
             log_ev!("upscale", trace_id, "realesrgan_killed");
             return Err("cancelled".into());
         }
@@ -737,8 +750,19 @@ fn run_upscale(
             Ok(Some(status)) => {
                 let elapsed = start.elapsed().as_secs_f64();
                 log_ev!("upscale", trace_id, "realesrgan_exit", "status" => status, "elapsed" => format!("{elapsed:.1}s"));
+                let stderr_output = stderr_reader.and_then(|h| h.join().ok()).unwrap_or_default();
                 if !status.success() {
-                    return Err(format!("exit {status}"));
+                    let err_summary = stderr_output
+                        .lines()
+                        .rev()
+                        .find(|l| !l.trim().is_empty())
+                        .unwrap_or("")
+                        .trim();
+                    if err_summary.is_empty() {
+                        return Err(format!("exit {status}"));
+                    } else {
+                        return Err(format!("exit {status}: {err_summary}"));
+                    }
                 }
                 if !std::path::Path::new(output).exists() {
                     return Err("no output".into());

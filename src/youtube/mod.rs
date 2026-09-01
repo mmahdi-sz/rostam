@@ -14,6 +14,8 @@ pub mod translator;
 mod types;
 
 pub use extract::extract_youtube_urls;
+#[allow(unused_imports)]
+pub use extract::is_youtube_channel_url;
 pub use fetch::{YtdlpErrorClassification, classify_ytdlp_stderr};
 pub use format::escape_markdown_v2;
 pub use handle::handle_youtube_url;

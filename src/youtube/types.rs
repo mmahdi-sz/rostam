@@ -88,5 +88,6 @@ pub enum FetchError {
     RateLimited,
     BadCookie(String),
     MembersOnly,
+    Unavailable(String),
     Other(String),
 }

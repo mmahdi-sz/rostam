@@ -107,6 +107,48 @@ fn clean_youtube_url(url: &str) -> String {
     }
 }
 
+/// Returns true if the URL points to a YouTube channel or channel tab rather than a specific video or playlist.
+pub fn is_youtube_channel_url(raw_url: &str) -> bool {
+    let normalized = if !raw_url.contains("://") {
+        format!("https://{raw_url}")
+    } else {
+        raw_url.to_string()
+    };
+    let after_scheme = match normalized.split("://").nth(1) {
+        Some(rest) => rest,
+        None => return false,
+    };
+    let path_and_query = match after_scheme.find('/') {
+        Some(idx) => &after_scheme[idx..],
+        None => return false,
+    };
+    let path = path_and_query
+        .split('?')
+        .next()
+        .unwrap_or("")
+        .split('#')
+        .next()
+        .unwrap_or("");
+    let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    if segments.is_empty() {
+        return false;
+    }
+    // 1. Channel handles: /@username or /@username/<tab>
+    if segments[0].starts_with('@') {
+        if !raw_url.contains("watch?") && !raw_url.contains("v=") {
+            return true;
+        }
+    }
+    // 2. /channel/..., /c/..., /user/...
+    if matches!(segments[0], "channel" | "c" | "user")
+        && !raw_url.contains("watch?")
+        && !raw_url.contains("v=")
+    {
+        return true;
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,5 +196,22 @@ mod tests {
         let urls = extract_youtube_urls(msg);
         assert_eq!(urls.len(), 1);
         assert_eq!(urls[0], "https://youtu.be/eicAD-UOn-c");
+    }
+
+    #[test]
+    fn test_is_youtube_channel_url() {
+        assert!(is_youtube_channel_url("https://www.youtube.com/@EasyPeasyEnglish/shorts"));
+        assert!(is_youtube_channel_url("https://www.youtube.com/@EasyPeasyEnglish/streams"));
+        assert!(is_youtube_channel_url("https://www.youtube.com/@EasyPeasyEnglish/podcasts"));
+        assert!(is_youtube_channel_url("https://www.youtube.com/@EasyPeasyEnglish"));
+        assert!(is_youtube_channel_url("https://www.youtube.com/@EasyPeasyEnglish/"));
+        assert!(is_youtube_channel_url("https://www.youtube.com/channel/UC123456789"));
+        assert!(is_youtube_channel_url("https://www.youtube.com/c/SomeChannel"));
+        assert!(is_youtube_channel_url("https://www.youtube.com/user/SomeUser"));
+
+        assert!(!is_youtube_channel_url("https://www.youtube.com/shorts/bQVU_L-5dDM"));
+        assert!(!is_youtube_channel_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+        assert!(!is_youtube_channel_url("https://youtu.be/dQw4w9WgXcQ"));
+        assert!(!is_youtube_channel_url("https://www.youtube.com/playlist?list=PLsrak_Tdck7WxloYLlh6mH17IxMyk2tyl"));
     }
 }

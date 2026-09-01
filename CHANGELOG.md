@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.5.9] - 2026-09-01
+
+### Fixed
+- **YouTube Channel Tab Fast-Rejection & Unavailable Video Classification (`src/youtube/`, `src/app/dispatch/`, `config/i18n.json`)**:
+  - Implemented fast rejection with localized user notice for YouTube channel/tab URLs (`/@...`, `/channel/...`, `/c/...`, `/user/...`), preventing 60s `yt-dlp` scraping timeouts and cookie hoarding.
+  - Classified private, deleted, removed, and auth-required videos as `FetchError::Unavailable`, returning friendly user explanations across all 4 languages (`fa`, `en`, `it`, `ru`) without logging false alarms to `stats_errors` or placing cookies into cooldown.
+  - Eliminated duplicate error logging in `dispatch/text.rs` and `dispatch/flow.rs` by making `handle_youtube_url` self-contained for system error tracking.
+- **Real-ESRGAN Diagnostic Stderr Capture (`src/upscale/handle.rs`)**:
+  - Replaced discarded `Stdio::null()` stderr with deadlock-safe background draining (up to 4KB), capturing precise error summaries (e.g. Vulkan driver or model initialization issues) in logs on non-zero subprocess exit.
+
 ## [2.5.8] - 2026-09-01
 
 ### Fixed

@@ -16,6 +16,7 @@ use crate::cookie_pool::{CookiePool, CookieSource, save_snapshot};
 use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::t;
 
+use super::extract::is_youtube_channel_url;
 use super::fetch::fetch_video_info;
 use super::format::{build_caption, build_description_blockquotes};
 use super::quality_keyboard::send_quality_prompt;
@@ -114,6 +115,12 @@ pub async fn handle_youtube_url(
     };
     let url = &url_str;
 
+    if is_youtube_channel_url(url) {
+        log_trace(trace_id, "channel_url_rejected", url);
+        let _ = send_text_md(api, chat_id, &t("youtube.channel_url_not_supported")).await;
+        return Ok(());
+    }
+
     if let Some(uid) = user_id {
         log_actor_id!("yt", trace_id, uid, "clicked" => "url");
     }
@@ -175,6 +182,7 @@ pub async fn handle_youtube_url(
                         status.next_available_in,
                     )
                     .await;
+                    crate::stats::record_error_global("youtube", "no_cookie_available").await;
                     anyhow::bail!("no cookie available");
                 }
             };
@@ -197,6 +205,7 @@ pub async fn handle_youtube_url(
                     status.next_available_in,
                 )
                 .await;
+                crate::stats::record_error_global("youtube", "retry_exhausted, no suitable cookie").await;
                 anyhow::bail!("retry exhausted, no suitable cookie");
             }
             tried.insert(cookie.id.clone());
@@ -357,6 +366,20 @@ pub async fn handle_youtube_url(
                 }
                 log_trace(trace_id, "fetch_members_only", url);
                 let _ = send_text_md(api, chat_id, &t("youtube.members_only")).await;
+                return Ok(());
+            }
+            Err(FetchError::Unavailable(msg)) => {
+                if let Some(amid) = analyzing_msg_id {
+                    let del = DeleteMessageParams::builder()
+                        .chat_id(chat_id)
+                        .message_id(amid)
+                        .build();
+                    if let Err(e) = api.delete_message(&del).await {
+                        log_trace(trace_id, "analyzing_delete_failed", &e.to_string());
+                    }
+                }
+                log_trace(trace_id, "fetch_video_unavailable", &format!("url={url} err={msg}"));
+                let _ = send_text_md(api, chat_id, &t("youtube.video_unavailable")).await;
                 return Ok(());
             }
             Err(FetchError::Other(msg)) => {

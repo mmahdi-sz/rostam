@@ -16,6 +16,7 @@ pub enum YtdlpErrorClassification {
     BadCookie(String),
     AgeRestricted(String),
     MembersOnly,
+    Unavailable(String),
     Other(String),
 }
 
@@ -32,6 +33,22 @@ pub fn classify_ytdlp_stderr(stderr: &str) -> YtdlpErrorClassification {
         || lower.contains("this video is available to this channel's members")
     {
         return YtdlpErrorClassification::MembersOnly;
+    }
+    if lower.contains("video unavailable")
+        || lower.contains("this video is private")
+        || lower.contains("private video")
+        || lower.contains("this video has been removed")
+        || lower.contains("removed by the uploader")
+        || lower.contains("this live stream recording is not available")
+        || lower.contains("playlists that require authentication")
+    {
+        let msg = stderr
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("video unavailable")
+            .trim();
+        return YtdlpErrorClassification::Unavailable(msg.to_string());
     }
     if lower.contains("sign in to confirm your age")
         || lower.contains("inappropriate for some users")
@@ -160,6 +177,14 @@ pub async fn fetch_video_info(
                 stderr.lines().last().unwrap_or(""),
             );
             return Err(FetchError::MembersOnly);
+        }
+        YtdlpErrorClassification::Unavailable(msg) => {
+            log_trace(
+                trace_id,
+                "yt_dlp_unavailable",
+                stderr.lines().last().unwrap_or(&msg),
+            );
+            return Err(FetchError::Unavailable(msg));
         }
         YtdlpErrorClassification::Other(msg) => {
             if !output.status.success() {
@@ -694,5 +719,26 @@ mod tests {
             classify_ytdlp_stderr(stderr2),
             YtdlpErrorClassification::MembersOnly
         );
+    }
+
+    #[test]
+    fn test_classify_unavailable() {
+        let stderr1 = "ERROR: [youtube] KK5Yucx09Hc: Video unavailable. This video is private";
+        assert!(matches!(
+            classify_ytdlp_stderr(stderr1),
+            YtdlpErrorClassification::Unavailable(_)
+        ));
+
+        let stderr2 = "ERROR: [youtube] YOUR_VIDEO_: Video unavailable";
+        assert!(matches!(
+            classify_ytdlp_stderr(stderr2),
+            YtdlpErrorClassification::Unavailable(_)
+        ));
+
+        let stderr3 = "ERROR: [youtube:tab] show: Playlists that require authentication may not extract correctly";
+        assert!(matches!(
+            classify_ytdlp_stderr(stderr3),
+            YtdlpErrorClassification::Unavailable(_)
+        ));
     }
 }

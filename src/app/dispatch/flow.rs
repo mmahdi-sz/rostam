@@ -490,7 +490,7 @@ pub(super) async fn handle_flow_message(
                     )
                     .await
                     {
-                        crate::stats::record_error_global("youtube", e).await;
+                        log_ev!("yt", trace_id, "handle_url_failed", "err" => format!("{e}"));
                     }
                 });
                 return Ok(true);
