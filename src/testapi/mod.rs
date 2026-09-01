@@ -189,6 +189,8 @@ pub async fn run() -> anyhow::Result<()> {
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     println!("[testapi] listening on 127.0.0.1:{port}");
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

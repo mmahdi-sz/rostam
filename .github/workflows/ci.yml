@@ -114,4 +114,10 @@ jobs:
       - name: Build with testapi feature
         run: cargo build --features testapi
       - name: Run testapi suite
-        run: bash scripts/run_testapi_suite.sh
+        run: |
+          bash scripts/run_testapi_suite.sh 2>&1 | tee /tmp/testapi_suite.log || {
+            tail -n 80 /tmp/testapi_suite.log | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }

@@ -28,14 +28,14 @@ function cleanup {
 trap cleanup EXIT
 
 echo "Waiting for server to start..."
-for i in {1..10}; do
+for i in {1..40}; do
     if grep -q "\[testapi\] listening" testapi.log 2>/dev/null; then
         echo "Server is ready."
         break
     fi
     sleep 0.5
-    if [ $i -eq 10 ]; then
-        echo "Server failed to start!"
+    if [ $i -eq 40 ]; then
+        echo "Server failed to start within 20s!"
         cat testapi.log
         exit 1
     fi
