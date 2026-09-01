@@ -15,9 +15,14 @@ TESTAPI_ENABLED=1 BOT_API_BASE_URL="http://127.0.0.1:$PORT/bot" ./target/debug/r
 SERVER_PID=$!
 
 function cleanup {
+    local rc=$?
     echo "Killing server PID $SERVER_PID"
-    kill $SERVER_PID || true
+    kill $SERVER_PID 2>/dev/null || true
     wait $SERVER_PID 2>/dev/null || true
+    if [ $rc -ne 0 ] && [ -f testapi.log ]; then
+        echo "=== testapi.log (server output) ==="
+        cat testapi.log
+    fi
     rm -f testapi.log
 }
 trap cleanup EXIT

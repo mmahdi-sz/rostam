@@ -64,6 +64,33 @@ jobs:
     name: TestAPI Integration
     runs-on: ubuntu-latest
     needs: check
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ros_telegram_bot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: "postgres://postgres:postgres@localhost:5432/ros_telegram_bot"
+      REDIS_URL: "redis://127.0.0.1:6379"
+      ADMIN_USER_ID: "123456789"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -75,6 +102,15 @@ jobs:
           unzip -qo /tmp/vosk.zip -d /tmp/vosk
           cp $(find /tmp/vosk -name libvosk.so | head -1) files/runtime/libvosk.so
           rm -rf /tmp/vosk /tmp/vosk.zip
+      - name: Configure test environment
+        run: |
+          cat << 'EOF' > .env
+          DATABASE_URL="postgres://postgres:postgres@localhost:5432/ros_telegram_bot"
+          REDIS_URL="redis://127.0.0.1:6379"
+          ADMIN_USER_ID="123456789"
+          BOT_TOKEN="123456:TESTAPI_DUMMY_TOKEN"
+          BOT_API_BASE_URL="http://127.0.0.1:14379/bot"
+          EOF
       - name: Build with testapi feature
         run: cargo build --features testapi
       - name: Run testapi suite
