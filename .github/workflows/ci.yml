@@ -19,6 +19,13 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+      - name: Setup libvosk runtime
+        run: |
+          mkdir -p files/runtime
+          curl -sL https://github.com/alphacep/vosk-api/releases/download/v0.3.45/vosk-linux-x86_64-0.3.45.zip -o /tmp/vosk.zip
+          unzip -qo /tmp/vosk.zip -d /tmp/vosk
+          cp $(find /tmp/vosk -name libvosk.so | head -1) files/runtime/libvosk.so
+          rm -rf /tmp/vosk /tmp/vosk.zip
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -33,9 +40,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-audit
+        run: which cargo-audit || cargo install cargo-audit --locked
+      - name: Security audit
+        run: cargo audit
 
   testapi:
     name: TestAPI Integration
@@ -45,6 +55,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Setup libvosk runtime
+        run: |
+          mkdir -p files/runtime
+          curl -sL https://github.com/alphacep/vosk-api/releases/download/v0.3.45/vosk-linux-x86_64-0.3.45.zip -o /tmp/vosk.zip
+          unzip -qo /tmp/vosk.zip -d /tmp/vosk
+          cp $(find /tmp/vosk -name libvosk.so | head -1) files/runtime/libvosk.so
+          rm -rf /tmp/vosk /tmp/vosk.zip
       - name: Build with testapi feature
         run: cargo build --features testapi
       - name: Run testapi suite
