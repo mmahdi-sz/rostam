@@ -75,16 +75,24 @@ static PENDING_SETS: LazyLock<Mutex<HashMap<(i64, i32), StoredPendingSet>>> =
 use crate::common::job::{JobGuard, JobRegistry};
 
 /// Active job cancellation flag for progress message cancel button.
-static ACTIVE_MS_JOBS: LazyLock<JobRegistry<i64>> =
-    LazyLock::new(JobRegistry::new);
+static ACTIVE_MS_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 /// Stores new set and purges old offers for the same user.
 pub fn put_pending(user_id: i64, message_id: i32, set: PendingSet) {
     if let Ok(mut m) = PENDING_SETS.lock() {
         let now = std::time::Instant::now();
         // Purge offers for this user or older than 1 hour (3600s)
-        m.retain(|(u, mid), item| (*u != user_id || *mid == message_id) && now.duration_since(item.created_at) < std::time::Duration::from_secs(3600));
-        m.insert((user_id, message_id), StoredPendingSet { set, created_at: now });
+        m.retain(|(u, mid), item| {
+            (*u != user_id || *mid == message_id)
+                && now.duration_since(item.created_at) < std::time::Duration::from_secs(3600)
+        });
+        m.insert(
+            (user_id, message_id),
+            StoredPendingSet {
+                set,
+                created_at: now,
+            },
+        );
     }
 }
 

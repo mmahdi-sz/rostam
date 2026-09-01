@@ -1,10 +1,7 @@
 //! Telegram request handling, paywall gating, input ingestion, and burn execution orchestration.
 
 use std::path::{Path, PathBuf};
-use std::sync::{
-    Arc, Mutex,
-    atomic::Ordering,
-};
+use std::sync::{Arc, Mutex, atomic::Ordering};
 use std::time::Instant;
 
 use frankenstein::{
@@ -38,7 +35,9 @@ use super::session::{
     BurnSession, SubtitleInputInfo, VideoInputInfo, abort_session, cancel_keyboard,
     job_cancel_keyboard, new_session, stop_download_ticker, try_claim_job,
 };
-use super::subtitle::{SubtitleFormat, build_filter_arg, convert_vtt_to_srt, detect_subtitle_format};
+use super::subtitle::{
+    SubtitleFormat, build_filter_arg, convert_vtt_to_srt, detect_subtitle_format,
+};
 use super::{MAX_BURN_DURATION_SECS, MAX_UPLOAD_BYTES};
 
 /// Enters the Hardsub Burn prompt, setting `FlowState::AwaitingStudioBurnInput`.

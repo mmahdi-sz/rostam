@@ -1,8 +1,5 @@
 use frankenstein::{
-    AsyncTelegramApi,
-    client_reqwest::Bot,
-    methods::SendMessageParams,
-    types::InlineKeyboardMarkup,
+    AsyncTelegramApi, client_reqwest::Bot, methods::SendMessageParams, types::InlineKeyboardMarkup,
 };
 use redis::aio::MultiplexedConnection;
 use tokio::sync::OnceCell;

@@ -11,7 +11,8 @@ pub mod ui;
 
 #[allow(unused_imports)]
 pub use calc::{
-    calculate_estimated_size_mb, calculate_target_bitrate_kbps, compute_vmaf_score, format_eta_hms,
+    calculate_estimated_size_mb, calculate_target_bitrate_kbps, calculate_target_dimensions,
+    compute_vmaf_score, format_eta_hms,
 };
 #[allow(unused_imports)]
 pub use handle::{enter_compress_prompt, handle_compress_cb, handle_video_upload};
@@ -28,6 +29,26 @@ pub use ui::{build_compress_keyboard, build_compress_text, send_compress_prompt_
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_calculate_target_dimensions() {
+        // Landscape 1920x1080
+        assert_eq!(calculate_target_dimensions(1920, 1080, 1080), (1920, 1080));
+        assert_eq!(calculate_target_dimensions(1920, 1080, 720), (1280, 720));
+        assert_eq!(calculate_target_dimensions(1920, 1080, 480), (854, 480));
+
+        // Portrait 1080x1920 (e.g. Reels, Shorts)
+        assert_eq!(calculate_target_dimensions(1080, 1920, 1080), (1080, 1920));
+        assert_eq!(calculate_target_dimensions(1080, 1920, 720), (720, 1280));
+        assert_eq!(calculate_target_dimensions(1080, 1920, 480), (480, 854));
+
+        // Square 1080x1080
+        assert_eq!(calculate_target_dimensions(1080, 1080, 1080), (1080, 1080));
+        assert_eq!(calculate_target_dimensions(1080, 1080, 720), (720, 720));
+
+        // Custom 4:3 1440x1080
+        assert_eq!(calculate_target_dimensions(1440, 1080, 720), (960, 720));
+    }
 
     #[test]
     fn test_calculate_target_bitrate_and_estimated_size() {
@@ -51,6 +72,27 @@ mod tests {
         assert!(target_kbps > 0);
         let est_mb = calculate_estimated_size_mb(&session, 720, 75);
         assert!(est_mb > 0.0);
+
+        // Test portrait video bitrate calculation
+        let portrait_session = CompressSession {
+            file_id: "fid_portrait".into(),
+            filename: "portrait.mp4".into(),
+            orig_w: 1080,
+            orig_h: 1920,
+            orig_fps: 30,
+            orig_bitrate: 2_000_000,
+            orig_codec: "h264".into(),
+            orig_size_bytes: 30_000_000,
+            duration_secs: 120,
+            codec: "h264".into(),
+            res_h: 1080,
+            fps: 30,
+            br_ratio: 100,
+        };
+        let p_kbps_1080 = calculate_target_bitrate_kbps(&portrait_session, 1080, 100);
+        assert_eq!(p_kbps_1080, 2000);
+        let p_kbps_720 = calculate_target_bitrate_kbps(&portrait_session, 720, 100);
+        assert!(p_kbps_720 < p_kbps_1080);
     }
 
     #[test]

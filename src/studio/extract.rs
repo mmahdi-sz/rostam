@@ -343,7 +343,6 @@ pub async fn handle_video_upload(
     }
 
     if cancel_flag.load(Ordering::Relaxed) {
-
         let _ = api
             .delete_message(
                 &DeleteMessageParams::builder()

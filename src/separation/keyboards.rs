@@ -10,7 +10,11 @@ pub const CB_SEP_BACK: &str = "sep:back";
 pub const CB_SEP_QUEUE_CANCEL: &str = "sep:qcancel";
 
 pub fn queue_cancel_keyboard() -> InlineKeyboardMarkup {
-    crate::common::job_cancel_keyboard(&t("separation.queue.cancel_btn"), CB_SEP_QUEUE_CANCEL, "cancel")
+    crate::common::job_cancel_keyboard(
+        &t("separation.queue.cancel_btn"),
+        CB_SEP_QUEUE_CANCEL,
+        "cancel",
+    )
 }
 
 pub fn prompt_keyboard(msg_id: i32) -> InlineKeyboardMarkup {

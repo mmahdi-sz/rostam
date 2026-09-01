@@ -14,8 +14,7 @@ pub use crate::common::dir::TempDirGuard;
 use crate::common::job::{JobGuard, JobRegistry};
 
 /// Global registry of active Studio jobs, mapping `user_id -> cancel_flag`.
-pub static ACTIVE_STUDIO_JOBS: LazyLock<JobRegistry<i64>> =
-    LazyLock::new(JobRegistry::new);
+pub static ACTIVE_STUDIO_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 /// Registers a cancel flag for a user's Studio job.
 pub fn register_active_job(user_id: i64, cancel_flag: Arc<AtomicBool>) {

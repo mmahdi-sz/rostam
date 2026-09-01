@@ -3,8 +3,8 @@
 //! Provides `ProgressTicker` to periodically edit status messages with live progress,
 //! deduplicating identical edits and integrating with `JobRegistry` cancellation tokens.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use frankenstein::client_reqwest::Bot;
@@ -121,7 +121,8 @@ impl ProgressTicker {
                 }
 
                 last_rendered = rendered_text.clone();
-                let _ = edit_text_md(&api, chat_id, message_id, &rendered_text, keyboard.clone()).await;
+                let _ =
+                    edit_text_md(&api, chat_id, message_id, &rendered_text, keyboard.clone()).await;
             }
         });
 

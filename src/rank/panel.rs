@@ -102,7 +102,9 @@ async fn build_main_text(
     };
 
     // Traffic
-    let daily_used = quota::get_daily_traffic(&client, user_id).await.unwrap_or(0) as u64;
+    let daily_used = quota::get_daily_traffic(&client, user_id)
+        .await
+        .unwrap_or(0) as u64;
     let daily_limit = rank.daily_traffic_bytes();
     let daily_left = daily_limit.saturating_sub(daily_used);
 

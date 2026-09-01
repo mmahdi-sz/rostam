@@ -2,18 +2,15 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use frankenstein::{
-    client_reqwest::Bot,
-    methods::SendDocumentParams,
-};
+use frankenstein::{client_reqwest::Bot, methods::SendDocumentParams};
 
 use crate::common::cpu_broker::CpuBrokerGuard;
 use crate::common::dir::TempDirGuard;
 use crate::i18n::{entities_for_text, t, tf};
-use crate::surge_dl::client::{fetch_detail, find_job_id_by_url, list_surge_job_ids, run_surge_add};
-use crate::surge_dl::types::{
-    DOWNLOAD_TIMEOUT_SECS, MAX_PART_BYTES, POLL_INTERVAL_SECS,
+use crate::surge_dl::client::{
+    fetch_detail, find_job_id_by_url, list_surge_job_ids, run_surge_add,
 };
+use crate::surge_dl::types::{DOWNLOAD_TIMEOUT_SECS, MAX_PART_BYTES, POLL_INTERVAL_SECS};
 use crate::surge_dl::ui::{build_bar, edit_status, fmt_bytes, fmt_speed, show_sent_menu};
 
 pub(crate) async fn run_surge_download(
@@ -292,8 +289,7 @@ async fn list_rar_parts(archive_base: &Path) -> Result<Vec<PathBuf>, std::io::Er
     while let Some(entry) = dir.next_entry().await? {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if name_str.starts_with(stem)
-            && (name_str.ends_with(".rar") || name_str.contains(".part"))
+        if name_str.starts_with(stem) && (name_str.ends_with(".rar") || name_str.contains(".part"))
         {
             parts.push(entry.path());
         }

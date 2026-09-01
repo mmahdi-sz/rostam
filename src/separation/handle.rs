@@ -4,10 +4,7 @@ use std::sync::{
 };
 
 use frankenstein::{
-    AsyncTelegramApi,
-    client_reqwest::Bot,
-    methods::EditMessageTextParams,
-    types::Message,
+    AsyncTelegramApi, client_reqwest::Bot, methods::EditMessageTextParams, types::Message,
 };
 
 use crate::bot::{edit_to_ai_lab, send_text_with_ai_back};
@@ -16,15 +13,15 @@ use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{entities_for_text, t};
 use crate::log::next_trace_id;
 
-#[allow(unused_imports)]
-pub use super::keyboards::{CB_AI_SEP, CB_SEP_BACK, CB_SEP_PREFIX, CB_SEP_QUEUE_CANCEL};
 use super::client::fetch_cpu_status;
 use super::format::delete_message;
+#[allow(unused_imports)]
+pub use super::keyboards::{CB_AI_SEP, CB_SEP_BACK, CB_SEP_PREFIX, CB_SEP_QUEUE_CANCEL};
 use super::keyboards::{mode_keyboard, prompt_keyboard, queue_cancel_keyboard};
 use super::log_trace;
 use super::media::{download_file, extract_and_prepare_audio};
 use super::quota::{check_and_reserve_quota, probe_audio_duration};
-use super::runner::{run_separation_task, SeparationTaskParams};
+use super::runner::{SeparationTaskParams, run_separation_task};
 use super::types::SeparationMode;
 
 /// Called when user presses AI Lab -> Audio Separation.

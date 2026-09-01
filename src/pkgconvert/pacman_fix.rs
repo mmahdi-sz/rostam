@@ -79,24 +79,24 @@ pub fn map_or_sanitize_dep(val: &str) -> Option<String> {
         return None;
     }
 
-    let (name, ver_spec): (&str, Option<String>) =
-        if let Some(idx) = trimmed.find(|c: char| c == '>' || c == '<' || c == '=') {
-            let (n, v) = trimmed.split_at(idx);
-            (n.trim(), Some(v.trim().to_string()))
-        } else {
-            let parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if parts.is_empty() {
-                return None;
-            }
-            (
-                parts[0],
-                if parts.len() > 1 {
-                    Some(parts[1..].join(" "))
-                } else {
-                    None
-                },
-            )
-        };
+    let (name, ver_spec): (&str, Option<String>) = if let Some(idx) = trimmed.find(['>', '<', '='])
+    {
+        let (n, v) = trimmed.split_at(idx);
+        (n.trim(), Some(v.trim().to_string()))
+    } else {
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.is_empty() {
+            return None;
+        }
+        (
+            parts[0],
+            if parts.len() > 1 {
+                Some(parts[1..].join(" "))
+            } else {
+                None
+            },
+        )
+    };
 
     let arch_name = map_package_name(name);
 
@@ -107,15 +107,9 @@ pub fn map_or_sanitize_dep(val: &str) -> Option<String> {
 }
 
 pub fn fix_pacman_pkginfo(path: &Path) -> std::io::Result<()> {
-    let file = match File::open(path) {
-        Ok(f) => f,
-        Err(e) => return Err(e),
-    };
+    let file = File::open(path)?;
 
-    let zdec = match zstd::Decoder::new(file) {
-        Ok(d) => d,
-        Err(e) => return Err(e),
-    };
+    let zdec = zstd::Decoder::new(file)?;
 
     let mut archive = tar::Archive::new(zdec);
 

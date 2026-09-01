@@ -1,7 +1,7 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use frankenstein::{
@@ -327,7 +327,8 @@ pub async fn handle_upscale_image(
                 Ok(c) => c,
                 Err(e) => {
                     log_ev!("upscale", trace_id, "quota_checkout", "err" => format!("{e}"), "=>" => "fail");
-                    crate::rank::paywall::quota_db_error(api, chat_id, "upscale", &format!("{e}")).await;
+                    crate::rank::paywall::quota_db_error(api, chat_id, "upscale", &format!("{e}"))
+                        .await;
                     return;
                 }
             };
@@ -363,7 +364,8 @@ pub async fn handle_upscale_image(
             }
             Err(e) => {
                 log_ev!("upscale", trace_id, "quota_reserve", "err" => format!("{e}"), "=>" => "fail");
-                crate::rank::paywall::quota_db_error(api, chat_id, "upscale", &format!("{e}")).await;
+                crate::rank::paywall::quota_db_error(api, chat_id, "upscale", &format!("{e}"))
+                    .await;
                 return;
             }
         }

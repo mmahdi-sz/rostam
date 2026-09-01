@@ -1,11 +1,6 @@
 use std::collections::HashMap;
 
-use frankenstein::{
-    AsyncTelegramApi,
-    client_reqwest::Bot,
-    methods::GetChatParams,
-    types::ChatId,
-};
+use frankenstein::{AsyncTelegramApi, client_reqwest::Bot, methods::GetChatParams, types::ChatId};
 
 use crate::force_join::cache::linked_count;
 use crate::force_join::conn::{

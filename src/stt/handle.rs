@@ -28,8 +28,7 @@ use std::sync::atomic::Ordering;
 use crate::common::job::JobRegistry;
 
 // Global map tracking active STT jobs per user_id: user_id -> cancel_flag
-static ACTIVE_STT_JOBS: LazyLock<JobRegistry<i64>> =
-    LazyLock::new(JobRegistry::new);
+static ACTIVE_STT_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 pub fn cancel_stt_job(user_id: i64) -> bool {
     ACTIVE_STT_JOBS.cancel(&user_id)
@@ -383,7 +382,7 @@ pub async fn handle_stt_audio(
         Ok(res) => res,
         Err(e) => {
             let e_str = e.to_string();
-    
+
             log_trace(trace_id, "stt_download_failed", &format!("err={e_str}"));
             crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
             crate::stats::record_error_global("stt", &format!("download failed: {e_str}")).await;
@@ -466,11 +465,11 @@ pub async fn handle_stt_audio(
             let client = match db.get().await {
                 Ok(c) => c,
                 Err(e) => {
-            
                     log_trace(trace_id, "stt_quota_checkout", &format!("err={e} => fail"));
                     delete_status(api, chat_id, status_msg_id).await;
                     clean_up(&work_dir);
-                    crate::rank::paywall::quota_db_error(api, chat_id, "stt", &format!("{e}")).await;
+                    crate::rank::paywall::quota_db_error(api, chat_id, "stt", &format!("{e}"))
+                        .await;
                     return;
                 }
             };
@@ -532,7 +531,7 @@ pub async fn handle_stt_audio(
                     } else {
                         (file_key, "remaining", format_duration_fa(d_rem.min(w_rem)))
                     };
-            
+
                     log_trace(
                         trace_id,
                         $event,
@@ -554,7 +553,6 @@ pub async fn handle_stt_audio(
 
             macro_rules! db_fail {
                 ($e:expr) => {{
-            
                     log_trace(
                         trace_id,
                         "stt_quota_reserve",
@@ -598,7 +596,11 @@ pub async fn handle_stt_audio(
                             refund_usage(&client, user_id, daily_kind, reserve_secs, 86400).await
                         {
                             log_trace(trace_id, "stt_quota_refund_failed", &e.to_string());
-                            crate::stats::record_error_global("stt", &format!("refund_failed: {e}")).await;
+                            crate::stats::record_error_global(
+                                "stt",
+                                &format!("refund_failed: {e}"),
+                            )
+                            .await;
                         }
                     }
                     Some(w)
@@ -645,8 +647,13 @@ pub async fn handle_stt_audio(
                             if let Err(e) =
                                 refund_usage(&client, user_id, kind, reserve_secs, window).await
                             {
-                                log_trace(trace_id, "stt_quota_refund", &format!("err={e} => fail"));
-                                crate::stats::record_error_global("stt", "quota_refund_failed").await;
+                                log_trace(
+                                    trace_id,
+                                    "stt_quota_refund",
+                                    &format!("err={e} => fail"),
+                                );
+                                crate::stats::record_error_global("stt", "quota_refund_failed")
+                                    .await;
                             }
                         }
                     }

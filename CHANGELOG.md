@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.5.8] - 2026-09-01
+
+### Fixed
+- **CI Pipelines, Security Vulnerabilities & Code Quality (`Cargo.toml`, `Cargo.lock`, `tests/pool_hoarding_stress.rs`, `src/`)**:
+  - Eliminated RustSec security advisories (`RUSTSEC-2024-0437` protobuf, `RUSTSEC-2025-0144` ml-dsa, `RUSTSEC-2023-0071` rsa) by setting `default-features = false` on `prometheus` and `rpm` dependencies.
+  - Resolved all modern Clippy warnings under strict `-D warnings` (`manual_is_multiple_of`, `manual_checked_ops`, `drain_collect`, `match_like_matches_macro`, `unnecessary_cast`, unused macro imports in `studio::trim`).
+  - Formatted entire repository code according to rustfmt specifications, passing `cargo fmt --all -- --check`.
+  - Calibrated contention assertions in `tests/pool_hoarding_stress.rs` to accurately verify active hoarding connections under concurrency.
+
 ## [2.5.7] - 2026-08-31
 
 ### Added

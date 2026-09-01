@@ -2,11 +2,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use frankenstein::{
-    AsyncTelegramApi,
-    client_reqwest::Bot,
-    methods::DeleteMessageParams,
-};
+use frankenstein::{AsyncTelegramApi, client_reqwest::Bot, methods::DeleteMessageParams};
 use tokio::sync::Notify;
 
 use crate::i18n::{entities_for_text, t, tf};

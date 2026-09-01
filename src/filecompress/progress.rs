@@ -77,7 +77,7 @@ pub fn bar(percent: u8) -> String {
 /// Remaining seconds extrapolated from the compression rate so far, or `None`
 /// until there is enough signal (the first percent tick is noise).
 pub fn eta_secs(percent: u8, compress_elapsed: u64) -> Option<u64> {
-    if percent < 5 || percent >= 100 || compress_elapsed < 3 {
+    if !(5..100).contains(&percent) || compress_elapsed < 3 {
         return None;
     }
     let total = compress_elapsed as f64 * 100.0 / f64::from(percent);

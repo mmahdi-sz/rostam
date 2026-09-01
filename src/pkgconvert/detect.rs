@@ -76,12 +76,12 @@ pub fn detect_by_magic(path: &Path) -> Option<PkgFormat> {
     }
 
     // .rpm: RPM lead magic 0xED 0xAB 0xEE 0xDB
-    if &buf[..4] == &[0xED, 0xAB, 0xEE, 0xDB] {
+    if buf[..4] == [0xED, 0xAB, 0xEE, 0xDB] {
         return Some(PkgFormat::Rpm);
     }
 
     // .pkg.tar.zst: zstd frame magic 0x28 0xB5 0x2F 0xFD (little-endian: 0xFD2FB528)
-    if &buf[..4] == &[0x28, 0xB5, 0x2F, 0xFD] {
+    if buf[..4] == [0x28, 0xB5, 0x2F, 0xFD] {
         return Some(PkgFormat::Pacman);
     }
 

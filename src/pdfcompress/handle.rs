@@ -30,8 +30,7 @@ pub const CB_PDF_CANCEL: &str = "pdf:cancel";
 
 use crate::common::job::JobRegistry;
 
-pub static ACTIVE_PDF_JOBS: LazyLock<JobRegistry<i64>> =
-    LazyLock::new(JobRegistry::new);
+pub static ACTIVE_PDF_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 pub fn cancel_pdf_job(user_id: i64) -> bool {
     ACTIVE_PDF_JOBS.cancel(&user_id)
@@ -854,7 +853,10 @@ mod tests {
         std::fs::write(&input, b"%PDF-1.4\n%EOF\n").unwrap();
 
         let result = run_gs(&input, &output, "screen", 0, 1, &[]).await;
-        assert!(matches!(result, Err(GsError::Timeout) | Err(GsError::Failed(_))));
+        assert!(matches!(
+            result,
+            Err(GsError::Timeout) | Err(GsError::Failed(_))
+        ));
 
         let _ = std::fs::remove_file(input);
         let _ = std::fs::remove_file(output);

@@ -1,20 +1,19 @@
 use frankenstein::{
-    AsyncTelegramApi, methods::AnswerCallbackQueryParams, types::MaybeInaccessibleMessage,
-    types::InlineKeyboardMarkup,
+    AsyncTelegramApi, methods::AnswerCallbackQueryParams, types::InlineKeyboardMarkup,
+    types::MaybeInaccessibleMessage,
 };
 
 use crate::app::state::AppState;
-use crate::emoji::{BroadcastMode, FlowState, handler as emoji_handler};
-use crate::youtube::trace::log_trace;
 use crate::bot::{
     CB_ADMIN_BROADCAST, CB_ADMIN_FORCE_JOIN, CB_ADMIN_GEN_CODE, CB_ADMIN_PANEL, CB_ADMIN_SECTION,
     CB_ADMIN_STATS, CB_AI_DENOISE, CB_AI_DEOLDIFY, CB_AI_GWM, CB_AI_NOBG, CB_AI_SEP, CB_AI_STT,
     CB_AI_TTS, CB_AI_UPSCALE, CB_BROADCAST_MODE_COPY, CB_BROADCAST_MODE_FORWARD,
     CB_BROADCAST_SEND_ACTIVE, CB_BROADCAST_SEND_ALL, CB_BROADCAST_TOGGLE_PIN, CB_DENOISE_CANCEL,
-    CB_DEOLDIFY_CANCEL, CB_NOBG_CANCEL, CB_START_AI_LAB, CB_START_GUIDE,
-    CB_START_GUIDE_PLATFORM, CB_START_LEADERBOARD, CB_START_STUDIO, CB_START_TOOLS, CB_TTS_CANCEL,
-    CB_USER_PANEL,
+    CB_DEOLDIFY_CANCEL, CB_NOBG_CANCEL, CB_START_AI_LAB, CB_START_GUIDE, CB_START_GUIDE_PLATFORM,
+    CB_START_LEADERBOARD, CB_START_STUDIO, CB_START_TOOLS, CB_TTS_CANCEL, CB_USER_PANEL,
 };
+use crate::emoji::{BroadcastMode, FlowState, handler as emoji_handler};
+use crate::youtube::trace::log_trace;
 
 use crate::bot::{
     edit_to_ai_lab, edit_to_leaderboard, edit_to_start_menu, edit_to_tools, send_start_menu,
@@ -784,10 +783,9 @@ pub(super) async fn handle_callback(
         return Ok(());
     }
 
-    if cb_data.starts_with(crate::bot::constants::CB_PKG_CONVERT_PREFIX) {
+    if let Some(action) = cb_data.strip_prefix(crate::bot::constants::CB_PKG_CONVERT_PREFIX) {
         let trace_id = next_trace_id();
         log_ev!("pkgconvert", trace_id, "cb_pkg_convert", "user_id" => cb_user_id, "cb" => cb_data);
-        let action = &cb_data[crate::bot::constants::CB_PKG_CONVERT_PREFIX.len()..];
         let _ = api
             .answer_callback_query(
                 &AnswerCallbackQueryParams::builder()

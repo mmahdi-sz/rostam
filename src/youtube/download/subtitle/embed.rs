@@ -1,5 +1,5 @@
-use crate::youtube::trace::log_trace;
 use super::files::subtitle_matches_selection;
+use crate::youtube::trace::log_trace;
 
 pub async fn embed_subtitles(
     dir: &std::path::Path,

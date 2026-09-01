@@ -32,6 +32,7 @@ fn make_user(id: u64) -> User {
 }
 
 /// 1. Access Matrix: Verifies access permissions across all 6 ChatMember status variants.
+///
 /// Creator, Administrator, Member, Restricted -> true (allowed access).
 /// Left, Kicked -> false (blocked by force join).
 #[test]
@@ -59,11 +60,7 @@ fn test_is_member_status_access_matrix() {
             .can_delete_stories(false)
             .build(),
     );
-    let member = ChatMember::Member(
-        ChatMemberMember::builder()
-            .user(make_user(103))
-            .build(),
-    );
+    let member = ChatMember::Member(ChatMemberMember::builder().user(make_user(103)).build());
     let restricted = ChatMember::Restricted(
         ChatMemberRestricted::builder()
             .user(make_user(104))
@@ -87,11 +84,7 @@ fn test_is_member_status_access_matrix() {
             .until_date(0)
             .build(),
     );
-    let left = ChatMember::Left(
-        ChatMemberLeft::builder()
-            .user(make_user(105))
-            .build(),
-    );
+    let left = ChatMember::Left(ChatMemberLeft::builder().user(make_user(105)).build());
     let kicked = ChatMember::Kicked(
         ChatMemberBanned::builder()
             .user(make_user(106))
@@ -103,7 +96,10 @@ fn test_is_member_status_access_matrix() {
     assert!(is_member_status(&creator), "Creator must be allowed");
     assert!(is_member_status(&admin), "Admin must be allowed");
     assert!(is_member_status(&member), "Member must be allowed");
-    assert!(is_member_status(&restricted), "Restricted member must be allowed");
+    assert!(
+        is_member_status(&restricted),
+        "Restricted member must be allowed"
+    );
 
     // Non-member variants must be blocked
     assert!(!is_member_status(&left), "Left user must be blocked");
@@ -157,10 +153,7 @@ fn test_derive_identifier_variations() {
         derive_identifier("http://t.me/vilix"),
         Some("@vilix".to_string())
     );
-    assert_eq!(
-        derive_identifier("t.me/vilix"),
-        Some("@vilix".to_string())
-    );
+    assert_eq!(derive_identifier("t.me/vilix"), Some("@vilix".to_string()));
 
     // Private invite links (must return None because identifier cannot be deduced)
     assert_eq!(derive_identifier("https://t.me/+AbCdEfGh123"), None);
@@ -468,21 +461,14 @@ fn test_membership_check_fail_open_on_api_error() {
     );
 
     // 3. Normal successful responses still enforce strict member status
-    let non_member = ChatMember::Left(
-        ChatMemberLeft::builder()
-            .user(make_user(105))
-            .build(),
-    );
+    let non_member = ChatMember::Left(ChatMemberLeft::builder().user(make_user(105)).build());
     assert!(
         !evaluate_membership_result(Ok(&non_member)),
         "Successful API response for non-member must still block"
     );
 
-    let active_member = ChatMember::Member(
-        ChatMemberMember::builder()
-            .user(make_user(103))
-            .build(),
-    );
+    let active_member =
+        ChatMember::Member(ChatMemberMember::builder().user(make_user(103)).build());
     assert!(
         evaluate_membership_result(Ok(&active_member)),
         "Successful API response for member must allow"

@@ -4,7 +4,7 @@
 //! and strict path traversal / symlink escape checks before any file is extracted to disk.
 
 use std::fs::File;
-use std::io::{ErrorKind, Read};
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -53,10 +53,7 @@ impl<R: Read> BoundedReader<R> {
 impl<R: Read> Read for BoundedReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.remaining == 0 {
-            return Err(std::io::Error::new(
-                ErrorKind::Other,
-                "Decompressed size limit exceeded",
-            ));
+            return Err(std::io::Error::other("Decompressed size limit exceeded"));
         }
         let max_read = buf.len().min(self.remaining as usize);
         let n = self.inner.read(&mut buf[..max_read])?;

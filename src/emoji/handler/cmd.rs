@@ -89,7 +89,7 @@ pub async fn handle_se_command(
 
     // Collect pairs: (selector, alias)
     let tokens: Vec<&str> = rest.split_whitespace().collect();
-    if tokens.len() < 2 || tokens.len() % 2 != 0 {
+    if tokens.len() < 2 || !tokens.len().is_multiple_of(2) {
         eprintln!(
             "[emoji_cmd trace={trace_id} event=se_usage_error] user_id={user_id} tokens={}",
             tokens.len()

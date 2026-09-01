@@ -9,9 +9,7 @@ use frankenstein::{
 
 use super::config::{CompressAlgo, CompressConfig, CompressFmt};
 use super::pipeline::start_compression_task;
-use super::progress::{
-    cancel_only_keyboard, done_inline_keyboard, options_keyboard,
-};
+use super::progress::{cancel_only_keyboard, done_inline_keyboard, options_keyboard};
 use crate::bot::send_text_with_back;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::flow::CompressFileEntry;

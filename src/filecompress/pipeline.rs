@@ -1,8 +1,8 @@
 //! Worker pipeline and CPU broker execution for file compression.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use frankenstein::{
@@ -15,7 +15,7 @@ use frankenstein::{
 use super::config::CompressConfig;
 use super::engine::{CompressError, run_compress};
 use super::handle::ACTIVE_FC_JOBS;
-use super::progress::{done_inline_keyboard, job_cancel_keyboard, render_progress, JobProgress};
+use super::progress::{JobProgress, done_inline_keyboard, job_cancel_keyboard, render_progress};
 use crate::bot::{download_telegram_file, send_text_with_back};
 use crate::common::cpu_broker::CpuBrokerGuard;
 use crate::common::dir::TempDirGuard;
@@ -71,7 +71,8 @@ pub async fn start_compression_task(
             Ok(c) => c,
             Err(e) => {
                 crate::log_ev!("filecompress", trace_id, "quota_checkout_failed", "err" => format!("{e}"));
-                crate::rank::paywall::quota_db_error(api, chat_id, "filecompress", &format!("{e}")).await;
+                crate::rank::paywall::quota_db_error(api, chat_id, "filecompress", &format!("{e}"))
+                    .await;
                 return;
             }
         };
@@ -107,7 +108,8 @@ pub async fn start_compression_task(
                 "paywall_monthly_blocked",
             ),
         ] {
-            match rank::quota::reserve_usage(&client, user_id, kind, 1, window, limit as i64).await {
+            match rank::quota::reserve_usage(&client, user_id, kind, 1, window, limit as i64).await
+            {
                 Ok(Some(used)) => {
                     crate::log_ev!("filecompress", trace_id, "quota_reserved", "kind" => kind.as_str(), "used" => used, "limit" => limit);
                 }
@@ -124,7 +126,11 @@ pub async fn start_compression_task(
                         .await
                         {
                             crate::log_ev!("filecompress", trace_id, "quota_refund", "err" => format!("{e}"), "=>" => "fail");
-                            crate::stats::record_error_global("filecompress", "quota_refund_failed").await;
+                            crate::stats::record_error_global(
+                                "filecompress",
+                                "quota_refund_failed",
+                            )
+                            .await;
                         }
                     }
                     let label = t(label_key);
@@ -149,11 +155,20 @@ pub async fn start_compression_task(
                         .await
                         {
                             crate::log_ev!("filecompress", trace_id, "quota_refund", "err" => format!("{re}"), "=>" => "fail");
-                            crate::stats::record_error_global("filecompress", "quota_refund_failed").await;
+                            crate::stats::record_error_global(
+                                "filecompress",
+                                "quota_refund_failed",
+                            )
+                            .await;
                         }
                     }
-                    crate::rank::paywall::quota_db_error(api, chat_id, "filecompress", &format!("{e}"))
-                        .await;
+                    crate::rank::paywall::quota_db_error(
+                        api,
+                        chat_id,
+                        "filecompress",
+                        &format!("{e}"),
+                    )
+                    .await;
                     return;
                 }
             }
@@ -187,10 +202,7 @@ pub async fn start_compression_task(
         .with_cancel_flag(cancel_flag.clone())
         .with_keyboard(job_cancel_keyboard())
         .spawn(move |elapsed| {
-            let text = apply_premium_to_md(&render_progress(
-                &timer_progress,
-                elapsed.as_secs(),
-            ));
+            let text = apply_premium_to_md(&render_progress(&timer_progress, elapsed.as_secs()));
             Some(text)
         });
 
@@ -406,7 +418,8 @@ async fn run_filecompress_worker(
                         rank::quota::add_usage(&client, user_id, kind, cpu_secs_delta, window).await
                     {
                         crate::log_ev!("filecompress", trace_id, "quota_settle", "kind" => kind.as_str(), "err" => format!("{e}"), "=>" => "fail");
-                        crate::stats::record_error_global("filecompress", "quota_settle_failed").await;
+                        crate::stats::record_error_global("filecompress", "quota_settle_failed")
+                            .await;
                     }
                 }
             }

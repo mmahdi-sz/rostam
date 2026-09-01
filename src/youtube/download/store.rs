@@ -32,8 +32,16 @@ pub fn store_request(req: YoutubeRequest) -> u64 {
     let now = std::time::Instant::now();
     let mut map = crate::sync_util::lock_or_recover(store());
     // Auto-sweep items older than 2 hours to prevent memory leaks from abandoned menus
-    map.retain(|_, item| now.duration_since(item.created_at) < std::time::Duration::from_secs(7200));
-    map.insert(id, StoredRequest { req, created_at: now });
+    map.retain(|_, item| {
+        now.duration_since(item.created_at) < std::time::Duration::from_secs(7200)
+    });
+    map.insert(
+        id,
+        StoredRequest {
+            req,
+            created_at: now,
+        },
+    );
     id
 }
 

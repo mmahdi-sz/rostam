@@ -1,8 +1,4 @@
-use frankenstein::{
-    AsyncTelegramApi,
-    client_reqwest::Bot,
-    methods::DeleteMessageParams,
-};
+use frankenstein::{AsyncTelegramApi, client_reqwest::Bot, methods::DeleteMessageParams};
 
 use crate::i18n::tf;
 

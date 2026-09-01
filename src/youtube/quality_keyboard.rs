@@ -229,21 +229,21 @@ async fn handle_resolution_callback(
         };
         if let Some(max) = user_rank.max_yt_quality()
             && height > max
-            {
-                log_trace(
-                    trace_id,
-                    "quality_paywall",
-                    &format!(
-                        "user_id={uid} height={height} max={max} rank={}",
-                        user_rank.as_str()
-                    ),
-                );
-                answer_callback(api, callback_query, "").await;
-                let limit = format!("{max}p");
-                let min_rank = rank::types::Rank::min_for_quality(height);
-                crate::rank::paywall::block_limit(api, message.chat.id, &limit, min_rank).await;
-                return true;
-            }
+        {
+            log_trace(
+                trace_id,
+                "quality_paywall",
+                &format!(
+                    "user_id={uid} height={height} max={max} rank={}",
+                    user_rank.as_str()
+                ),
+            );
+            answer_callback(api, callback_query, "").await;
+            let limit = format!("{max}p");
+            let min_rank = rank::types::Rank::min_for_quality(height);
+            crate::rank::paywall::block_limit(api, message.chat.id, &limit, min_rank).await;
+            return true;
+        }
     }
 
     enter_selection_menu(api, request_id, height, message.chat.id, message.message_id).await;

@@ -121,7 +121,15 @@ pub async fn run_separation_task(params: SeparationTaskParams) {
     if cancelled.load(Ordering::Relaxed) {
         log_trace(trace_id, "cancelled_in_queue", "");
         std::fs::remove_dir_all(&tmp_dir).ok();
-        refund_quota(&database, user_id, reserve_secs, reserved, trace_id, "cancelled_in_queue").await;
+        refund_quota(
+            &database,
+            user_id,
+            reserve_secs,
+            reserved,
+            trace_id,
+            "cancelled_in_queue",
+        )
+        .await;
         return;
     }
 
@@ -139,7 +147,15 @@ pub async fn run_separation_task(params: SeparationTaskParams) {
             .await;
             let _ = delete_message(&api, chat_id, message_id).await;
             std::fs::remove_dir_all(&tmp_dir).ok();
-            refund_quota(&database, user_id, reserve_secs, reserved, trace_id, "queue_timeout").await;
+            refund_quota(
+                &database,
+                user_id,
+                reserve_secs,
+                reserved,
+                trace_id,
+                "queue_timeout",
+            )
+            .await;
             return;
         }
         Some(r) => r,
@@ -170,11 +186,8 @@ pub async fn run_separation_task(params: SeparationTaskParams) {
                 .separation_requests_total
                 .with_label_values(&["fail"])
                 .inc();
-            crate::stats::record_error_global(
-                "separation",
-                &format!("processing error: {e:?}"),
-            )
-            .await;
+            crate::stats::record_error_global("separation", &format!("processing error: {e:?}"))
+                .await;
             let _ = delete_message(&api, chat_id, message_id).await;
             let key = match &e {
                 SeparationError::ServiceUnavailable => "separation.error.service_unavailable",
@@ -184,7 +197,15 @@ pub async fn run_separation_task(params: SeparationTaskParams) {
             };
             let _ = crate::bot::send_text_with_ai_back(&api, chat_id, &t(key)).await;
             std::fs::remove_dir_all(&tmp_dir).ok();
-            refund_quota(&database, user_id, reserve_secs, reserved, trace_id, "separate_error").await;
+            refund_quota(
+                &database,
+                user_id,
+                reserve_secs,
+                reserved,
+                trace_id,
+                "separate_error",
+            )
+            .await;
         }
     }
 }

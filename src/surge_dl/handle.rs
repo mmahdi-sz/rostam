@@ -15,9 +15,7 @@ use crate::surge_dl::engine::run_surge_download;
 use crate::surge_dl::probe::{
     available_disk_space, detect_social_platform, is_direct_link, probe_url, sanitize_rename,
 };
-use crate::surge_dl::types::{
-    CB_SURGE_CONFIRM_ORIGINAL, CB_SURGE_CONFIRM_RENAME, CB_TOOLS_SURGE,
-};
+use crate::surge_dl::types::{CB_SURGE_CONFIRM_ORIGINAL, CB_SURGE_CONFIRM_RENAME, CB_TOOLS_SURGE};
 use crate::surge_dl::ui::{cancel_keyboard, confirm_keyboard, fmt_bytes, fmt_traffic_fa};
 
 // ── menu entry ───────────────────────────────────────────────────────────────
@@ -140,9 +138,10 @@ pub async fn handle_surge_text(
                 let daily_used = rank::quota::get_daily_traffic(&client, user_id)
                     .await
                     .unwrap_or(0) as u64;
-                let monthly_used = rank::quota::get_monthly_traffic(&client, user_id, first_upload_at)
-                    .await
-                    .unwrap_or(0) as u64;
+                let monthly_used =
+                    rank::quota::get_monthly_traffic(&client, user_id, first_upload_at)
+                        .await
+                        .unwrap_or(0) as u64;
 
                 let file_sz = size_bytes.unwrap_or(0);
                 if daily_used + file_sz > daily_limit {

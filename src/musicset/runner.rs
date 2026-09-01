@@ -152,7 +152,10 @@ pub async fn run_set_job(
     } else {
         None
     };
-    let cores = cpu_guard.as_ref().map(|g| g.cores().to_vec()).unwrap_or_default();
+    let cores = cpu_guard
+        .as_ref()
+        .map(|g| g.cores().to_vec())
+        .unwrap_or_default();
 
     let mut ready: Vec<Track> = Vec::new();
     let mut failed = 0usize;
@@ -245,7 +248,10 @@ pub async fn run_set_job(
         if cpu_guard.is_none() {
             cpu_guard = Some(CpuBrokerGuard::acquire(user_id, trace_id, "musicset").await);
         }
-        let cores = cpu_guard.as_ref().map(|g| g.cores().to_vec()).unwrap_or_default();
+        let cores = cpu_guard
+            .as_ref()
+            .map(|g| g.cores().to_vec())
+            .unwrap_or_default();
         edit_status(
             &api,
             chat_id,

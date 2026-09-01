@@ -8,9 +8,7 @@ use frankenstein::{
 };
 
 use super::runner::start_compression_job;
-use super::session::{
-    CompressSession, clear_session, load_session, save_session,
-};
+use super::session::{CompressSession, clear_session, load_session, save_session};
 use super::ui::{build_compress_keyboard, build_compress_text};
 use crate::bot::constants::{
     CB_STUDIO_COMPRESS, CB_STUDIO_COMPRESS_CANCEL, CB_STUDIO_COMPRESS_JOBCANCEL,
@@ -168,11 +166,12 @@ pub async fn handle_video_upload(
     let orig_bitrate = meta.bitrate.max(100_000);
     let duration_secs = meta.duration_secs.max(1);
 
-    // Initial selected resolution height is orig_h or nearest lower standard height
+    // Initial selected resolution scale is base_dim or nearest lower standard height
+    let base_dim = orig_w.min(orig_h);
     let initial_res_h = [2160, 1440, 1080, 720, 480, 360, 240, 144]
         .into_iter()
-        .find(|&h| h <= orig_h)
-        .unwrap_or(orig_h);
+        .find(|&h| h <= base_dim)
+        .unwrap_or(base_dim);
 
     // Initial selected FPS is orig_fps or nearest lower standard FPS
     let initial_fps = [60, 45, 30, 24, 20, 15, 13]
@@ -261,7 +260,8 @@ pub async fn handle_compress_cb(
                 "c" => session.codec = parts[1].to_string(),
                 "r" => {
                     if let Ok(h) = parts[1].parse::<u32>() {
-                        if h <= session.orig_h {
+                        let base_dim = session.orig_w.min(session.orig_h);
+                        if h <= base_dim {
                             session.res_h = h;
                         }
                     }

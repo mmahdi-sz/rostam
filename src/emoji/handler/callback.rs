@@ -254,8 +254,10 @@ pub async fn handle_emoji_callback(
                 eprintln!(
                     "[emoji_cb trace={trace_id} event=route] handler=CB_PACK_OPEN pack_id={pack_id}"
                 );
-                show_pack_detail(api, chat_id, message_id, user_id, pack_id, &*client, trace_id)
-                    .await;
+                show_pack_detail(
+                    api, chat_id, message_id, user_id, pack_id, &*client, trace_id,
+                )
+                .await;
             }
         }
         d if d.starts_with(CB_PACK_SET_DEFAULT_PREFIX) => {
@@ -274,8 +276,10 @@ pub async fn handle_emoji_callback(
                         "[emoji_cb trace={trace_id} event=set_default_failed] pack_id={pack_id} err={e}"
                     ),
                 }
-                show_pack_detail(api, chat_id, message_id, user_id, pack_id, &*client, trace_id)
-                    .await;
+                show_pack_detail(
+                    api, chat_id, message_id, user_id, pack_id, &*client, trace_id,
+                )
+                .await;
             }
         }
         d if d.starts_with(CB_PACK_SET_ALIAS_PREFIX) => {
@@ -514,7 +518,8 @@ pub async fn handle_emoji_callback(
             let result = if d == CB_IMPORT_REPLACE {
                 emoji_import::execute_replace(&parsed, &mut client, user_id).await
             } else {
-                emoji_import::execute_merge(&parsed, &mut client, user_id, d == CB_IMPORT_SMART).await
+                emoji_import::execute_merge(&parsed, &mut client, user_id, d == CB_IMPORT_SMART)
+                    .await
             };
             match result {
                 Ok(r) => {

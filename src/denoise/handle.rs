@@ -289,9 +289,14 @@ pub async fn handle_denoise_audio(
             let client = match db.get().await {
                 Ok(c) => c,
                 Err(e) => {
-                    log_trace(trace_id, "denoise_quota_checkout", &format!("err={e} => fail"));
+                    log_trace(
+                        trace_id,
+                        "denoise_quota_checkout",
+                        &format!("err={e} => fail"),
+                    );
                     clean_up(&work_dir);
-                    crate::rank::paywall::quota_db_error(api, chat_id, "denoise", &format!("{e}")).await;
+                    crate::rank::paywall::quota_db_error(api, chat_id, "denoise", &format!("{e}"))
+                        .await;
                     return;
                 }
             };
@@ -398,11 +403,21 @@ pub async fn handle_denoise_audio(
                 )
                 .await;
                 if !matches!(w, Ok(Some(_))) {
-                    if let Err(e) =
-                        refund_usage(&client, user_id, QuotaKind::DenoiseDaily, reserve_secs, 86400).await
+                    if let Err(e) = refund_usage(
+                        &client,
+                        user_id,
+                        QuotaKind::DenoiseDaily,
+                        reserve_secs,
+                        86400,
+                    )
+                    .await
                     {
                         log_trace(trace_id, "denoise_quota_refund_failed", &e.to_string());
-                        crate::stats::record_error_global("denoise", &format!("refund_failed: {e}")).await;
+                        crate::stats::record_error_global(
+                            "denoise",
+                            &format!("refund_failed: {e}"),
+                        )
+                        .await;
                     }
                 }
                 Some(w)
@@ -480,8 +495,7 @@ pub async fn handle_denoise_audio(
                 let eta_secs = (est_total_secs - elapsed_secs).max(0.0);
 
                 let bar = crate::youtube::download::progress::build_bar(percent);
-                let elapsed_str =
-                    crate::youtube::download::progress::format_elapsed(elapsed);
+                let elapsed_str = crate::youtube::download::progress::format_elapsed(elapsed);
                 let eta_str = crate::youtube::download::progress::format_elapsed(
                     std::time::Duration::from_secs_f64(eta_secs),
                 );

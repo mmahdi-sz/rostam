@@ -255,9 +255,7 @@ impl TransferProgress {
 
         TransferSnapshot {
             stage: stage_str,
-            percent: pct
-                .map(|p| format!("{:.1}%", p))
-                .unwrap_or_else(|| "".to_string()),
+            percent: pct.map(|p| format!("{:.1}%", p)).unwrap_or_default(),
             bar: build_bar(pct.unwrap_or(0.0) as f32),
             done: fmt_bytes(done),
             total: if total == 0 {
@@ -445,10 +443,7 @@ where
             .and_then(move |c| {
                 if let Some(cancel) = &cancel_clone {
                     if cancel.load(Ordering::Relaxed) {
-                        return futures::future::ready(Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "cancelled",
-                        )));
+                        return futures::future::ready(Err(std::io::Error::other("cancelled")));
                     }
                 }
                 futures::future::ready(Ok(c))

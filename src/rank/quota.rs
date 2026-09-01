@@ -414,7 +414,10 @@ pub mod tests {
             }
         }
 
-        assert_eq!(granted, 5, "Exactly 5 reservations must succeed under limit 5");
+        assert_eq!(
+            granted, 5,
+            "Exactly 5 reservations must succeed under limit 5"
+        );
         assert_eq!(rejected, 10, "Remaining 10 reservations must be rejected");
 
         let used = get_usage(&client, TEST_UID, KIND, WINDOW_SECS)
@@ -431,7 +434,15 @@ pub mod tests {
         for _ in 0..5 {
             let client = client.clone();
             set_multi.spawn(async move {
-                reserve_usage(&client, TEST_UID, KIND, amount_multi, WINDOW_SECS, limit_multi).await
+                reserve_usage(
+                    &client,
+                    TEST_UID,
+                    KIND,
+                    amount_multi,
+                    WINDOW_SECS,
+                    limit_multi,
+                )
+                .await
             });
         }
 
@@ -470,7 +481,9 @@ pub mod tests {
         const WINDOW_SECS: i64 = 86_400;
 
         let Some(client) = connect_test_db().await else {
-            eprintln!("[test] Skipping refund_usage_on_job_failure_e2e: DATABASE_URL not available");
+            eprintln!(
+                "[test] Skipping refund_usage_on_job_failure_e2e: DATABASE_URL not available"
+            );
             return;
         };
 
@@ -479,7 +492,11 @@ pub mod tests {
         let res = reserve_usage(&client, TEST_UID, QuotaKind::Upscale2xWeekly, 1, 604_800, 5)
             .await
             .expect("db error");
-        assert_eq!(res, Some(1), "Initial reservation should succeed with used=1");
+        assert_eq!(
+            res,
+            Some(1),
+            "Initial reservation should succeed with used=1"
+        );
 
         // Simulate handler encountering mid-job failure (e.g. download error or engine crash) and invoking refund.
         refund_usage(&client, TEST_UID, QuotaKind::Upscale2xWeekly, 1, 604_800)
@@ -489,20 +506,34 @@ pub mod tests {
         let used = get_usage(&client, TEST_UID, QuotaKind::Upscale2xWeekly, 604_800)
             .await
             .expect("get_usage");
-        assert_eq!(used, 0, "Usage must be fully restored to 0 after failure refund");
+        assert_eq!(
+            used, 0,
+            "Usage must be fully restored to 0 after failure refund"
+        );
 
         // User can now re-attempt without being blocked by lost quota.
         let retry_res = reserve_usage(&client, TEST_UID, QuotaKind::Upscale2xWeekly, 1, 604_800, 5)
             .await
             .expect("db error");
-        assert_eq!(retry_res, Some(1), "Subsequent job reservation must succeed");
+        assert_eq!(
+            retry_res,
+            Some(1),
+            "Subsequent job reservation must succeed"
+        );
 
         // Scenario 2: Two-tier quota failure rollback (as in STT and Separation handlers).
         // If daily reservation succeeds but weekly fails, the handler immediately refunds daily quota.
         cleanup_user(&client, TEST_UID).await;
-        let daily_res = reserve_usage(&client, TEST_UID, QuotaKind::SttFastDaily, 60, WINDOW_SECS, 120)
-            .await
-            .expect("daily reserve");
+        let daily_res = reserve_usage(
+            &client,
+            TEST_UID,
+            QuotaKind::SttFastDaily,
+            60,
+            WINDOW_SECS,
+            120,
+        )
+        .await
+        .expect("daily reserve");
         assert_eq!(daily_res, Some(60), "Daily quota should reserve 60s");
 
         // Weekly quota is exhausted (limit=0).
@@ -582,7 +613,10 @@ pub mod tests {
         let active_usage = get_usage(&client, TEST_UID, QuotaKind::DenoiseDaily, 86_400)
             .await
             .expect("get_usage active");
-        assert_eq!(active_usage, 20, "Active usage must reflect only new window");
+        assert_eq!(
+            active_usage, 20,
+            "Active usage must reflect only new window"
+        );
 
         // Case B: Daily Tehran-time traffic reset (traffic_daily).
         cleanup_user(&client, TEST_UID).await;
@@ -652,7 +686,9 @@ pub mod tests {
         const WINDOW_SECS: i64 = 86_400;
 
         let Some(client) = connect_test_db().await else {
-            eprintln!("[test] Skipping file_size_cap_boundary_enforcement_e2e: DATABASE_URL not available");
+            eprintln!(
+                "[test] Skipping file_size_cap_boundary_enforcement_e2e: DATABASE_URL not available"
+            );
             return;
         };
 
@@ -660,19 +696,36 @@ pub mod tests {
         cleanup_user(&client, TEST_UID).await;
 
         // Request exactly at the limit (1000) -> MUST succeed.
-        let at_limit = reserve_usage(&client, TEST_UID, QuotaKind::PkgConvertDaily, LIMIT, WINDOW_SECS, LIMIT)
-            .await
-            .expect("reserve exact limit");
+        let at_limit = reserve_usage(
+            &client,
+            TEST_UID,
+            QuotaKind::PkgConvertDaily,
+            LIMIT,
+            WINDOW_SECS,
+            LIMIT,
+        )
+        .await
+        .expect("reserve exact limit");
         assert_eq!(at_limit, Some(1000), "Request at exact limit must succeed");
 
         // Clean up state back to 0.
         cleanup_user(&client, TEST_UID).await;
 
         // Request at limit + 1 (1001) -> MUST be blocked.
-        let over_limit = reserve_usage(&client, TEST_UID, QuotaKind::PkgConvertDaily, LIMIT + 1, WINDOW_SECS, LIMIT)
-            .await
-            .expect("reserve over limit");
-        assert_eq!(over_limit, None, "Request at limit + 1 byte must be rejected");
+        let over_limit = reserve_usage(
+            &client,
+            TEST_UID,
+            QuotaKind::PkgConvertDaily,
+            LIMIT + 1,
+            WINDOW_SECS,
+            LIMIT,
+        )
+        .await
+        .expect("reserve over limit");
+        assert_eq!(
+            over_limit, None,
+            "Request at limit + 1 byte must be rejected"
+        );
 
         cleanup_user(&client, TEST_UID).await;
     }
@@ -682,26 +735,50 @@ pub mod tests {
         // Test 4b: Package Converter input cap (200 MB).
         let pkg_max = crate::pkgconvert::validate::MAX_INPUT_FILE_BYTES;
         assert_eq!(pkg_max, 200 * 1024 * 1024);
-        assert!(!(pkg_max > crate::pkgconvert::validate::MAX_INPUT_FILE_BYTES), "Exact 200MB must pass");
-        assert!(pkg_max + 1 > crate::pkgconvert::validate::MAX_INPUT_FILE_BYTES, "200MB + 1 must be rejected");
+        assert!(
+            !(pkg_max > crate::pkgconvert::validate::MAX_INPUT_FILE_BYTES),
+            "Exact 200MB must pass"
+        );
+        assert!(
+            pkg_max + 1 > crate::pkgconvert::validate::MAX_INPUT_FILE_BYTES,
+            "200MB + 1 must be rejected"
+        );
 
         // Test 4c: Studio Hardsub Video Burn duration cap (7200s / 2 hours).
         let burn_max_dur = crate::studio::burn::MAX_BURN_DURATION_SECS;
         assert_eq!(burn_max_dur, 7200);
-        assert!(!(burn_max_dur > crate::studio::burn::MAX_BURN_DURATION_SECS), "Exact 7200s must pass");
-        assert!(burn_max_dur + 1 > crate::studio::burn::MAX_BURN_DURATION_SECS, "7200s + 1 must be rejected");
+        assert!(
+            !(burn_max_dur > crate::studio::burn::MAX_BURN_DURATION_SECS),
+            "Exact 7200s must pass"
+        );
+        assert!(
+            burn_max_dur + 1 > crate::studio::burn::MAX_BURN_DURATION_SECS,
+            "7200s + 1 must be rejected"
+        );
 
         // Test 4d: Studio Hardsub Video Burn upload cap (2000 MB).
         let burn_max_upload = crate::studio::burn::MAX_UPLOAD_BYTES;
         assert_eq!(burn_max_upload, 2000 * 1024 * 1024);
-        assert!(!(burn_max_upload > crate::studio::burn::MAX_UPLOAD_BYTES), "Exact 2000MB must pass");
-        assert!(burn_max_upload + 1 > crate::studio::burn::MAX_UPLOAD_BYTES, "2000MB + 1 must be rejected");
+        assert!(
+            !(burn_max_upload > crate::studio::burn::MAX_UPLOAD_BYTES),
+            "Exact 2000MB must pass"
+        );
+        assert!(
+            burn_max_upload + 1 > crate::studio::burn::MAX_UPLOAD_BYTES,
+            "2000MB + 1 must be rejected"
+        );
 
         // Test 4e: TTS character count cap (500 chars).
         let tts_max = crate::moss_tts::handle::TTS_MAX_CHARS;
         assert_eq!(tts_max, 500);
-        assert!(!(tts_max > crate::moss_tts::handle::TTS_MAX_CHARS), "Exact 500 chars must pass");
-        assert!(tts_max + 1 > crate::moss_tts::handle::TTS_MAX_CHARS, "501 chars must be rejected");
+        assert!(
+            !(tts_max > crate::moss_tts::handle::TTS_MAX_CHARS),
+            "Exact 500 chars must pass"
+        );
+        assert!(
+            tts_max + 1 > crate::moss_tts::handle::TTS_MAX_CHARS,
+            "501 chars must be rejected"
+        );
 
         // Test 4f: PDF Compress default max cap.
         let pdf_max = crate::config::pdf_compress_max_bytes();

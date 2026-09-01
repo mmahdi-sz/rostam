@@ -31,11 +31,7 @@ fn now_epoch() -> i64 {
 /// Stash a referral link payload. Caller gates it to first-ever sighting of
 /// `referred_id`; the PK makes it once-only anyway. Becomes a point in
 /// `confirm_on_join` as soon as the user is in the force-join channel.
-pub async fn record_referral(
-    client: &Client,
-    referred_id: i64,
-    referrer_id: i64,
-) {
+pub async fn record_referral(client: &Client, referred_id: i64, referrer_id: i64) {
     let now = now_epoch();
     let r = client
         .execute(
@@ -186,11 +182,7 @@ pub fn calculate_converted_days(remaining_days: i64, cur_weight: i64, target_wei
     }
 }
 
-pub async fn plan_activation(
-    client: &Client,
-    user_id: i64,
-    tier_rank: Rank,
-) -> ActivationPlan {
+pub async fn plan_activation(client: &Client, user_id: i64, tier_rank: Rank) -> ActivationPlan {
     let now = now_epoch();
     let cur = crate::rank::store::get_user_rank(client, user_id)
         .await
@@ -439,10 +431,7 @@ pub struct TopReferrer {
     pub referral_count: i64,
 }
 
-pub async fn get_top_referrers(
-    client: &Client,
-    limit: i64,
-) -> Vec<TopReferrer> {
+pub async fn get_top_referrers(client: &Client, limit: i64) -> Vec<TopReferrer> {
     let rows = match client
         .query(
             "SELECT r.referrer_id, COUNT(*) AS count, u.username

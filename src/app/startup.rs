@@ -142,19 +142,21 @@ pub fn spawn_redeem_sweeper(database: PostgresDatabase) {
     tokio::spawn(async move {
         loop {
             match database.get().await {
-                Ok(mut client) => {
-                    match crate::redeem::store::sweep_expired(&mut client).await {
-                        Ok(n) if n > 0 => eprintln!("[redeem event=sweep_done removed={n}]"),
-                        Ok(_) => {}
-                        Err(e) => {
-                            eprintln!("[redeem event=sweep_failed err={e}]");
-                            crate::stats::record_error_global("redeem_sweeper", &e.to_string()).await;
-                        }
+                Ok(mut client) => match crate::redeem::store::sweep_expired(&mut client).await {
+                    Ok(n) if n > 0 => eprintln!("[redeem event=sweep_done removed={n}]"),
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("[redeem event=sweep_failed err={e}]");
+                        crate::stats::record_error_global("redeem_sweeper", &e.to_string()).await;
                     }
-                }
+                },
                 Err(e) => {
                     eprintln!("[redeem event=sweeper_checkout_failed err={e}]");
-                    crate::stats::record_error_global("redeem_sweeper", &format!("checkout failed: {e}")).await;
+                    crate::stats::record_error_global(
+                        "redeem_sweeper",
+                        &format!("checkout failed: {e}"),
+                    )
+                    .await;
                 }
             }
             tokio::time::sleep(Duration::from_secs(3600)).await;

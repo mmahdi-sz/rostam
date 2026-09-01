@@ -8,10 +8,10 @@ use std::sync::{
 
 use frankenstein::types::InlineKeyboardMarkup;
 
+use super::subtitle::SubtitleFormat;
 use crate::emoji::panel::btn_icon_danger;
 use crate::i18n::t;
 use crate::studio::pipeline::{register_active_job, remove_active_job};
-use super::subtitle::SubtitleFormat;
 
 pub fn cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()

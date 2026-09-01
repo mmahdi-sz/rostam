@@ -220,15 +220,9 @@ pub async fn list_active_codes(
 }
 
 /// Deletes specific code.
-pub async fn delete_code(
-    client: &Client,
-    code: &str,
-) -> Result<(), tokio_postgres::Error> {
+pub async fn delete_code(client: &Client, code: &str) -> Result<(), tokio_postgres::Error> {
     client
-        .execute(
-            "DELETE FROM redeem_redemptions WHERE code = $1",
-            &[&code],
-        )
+        .execute("DELETE FROM redeem_redemptions WHERE code = $1", &[&code])
         .await?;
     client
         .execute("DELETE FROM redeem_codes WHERE code = $1", &[&code])

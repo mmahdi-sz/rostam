@@ -42,7 +42,11 @@ pub async fn enter_selection_menu(
     let sel = match with_selection(&req, |slot| slot.clone()) {
         Some(s) => s,
         None => {
-            log_trace(trace_id, "selection_panel_no_selection", &format!("request_id={request_id}"));
+            log_trace(
+                trace_id,
+                "selection_panel_no_selection",
+                &format!("request_id={request_id}"),
+            );
             return;
         }
     };
@@ -147,7 +151,11 @@ pub async fn refresh_full_panel(
     request_id: u64,
 ) {
     let Some(sel) = with_selection(req, |slot| slot.clone()) else {
-        log_trace(req.trace_id, "selection_expired", &format!("request_id={request_id}"));
+        log_trace(
+            req.trace_id,
+            "selection_expired",
+            &format!("request_id={request_id}"),
+        );
         return;
     };
     let (text, entities) = build_selection_text(req, &sel);

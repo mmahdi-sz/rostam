@@ -1,16 +1,16 @@
 //! Admin broadcast module: sending banners (copy or forward) with optional pinning.
 
+use crate::bot::constants::*;
+use crate::emoji::flow::BroadcastMode;
+use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
+use crate::i18n::{t, tf};
+use crate::stats::{get_broadcast_user_ids, mark_user_blocked_global, record_event_global};
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     methods::{CopyMessageParams, ForwardMessageParams, PinChatMessageParams},
     types::InlineKeyboardMarkup,
 };
-use crate::bot::constants::*;
-use crate::emoji::flow::BroadcastMode;
-use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_success};
-use crate::i18n::{t, tf};
-use crate::stats::{get_broadcast_user_ids, mark_user_blocked_global, record_event_global};
 
 /// Pin state travels in the callback data — the menu is stateless, so entering
 /// it no longer resets the toggle to off.
@@ -76,26 +76,14 @@ pub fn format_broadcast_status(
         BroadcastMode::Forward => t("admin.broadcast.mode_forward"),
     };
 
-    let percent = if total > 0 {
-        (processed * 100) / total
-    } else {
-        100
-    };
-    let percent = percent.min(100);
-    let filled_blocks = if total > 0 {
-        (processed * 16) / total
-    } else {
-        16
-    };
-    let filled_blocks = filled_blocks.min(16);
+    let percent = (processed * 100).checked_div(total).unwrap_or(100).min(100);
+    let filled_blocks = (processed * 16).checked_div(total).unwrap_or(16).min(16);
     let empty_blocks = 16 - filled_blocks;
     let bar = format!("{}{}", "█".repeat(filled_blocks), "░".repeat(empty_blocks));
 
-    let speed = if elapsed_secs > 0 {
-        (processed as u64 * 60) / elapsed_secs
-    } else {
-        processed as u64 * 60
-    };
+    let speed = (processed as u64 * 60)
+        .checked_div(elapsed_secs)
+        .unwrap_or(processed as u64 * 60);
 
     tf(
         "admin.broadcast.progress_status",

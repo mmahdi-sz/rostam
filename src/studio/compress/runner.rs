@@ -10,13 +10,15 @@ use frankenstein::{
     types::InlineKeyboardMarkup,
 };
 
-use super::calc::{calculate_target_bitrate_kbps, compute_vmaf_score, format_eta_hms};
+use super::calc::{
+    calculate_target_bitrate_kbps, calculate_target_dimensions, compute_vmaf_score, format_eta_hms,
+};
 use super::session::{CompressSession, clear_session};
 use super::ui::send_compress_prompt_new_msg;
 use crate::bot::constants::CB_STUDIO_COMPRESS_JOBCANCEL;
 use crate::common::cpu_broker::CpuBrokerGuard;
-use crate::emoji::panel::btn_icon_danger;
 use crate::emoji::FlowManager;
+use crate::emoji::panel::btn_icon_danger;
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
 use crate::log::next_trace_id;
 use crate::moebius::cpu::trim_memory;
@@ -66,7 +68,6 @@ pub async fn start_compression_job(
         let _ = api.edit_message_text(&params).await;
 
         if cancel_flag.load(Ordering::Relaxed) {
-
             clear_session(user_id).await;
             let _ =
                 crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
@@ -102,7 +103,7 @@ pub async fn start_compression_job(
             Ok(res) => res,
             Err(e) => {
                 log_ev!("studio_compress", trace_id, "download_failed", "=>" => format!("fail err={e}"));
-    
+
                 let _ = crate::bot::send_text_md(
                     &api,
                     chat_id,
@@ -126,7 +127,6 @@ pub async fn start_compression_job(
         let download_secs = download_start.elapsed().as_secs();
 
         if cancel_flag.load(Ordering::Relaxed) {
-
             clear_session(user_id).await;
             let _ =
                 crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
@@ -176,7 +176,15 @@ pub async fn start_compression_job(
         };
 
         let target_kbps = calculate_target_bitrate_kbps(&session, session.res_h, session.br_ratio);
-        let scale_filter = format!("scale=-2:{}", session.res_h);
+        let (target_w, target_h) =
+            calculate_target_dimensions(session.orig_w, session.orig_h, session.res_h);
+        let scale_filter = if target_w == session.orig_w && target_h == session.orig_h {
+            "scale=trunc(iw/2)*2:trunc(ih/2)*2".to_string()
+        } else if session.orig_w >= session.orig_h {
+            format!("scale=-2:{}", session.res_h)
+        } else {
+            format!("scale={}:-2", session.res_h)
+        };
         let r_flag = session.fps.to_string();
         let b_v_flag = format!("{target_kbps}k");
 
@@ -342,7 +350,6 @@ pub async fn start_compression_job(
         let compress_secs = job_start.elapsed().as_secs();
 
         if cancel_flag.load(Ordering::Relaxed) {
-
             clear_session(user_id).await;
             let _ =
                 crate::bot::send_text_md(&api, chat_id, &t("studio.compress.job_cancelled")).await;
@@ -350,10 +357,7 @@ pub async fn start_compression_job(
             return;
         }
 
-        let ffmpeg_ok = match run_res {
-            Ok(Ok(true)) => true,
-            _ => false,
-        };
+        let ffmpeg_ok = matches!(run_res, Ok(Ok(true)));
 
         if !ffmpeg_ok || !output_file.exists() {
             log_ev!("studio_compress", trace_id, "ffmpeg_failed", "=>" => "fail");

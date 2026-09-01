@@ -141,7 +141,9 @@ pub async fn set_user_language(user_id: i64, lang: &str) {
 /// Records user in stats. Returns `true` if first time seen (used to gate referral attribution).
 pub async fn record_user_global(user_id: i64, username: Option<&str>) -> bool {
     let Some(pool) = get_pool() else { return false };
-    let Ok(client) = pool.get().await else { return false };
+    let Ok(client) = pool.get().await else {
+        return false;
+    };
     record_user(&client, user_id, username).await
 }
 
@@ -262,7 +264,9 @@ pub async fn record_user(client: &Client, user_id: i64, username: Option<&str>) 
 /// and before the language/force-join gates.
 pub async fn user_seen(user_id: i64) -> bool {
     let Some(pool) = get_pool() else { return false };
-    let Ok(client) = pool.get().await else { return false };
+    let Ok(client) = pool.get().await else {
+        return false;
+    };
     client
         .query_opt("SELECT 1 FROM stats_users WHERE user_id = $1", &[&user_id])
         .await

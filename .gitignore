@@ -26,3 +26,4 @@ node_modules/
 .codegraph/
 package.json
 package-lock.json
+.superpowers/

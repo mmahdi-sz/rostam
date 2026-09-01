@@ -9,9 +9,7 @@ use frankenstein::{
 
 use crate::emoji::panel::btn_icon;
 use crate::i18n::{entities_for_text, t, tf};
-use crate::surge_dl::types::{
-    CB_SURGE_CANCEL, CB_SURGE_CONFIRM_ORIGINAL, CB_SURGE_CONFIRM_RENAME,
-};
+use crate::surge_dl::types::{CB_SURGE_CANCEL, CB_SURGE_CONFIRM_ORIGINAL, CB_SURGE_CONFIRM_RENAME};
 
 pub(crate) fn cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()

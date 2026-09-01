@@ -105,44 +105,29 @@ pub async fn test_redeem_apply(Json(req): Json<RedeemApplyReq>) -> axum::respons
             let stats = stats.clone();
             let i18n_keys = i18n_keys.clone();
             let emojis = emojis.clone();
-            CAPTURED_STATS
-                .scope(stats, {
-                    RESOLVED_I18N_KEYS
-                        .scope(i18n_keys, {
-                            CAPTURED_EMOJIS
-                                .scope(emojis, async {
-                                    match database {
-                                        Some(db) => {
-                                            let db_opt = Some(db.clone());
-                                            let res = crate::redeem::handle::handle_redeem(
-                                                &bot,
-                                                user_id,
-                                                user_id,
-                                                "Test",
-                                                None,
-                                                &code,
-                                                &db_opt,
-                                            )
-                                            .await;
-                                            (res, "connected".to_string())
-                                        }
-                                        None => {
-                                            let res = crate::redeem::handle::handle_redeem(
-                                                &bot,
-                                                user_id,
-                                                user_id,
-                                                "Test",
-                                                None,
-                                                &code,
-                                                &None,
-                                            )
-                                            .await;
-                                            (res, "unavailable".to_string())
-                                        }
-                                    }
-                                })
-                        })
+            CAPTURED_STATS.scope(stats, {
+                RESOLVED_I18N_KEYS.scope(i18n_keys, {
+                    CAPTURED_EMOJIS.scope(emojis, async {
+                        match database {
+                            Some(db) => {
+                                let db_opt = Some(db.clone());
+                                let res = crate::redeem::handle::handle_redeem(
+                                    &bot, user_id, user_id, "Test", None, &code, &db_opt,
+                                )
+                                .await;
+                                (res, "connected".to_string())
+                            }
+                            None => {
+                                let res = crate::redeem::handle::handle_redeem(
+                                    &bot, user_id, user_id, "Test", None, &code, &None,
+                                )
+                                .await;
+                                (res, "unavailable".to_string())
+                            }
+                        }
+                    })
                 })
+            })
         })
         .await;
 

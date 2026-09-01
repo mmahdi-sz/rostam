@@ -116,7 +116,10 @@ impl<K: Eq + Hash + Clone + 'static> JobRegistry<K, Arc<tokio::sync::Notify>> {
     pub fn register_notify_with_guard(
         &'static self,
         key: K,
-    ) -> (Arc<tokio::sync::Notify>, JobGuard<K, Arc<tokio::sync::Notify>>) {
+    ) -> (
+        Arc<tokio::sync::Notify>,
+        JobGuard<K, Arc<tokio::sync::Notify>>,
+    ) {
         let notify = self.register_notify(key.clone());
         let guard = self.guard(key);
         (notify, guard)

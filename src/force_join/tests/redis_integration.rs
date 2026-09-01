@@ -28,7 +28,9 @@ async fn test_lock_crud_lifecycle() {
     assert!(lock_id > 0, "add_lock must return a valid positive ID");
 
     // 2. Retrieve lock
-    let lock = get_lock(lock_id).await.expect("created lock must exist in Redis");
+    let lock = get_lock(lock_id)
+        .await
+        .expect("created lock must exist in Redis");
     assert_eq!(lock.id, lock_id);
     assert_eq!(lock.link, link);
     assert_eq!(lock.identifier, "@test_lifecycle_channel");
@@ -40,12 +42,20 @@ async fn test_lock_crud_lifecycle() {
 
     // 3. Update fields
     set_display_name(lock_id, "Test Lifecycle Channel").await;
-    assert!(set_time_limit(lock_id, "14").await, "set_time_limit should succeed for '14'");
-    assert!(set_member_cap(lock_id, "250").await, "set_member_cap should succeed for '250'");
+    assert!(
+        set_time_limit(lock_id, "14").await,
+        "set_time_limit should succeed for '14'"
+    );
+    assert!(
+        set_member_cap(lock_id, "250").await,
+        "set_member_cap should succeed for '250'"
+    );
     set_reserve_link(lock_id, "https://t.me/test_lifecycle_backup").await;
 
     // 4. Verify updated fields
-    let updated = get_lock(lock_id).await.expect("updated lock must exist in Redis");
+    let updated = get_lock(lock_id)
+        .await
+        .expect("updated lock must exist in Redis");
     assert_eq!(updated.display_override, "Test Lifecycle Channel");
     assert!(
         updated.expires_at > now_epoch() + 13 * 86400,
@@ -69,7 +79,10 @@ async fn test_lock_crud_lifecycle() {
     delete_lock(lock_id).await;
 
     // 8. Verify all associated Redis keys are purged
-    assert!(get_lock(lock_id).await.is_none(), "lock hash must be deleted");
+    assert!(
+        get_lock(lock_id).await.is_none(),
+        "lock hash must be deleted"
+    );
     assert!(
         !list_locks().await.iter().any(|l| l.id == lock_id),
         "deleted lock must not appear in list_locks()"
@@ -88,7 +101,10 @@ async fn test_lock_crud_lifecycle() {
         .query_async(&mut c)
         .await
         .unwrap_or(false);
-    assert!(!already_exists, "already_count key must be purged on delete");
+    assert!(
+        !already_exists,
+        "already_count key must be purged on delete"
+    );
 
     let linked_exists: bool = redis::cmd("EXISTS")
         .arg(linked_count_key(lock_id))
@@ -188,7 +204,10 @@ async fn test_cache_status_lua_transitions() {
     assert_eq!(state_b_linked.as_deref(), Some("linked"));
 
     let count_linked_after_join: i64 = linked_count(test_lock_id).await;
-    assert_eq!(count_linked_after_join, 1, "linked_count must increment to 1");
+    assert_eq!(
+        count_linked_after_join, 1,
+        "linked_count must increment to 1"
+    );
 
     // Step 4: User B leaves channel -> state returns to 'pending', linked_count -1
     cache_status(test_lock_id, user_b, false).await;
@@ -201,7 +220,10 @@ async fn test_cache_status_lua_transitions() {
     assert_eq!(state_b_left.as_deref(), Some("pending"));
 
     let count_linked_after_leave: i64 = linked_count(test_lock_id).await;
-    assert_eq!(count_linked_after_leave, 0, "linked_count must decrement to 0");
+    assert_eq!(
+        count_linked_after_leave, 0,
+        "linked_count must decrement to 0"
+    );
 
     // Clean up test keys
     let _: Result<(), _> = redis::cmd("DEL")

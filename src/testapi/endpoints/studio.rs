@@ -224,7 +224,8 @@ pub async fn test_studio_compress(
     let orig_bitrate = req.orig_bitrate.unwrap_or(2_000_000);
     let duration_secs = req.duration_secs.unwrap_or(120);
 
-    let res_h = req.selected_res.unwrap_or(1080).min(orig_h);
+    let base_dim = orig_w.min(orig_h);
+    let res_h = req.selected_res.unwrap_or(1080).min(base_dim);
     let fps = req.selected_fps.unwrap_or(60).min(orig_fps);
     let codec = req.selected_codec.unwrap_or_else(|| "h264".to_string());
     let br_ratio = req.selected_br_ratio.unwrap_or(100);
@@ -249,7 +250,7 @@ pub async fn test_studio_compress(
     let menu_keyboard = dump(&build_compress_keyboard(&session));
 
     let all_res = [2160, 1440, 1080, 720, 480, 360, 240, 144];
-    let available_resolutions: Vec<u32> = all_res.into_iter().filter(|&h| h <= orig_h).collect();
+    let available_resolutions: Vec<u32> = all_res.into_iter().filter(|&h| h <= base_dim).collect();
 
     let all_fps = [60, 45, 30, 24, 20, 15, 13];
     let available_fps: Vec<u32> = all_fps.into_iter().filter(|&f| f <= orig_fps).collect();

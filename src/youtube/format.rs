@@ -53,7 +53,7 @@ pub fn format_count(n: u64) -> String {
     let mut out = String::with_capacity(s.len() + s.len() / 3);
     let len = bytes.len();
     for (i, b) in bytes.iter().enumerate() {
-        if i > 0 && (len - i) % 3 == 0 {
+        if i > 0 && (len - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(*b as char);
@@ -90,7 +90,9 @@ pub fn build_caption(info: &VideoInfo) -> String {
     let channel_label = escape_markdown_v2(&t("youtube.caption.channel_label"));
 
     if info.is_playlist {
-        let count = info.playlist_item_count.unwrap_or(info.playlist_items.len());
+        let count = info
+            .playlist_item_count
+            .unwrap_or(info.playlist_items.len());
         let count_str = escape_markdown_v2(&format_count(count as u64));
         let count_label = escape_markdown_v2(&t("youtube.caption.video_count_label"));
         let views = info

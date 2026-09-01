@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use deadpool_postgres::{Config, ManagerConfig, Object, Pool, PoolConfig, RecyclingMethod, Runtime, Timeouts};
+use deadpool_postgres::{
+    Config, ManagerConfig, Object, Pool, PoolConfig, RecyclingMethod, Runtime, Timeouts,
+};
 use tokio_postgres::NoTls;
 
 use crate::config;
@@ -19,7 +21,9 @@ impl PostgresDatabase {
 
         // Run Refinery migrations on startup using a temporary pooled connection
         {
-            let mut client = pool.get().await.map_err(|e| anyhow::anyhow!("failed to checkout migration connection from pool: {e}"))?;
+            let mut client = pool.get().await.map_err(|e| {
+                anyhow::anyhow!("failed to checkout migration connection from pool: {e}")
+            })?;
             Self::init_schema(&mut *client).await?;
         }
 
@@ -35,25 +39,45 @@ impl PostgresDatabase {
     }
 
     pub async fn save_snapshot(&self, snapshot: &CookiePoolSnapshot) -> anyhow::Result<()> {
-        let client = self.get().await.map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
-        cookie_pool::save_snapshot(&client, snapshot).await.map_err(|e| anyhow::anyhow!("{e}"))
+        let client = self
+            .get()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
+        cookie_pool::save_snapshot(&client, snapshot)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     pub async fn load_state(&self) -> anyhow::Result<(Option<String>, Vec<CooldownEntry>)> {
-        let client = self.get().await.map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
-        cookie_pool::load_state(&client).await.map_err(|e| anyhow::anyhow!("{e}"))
+        let client = self
+            .get()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
+        cookie_pool::load_state(&client)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     #[allow(dead_code)]
     pub async fn save_last_used(&self, cookie_id: Option<&str>) -> anyhow::Result<()> {
-        let client = self.get().await.map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
-        cookie_pool::save_last_used(&client, cookie_id).await.map_err(|e| anyhow::anyhow!("{e}"))
+        let client = self
+            .get()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
+        cookie_pool::save_last_used(&client, cookie_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     #[allow(dead_code)]
     pub async fn save_cooldown(&self, entry: &CooldownEntry) -> anyhow::Result<()> {
-        let client = self.get().await.map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
-        cookie_pool::save_cooldown(&client, entry).await.map_err(|e| anyhow::anyhow!("{e}"))
+        let client = self
+            .get()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
+        cookie_pool::save_cooldown(&client, entry)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     async fn init_schema(client: &mut tokio_postgres::Client) -> anyhow::Result<()> {

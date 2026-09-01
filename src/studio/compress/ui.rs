@@ -5,11 +5,9 @@ use frankenstein::{
     types::{InlineKeyboardMarkup, ReplyMarkup},
 };
 
-use super::calc::calculate_target_bitrate_kbps;
+use super::calc::{calculate_target_bitrate_kbps, calculate_target_dimensions};
 use super::session::CompressSession;
-use crate::bot::constants::{
-    CB_START_STUDIO, CB_STUDIO_COMPRESS_CANCEL, CB_STUDIO_COMPRESS_START,
-};
+use crate::bot::constants::{CB_START_STUDIO, CB_STUDIO_COMPRESS_CANCEL, CB_STUDIO_COMPRESS_START};
 use crate::emoji::panel::{btn_icon, btn_icon_danger, btn_icon_primary, btn_icon_success};
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
@@ -38,7 +36,7 @@ pub fn build_compress_keyboard(session: &CompressSession) -> InlineKeyboardMarku
     }
     rows.push(codec_row);
 
-    // Section 2: Resolution (Filtered by <= orig_h)
+    // Section 2: Resolution (Filtered by <= base_dim = min(orig_w, orig_h))
     let res_matrix: &[&[(u32, &str)]] = &[
         &[(2160, "2160p (4K)"), (1440, "1440p (2K)")],
         &[(1080, "1080p (fullHD)"), (720, "720p (HD)")],
@@ -50,10 +48,11 @@ pub fn build_compress_keyboard(session: &CompressSession) -> InlineKeyboardMarku
         ],
     ];
 
+    let base_dim = session.orig_w.min(session.orig_h);
     for row in res_matrix {
         let mut res_row = Vec::new();
         for &(h, label) in *row {
-            if h <= session.orig_h {
+            if h <= base_dim {
                 let cb = format!("stc:set:r:{h}");
                 let btn = if session.res_h == h {
                     btn_icon_success(label, &cb, "")
@@ -142,7 +141,9 @@ pub fn build_compress_text(session: &CompressSession) -> String {
         "av1" => "AV1",
         _ => session.codec.as_str(),
     };
-    let sel_res = format!("{}p", session.res_h);
+    let (target_w, target_h) =
+        calculate_target_dimensions(session.orig_w, session.orig_h, session.res_h);
+    let sel_res = format!("{}x{} ({}p)", target_w, target_h, session.res_h);
 
     let sel_br_kbps = calculate_target_bitrate_kbps(session, session.res_h, session.br_ratio);
     let sel_br_label = format!("{sel_br_kbps} kbps");

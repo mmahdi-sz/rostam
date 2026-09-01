@@ -4,8 +4,7 @@ use tokio::sync::Notify;
 
 use crate::common::job::{JobGuard, JobRegistry};
 
-static ACTIVE_DOWNLOADS: LazyLock<JobRegistry<u64, Arc<Notify>>> =
-    LazyLock::new(JobRegistry::new);
+static ACTIVE_DOWNLOADS: LazyLock<JobRegistry<u64, Arc<Notify>>> = LazyLock::new(JobRegistry::new);
 
 pub fn register_cancel(request_id: u64) -> Arc<Notify> {
     ACTIVE_DOWNLOADS.register_notify(request_id)

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 use std::sync::LazyLock;
+use std::sync::atomic::Ordering;
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
@@ -23,8 +23,7 @@ use crate::stats;
 use crate::common::job::JobRegistry;
 
 /// Cancel flag per user so the "Cancel" button on status message works.
-static ACTIVE_DEOLDIFY_JOBS: LazyLock<JobRegistry<i64>> =
-    LazyLock::new(JobRegistry::new);
+static ACTIVE_DEOLDIFY_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 pub fn cancel_deoldify_job(user_id: i64) -> bool {
     ACTIVE_DEOLDIFY_JOBS.cancel(&user_id)
@@ -107,7 +106,8 @@ pub async fn handle_deoldify_image(
                 Ok(c) => c,
                 Err(e) => {
                     log_ev!("deoldify", trace_id, "quota_checkout", "err" => format!("{e}"), "=>" => "fail");
-                    crate::rank::paywall::quota_db_error(api, chat_id, "deoldify", &format!("{e}")).await;
+                    crate::rank::paywall::quota_db_error(api, chat_id, "deoldify", &format!("{e}"))
+                        .await;
                     flow_manager.set(user_id, FlowState::Idle);
                     return;
                 }

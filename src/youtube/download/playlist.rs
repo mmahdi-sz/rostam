@@ -317,9 +317,7 @@ async fn download_single_playlist_item_with_retry(
                 log_trace(
                     trace_id,
                     "playlist_item_cookie_attempt_failed",
-                    &format!(
-                        "num={video_num} attempt={attempt} url={video_url} err={raw_err}"
-                    ),
+                    &format!("num={video_num} attempt={attempt} url={video_url} err={raw_err}"),
                 );
 
                 let Some(cookie_pool) = req.cookie_pool.as_ref() else {

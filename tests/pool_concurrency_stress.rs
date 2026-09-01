@@ -9,7 +9,12 @@ async fn test_pool_concurrent_checkout_and_recycling() {
             content.lines().find_map(|line| {
                 let trimmed = line.trim();
                 if trimmed.starts_with("DATABASE_URL=") {
-                    Some(trimmed.strip_prefix("DATABASE_URL=")?.trim_matches('"').to_string())
+                    Some(
+                        trimmed
+                            .strip_prefix("DATABASE_URL=")?
+                            .trim_matches('"')
+                            .to_string(),
+                    )
                 } else {
                     None
                 }
@@ -17,7 +22,9 @@ async fn test_pool_concurrent_checkout_and_recycling() {
         })
     });
     let Some(db_url) = db_url else {
-        eprintln!("[test] Skipping test_pool_concurrent_checkout_and_recycling: DATABASE_URL not found");
+        eprintln!(
+            "[test] Skipping test_pool_concurrent_checkout_and_recycling: DATABASE_URL not found"
+        );
         return;
     };
 
@@ -36,7 +43,10 @@ async fn test_pool_concurrent_checkout_and_recycling() {
     cfg.pool = Some(pool_cfg);
 
     let pool = cfg
-        .create_pool(Some(deadpool_postgres::Runtime::Tokio1), tokio_postgres::NoTls)
+        .create_pool(
+            Some(deadpool_postgres::Runtime::Tokio1),
+            tokio_postgres::NoTls,
+        )
         .expect("create pool");
 
     // Spawn 64 concurrent tasks executing queries against the pool of max size 16
@@ -49,11 +59,11 @@ async fn test_pool_concurrent_checkout_and_recycling() {
         set.spawn(async move {
             let client = pool.get().await.expect("checkout client from pool");
             let row = client
-                .query_one("SELECT $1::int AS n", &[&(i as i32)])
+                .query_one("SELECT $1::int AS n", &[&{ i }])
                 .await
                 .expect("query execution");
             let n: i32 = row.get("n");
-            assert_eq!(n, i as i32);
+            assert_eq!(n, i);
             // Simulate short work
             tokio::time::sleep(Duration::from_millis(10)).await;
             // Connection is returned to pool upon drop

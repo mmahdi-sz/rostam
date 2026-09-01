@@ -3,9 +3,9 @@
 //! Subprocesses are executed either via `.output().await` (which fully drains
 //! stdout/stderr) or with `Stdio::null()` to prevent 64KB pipe buffer deadlocks.
 
+use anyhow::{Result, bail};
 use std::path::Path;
 use std::process::Stdio;
-use anyhow::{bail, Result};
 
 /// Extracted video and audio container metadata.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

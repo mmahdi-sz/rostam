@@ -10,7 +10,7 @@ use crate::config;
 use crate::cookie_pool::{CookiePool, CookieSource};
 use crate::database::postgresql::PostgresDatabase;
 use crate::denoise;
-use crate::emoji::{handler as emoji_handler, FlowState, FlowManager};
+use crate::emoji::{FlowManager, FlowState, handler as emoji_handler};
 use crate::gemini_watermark::handle_gwm_image;
 use crate::i18n::{t, tf};
 use crate::ip_lookup::handle_ip_lookup_text;
@@ -32,7 +32,6 @@ pub(super) async fn handle_flow_message(
     message: &Message,
     uid: i64,
 ) -> crate::error::Result<bool> {
-
     if matches!(flow_manager.get(uid), FlowState::Idle) {
         return Ok(false);
     }
@@ -43,14 +42,8 @@ pub(super) async fn handle_flow_message(
             flow_manager.clear(uid);
             let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
             if is_admin {
-                crate::redeem::handle::handle_generate(
-                    api,
-                    message.chat.id,
-                    uid,
-                    text,
-                    database,
-                )
-                .await;
+                crate::redeem::handle::handle_generate(api, message.chat.id, uid, text, database)
+                    .await;
             }
             return Ok(true);
         }
@@ -92,8 +85,7 @@ pub(super) async fn handle_flow_message(
     }
 
     // Admin sent input for lock field wizard (name/time/member/reserve)
-    if let FlowState::AwaitingForceJoinField { lock_id, field, .. } = flow_manager.get(uid)
-    {
+    if let FlowState::AwaitingForceJoinField { lock_id, field, .. } = flow_manager.get(uid) {
         if let Some(text) = message.text.as_deref() {
             let is_admin = config::admin_user_id().map(|id| id == uid).unwrap_or(false);
             if is_admin {
@@ -152,13 +144,9 @@ pub(super) async fn handle_flow_message(
                     ("active", &active_users.to_string()),
                 ],
             );
-            let kb = crate::admin::broadcast::broadcast_target_keyboard(
-                active_users,
-                total_users,
-            );
+            let kb = crate::admin::broadcast::broadcast_target_keyboard(active_users, total_users);
 
-            let _ =
-                crate::bot::send_text_with_kb(api, message.chat.id, &prompt_text, kb).await;
+            let _ = crate::bot::send_text_with_kb(api, message.chat.id, &prompt_text, kb).await;
         }
         return Ok(true);
     }
@@ -194,15 +182,12 @@ pub(super) async fn handle_flow_message(
         }
     }
 
-    if emoji_handler::handle_emoji_flow_message(api, &message, uid, flow_manager, database)
-        .await
-    {
+    if emoji_handler::handle_emoji_flow_message(api, &message, uid, flow_manager, database).await {
         return Ok(true);
     }
 
     if let FlowState::AwaitingSttAudio { config } = flow_manager.get(uid) {
-        if message.voice.is_some() || message.audio.is_some() || message.document.is_some()
-        {
+        if message.voice.is_some() || message.audio.is_some() || message.document.is_some() {
             let file_id = message
                 .voice
                 .as_ref()
@@ -327,10 +312,8 @@ pub(super) async fn handle_flow_message(
             let fm_clone = flow_manager.clone();
             let db_clone = database.clone();
             crate::app::spawn_user_task(async move {
-                crate::deoldify::handle_deoldify_image(
-                    &api2, &msg2, uid, &fm_clone, db_clone,
-                )
-                .await;
+                crate::deoldify::handle_deoldify_image(&api2, &msg2, uid, &fm_clone, db_clone)
+                    .await;
             });
             return Ok(true);
         }
@@ -395,8 +378,7 @@ pub(super) async fn handle_flow_message(
             handle_pdf_file(api, &message, uid, flow_manager).await;
         } else {
             let _ =
-                crate::bot::send_text(api, message.chat.id, &t("pdfcompress.busy_warning"))
-                    .await;
+                crate::bot::send_text(api, message.chat.id, &t("pdfcompress.busy_warning")).await;
         }
         return Ok(true);
     }
@@ -405,8 +387,7 @@ pub(super) async fn handle_flow_message(
         flow_manager.get(uid),
         FlowState::AwaitingPdfCompressLevel { .. }
     ) {
-        let _ = crate::bot::send_text(api, message.chat.id, &t("pdfcompress.busy_warning"))
-            .await;
+        let _ = crate::bot::send_text(api, message.chat.id, &t("pdfcompress.busy_warning")).await;
         return Ok(true);
     }
 
@@ -414,8 +395,7 @@ pub(super) async fn handle_flow_message(
         if message.document.is_some() {
             let trace_id = next_trace_id();
             log_ev!("pkgconvert", trace_id, "file_dispatched", "user_id" => uid);
-            crate::pkgconvert::handle_pkg_file(api, &message, uid, flow_manager, database)
-                .await;
+            crate::pkgconvert::handle_pkg_file(api, &message, uid, flow_manager, database).await;
         } else {
             let _ = crate::bot::send_text_md(api, message.chat.id, &t("pkg.prompt")).await;
         }
@@ -523,24 +503,18 @@ pub(super) async fn handle_flow_message(
                 let api2 = api.clone();
                 let chat_id2 = message.chat.id;
                 crate::app::spawn_user_task(async move {
-                    let _ = crate::bot::send_text(
-                        &api2,
-                        chat_id2,
-                        &t("spotify.only_single_tracks"),
-                    )
-                    .await;
+                    let _ =
+                        crate::bot::send_text(&api2, chat_id2, &t("spotify.only_single_tracks"))
+                            .await;
                 });
                 return Ok(true);
             } else if platform == Some("soundcloud") {
                 let api2 = api.clone();
                 let chat_id2 = message.chat.id;
                 crate::app::spawn_user_task(async move {
-                    let _ = crate::bot::send_text(
-                        &api2,
-                        chat_id2,
-                        &t("soundcloud.only_single_tracks"),
-                    )
-                    .await;
+                    let _ =
+                        crate::bot::send_text(&api2, chat_id2, &t("soundcloud.only_single_tracks"))
+                            .await;
                 });
                 return Ok(true);
             } else if let Some(p) = platform {
@@ -593,14 +567,8 @@ pub(super) async fn handle_flow_message(
                 "filecompress_password_dispatched",
                 &format!("user_id={uid} chat_id={}", message.chat.id),
             );
-            crate::filecompress::handle_fc_password_text(
-                api,
-                &message,
-                uid,
-                flow_manager,
-                config,
-            )
-            .await;
+            crate::filecompress::handle_fc_password_text(api, &message, uid, flow_manager, config)
+                .await;
             return Ok(true);
         }
         // Non-text input during password step: prompt text required
@@ -695,8 +663,7 @@ pub(super) async fn handle_flow_message(
                 "filecompress_file_dispatched",
                 &format!("user_id={uid} chat_id={}", message.chat.id),
             );
-            crate::filecompress::handle_fc_file(api, &message, uid, flow_manager, database)
-                .await;
+            crate::filecompress::handle_fc_file(api, &message, uid, flow_manager, database).await;
             return Ok(true);
         }
     }
@@ -728,10 +695,7 @@ pub(super) async fn handle_flow_message(
             let fm = flow_manager.clone();
             flow_manager.clear(uid);
             crate::app::spawn_user_task(async move {
-                crate::studio::compress::handle_video_upload(
-                    &api2, msg2, uid, trace_id, &fm,
-                )
-                .await;
+                crate::studio::compress::handle_video_upload(&api2, msg2, uid, trace_id, &fm).await;
             });
             return Ok(true);
         }
@@ -746,10 +710,7 @@ pub(super) async fn handle_flow_message(
             let fm = flow_manager.clone();
             flow_manager.clear(uid);
             crate::app::spawn_user_task(async move {
-                crate::studio::extract::handle_video_upload(
-                    &api2, msg2, uid, trace_id, &fm,
-                )
-                .await;
+                crate::studio::extract::handle_video_upload(&api2, msg2, uid, trace_id, &fm).await;
             });
             return Ok(true);
         }

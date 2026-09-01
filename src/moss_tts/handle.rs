@@ -33,8 +33,7 @@ pub const CB_TTS_JOB_CANCEL: &str = "tts:jobcancel";
 use crate::common::job::JobRegistry;
 
 /// Per-user active job cancellation flag; passed to engine to interrupt generation loop and release CPU.
-static ACTIVE_TTS_JOBS: LazyLock<JobRegistry<i64>> =
-    LazyLock::new(JobRegistry::new);
+static ACTIVE_TTS_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 pub fn tts_cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
@@ -173,7 +172,8 @@ pub async fn handle_tts_text(
                 Ok(c) => c,
                 Err(e) => {
                     log_ev!("tts", trace_id, "quota_checkout", "err" => format!("{e}"), "=>" => "fail");
-                    crate::rank::paywall::quota_db_error(api, chat_id, "tts", &format!("{e}")).await;
+                    crate::rank::paywall::quota_db_error(api, chat_id, "tts", &format!("{e}"))
+                        .await;
                     flow_manager.set(user_id, FlowState::Idle);
                     return;
                 }

@@ -7,9 +7,8 @@ use crate::force_join::conn::conn;
 use crate::force_join::{
     CB_FJ_ADD_NEW, CB_FJ_CHECK, CB_FJ_TOGGLE, CB_FJ_VIEW, Lock, ToggleModeResult, add_lock,
     already_count_key, build_manage, delete_lock, is_enabled, is_joined, is_joined_live,
-    linked_count_key, locks_list_view, mandatory_locks, menu_keyboard, menu_text,
-    set_display_name, set_enabled, set_field, set_member_cap, set_reserve_link, set_time_limit,
-    toggle_lock_mode,
+    linked_count_key, locks_list_view, mandatory_locks, menu_keyboard, menu_text, set_display_name,
+    set_enabled, set_field, set_member_cap, set_reserve_link, set_time_limit, toggle_lock_mode,
 };
 use crate::i18n::t;
 
@@ -508,9 +507,7 @@ pub struct FjToggleModeResp {
     pub resulting_mode: Option<String>,
 }
 
-pub async fn test_fj_admin_toggle_mode(
-    Json(req): Json<FjToggleModeReq>,
-) -> Json<FjToggleModeResp> {
+pub async fn test_fj_admin_toggle_mode(Json(req): Json<FjToggleModeReq>) -> Json<FjToggleModeResp> {
     let bot = Bot::new_url("http://127.0.0.1:14379/bot".to_string());
 
     let (res, resulting_mode) = match req.scenario.as_str() {

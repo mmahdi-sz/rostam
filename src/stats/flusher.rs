@@ -1,6 +1,6 @@
-use std::time::Duration;
 use deadpool_postgres::Pool;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use std::time::Duration;
+use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 pub enum TelemetryMsg {
     Event {
@@ -69,14 +69,11 @@ impl TelemetryFlusher {
     }
 }
 
-async fn flush_events(
-    pool: &Pool,
-    buffer: &mut Vec<(i64, String, String, String, i64)>,
-) {
+async fn flush_events(pool: &Pool, buffer: &mut Vec<(i64, String, String, String, i64)>) {
     if buffer.is_empty() {
         return;
     }
-    let batch: Vec<_> = buffer.drain(..).collect();
+    let batch: Vec<_> = std::mem::take(buffer);
 
     let client = match pool.get().await {
         Ok(c) => c,
@@ -98,8 +95,10 @@ async fn flush_events(
     }
 
     // Multi-row parameterized batch insert
-    let mut sql = String::from("INSERT INTO stats_events (user_id, feature, action, status, amount) VALUES ");
-    let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::with_capacity(batch.len() * 5);
+    let mut sql =
+        String::from("INSERT INTO stats_events (user_id, feature, action, status, amount) VALUES ");
+    let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
+        Vec::with_capacity(batch.len() * 5);
 
     for (i, item) in batch.iter().enumerate() {
         if i > 0 {
@@ -130,7 +129,7 @@ async fn flush_errors(pool: &Pool, buffer: &mut Vec<(String, String)>) {
     if buffer.is_empty() {
         return;
     }
-    let batch: Vec<_> = buffer.drain(..).collect();
+    let batch: Vec<_> = std::mem::take(buffer);
 
     let client = match pool.get().await {
         Ok(c) => c,
@@ -152,7 +151,8 @@ async fn flush_errors(pool: &Pool, buffer: &mut Vec<(String, String)>) {
     }
 
     let mut sql = String::from("INSERT INTO stats_errors (feature, message) VALUES ");
-    let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::with_capacity(batch.len() * 2);
+    let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
+        Vec::with_capacity(batch.len() * 2);
 
     for (i, item) in batch.iter().enumerate() {
         if i > 0 {

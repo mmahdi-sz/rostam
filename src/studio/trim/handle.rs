@@ -7,10 +7,7 @@ use frankenstein::{
     types::{InlineKeyboardMarkup, Message, ReplyParameters},
 };
 
-use crate::bot::{
-    files::download_telegram_file,
-    messaging::send_text_md,
-};
+use crate::bot::{files::download_telegram_file, messaging::send_text_md};
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::panel::btn_icon_danger;
 use crate::emoji::{FlowManager, FlowState};
@@ -18,7 +15,6 @@ use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
 use crate::log::next_trace_id;
 use crate::studio::is_video_message_metadata;
 use crate::studio::pipeline::{TempDirGuard, spawn_download_ticker};
-use crate::{log_actor_id, log_ev};
 
 use super::probe::{format_bitrate, run_ffprobe};
 use super::range::{DEFAULT_MAX_CUT_RANGES, RangeError, format_timestamp, parse_cut_ranges};

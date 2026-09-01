@@ -23,11 +23,10 @@ use crate::stats::record_event_user;
 use crate::studio::pipeline::{
     TempDirGuard, job_guard, register_active_job, spawn_download_ticker,
 };
-use crate::log_ev;
 
+use super::handle::{cancel_keyboard, job_cancel_keyboard};
 use super::probe::run_ffprobe;
 use super::range::{CutRange, format_timestamp};
-use super::handle::{cancel_keyboard, job_cancel_keyboard};
 
 /// Executes brokered ffmpeg multi-cut job with ticker, cancel flag, and re-arm.
 pub async fn execute_trim_job(
@@ -397,10 +396,7 @@ pub async fn execute_trim_job(
         })
         .await;
 
-        let trim_ok = match run_res {
-            Ok(Ok(true)) => true,
-            _ => false,
-        };
+        let trim_ok = matches!(run_res, Ok(Ok(true)));
 
         if cancel_flag.load(Ordering::Relaxed) {
             break;

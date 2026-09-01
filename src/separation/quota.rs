@@ -58,7 +58,13 @@ pub async fn check_and_reserve_quota(
                     let _ = delete_message(api, chat_id, message_id).await;
                     std::fs::remove_dir_all(tmp_dir).ok();
                     flow_manager.clear(user_id);
-                    crate::rank::paywall::quota_db_error(api, chat_id, "separation", &format!("{e}")).await;
+                    crate::rank::paywall::quota_db_error(
+                        api,
+                        chat_id,
+                        "separation",
+                        &format!("{e}"),
+                    )
+                    .await;
                     return Err(());
                 }
             };
@@ -163,7 +169,11 @@ pub async fn check_and_reserve_quota(
                     .await
                     {
                         log_trace(trace_id, "quota_refund_failed", &e.to_string());
-                        crate::stats::record_error_global("separation", &format!("refund_failed: {e}")).await;
+                        crate::stats::record_error_global(
+                            "separation",
+                            &format!("refund_failed: {e}"),
+                        )
+                        .await;
                     }
                 }
                 Some(w)
@@ -188,13 +198,8 @@ pub async fn check_and_reserve_quota(
                 let _ = delete_message(api, chat_id, message_id).await;
                 std::fs::remove_dir_all(tmp_dir).ok();
                 flow_manager.clear(user_id);
-                crate::rank::paywall::quota_db_error(
-                    api,
-                    chat_id,
-                    "separation",
-                    &format!("{e}"),
-                )
-                .await;
+                crate::rank::paywall::quota_db_error(api, chat_id, "separation", &format!("{e}"))
+                    .await;
                 return Err(());
             }
         }
@@ -253,15 +258,11 @@ pub async fn refund_quota(
                     (QuotaKind::SeparationDaily, 86400),
                     (QuotaKind::SeparationWeekly, 7 * 86400),
                 ] {
-                    if let Err(e) =
-                        refund_usage(&client, user_id, kind, reserve_secs, window).await
+                    if let Err(e) = refund_usage(&client, user_id, kind, reserve_secs, window).await
                     {
                         log_trace(trace_id, "quota_refund", &format!("err={e} => fail"));
-                        crate::stats::record_error_global(
-                            "separation",
-                            "quota_refund_failed",
-                        )
-                        .await;
+                        crate::stats::record_error_global("separation", "quota_refund_failed")
+                            .await;
                     }
                 }
             }

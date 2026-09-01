@@ -1,9 +1,7 @@
 use std::sync::LazyLock;
 
 use frankenstein::{
-    AsyncTelegramApi, ParseMode,
-    client_reqwest::Bot,
-    methods::EditMessageTextParams,
+    AsyncTelegramApi, ParseMode, client_reqwest::Bot, methods::EditMessageTextParams,
 };
 
 use super::config::CompressConfig;
@@ -19,8 +17,7 @@ use crate::common::job::JobRegistry;
 
 /// Cancel flag per user so the "Cancel" button on progress message works.
 /// Kills 7z/rar process to free CPU instead of discarding output.
-pub(super) static ACTIVE_FC_JOBS: LazyLock<JobRegistry<i64>> =
-    LazyLock::new(JobRegistry::new);
+pub(super) static ACTIVE_FC_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 pub fn cancel_fc_job(user_id: i64) -> bool {
     ACTIVE_FC_JOBS.cancel(&user_id)

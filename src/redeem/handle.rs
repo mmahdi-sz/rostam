@@ -363,7 +363,8 @@ pub async fn handle_redeem(
         if now_epoch() > exp {
             if let Err(e) = store::delete_code(&client, code).await {
                 eprintln!("[redeem event=delete_expired_failed code={code} err={e}]");
-                crate::stats::record_error_global("redeem", &format!("delete_expired_failed: {e}")).await;
+                crate::stats::record_error_global("redeem", &format!("delete_expired_failed: {e}"))
+                    .await;
             }
             eprintln!("[redeem event=redeem_expired user_id={user_id} code={code}]");
             send_with_back(api, chat_id, &t("redeem.invalid")).await;

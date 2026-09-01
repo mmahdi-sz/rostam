@@ -97,7 +97,9 @@ pub async fn handle_update(
         }
         state.user_last_update.insert(uid, now);
         if state.user_last_update.len() > 50_000 {
-            state.user_last_update.retain(|_, v| now.duration_since(*v) < std::time::Duration::from_secs(3600));
+            state
+                .user_last_update
+                .retain(|_, v| now.duration_since(*v) < std::time::Duration::from_secs(3600));
         }
     }
 
@@ -209,7 +211,9 @@ pub async fn handle_update(
                         return Ok(());
                     }
                     match content {
-                        UpdateContent::Message(message) => text::handle_message(state, *message).await?,
+                        UpdateContent::Message(message) => {
+                            text::handle_message(state, *message).await?
+                        }
                         UpdateContent::CallbackQuery(callback_query) => {
                             callback::handle_callback(state, *callback_query).await?
                         }
@@ -319,4 +323,3 @@ async fn gate_force_join(
 
     Ok(true)
 }
-

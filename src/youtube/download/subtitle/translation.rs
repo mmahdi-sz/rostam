@@ -127,11 +127,7 @@ pub async fn translate_subtitles(
 
         match res {
             Ok(()) => {
-                log_trace(
-                    trace_id,
-                    "translate_subtitle_ok",
-                    &format!("lang={tgt}"),
-                );
+                log_trace(trace_id, "translate_subtitle_ok", &format!("lang={tgt}"));
             }
             Err(e) => {
                 log_trace(

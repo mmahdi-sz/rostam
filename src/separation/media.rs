@@ -1,10 +1,6 @@
 use std::path::PathBuf;
 
-use frankenstein::{
-    AsyncTelegramApi,
-    client_reqwest::Bot,
-    methods::EditMessageTextParams,
-};
+use frankenstein::{AsyncTelegramApi, client_reqwest::Bot, methods::EditMessageTextParams};
 
 use crate::i18n::tf;
 

@@ -1,10 +1,6 @@
 use std::path::PathBuf;
 
-use frankenstein::{
-    AsyncTelegramApi,
-    client_reqwest::Bot,
-    methods::SendAudioParams,
-};
+use frankenstein::{AsyncTelegramApi, client_reqwest::Bot, methods::SendAudioParams};
 
 use crate::bot::send_file_with_upload_ticker;
 use crate::emoji::{FlowManager, FlowState};

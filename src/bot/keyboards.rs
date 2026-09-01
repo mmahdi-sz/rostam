@@ -8,9 +8,7 @@ use rand::Rng;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::constants::*;
-use crate::emoji::panel::{
-    btn_icon, btn_icon_plain, btn_icon_primary, btn_icon_success,
-};
+use crate::emoji::panel::{btn_icon, btn_icon_plain, btn_icon_primary, btn_icon_success};
 use crate::i18n::{apply_premium_to_md, t};
 
 pub async fn send_lang_picker(api: &Bot, chat_id: i64) -> crate::error::Result<()> {

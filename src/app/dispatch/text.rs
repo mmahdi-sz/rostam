@@ -28,7 +28,11 @@ pub(super) async fn handle_message(
         ..
     } = state;
     let user_id = message.from.as_ref().map(|u| u.id as i64);
-    let msg_text = message.text.as_deref().or(message.caption.as_deref()).unwrap_or("");
+    let msg_text = message
+        .text
+        .as_deref()
+        .or(message.caption.as_deref())
+        .unwrap_or("");
     if let Some(u) = message.from.as_ref() {
         let trace_id = crate::log::next_trace_id();
         log_actor!("dispatch", trace_id, u, "msg" => msg_text.chars().take(40).collect::<String>());
@@ -62,7 +66,10 @@ pub(super) async fn handle_message(
     }
 
     // Step 2: /start always clears flow (+ deep-link payload: redeem<CODE>)
-    if let (Some(uid), Some(text)) = (user_id, message.text.as_deref().or(message.caption.as_deref())) {
+    if let (Some(uid), Some(text)) = (
+        user_id,
+        message.text.as_deref().or(message.caption.as_deref()),
+    ) {
         if let Some(rest) = text.strip_prefix("/start") {
             flow_manager.clear(uid);
             let payload = rest.trim();
@@ -92,7 +99,10 @@ pub(super) async fn handle_message(
     }
 
     // Step 3: "Cancel operation" reply keyboard when Idle
-    if let (Some(uid), Some(text)) = (user_id, message.text.as_deref().or(message.caption.as_deref())) {
+    if let (Some(uid), Some(text)) = (
+        user_id,
+        message.text.as_deref().or(message.caption.as_deref()),
+    ) {
         if text.contains(&crate::i18n::t("emoji.cancel_button"))
             && matches!(flow_manager.get(uid), FlowState::Idle)
         {
@@ -103,7 +113,17 @@ pub(super) async fn handle_message(
 
     // Step 4: active flow dispatch
     if let Some(uid) = user_id {
-        if flow::handle_flow_message(api, cookie_pool, database, flow_manager, rate_limit_tx, &message, uid).await? {
+        if flow::handle_flow_message(
+            api,
+            cookie_pool,
+            database,
+            flow_manager,
+            rate_limit_tx,
+            &message,
+            uid,
+        )
+        .await?
+        {
             return Ok(());
         }
     }
@@ -256,10 +276,7 @@ pub(super) async fn handle_message(
                         log_trace(
                             trace_id,
                             "route_youtube_url",
-                            &format!(
-                                "user_id={uid} chat_id={} url={target_url}",
-                                message.chat.id
-                            ),
+                            &format!("user_id={uid} chat_id={} url={target_url}", message.chat.id),
                         );
                         let api2 = api.clone();
                         let chat_id2 = message.chat.id;

@@ -688,11 +688,11 @@ mod tests {
             YtdlpErrorClassification::MembersOnly
         );
 
-        let stderr2 = "ERROR: [youtube] xyz: This video is only available to members of this channel.";
+        let stderr2 =
+            "ERROR: [youtube] xyz: This video is only available to members of this channel.";
         assert_eq!(
             classify_ytdlp_stderr(stderr2),
             YtdlpErrorClassification::MembersOnly
         );
     }
 }
-

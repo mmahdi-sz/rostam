@@ -1,5 +1,5 @@
-use std::sync::LazyLock;
 use regex::Regex;
+use std::sync::LazyLock;
 
 pub const DEFAULT_MAX_CUT_RANGES: usize = 10;
 

@@ -54,7 +54,10 @@ pub async fn intercept_bot_request(
     }
 
     if method == "getChat" {
-        let chat_id = payload.get("chat_id").cloned().unwrap_or(serde_json::json!(12345));
+        let chat_id = payload
+            .get("chat_id")
+            .cloned()
+            .unwrap_or(serde_json::json!(12345));
         let title = "Test Channel".to_string();
         return Json(serde_json::json!({
             "ok": true,

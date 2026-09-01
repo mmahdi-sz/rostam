@@ -113,7 +113,8 @@ pub async fn handle_nobg_image(
                 Ok(c) => c,
                 Err(e) => {
                     log_ev!("feynobg", trace_id, "quota_checkout", "err" => format!("{e}"), "=>" => "fail");
-                    crate::rank::paywall::quota_db_error(api, chat_id, "feynobg", &format!("{e}")).await;
+                    crate::rank::paywall::quota_db_error(api, chat_id, "feynobg", &format!("{e}"))
+                        .await;
                     flow_manager.set(user_id, FlowState::Idle);
                     return;
                 }
