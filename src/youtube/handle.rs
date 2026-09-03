@@ -161,53 +161,37 @@ pub async fn handle_youtube_url(
         // so other users' YouTube requests aren't serialized behind this one.
         let (cookie, snapshot) = {
             let mut pool = cookie_pool.lock().await;
-            let cookie = match pool.next_cookie() {
+            let cookie = match pool.next_cookie_excluding(&tried) {
                 Some(c) => c,
                 None => {
                     let status = pool.status();
                     log_trace(
                         trace_id,
-                        "cookie_none",
+                        "cookie_exhausted",
                         &format!(
-                            "status selectable={} cooldown={}",
-                            status.selectable_cookies, status.cooldown_cookies
+                            "tried={} selectable={} cooldown={}",
+                            tried.len(),
+                            status.selectable_cookies,
+                            status.cooldown_cookies
                         ),
                     );
-                    send_cookie_outage_message(
-                        api,
-                        chat_id,
-                        trace_id,
-                        status.available_cookies,
-                        status.cooldown_cookies,
-                        status.next_available_in,
-                    )
-                    .await;
+                    if status.selectable_cookies == 0 && status.cooldown_cookies > 0 {
+                        send_cookie_outage_message(
+                            api,
+                            chat_id,
+                            trace_id,
+                            status.available_cookies,
+                            status.cooldown_cookies,
+                            status.next_available_in,
+                        )
+                        .await;
+                    } else {
+                        let _ = send_text(api, chat_id, &t("cookie.youtube_unavailable")).await;
+                    }
                     crate::stats::record_error_global("youtube", "no_cookie_available").await;
-                    anyhow::bail!("no cookie available");
+                    anyhow::bail!("no suitable cookie available");
                 }
             };
-            if tried.contains(&cookie.id) {
-                let status = pool.status();
-                log_trace(
-                    trace_id,
-                    "cookie_retry_exhausted",
-                    &format!(
-                        "tried={tried:?} selectable={} cooldown={}",
-                        status.selectable_cookies, status.cooldown_cookies
-                    ),
-                );
-                send_cookie_outage_message(
-                    api,
-                    chat_id,
-                    trace_id,
-                    status.available_cookies,
-                    status.cooldown_cookies,
-                    status.next_available_in,
-                )
-                .await;
-                crate::stats::record_error_global("youtube", "retry_exhausted, no suitable cookie").await;
-                anyhow::bail!("retry exhausted, no suitable cookie");
-            }
             tried.insert(cookie.id.clone());
             log_trace(
                 trace_id,
@@ -380,6 +364,20 @@ pub async fn handle_youtube_url(
                 }
                 log_trace(trace_id, "fetch_video_unavailable", &format!("url={url} err={msg}"));
                 let _ = send_text_md(api, chat_id, &t("youtube.video_unavailable")).await;
+                return Ok(());
+            }
+            Err(FetchError::LiveStreamNotSupported) => {
+                if let Some(amid) = analyzing_msg_id {
+                    let del = DeleteMessageParams::builder()
+                        .chat_id(chat_id)
+                        .message_id(amid)
+                        .build();
+                    if let Err(e) = api.delete_message(&del).await {
+                        log_trace(trace_id, "analyzing_delete_failed", &e.to_string());
+                    }
+                }
+                log_trace(trace_id, "fetch_live_stream_rejected", url);
+                let _ = send_text_md(api, chat_id, &t("youtube.live_stream_not_supported")).await;
                 return Ok(());
             }
             Err(FetchError::Other(msg)) => {

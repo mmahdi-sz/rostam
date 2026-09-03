@@ -580,6 +580,7 @@
             "members_only": "⚠️ این ویدیو مخصوص اعضای پولی کانال \\(Members\\-Only\\) است و امکان دانلود آن وجود ندارد\\.",
             "channel_url_not_supported": "⚠️ امکان دانلود کل کانال یا تب‌های یوتیوب وجود ندارد\\.\n\nلطفاً لینک مستقیم یک ویدیو یا پلی‌لیست مشخص را ارسال کنید\\.",
             "video_unavailable": "⚠️ این ویدیو در دسترس نیست \\(خصوصی، حذف‌شده یا نیازمند احراز هویت است\\)\\.",
+            "live_stream_not_supported": "⚠️ این ویدیو در حال حاضر به‌صورت پخش زنده \\(Live\\) است\\.\n\nامکان دانلود استریم‌های در حال پخش وجود ندارد؛ لطفاً پس از اتمام پخش زنده و انتشار فایل نهایی ویدیو، لینک را ارسال کنید\\.",
             "send_photo_failed": "ارسال تامبنیل ناموفق بود: {error}",
             "quality": {
                 "prompt": "🖥️ *4K 2160p \\| 2K 1440p*\nمناسب تلویزیون‌های بزرگ و مانیتورهای حرفه‌ای — بالاترین کیفیت، حجم زیاد\n\n💻 *Full HD \\| 1080p*\nمناسب لپ‌تاپ و مانیتور معمولی — بهترین تعادل کیفیت و حجم برای اکثر کاربران\n\n📱 *HD \\| 720p*\nمناسب تماشا روی گوشی — کیفیت خوب با حجم منطقی\n\n📱 *SD \\| 480p*\nمناسب اینترنت ضعیف یا ذخیره‌سازی محدود — حجم کم\n\n📶 *360p \\| 240p \\| 144p*\nمناسب اینترنت خیلی ضعیف — حجم حداقلی، کیفیت پایین",
@@ -1974,6 +1975,7 @@
             "members_only": "⚠️ This video is for channel members only \\(Members\\-Only\\) and cannot be downloaded\\.",
             "channel_url_not_supported": "⚠️ Downloading entire YouTube channels or channel tabs is not supported\\.\n\nPlease send a direct link to a specific video or playlist\\.",
             "video_unavailable": "⚠️ This video is unavailable \\(private, deleted, or requires login\\)\\.",
+            "live_stream_not_supported": "⚠️ This video is currently a live stream \\(Live\\)\\.\n\nDownloading active live streams is not supported\\. Please send the link after the stream ends and the final video is published\\.",
             "send_photo_failed": "Failed to send thumbnail: {error}",
             "quality": {
                 "prompt": "🖥️ *4K 2160p \\| 2K 1440p*\nBest for large TVs and professional monitors — highest quality, large file size\n\n💻 *Full HD \\| 1080p*\nBest for laptops and regular monitors — ideal quality/size balance\n\n📱 *HD \\| 720p*\nGreat for mobile viewing — good quality with reasonable size\n\n📱 *SD \\| 480p*\nFor slow connections or limited storage — small size\n\n📶 *360p \\| 240p \\| 144p*\nFor very slow connections — minimal size, low quality",
@@ -3394,6 +3396,7 @@
             "members_only": "⚠️ Questo video è riservato ai soli membri del canale \\(Members\\-Only\\) e non può essere scaricato\\.",
             "channel_url_not_supported": "⚠️ Il download di interi canali o schede di YouTube non è supportato\\.\n\nInvia un link diretto a un video specifico o a una playlist\\.",
             "video_unavailable": "⚠️ Questo video non è disponibile \\(privato, rimosso o richiede l'accesso\\)\\.",
+            "live_stream_not_supported": "⚠️ Questo video è attualmente una trasmissione dal vivo \\(Live\\)\\.\n\nIl download di live streaming attivi non è supportato\\. Invia il link dopo il termine della diretta e la pubblicazione del video definitivo\\.",
             "send_photo_failed": "Invio miniatura fallito: {error}",
             "quality": {
                 "prompt": "🖥️ *4K 2160p \\| 2K 1440p*\nPer TV grandi e monitor professionali — qualità massima, file grande\n\n💻 *Full HD \\| 1080p*\nPer laptop e monitor normali — miglior bilanciamento qualità/dimensione\n\n📱 *HD \\| 720p*\nOttimo per visione mobile — buona qualità con dimensione ragionevole\n\n📱 *SD \\| 480p*\nPer connessioni lente o spazio limitato — dimensione ridotta\n\n📶 *360p \\| 240p \\| 144p*\nPer connessioni molto lente — dimensione minima, qualità bassa",
@@ -4788,6 +4791,7 @@
             "members_only": "⚠️ Это видео доступно только спонсорам канала \\(Members\\-Only\\) и не может быть скачано\\.",
             "channel_url_not_supported": "⚠️ Скачивание целых каналов или вкладок YouTube не поддерживается\\.\n\nПожалуйста, отправьте прямую ссылку на конкретное видео или плейлист\\.",
             "video_unavailable": "⚠️ Это видео недоступно \\(приватное, удалено или требует входа\\)\\.",
+            "live_stream_not_supported": "⚠️ Это видео в настоящее время транслируется в прямом эфире \\(Live\\)\\.\n\nСкачивание прямых трансляций не поддерживается\\. Пожалуйста, отправьте ссылку после завершения эфира и публикации финального видео\\.",
             "send_photo_failed": "Failed to send thumbnail: {error}",
             "quality": {
                 "prompt": "🖥️ *4K 2160p \\| 2K 1440p*\nBest for large TVs and professional monitors — highest quality, large file size\n\n💻 *Full HD \\| 1080p*\nBest for laptops and regular monitors — ideal quality/size balance\n\n📱 *HD \\| 720p*\nGreat for mobile viewing — good quality with reasonable size\n\n📱 *SD \\| 480p*\nFor slow connections or limited storage — small size\n\n📶 *360p \\| 240p \\| 144p*\nFor very slow connections — minimal size, low quality",

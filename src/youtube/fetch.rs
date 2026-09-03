@@ -17,6 +17,7 @@ pub enum YtdlpErrorClassification {
     AgeRestricted(String),
     MembersOnly,
     Unavailable(String),
+    LiveStream(String),
     Other(String),
 }
 
@@ -34,12 +35,25 @@ pub fn classify_ytdlp_stderr(stderr: &str) -> YtdlpErrorClassification {
     {
         return YtdlpErrorClassification::MembersOnly;
     }
+    if lower.contains("this live stream recording is not available")
+        || lower.contains("this live event will begin in")
+        || lower.contains("live stream has ended")
+        || lower.contains("the live stream is offline")
+        || lower.contains("live stream is offline")
+    {
+        let msg = stderr
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("live stream not available")
+            .trim();
+        return YtdlpErrorClassification::LiveStream(msg.to_string());
+    }
     if lower.contains("video unavailable")
         || lower.contains("this video is private")
         || lower.contains("private video")
         || lower.contains("this video has been removed")
         || lower.contains("removed by the uploader")
-        || lower.contains("this live stream recording is not available")
         || lower.contains("playlists that require authentication")
     {
         let msg = stderr
@@ -186,6 +200,14 @@ pub async fn fetch_video_info(
             );
             return Err(FetchError::Unavailable(msg));
         }
+        YtdlpErrorClassification::LiveStream(msg) => {
+            log_trace(
+                trace_id,
+                "yt_dlp_live_stream_not_available",
+                stderr.lines().last().unwrap_or(&msg),
+            );
+            return Err(FetchError::LiveStreamNotSupported);
+        }
         YtdlpErrorClassification::Other(msg) => {
             if !output.status.success() {
                 log_trace(
@@ -203,6 +225,13 @@ pub async fn fetch_video_info(
 
     let json: serde_json::Value = serde_json::from_slice(&output.stdout)
         .map_err(|e| FetchError::Other(format!("failed to parse yt-dlp json: {e}")))?;
+
+    let is_live = json.get("is_live").and_then(|v| v.as_bool()).unwrap_or(false)
+        || json.get("live_status").and_then(|v| v.as_str()) == Some("is_live");
+    if is_live {
+        log_trace(trace_id, "yt_dlp_live_stream_detected", url);
+        return Err(FetchError::LiveStreamNotSupported);
+    }
 
     let availability = json
         .get("availability")
@@ -739,6 +768,21 @@ mod tests {
         assert!(matches!(
             classify_ytdlp_stderr(stderr3),
             YtdlpErrorClassification::Unavailable(_)
+        ));
+    }
+
+    #[test]
+    fn test_classify_live_stream() {
+        let stderr1 = "ERROR: [youtube] jfKfPfyJRdk: This live stream recording is not available.";
+        assert!(matches!(
+            classify_ytdlp_stderr(stderr1),
+            YtdlpErrorClassification::LiveStream(_)
+        ));
+
+        let stderr2 = "ERROR: [youtube] abc: This live event will begin in 2 hours.";
+        assert!(matches!(
+            classify_ytdlp_stderr(stderr2),
+            YtdlpErrorClassification::LiveStream(_)
         ));
     }
 }

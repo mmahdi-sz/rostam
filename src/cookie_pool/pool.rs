@@ -81,12 +81,50 @@ impl CookiePool {
     }
 
     pub fn next_cookie(&mut self) -> Option<SelectedCookie> {
+        self.next_cookie_excluding(&HashSet::new())
+    }
+
+    pub fn next_cookie_excluding(&mut self, excluded_ids: &HashSet<String>) -> Option<SelectedCookie> {
         self.cleanup_expired_cooldowns();
-        let selectable = self.selectable_indexes();
-        if selectable.is_empty() {
+        let cooldown_ids = self
+            .cooldown_list
+            .iter()
+            .map(|e| e.cookie_id.as_str())
+            .collect::<HashSet<_>>();
+        let selectable_not_excluded: Vec<usize> = self
+            .available_cookies
+            .iter()
+            .enumerate()
+            .filter_map(|(index, cookie)| {
+                if excluded_ids.contains(&cookie.id) || cooldown_ids.contains(cookie.id.as_str()) {
+                    None
+                } else {
+                    Some(index)
+                }
+            })
+            .collect();
+
+        if selectable_not_excluded.is_empty() {
             return None;
         }
-        let selected_index = selectable[self.random_index(selectable.len())];
+
+        let filtered: Vec<usize> = if selectable_not_excluded.len() > 1 {
+            selectable_not_excluded
+                .iter()
+                .copied()
+                .filter(|&idx| self.last_used_cookie.as_deref() != Some(self.available_cookies[idx].id.as_str()))
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        let candidate_pool = if filtered.is_empty() {
+            &selectable_not_excluded
+        } else {
+            &filtered
+        };
+
+        let selected_index = candidate_pool[self.random_index(candidate_pool.len())];
         let selected = self.available_cookies[selected_index].clone();
         let yt_dlp_browser_spec = selected.yt_dlp_browser_spec();
         self.last_used_cookie = Some(selected.id.clone());
@@ -240,5 +278,35 @@ mod tests {
     #[test]
     fn rate_limit_safety_cooldown_is_one_hour() {
         assert_eq!(REFRESH_COOLDOWN, Duration::from_secs(60 * 60));
+    }
+
+    #[test]
+    fn test_next_cookie_excluding() {
+        let mut pool = CookiePool {
+            available_cookies: vec![
+                dummy_cookie("c1"),
+                dummy_cookie("c2"),
+                dummy_cookie("c3"),
+            ],
+            last_used_cookie: None,
+            cooldown_list: Vec::new(),
+            cooldown: DEFAULT_COOLDOWN,
+            random_counter: 0,
+        };
+
+        let mut tried = HashSet::new();
+        let first = pool.next_cookie_excluding(&tried).unwrap();
+        tried.insert(first.id);
+
+        let second = pool.next_cookie_excluding(&tried).unwrap();
+        assert!(!tried.contains(&second.id));
+        tried.insert(second.id);
+
+        let third = pool.next_cookie_excluding(&tried).unwrap();
+        assert!(!tried.contains(&third.id));
+        tried.insert(third.id);
+
+        let fourth = pool.next_cookie_excluding(&tried);
+        assert!(fourth.is_none());
     }
 }

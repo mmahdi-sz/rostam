@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.5.10] - 2026-09-03
+
+### Added
+- **YouTube Live Stream Detection & Friendly Rejection (`src/youtube/`, `config/i18n.json`)**:
+  - Added detection for active YouTube live streams (`is_live: true` and live stream recording unavailable errors) before format selection.
+  - Returned clear localized notifications across 4 languages (`fa`, `en`, `it`, `ru`) informing users that live streams cannot be downloaded until finished and published.
+
+### Fixed
+- **Cookie Pool Exhaustion False Alarm & Collision Prevention (`src/cookie_pool/pool.rs`, `src/youtube/handle.rs`, `src/youtube/download/playlist.rs`)**:
+  - Implemented `next_cookie_excluding(&tried)` ensuring retries always sample untried candidate cookies rather than colliding with already-tried cookies.
+  - Corrected outage alert gating in `handle.rs` so admin notifications only trigger when all cookies enter 429 cooldown (`status.selectable_cookies == 0 && status.cooldown_cookies > 0`), eliminating false alarm alerts on single-video failures.
+
 ## [2.5.9] - 2026-09-01
 
 ### Fixed

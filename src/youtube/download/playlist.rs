@@ -329,24 +329,20 @@ async fn download_single_playlist_item_with_retry(
                         let mut pool = cookie_pool.lock().await;
                         pool.mark_last_rate_limited();
                         crate::stats::record_event_global("cookie", "429", "rate_limit", 0).await;
-                        if let Some(next) = pool.next_cookie() {
-                            if !tried.contains(&next.id) {
-                                tried.insert(next.id.clone());
-                                *current_cookie_spec = next.yt_dlp_browser_spec;
-                                continue;
-                            }
+                        if let Some(next) = pool.next_cookie_excluding(&tried) {
+                            tried.insert(next.id.clone());
+                            *current_cookie_spec = next.yt_dlp_browser_spec;
+                            continue;
                         }
                         return Err(raw_err);
                     }
                     crate::youtube::YtdlpErrorClassification::BadCookie(_)
                     | crate::youtube::YtdlpErrorClassification::AgeRestricted(_) => {
                         let mut pool = cookie_pool.lock().await;
-                        if let Some(next) = pool.next_cookie() {
-                            if !tried.contains(&next.id) {
-                                tried.insert(next.id.clone());
-                                *current_cookie_spec = next.yt_dlp_browser_spec;
-                                continue;
-                            }
+                        if let Some(next) = pool.next_cookie_excluding(&tried) {
+                            tried.insert(next.id.clone());
+                            *current_cookie_spec = next.yt_dlp_browser_spec;
+                            continue;
                         }
                         return Err(raw_err);
                     }
