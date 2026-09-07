@@ -580,6 +580,7 @@
             "members_only": "⚠️ این ویدیو مخصوص اعضای پولی کانال \\(Members\\-Only\\) است و امکان دانلود آن وجود ندارد\\.",
             "channel_url_not_supported": "⚠️ امکان دانلود کل کانال یا تب‌های یوتیوب وجود ندارد\\.\n\nلطفاً لینک مستقیم یک ویدیو یا پلی‌لیست مشخص را ارسال کنید\\.",
             "video_unavailable": "⚠️ این ویدیو در دسترس نیست \\(خصوصی، حذف‌شده یا نیازمند احراز هویت است\\)\\.",
+            "age_restricted": "🔞 این ویدیو دارای محدودیت سنی است و بدون حساب کاربری تأییدشده قابل دانلود نیست\\.",
             "live_stream_not_supported": "⚠️ این ویدیو در حال حاضر به‌صورت پخش زنده \\(Live\\) است\\.\n\nامکان دانلود استریم‌های در حال پخش وجود ندارد؛ لطفاً پس از اتمام پخش زنده و انتشار فایل نهایی ویدیو، لینک را ارسال کنید\\.",
             "send_photo_failed": "ارسال تامبنیل ناموفق بود: {error}",
             "quality": {
@@ -1975,6 +1976,7 @@
             "members_only": "⚠️ This video is for channel members only \\(Members\\-Only\\) and cannot be downloaded\\.",
             "channel_url_not_supported": "⚠️ Downloading entire YouTube channels or channel tabs is not supported\\.\n\nPlease send a direct link to a specific video or playlist\\.",
             "video_unavailable": "⚠️ This video is unavailable \\(private, deleted, or requires login\\)\\.",
+            "age_restricted": "🔞 This video is age\\-restricted and cannot be downloaded without an age\\-verified account\\.",
             "live_stream_not_supported": "⚠️ This video is currently a live stream \\(Live\\)\\.\n\nDownloading active live streams is not supported\\. Please send the link after the stream ends and the final video is published\\.",
             "send_photo_failed": "Failed to send thumbnail: {error}",
             "quality": {
@@ -3396,6 +3398,7 @@
             "members_only": "⚠️ Questo video è riservato ai soli membri del canale \\(Members\\-Only\\) e non può essere scaricato\\.",
             "channel_url_not_supported": "⚠️ Il download di interi canali o schede di YouTube non è supportato\\.\n\nInvia un link diretto a un video specifico o a una playlist\\.",
             "video_unavailable": "⚠️ Questo video non è disponibile \\(privato, rimosso o richiede l'accesso\\)\\.",
+            "age_restricted": "🔞 Questo video è soggetto a limiti di età e non può essere scaricato senza un account verificato\\.",
             "live_stream_not_supported": "⚠️ Questo video è attualmente una trasmissione dal vivo \\(Live\\)\\.\n\nIl download di live streaming attivi non è supportato\\. Invia il link dopo il termine della diretta e la pubblicazione del video definitivo\\.",
             "send_photo_failed": "Invio miniatura fallito: {error}",
             "quality": {
@@ -4791,6 +4794,7 @@
             "members_only": "⚠️ Это видео доступно только спонсорам канала \\(Members\\-Only\\) и не может быть скачано\\.",
             "channel_url_not_supported": "⚠️ Скачивание целых каналов или вкладок YouTube не поддерживается\\.\n\nПожалуйста, отправьте прямую ссылку на конкретное видео или плейлист\\.",
             "video_unavailable": "⚠️ Это видео недоступно \\(приватное, удалено или требует входа\\)\\.",
+            "age_restricted": "🔞 Это видео имеет возрастные ограничения и не может быть загружено без подтвержденного аккаунта\\.",
             "live_stream_not_supported": "⚠️ Это видео в настоящее время транслируется в прямом эфире \\(Live\\)\\.\n\nСкачивание прямых трансляций не поддерживается\\. Пожалуйста, отправьте ссылку после завершения эфира и публикации финального видео\\.",
             "send_photo_failed": "Failed to send thumbnail: {error}",
             "quality": {

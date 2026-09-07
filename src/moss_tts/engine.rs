@@ -15,6 +15,21 @@ static HOMOFAST: OnceLock<HomoFastResolver> = OnceLock::new();
 fn get_piper() -> Option<&'static Mutex<Piper>> {
     PIPER
         .get_or_init(|| {
+            if std::env::var("PIPER_ESPEAKNG_DATA_DIRECTORY").is_err() {
+                for candidate in [
+                    "files/runtime/espeak-ng-data",
+                    "espeak-ng-data",
+                    "/mnt/data/mahdidev/ros/production/espeak-ng-data",
+                    "/data/mahdidev/ros/production/espeak-ng-data",
+                ] {
+                    if Path::new(candidate).join("phontab").exists() {
+                        unsafe {
+                            std::env::set_var("PIPER_ESPEAKNG_DATA_DIRECTORY", candidate);
+                        }
+                        break;
+                    }
+                }
+            }
             let model_path = PathBuf::from("models/piper/fa_IR/fa_IR-mantatts-par.onnx");
             let config_path = PathBuf::from("models/piper/fa_IR/fa_IR-mantatts-par.onnx.json");
             match Piper::new(&model_path, &config_path) {

@@ -99,9 +99,12 @@ pub async fn run() -> anyhow::Result<()> {
         cookie_status.available_cookies, cookie_status.selectable_cookies
     );
 
+    let cookie_pool_arc = std::sync::Arc::new(tokio::sync::Mutex::new(cookie_pool));
+    crate::cookie_pool::set_global_cookie_pool(cookie_pool_arc.clone());
+
     let mut state = AppState {
         api: api.clone(),
-        cookie_pool: std::sync::Arc::new(tokio::sync::Mutex::new(cookie_pool)),
+        cookie_pool: cookie_pool_arc,
         database,
         flow_manager: FlowManager::new(),
         rate_limit_tx,

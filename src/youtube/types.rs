@@ -89,6 +89,7 @@ pub enum FetchError {
     BadCookie(String),
     MembersOnly,
     Unavailable(String),
+    AgeRestricted(String),
     LiveStreamNotSupported,
     Other(String),
 }

@@ -113,12 +113,14 @@ pub async fn handle_soundcloud_url(
     let meta = match fetch_soundcloud_meta(trace_id, sc_url).await {
         Ok(m) => m,
         Err(e) => {
-            log_ev!("sc", trace_id, "fetch_metadata_fail", "err" => e.to_string());
-            crate::stats::record_error_global("soundcloud", format!("fetch_meta: {e}")).await;
-            // DRM has dedicated error key
-            let key = if e.to_string().contains("DRM") {
+            let err_str = e.to_string();
+            log_ev!("sc", trace_id, "fetch_metadata_fail", "err" => &err_str);
+            let key = if err_str.contains("DRM") {
                 "soundcloud.drm_protected"
+            } else if err_str.contains("404") || err_str.to_lowercase().contains("not found") {
+                "soundcloud.track_not_found"
             } else {
+                crate::stats::record_error_global("soundcloud", format!("fetch_meta: {err_str}")).await;
                 "soundcloud.track_not_found"
             };
             handle_error(key).await;

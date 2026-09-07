@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.6.1] - 2026-09-07
+
+### Fixed
+- **Spotify & MusicSet YouTube Audio Download Cookie Integration (`src/cookie_pool/`, `src/spotify/handle.rs`, `src/app/mod.rs`)**:
+  - Connected `run_yt_dlp_audio` to the rotating `CookiePool` via `get_global_cookie_spec()`, passing `--cookies-from-browser` and `--extractor-args youtubetab:skip=authcheck`.
+  - Added deadlock-safe background stderr capture and error summary reporting for failed yt-dlp audio extraction runs.
+  - Eliminated server-IP bot-detection failures (`Sign in to confirm you're not a bot`), enabling Spotify single tracks and large playlists to download successfully.
+- **YouTube Age-Restricted Classification & Cookie Pool Protection (`src/youtube/fetch.rs`, `src/youtube/types.rs`, `src/youtube/handle.rs`, `config/i18n.json`)**:
+  - Introduced `FetchError::AgeRestricted(msg)` to immediately halt cookie rotation upon detecting age restriction rather than burning all 22 cookies in the pool and entering false-alarm cooldowns.
+  - Returned clear localized notifications across all 4 languages (`fa`, `en`, `it`, `ru`) informing users that age-restricted videos cannot be downloaded without an age-verified account.
+- **SoundCloud DRM & 404 Telemetry Clean-up (`src/soundcloud/handle.rs`)**:
+  - Filtered user-side DRM (`This video is DRM protected`) and 404 conditions from `record_error_global`, preventing user errors from cluttering system failure metrics while preserving user notifications.
+- **Piper TTS eSpeak-ng Data Directory Discovery (`src/moss_tts/engine.rs`, `deploy.sh`)**:
+  - Packaged static `espeak-ng-data` in runtime distribution and configured automatic discovery of `PIPER_ESPEAKNG_DATA_DIRECTORY`, eliminating `Failed to initialize eSpeak-ng (code 0)` errors.
+
 ## [2.6.0] - 2026-09-07
 
 ### Added

@@ -176,13 +176,21 @@ pub async fn fetch_video_info(
             );
             return Err(FetchError::RateLimited);
         }
-        YtdlpErrorClassification::BadCookie(msg) | YtdlpErrorClassification::AgeRestricted(msg) => {
+        YtdlpErrorClassification::BadCookie(msg) => {
             log_trace(
                 trace_id,
                 "yt_dlp_bad_cookie",
                 stderr.lines().last().unwrap_or(&msg),
             );
             return Err(FetchError::BadCookie(msg));
+        }
+        YtdlpErrorClassification::AgeRestricted(msg) => {
+            log_trace(
+                trace_id,
+                "yt_dlp_age_restricted",
+                stderr.lines().last().unwrap_or(&msg),
+            );
+            return Err(FetchError::AgeRestricted(msg));
         }
         YtdlpErrorClassification::MembersOnly => {
             log_trace(

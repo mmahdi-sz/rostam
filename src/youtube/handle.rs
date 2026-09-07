@@ -366,6 +366,20 @@ pub async fn handle_youtube_url(
                 let _ = send_text_md(api, chat_id, &t("youtube.video_unavailable")).await;
                 return Ok(());
             }
+            Err(FetchError::AgeRestricted(msg)) => {
+                if let Some(amid) = analyzing_msg_id {
+                    let del = DeleteMessageParams::builder()
+                        .chat_id(chat_id)
+                        .message_id(amid)
+                        .build();
+                    if let Err(e) = api.delete_message(&del).await {
+                        log_trace(trace_id, "analyzing_delete_failed", &e.to_string());
+                    }
+                }
+                log_trace(trace_id, "fetch_age_restricted", &format!("url={url} err={msg}"));
+                let _ = send_text_md(api, chat_id, &t("youtube.age_restricted")).await;
+                return Ok(());
+            }
             Err(FetchError::LiveStreamNotSupported) => {
                 if let Some(amid) = analyzing_msg_id {
                     let del = DeleteMessageParams::builder()
