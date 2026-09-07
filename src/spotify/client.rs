@@ -106,19 +106,62 @@ pub struct SpotifySet {
     pub items: Vec<SpotifySetItem>,
 }
 
-/// Fetch an album/playlist track list from the public embed page.
-///
-/// ponytail: embed only — no `SPOTIFY_CLIENT_ID` is configured on this
-/// deployment, so the rspotify path would fail on every call and fall back here
-/// anyway. Its ceiling: the embed page carries the tracks it renders (large
-/// playlists are truncated by Spotify, not by us) — swap in `playlist_items`
-/// pagination if credentials are ever added.
+/// Maximum tracks allowed from a single Spotify playlist as defense-in-depth against runaway lists.
+pub const MAX_SPOTIFY_PLAYLIST_TRACKS: usize = 2000;
+
+/// Extract the anonymous session accessToken embedded in Spotify's __NEXT_DATA__ JSON.
+pub fn extract_embed_token(data: &serde_json::Value) -> Option<String> {
+    const TOKEN_PATHS: &[&str] = &[
+        "/props/pageProps/state/settings/session/accessToken",
+        "/props/pageProps/settings/session/accessToken",
+        "/props/pageProps/session/accessToken",
+        "/props/pageProps/state/data/session/accessToken",
+    ];
+    for path in TOKEN_PATHS {
+        if let Some(token) = data.pointer(path).and_then(|v| v.as_str()) {
+            if !token.is_empty() {
+                return Some(token.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Parse full track IDs from Spotify's internal spclient endpoint response.
+pub fn parse_spclient_track_ids(json_str: &str) -> Vec<String> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json_str) else {
+        return Vec::new();
+    };
+    let items = v
+        .pointer("/contents/items")
+        .and_then(|arr| arr.as_array())
+        .map(|a| a.as_slice())
+        .unwrap_or_default();
+
+    let mut track_ids = Vec::with_capacity(items.len());
+    for item in items {
+        if let Some(uri) = item.get("uri").and_then(|u| u.as_str()) {
+            if let Some(track_id) = uri.strip_prefix("spotify:track:") {
+                if !track_id.is_empty() {
+                    track_ids.push(track_id.to_string());
+                    if track_ids.len() >= MAX_SPOTIFY_PLAYLIST_TRACKS {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    track_ids
+}
+
+/// Fetch an album/playlist track list from the public embed page, extending
+/// playlists beyond 100 tracks via Spotify's internal spclient API when available.
 pub async fn fetch_spotify_set(
     kind: crate::spotify::extract::SpotifySetKind,
     set_id: &str,
 ) -> anyhow::Result<SpotifySet> {
     let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (X11; Linux x86_64)")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .timeout(Duration::from_secs(20))
         .build()?;
 
@@ -131,6 +174,7 @@ pub async fn fetch_spotify_set(
             kind.as_str()
         ));
     }
+    let next_data = embed_next_data(&html);
     let entity = extract_embed_entity(&html).ok_or_else(|| {
         anyhow!(
             "Failed to parse embed page for {} '{set_id}'",
@@ -146,6 +190,8 @@ pub async fn fetch_spotify_set(
         .to_string();
 
     let mut items = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+
     for entry in entity
         .get("trackList")
         .and_then(|v| v.as_array())
@@ -161,6 +207,7 @@ pub async fn fetch_spotify_set(
         else {
             continue;
         };
+        seen_ids.insert(track_id.to_string());
         items.push(SpotifySetItem {
             track_id: track_id.to_string(),
             title: entry
@@ -174,6 +221,63 @@ pub async fn fetch_spotify_set(
                 .unwrap_or("Unknown Artist")
                 .to_string(),
         });
+    }
+
+    // For playlists, if an anonymous session token is present in the embed page,
+    // query Spotify's internal spclient endpoint to extend tracks beyond the 100-track embed ceiling.
+    if kind == crate::spotify::extract::SpotifySetKind::Playlist {
+        if let Some(token) = next_data.as_ref().and_then(extract_embed_token) {
+            let spclient_url =
+                format!("https://spclient.wg.spotify.com/playlist/v2/playlist/{set_id}");
+            let spclient_req = client
+                .get(&spclient_url)
+                .header("Authorization", format!("Bearer {token}"))
+                .header("Accept", "application/json")
+                .timeout(Duration::from_secs(15))
+                .send()
+                .await;
+
+            match spclient_req {
+                Ok(resp) if resp.status().is_success() => {
+                    if let Ok(body) = resp.text().await {
+                        let all_track_ids = parse_spclient_track_ids(&body);
+                        if all_track_ids.len() > items.len() {
+                            log_ev!(
+                                "sp",
+                                0,
+                                "spclient_expanded_playlist",
+                                "embed_tracks" => items.len(),
+                                "total_tracks" => all_track_ids.len()
+                            );
+                            for tid in all_track_ids {
+                                if seen_ids.insert(tid.clone()) {
+                                    let track_num = items.len() + 1;
+                                    items.push(SpotifySetItem {
+                                        track_id: tid,
+                                        title: format!("Track {track_num}"),
+                                        artist: String::new(),
+                                    });
+                                    if items.len() >= MAX_SPOTIFY_PLAYLIST_TRACKS {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(resp) => {
+                    log_ev!(
+                        "sp",
+                        0,
+                        "spclient_fetch_status_err",
+                        "status" => resp.status().as_u16()
+                    );
+                }
+                Err(e) => {
+                    log_ev!("sp", 0, "spclient_fetch_err", "err" => e.to_string());
+                }
+            }
+        }
     }
 
     if items.is_empty() {
@@ -339,6 +443,94 @@ async fn fetch_spotify_track_public(track_id: &str) -> anyhow::Result<SpotifyTra
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_extract_embed_token_primary_path() {
+        let json: serde_json::Value = serde_json::json!({
+            "props": {
+                "pageProps": {
+                    "state": {
+                        "settings": {
+                            "session": {
+                                "accessToken": "BQCTestToken123456"
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        assert_eq!(
+            extract_embed_token(&json),
+            Some("BQCTestToken123456".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_embed_token_fallback_path() {
+        let json: serde_json::Value = serde_json::json!({
+            "props": {
+                "pageProps": {
+                    "session": {
+                        "accessToken": "BQCFallbackToken789"
+                    }
+                }
+            }
+        });
+        assert_eq!(
+            extract_embed_token(&json),
+            Some("BQCFallbackToken789".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_embed_token_missing() {
+        let json: serde_json::Value = serde_json::json!({
+            "props": {
+                "pageProps": {}
+            }
+        });
+        assert_eq!(extract_embed_token(&json), None);
+    }
+
+    #[test]
+    fn test_parse_spclient_track_ids() {
+        let payload = r#"{
+            "length": 3,
+            "contents": {
+                "items": [
+                    {"uri": "spotify:track:1111111111111111111111"},
+                    {"uri": "spotify:episode:ignore_this_podcast"},
+                    {"uri": "spotify:track:2222222222222222222222"},
+                    {"uri": "spotify:track:3333333333333333333333"}
+                ]
+            }
+        }"#;
+        let track_ids = parse_spclient_track_ids(payload);
+        assert_eq!(
+            track_ids,
+            vec![
+                "1111111111111111111111".to_string(),
+                "2222222222222222222222".to_string(),
+                "3333333333333333333333".to_string()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_spotify_set_real_large_playlist() {
+        let set = fetch_spotify_set(
+            crate::spotify::extract::SpotifySetKind::Playlist,
+            "4HwaPDuT7HkO9PqudOErY5",
+        )
+        .await
+        .unwrap();
+        assert_eq!(set.title, "Breakcore bangers");
+        assert!(
+            set.items.len() >= 700,
+            "expected >= 700 tracks, got {}",
+            set.items.len()
+        );
+    }
 
     #[tokio::test]
     async fn test_fetch_spotify_track_public_fallback() {

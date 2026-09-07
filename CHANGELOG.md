@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.6.0] - 2026-09-07
+
+### Added
+- **Spotify Playlist Expansion Beyond 100 Tracks (`src/spotify/client.rs`, `src/musicset/runner.rs`)**:
+  - Extracted anonymous session token from public embed HTML and integrated Spotify internal `spclient.wg.spotify.com/playlist/v2/playlist/{id}` API.
+  - Expanded playlist track capacity beyond the 100-track embed ceiling up to 2,000 tracks with sub-second retrieval.
+  - Retained 100% graceful fallback to embed page track list upon network or gateway error.
+  - Cleaned up pre-download ticker label formatting for tracks beyond 100 with empty artist metadata.
+
 ## [2.5.10] - 2026-09-03
 
 ### Added

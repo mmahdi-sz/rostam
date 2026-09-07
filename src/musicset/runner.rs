@@ -171,7 +171,11 @@ pub async fn run_set_job(
         {
             let guess = match &pending.items {
                 SetItems::Spotify(items) => {
-                    format!("{} - {}", items[idx].artist, items[idx].title)
+                    if items[idx].artist.is_empty() {
+                        items[idx].title.clone()
+                    } else {
+                        format!("{} - {}", items[idx].artist, items[idx].title)
+                    }
                 }
                 SetItems::Soundcloud(urls) => sc_slug(&urls[idx]),
             };
