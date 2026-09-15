@@ -393,102 +393,137 @@ pub async fn run_yt_dlp_audio(
     let out_template = job_dir.join(format!("{stem}.%(ext)s"));
     let _ = cores; // pinning is handled by the broker; kept for call-site clarity
 
-    let cookie_spec = crate::cookie_pool::get_global_cookie_spec().await;
-
-    let mut cmd = Command::new("yt-dlp");
-    cmd.arg("--js-runtimes")
-        .arg(format!("deno:{}", crate::config::deno_path()));
-    if let Some(ref spec) = cookie_spec {
-        cmd.arg("--cookies-from-browser").arg(spec);
-    }
-    cmd.arg("--extractor-args")
-        .arg("youtubetab:skip=authcheck")
-        .arg("-x")
-        .arg("--audio-format")
-        .arg("mp3")
-        .arg("--audio-quality")
-        .arg("320k")
-        .arg("--no-warnings")
-        .arg("-o")
-        .arg(&out_template)
-        .arg(webpage_url)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            log_ev!("sp", trace_id, "yt_dlp_spawn_fail", "err" => e.to_string());
-            return DlOutcome::Failed;
-        }
-    };
-
-    let stderr_task = child.stderr.take().map(|mut r| {
-        tokio::spawn(async move {
-            use tokio::io::AsyncReadExt;
-            let mut buf = Vec::new();
-            let _ = tokio::io::copy(&mut (&mut r).take(4096), &mut buf).await;
-            let _ = tokio::io::copy(&mut r, &mut tokio::io::sink()).await;
-            String::from_utf8_lossy(&buf).to_string()
-        })
-    });
-
-    let timeout_secs = 300u64;
-    let start_instant = std::time::Instant::now();
-
-    loop {
+    const MAX_ATTEMPTS: usize = 3;
+    for attempt in 1..=MAX_ATTEMPTS {
         if stop_flag.load(Ordering::SeqCst) {
-            let _ = child.start_kill();
-            let _ = child.wait().await;
-            if let Some(t) = stderr_task {
-                let _ = t.await;
-            }
             return DlOutcome::Cancelled;
         }
 
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let stderr_output = if let Some(t) = stderr_task {
-                    t.await.unwrap_or_default()
-                } else {
-                    String::new()
-                };
-                if status.success() {
-                    return DlOutcome::Ok;
-                }
-                let err_summary = stderr_output
-                    .lines()
-                    .rev()
-                    .find(|l| !l.trim().is_empty())
-                    .unwrap_or("")
-                    .trim();
-                log_ev!(
-                    "sp",
-                    trace_id,
-                    "yt_dlp_exit_fail",
-                    "status" => status.to_string(),
-                    "err" => err_summary
-                );
+        let cookie_spec = crate::cookie_pool::get_global_cookie_spec().await;
+        if attempt > 1 {
+            log_ev!(
+                "sp",
+                trace_id,
+                "yt_dlp_retry_attempt",
+                "attempt" => attempt,
+                "cookie_spec" => cookie_spec.as_deref().unwrap_or("none")
+            );
+        }
+
+        let mut cmd = Command::new("yt-dlp");
+        cmd.arg("--js-runtimes")
+            .arg(format!("deno:{}", crate::config::deno_path()));
+        if let Some(ref spec) = cookie_spec {
+            cmd.arg("--cookies-from-browser").arg(spec);
+        }
+        cmd.arg("--extractor-args")
+            .arg("youtube:player_client=android,web;youtubetab:skip=authcheck")
+            .arg("-x")
+            .arg("--audio-format")
+            .arg("mp3")
+            .arg("--audio-quality")
+            .arg("320k")
+            .arg("--no-warnings")
+            .arg("-o")
+            .arg(&out_template)
+            .arg(webpage_url)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                log_ev!("sp", trace_id, "yt_dlp_spawn_fail", "err" => e.to_string());
                 return DlOutcome::Failed;
             }
-            Ok(None) => {
-                if start_instant.elapsed() > Duration::from_secs(timeout_secs) {
-                    let _ = child.start_kill();
-                    if let Some(t) = stderr_task {
-                        let _ = t.await;
+        };
+
+        let stderr_task = child.stderr.take().map(|mut r| {
+            tokio::spawn(async move {
+                use tokio::io::AsyncReadExt;
+                let mut buf = Vec::new();
+                let _ = tokio::io::copy(&mut (&mut r).take(4096), &mut buf).await;
+                let _ = tokio::io::copy(&mut r, &mut tokio::io::sink()).await;
+                String::from_utf8_lossy(&buf).to_string()
+            })
+        });
+
+        let timeout_secs = 300u64;
+        let start_instant = std::time::Instant::now();
+
+        let outcome = loop {
+            if stop_flag.load(Ordering::SeqCst) {
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                if let Some(t) = stderr_task {
+                    let _ = t.await;
+                }
+                return DlOutcome::Cancelled;
+            }
+
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let stderr_output = if let Some(t) = stderr_task {
+                        t.await.unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+                    if status.success() {
+                        return DlOutcome::Ok;
                     }
-                    log_ev!("sp", trace_id, "yt_dlp_timeout", "=>" => "timeout");
+                    let err_summary = stderr_output
+                        .lines()
+                        .rev()
+                        .find(|l| !l.trim().is_empty())
+                        .unwrap_or("")
+                        .trim();
+                    log_ev!(
+                        "sp",
+                        trace_id,
+                        "yt_dlp_exit_fail",
+                        "status" => status.to_string(),
+                        "err" => err_summary
+                    );
+
+                    let retriable = err_summary.contains("confirm you're not a bot")
+                        || err_summary.contains("confirm you’re not a bot")
+                        || err_summary.contains("Sign in to confirm")
+                        || err_summary.contains("HTTP Error 403")
+                        || err_summary.contains("HTTP Error 429")
+                        || err_summary.contains("403: Forbidden");
+
+                    if retriable && attempt < MAX_ATTEMPTS {
+                        let mp3_path = job_dir.join(format!("{stem}.mp3"));
+                        let _ = tokio::fs::remove_file(&mp3_path).await;
+                        break false; // retry with next cookie
+                    }
                     return DlOutcome::Failed;
                 }
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                Ok(None) => {
+                    if start_instant.elapsed() > Duration::from_secs(timeout_secs) {
+                        let _ = child.start_kill();
+                        if let Some(t) = stderr_task {
+                            let _ = t.await;
+                        }
+                        log_ev!("sp", trace_id, "yt_dlp_timeout", "=>" => "timeout");
+                        return DlOutcome::Failed;
+                    }
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+                Err(e) => {
+                    log_ev!("sp", trace_id, "yt_dlp_wait_err", "err" => e.to_string());
+                    return DlOutcome::Failed;
+                }
             }
-            Err(e) => {
-                log_ev!("sp", trace_id, "yt_dlp_wait_err", "err" => e.to_string());
-                return DlOutcome::Failed;
-            }
+        };
+
+        if outcome {
+            return DlOutcome::Ok;
         }
     }
+
+    DlOutcome::Failed
 }
 
 pub fn format_spotify_release_date(raw_date: &str, is_fa: bool) -> String {

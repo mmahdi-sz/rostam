@@ -29,7 +29,7 @@ pub async fn probe_metadata(path: &Path) -> Result<MediaMetadata> {
             "-v",
             "error",
             "-show_entries",
-            "format=duration,bit_rate:stream=width,height,r_frame_rate,codec_name",
+            "format=duration,bit_rate:stream=codec_type,width,height,r_frame_rate,avg_frame_rate,codec_name",
             "-of",
             "json",
         ])
@@ -67,7 +67,17 @@ pub fn parse_ffprobe_json(json_bytes: &[u8], path: &Path) -> Result<MediaMetadat
 
     let video_stream = streams.and_then(|arr| {
         arr.iter()
-            .find(|st| st.get("width").is_some() || st.get("codec_name").is_some())
+            .find(|st| {
+                let is_video = st
+                    .get("codec_type")
+                    .and_then(|t| t.as_str())
+                    .map(|t| t == "video")
+                    .unwrap_or(false);
+                let has_dims = st.get("width").and_then(|w| w.as_u64()).unwrap_or(0) > 0
+                    && st.get("height").and_then(|h| h.as_u64()).unwrap_or(0) > 0;
+                is_video || has_dims
+            })
+            .or_else(|| arr.iter().find(|st| st.get("codec_name").is_some()))
     });
 
     let width = video_stream
@@ -86,22 +96,32 @@ pub fn parse_ffprobe_json(json_bytes: &[u8], path: &Path) -> Result<MediaMetadat
         .unwrap_or("unknown")
         .to_string();
 
-    let fps = video_stream
-        .and_then(|s| s.get("r_frame_rate"))
-        .and_then(|r| r.as_str())
-        .map(|rate_str| {
-            let parts: Vec<&str> = rate_str.split('/').collect();
-            if parts.len() == 2 {
-                let num: f64 = parts[0].parse().unwrap_or(0.0);
-                let den: f64 = parts[1].parse().unwrap_or(1.0);
-                if den > 0.0 {
-                    (num / den).round() as u32
-                } else {
-                    0
-                }
+    let parse_fps = |rate_str: &str| -> u32 {
+        let parts: Vec<&str> = rate_str.split('/').collect();
+        if parts.len() == 2 {
+            let num: f64 = parts[0].parse().unwrap_or(0.0);
+            let den: f64 = parts[1].parse().unwrap_or(1.0);
+            if den > 0.0 {
+                (num / den).round() as u32
             } else {
-                rate_str.parse::<u32>().unwrap_or(0)
+                0
             }
+        } else {
+            rate_str.parse::<u32>().unwrap_or(0)
+        }
+    };
+
+    let fps = video_stream
+        .and_then(|s| {
+            s.get("r_frame_rate")
+                .and_then(|r| r.as_str())
+                .map(parse_fps)
+                .filter(|&f| f > 0)
+                .or_else(|| {
+                    s.get("avg_frame_rate")
+                        .and_then(|r| r.as_str())
+                        .map(parse_fps)
+                })
         })
         .unwrap_or(0);
 
@@ -191,5 +211,40 @@ mod tests {
         assert_eq!(meta.codec, "h264");
         assert_eq!(meta.duration_secs, 123);
         assert!((meta.duration_exact - 123.456).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_parse_ffprobe_json_audio_first_stream() {
+        let json_data = br#"{
+            "streams": [
+                {
+                    "codec_name": "aac",
+                    "codec_type": "audio",
+                    "r_frame_rate": "0/0"
+                },
+                {
+                    "codec_name": "h264",
+                    "codec_type": "video",
+                    "width": 1280,
+                    "height": 720,
+                    "r_frame_rate": "60/1"
+                }
+            ],
+            "format": {
+                "duration": "25.770667",
+                "bit_rate": "3387754"
+            }
+        }"#;
+
+        let path = Path::new("/tmp/file_111.mp4");
+        let meta = parse_ffprobe_json(json_data, path).expect("parse json failed");
+
+        assert_eq!(meta.filename, "file_111.mp4");
+        assert_eq!(meta.width, 1280);
+        assert_eq!(meta.height, 720);
+        assert_eq!(meta.bitrate, 3387754);
+        assert_eq!(meta.fps, 60);
+        assert_eq!(meta.codec, "h264");
+        assert_eq!(meta.duration_secs, 26);
     }
 }

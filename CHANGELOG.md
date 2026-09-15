@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.6.2] - 2026-09-15
+
+### Fixed
+- **Video Metadata Detection for Studio Compress & Trim (`src/studio/trim/probe.rs`, `src/common/ffmpeg.rs`, `src/studio/compress/handle.rs`)**:
+  - Restrained `ffprobe` stream queries with `-select_streams v:0` and explicit `codec_type == "video"` inspection, preventing audio streams (`aac`) from being mistakenly selected as the primary video stream.
+  - Resolved `1x1` resolution, `1 fps`, and `aac` codec misdetections on video uploads where audio stream index precedes video stream index.
+- **Audio Separation Format Normalization & Memory Cycle Guard (`separation-service/main.py`)**:
+  - Implemented automatic pre-conversion to 16-bit PCM WAV (`pcm_s16le`, 44.1kHz) via `ffmpeg` for all non-WAV audio uploads (such as M4A, AAC, and OPUS) before feeding into the ONNX separation engine, resolving `HTTP 500: Format not recognised` failures.
+  - Eliminated perpetual memory unload/reload thrashing by distinguishing intentional 180s idle unload events from service failures in `auto_recovery_loop()`.
+- **Surge DL Large File Multipart Splitting & Toolchain Availability (`src/surge_dl/engine.rs`)**:
+  - Installed and verified `rar` CLI archiver (`/usr/bin/rar`) on production host, fixing `No such file or directory (os error 2)` crashes during archive splitting for files exceeding Telegram single-upload limits.
+- **YouTube Client Simulation & Bot-Detection Bypass (`src/youtube/download/`, `src/spotify/handle.rs`)**:
+  - Configured extractor args with `youtube:player_client=android,web;youtubetab:skip=authcheck` across single downloads, playlist items, subtitle fetches, and Spotify track matching to mitigate `Sign in to confirm you're not a bot` challenges and 403 stream throttles.
+- **YouTube Thumbnail Preview Graceful Fallback (`src/youtube/handle.rs`)**:
+  - Added seamless text message fallback with Markdown caption when Telegram rejects expired or unreachable thumbnail URLs (`send_photo_failed: Bad Request: failed to get HTTP URL content`), preserving user download flow uninterrupted.
+- **Firefox Zombie Worker Reaping (`src/modules/cookie_refresher.rs`)**:
+  - Added `reap_orphan_firefox_processes` to detect and terminate abandoned `-contentproc` worker processes with dead parent PIDs when Firefox browser instances close or crash during cookie refresh.
+
 ## [2.6.1] - 2026-09-07
 
 ### Fixed

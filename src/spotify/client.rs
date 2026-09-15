@@ -312,10 +312,7 @@ fn extract_embed_entity(html: &str) -> Option<serde_json::Value> {
 /// Fallback method to parse track metadata directly from Spotify's public embed pages.
 /// Works without requiring Spotify Developer Credentials or a Premium subscription.
 async fn fetch_spotify_track_public(track_id: &str) -> anyhow::Result<SpotifyTrackMeta> {
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (X11; Linux x86_64)")
-        .timeout(Duration::from_secs(15))
-        .build()?;
+    let client = crate::http::client();
 
     let embed_url = format!("https://open.spotify.com/embed/track/{track_id}");
     if let Ok(resp) = client.get(&embed_url).send().await {

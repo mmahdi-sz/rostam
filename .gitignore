@@ -21,6 +21,7 @@ downloads/
 plans/
 testapi.log
 scripts/run_testapi_suite.sh
+scripts/send_*.py
 files/.official_logout_done
 node_modules/
 .codegraph/

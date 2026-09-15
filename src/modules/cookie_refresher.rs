@@ -161,6 +161,8 @@ async fn kill_existing_firefox(profile_path: &str, profile_name: &str) {
         .await;
     sleep(Duration::from_secs(2)).await;
 
+    reap_orphan_firefox_processes(p).await;
+
     // Remove Firefox lock files so the profile opens cleanly.
     for lock in [".parentlock", "lock"] {
         let path = std::path::Path::new(profile_path).join(lock);
@@ -303,7 +305,7 @@ async fn kill_firefox(profile_path: &str, profile_name: &str) {
             .await;
         sleep(Duration::from_secs(1)).await;
     }
-    reap_orphan_crashhelpers(p).await;
+    reap_orphan_firefox_processes(p).await;
 }
 
 /// Firefox spawns helper processes (crashhelper) that reparent to init (PPID=1)
@@ -341,6 +343,60 @@ async fn reap_orphan_crashhelpers(profile_name: &str) {
     }
     if reaped > 0 {
         println!("[cookie_refresh profile={p} event=crashhelper_reaped] count={reaped}");
+    }
+}
+
+/// Modern Firefox spawns -contentproc child worker processes that also reparent
+/// to init (PPID=1) when the parent process is killed or crashes. They don't carry
+/// the profile path in argv. Reap any -contentproc whose referenced -parentPid is dead.
+async fn reap_orphan_firefox_processes(profile_name: &str) {
+    let p = profile_name;
+    reap_orphan_crashhelpers(p).await;
+
+    let out = match Command::new("pgrep")
+        .args(["-af", "-contentproc"])
+        .output()
+        .await
+    {
+        Ok(o) => o,
+        Err(_) => return,
+    };
+    let listing = String::from_utf8_lossy(&out.stdout);
+    let mut reaped = 0u32;
+    for line in listing.lines() {
+        let mut parts = line.split_whitespace();
+        let Some(pid) = parts.next() else {
+            continue;
+        };
+        let Some(bin) = parts.next() else {
+            continue;
+        };
+        if !bin.contains("firefox") {
+            continue;
+        }
+
+        let mut parent_pid_str = None;
+        let mut prev = "";
+        for token in parts {
+            if prev == "-parentPid" {
+                parent_pid_str = Some(token);
+                break;
+            }
+            prev = token;
+        }
+
+        if let Some(ppid) = parent_pid_str {
+            if let Ok(parent_pid) = ppid.parse::<i32>() {
+                let parent_alive = std::path::Path::new(&format!("/proc/{parent_pid}")).exists();
+                if !parent_alive {
+                    let _ = Command::new("kill").args(["-9", pid]).output().await;
+                    reaped += 1;
+                }
+            }
+        }
+    }
+    if reaped > 0 {
+        println!("[cookie_refresh profile={p} event=contentproc_reaped] count={reaped}");
     }
 }
 

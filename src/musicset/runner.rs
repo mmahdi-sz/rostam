@@ -185,12 +185,16 @@ pub async fn run_set_job(
         }
         let track = match &pending.items {
             SetItems::Spotify(items) => {
-                fetch_spotify_track_file(&job_dir, &stem, &items[idx], &cores, trace_id, &cancel)
-                    .await
+                fetch_spotify_track_file(
+                    &job_dir, &stem, &items[idx], &cur_name, &cores, trace_id, &cancel,
+                )
+                .await
             }
             SetItems::Soundcloud(urls) => {
-                fetch_soundcloud_track_file(&job_dir, &stem, &urls[idx], user_id, trace_id, &cancel)
-                    .await
+                fetch_soundcloud_track_file(
+                    &job_dir, &stem, &urls[idx], &cur_name, user_id, trace_id, &cancel,
+                )
+                .await
             }
         };
 
@@ -319,6 +323,7 @@ async fn fetch_spotify_track_file(
     job_dir: &std::path::Path,
     stem: &str,
     item: &crate::spotify::client::SpotifySetItem,
+    cur_name: &Arc<Mutex<String>>,
     cores: &[i32],
     trace_id: u64,
     cancel: &Arc<AtomicBool>,
@@ -329,6 +334,15 @@ async fn fetch_spotify_track_file(
     let meta = crate::spotify::client::fetch_spotify_track(&item.track_id)
         .await
         .ok()?;
+
+    if let Ok(mut g) = cur_name.lock() {
+        *g = if meta.artists_joined.is_empty() {
+            meta.title.clone()
+        } else {
+            format!("{} - {}", meta.artists_joined, meta.title)
+        };
+    }
+
     let cand = crate::spotify::search::find_best_youtube_match(
         &meta.primary_artist,
         &meta.title,
@@ -365,6 +379,7 @@ async fn fetch_soundcloud_track_file(
     job_dir: &std::path::Path,
     stem: &str,
     sc_url: &str,
+    cur_name: &Arc<Mutex<String>>,
     user_id: i64,
     trace_id: u64,
     cancel: &Arc<AtomicBool>,
@@ -372,6 +387,14 @@ async fn fetch_soundcloud_track_file(
     let meta = crate::soundcloud::fetch::fetch_soundcloud_meta(trace_id, sc_url)
         .await
         .ok()?;
+
+    if let Ok(mut g) = cur_name.lock() {
+        *g = if meta.artist.is_empty() {
+            meta.title.clone()
+        } else {
+            format!("{} - {}", meta.artist, meta.title)
+        };
+    }
     let mp3 = crate::soundcloud::handle::download_soundcloud_audio(
         job_dir, stem, sc_url, user_id, trace_id, cancel,
     )

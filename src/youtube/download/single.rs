@@ -187,7 +187,7 @@ pub(crate) async fn run_download(
         .arg("--cookies-from-browser")
         .arg(&req.cookie_spec)
         .arg("--extractor-args")
-        .arg("youtubetab:skip=authcheck")
+        .arg("youtube:player_client=android,web;youtubetab:skip=authcheck")
         .arg("--no-warnings")
         .arg("--no-playlist")
         .arg("--progress")

@@ -98,7 +98,7 @@ def unload_models():
         log.info("[separation event=model_unloaded] idle timeout reached, memory released")
 
 async def auto_recovery_loop():
-    """Combined idle-unloader + crash-recovery loop (runs every 30 s)."""
+    """Idle-unloader loop (runs every 30 s) to reclaim memory when idle."""
     while True:
         await asyncio.sleep(30)
         if _model_loaded:
@@ -107,10 +107,6 @@ async def auto_recovery_loop():
                 log.info(f"[separation event=idle_unload_trigger] idle_secs={idle_secs:.0f}")
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, unload_models)
-        elif not _model_loaded:
-            log.warning("[separation event=auto_recovery_trigger] Model is not loaded, attempting background reload...")
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, load_models)
 
 
 @asynccontextmanager
@@ -310,13 +306,27 @@ def _do_separation(trace_id: int, audio_bytes: bytes, filename: str, mode: str, 
 
         log.info(f"[separation trace={trace_id} event=audio_validated] duration={duration:.1f}s")
 
+        # Convert to uncompressed WAV if not already WAV, ensuring libsndfile compatibility (e.g. for M4A, AAC, OPUS)
+        actual_input = input_path
+        if ext.lower() != ".wav":
+            wav_path = os.path.join(work_dir, "input.wav")
+            conv = subprocess.run(
+                ["ffmpeg", "-y", "-i", input_path, "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2", wav_path],
+                capture_output=True, text=True
+            )
+            if conv.returncode == 0 and os.path.exists(wav_path):
+                log.info(f"[separation trace={trace_id} event=converted_to_wav] from={ext}")
+                actual_input = wav_path
+            else:
+                log.warning(f"[separation trace={trace_id} event=wav_conversion_failed] err={conv.stderr.strip()}")
+
         separator = _separator_quality if mode == "quality" else _separator_fast
 
         overlap = 0.50 if mode == "quality" else 0.25
         separator.arch_specific_params = {"overlap": overlap}
 
         log.info(f"[separation trace={trace_id} event=separator_run] mode={mode} overlap={overlap} threads={core_count}")
-        output_files = separator.separate(input_path)
+        output_files = separator.separate(actual_input)
 
         log.info(f"[separation trace={trace_id} event=separator_output] files={output_files}")
 

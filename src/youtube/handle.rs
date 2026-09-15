@@ -251,8 +251,10 @@ pub async fn handle_youtube_url(
                         let _ = send_text(api, chat_id, &t("youtube.send_photo_failed")).await;
                         anyhow::bail!("fallback send_message failed: {err2}");
                     }
+                    log_trace(trace_id, "send_photo_fallback_ok", "preview text sent");
+                } else {
+                    log_trace(trace_id, "send_photo_ok", "preview photo sent");
                 }
-                log_trace(trace_id, "send_photo_ok", "preview photo sent");
                 if !info.is_playlist {
                     if let Some(desc) = info.description.as_deref() {
                         let link_preview = LinkPreviewOptions::builder().is_disabled(true).build();
