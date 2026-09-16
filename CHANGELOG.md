@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.6.3] - 2026-09-16
+
+### Fixed
+- **STT WAV Header Parsing & RIFF Metadata Handling (`src/stt/vosk.rs`, `src/common/ffmpeg.rs`, `src/stt/handle.rs`, `config/i18n.json`)**:
+  - Replaced naive 44-byte WAV header reading in `vosk::transcribe` with robust `hound::WavReader` (`read_wav_samples`), properly handling all RIFF chunks and ignoring intermediate metadata chunks (`LIST`, `INFO`, `JUNK`).
+  - Resolved zero-length transcription bug (`text_len=0 elapsed=0.0s`) on audio files converted by FFmpeg with Denoise disabled, where the 26-byte `LIST` chunk was previously misread as the total audio data length.
+  - Added `-bitexact` flag to `convert_to_wav` in `src/common/ffmpeg.rs` as defense-in-depth against unexpected metadata injection during audio transcoding.
+  - Added localized fallback notice `stt.no_speech_detected` across all 4 languages (`fa`, `en`, `it`, `ru`) when transcription result contains no detected speech, preventing blank output.
+  - Added unit test `test_read_wav_samples_with_list_chunk` verifying accurate PCM sample extraction from WAV containers with `LIST` chunks.
+
 ## [2.6.2] - 2026-09-15
 
 ### Fixed

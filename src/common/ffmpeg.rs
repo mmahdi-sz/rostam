@@ -165,6 +165,7 @@ pub async fn convert_to_wav(
         .args(["-ar", &sample_rate_hz.to_string()])
         .args(["-ac", &channels.to_string()])
         .args(["-c:a", "pcm_s16le"])
+        .arg("-bitexact")
         .arg(output_wav_path)
         .stdout(Stdio::null())
         .stderr(Stdio::null())

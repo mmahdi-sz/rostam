@@ -828,6 +828,11 @@ pub async fn handle_stt_audio(
         t("stt.denoise_off")
     };
     let total_secs = overall_start.elapsed().as_secs_f64();
+    let text_display = if text.trim().is_empty() {
+        t("stt.no_speech_detected")
+    } else {
+        text.clone()
+    };
 
     let result_text = tf(
         "stt.result_report",
@@ -838,7 +843,7 @@ pub async fn handle_stt_audio(
             ("dur", &format!("{audio_duration:.1}")),
             ("total", &format!("{total_secs:.1}")),
             ("denoise_time", &format!("{denoise_secs:.1}")),
-            ("text", &text),
+            ("text", &text_display),
         ],
     );
 
