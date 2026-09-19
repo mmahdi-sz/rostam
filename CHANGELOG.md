@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.6.4] - 2026-09-19
+
+### Fixed
+- **Ghostscript Toolchain Provisioning for PDF Compression (`pdfcompress`)**:
+  - Installed and verified `ghostscript` 10.08.0 (`/usr/bin/gs`) on Arch host environment, resolving `gs failed: spawn: No such file or directory (os error 2)` crashes.
+- **Persistent Headless XFCE Display Environment (`cookie_refresher`)**:
+  - Established persistent headless XFCE session on `DISPLAY=:10`, preventing Firefox immediate exit/crashes during automated YouTube cookie warming after XRDP client disconnections.
+- **MarkdownV2 Template Syntax Normalization (`config/i18n.json`)**:
+  - Corrected Telegram MarkdownV2 bold formatting markers and escaped reserved symbols (`-`, `.`, `(`, `)`) across Russian, Italian, and English localization strings for DeOldify, Background Removal, Denoise, and Upscale modules.
+
 ## [2.6.3] - 2026-09-16
 
 ### Fixed

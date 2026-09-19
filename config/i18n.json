@@ -43,38 +43,38 @@
             "dev_cafe_title": "💻 *کافه برنامه‌نویسی و فناوری*\n\nمجموعه ابزارهای تخصصی برای توسعه‌دهندگان، برنامه‌نویسان و مدیران سیستم:\n\n• 📦 *تبدیل فرمت بسته‌ها:* تبدیل سریع و امن بسته‌های نرم‌افزاری بین DEB، RPM و Pacman\n\n*ابزار مورد نظر را انتخاب کنید👇:*"
         },
         "tts": {
-            "enter_text_default": "📝 **تبدیل متن به صدا**\n\nلطفاً متنی که می‌خواهید به صدا تبدیل شود را ارسال کنید \\(حداکثر ۵۰۰ کاراکتر\\):",
+            "enter_text_default": "📝 *تبدیل متن به صدا*\n\nلطفاً متنی که می‌خواهید به صدا تبدیل شود را ارسال کنید \\(حداکثر ۵۰۰ کاراکتر\\):",
             "cancel_button": "❌ انصراف",
             "cancelled": "❌ عملیات تبدیل متن به صدا لغو شد\\.",
             "preparing": "✅ متن دریافت شد\\. در حال پردازش\\.\\.\\.",
             "progress_body": "🎙 *در حال ساخت صدا\\.\\.\\.*\n\n{bar}  {percent}%\n⏱️ *زمان سپری‌شده:* {elapsed}\n⏳ *زمان باقی‌مانده تخمینی:* {eta}",
-            "result_caption": "✅ **صدا با موفقیت ساخته شد\\!**",
+            "result_caption": "✅ *صدا با موفقیت ساخته شد\\!*",
             "process_failed": "پردازش هوش مصنوعی با خطا مواجه شد\\. دوباره تلاش کنید\\.",
             "voice_forbidden_error": "⚠️ *خطا در ارسال صدا*\n\nبه نظر می‌رسد در تنظیمات حریم خصوصی تلگرام خود، دریافت پیام‌های صوتی \\(Voice\\) را محدود کرده‌اید\\.\n\nلطفاً برای دریافت خروجی، به مسیر زیر بروید:\n⚙️ `Settings > Privacy and Security > Voice Messages`\nو ربات ما را در بخش *Exceptions \\(استثناها\\)* اضافه کنید، یا تنظیمات را روی *Everybody* قرار دهید\\.",
             "quota_weekly_limit": "سقف هفتگی تبدیل متن به صدا \\\\({limit} دقیقه در هفته\\\\) پر شده\\\\. برای سهمیه بیشتر رتبه خود را ارتقا دهید\\\\.",
             "text_too_long": "⚠️ متن بیش از حد بلند است: {len} کاراکتر از حداکثر {max}\\. کوتاه‌ترش کنید و دوباره بفرستید\\."
         },
         "deoldify": {
-            "prompt": "🎨 **بخش رنگ‌آمیزی هوشمند عکس‌های قدیمی**\n\nاین ابزار با شبکه عصبی عمیق، تصاویر سیاه و سفید یا تک‌رنگ قدیمی شما را با حفظ بافت و روشنایی اصلی به عکس‌های رنگی طبیعی تبدیل می‌کند\\.\n\n📥 **لطفاً عکس سیاه و سفید خود را ارسال کنید:**\n*\\(پشتیبانی از فرمت‌های JPG, PNG, WEBP و فایل تصویری\\)*",
-            "preparing": "🎨 **تصویر دریافت شد\\. در حال رنگ‌آمیزی با هوش مصنوعی\\.\\.\\. ⏳**\n\n⏱️ **زمان سپری‌شده:** {elapsed}",
+            "prompt": "🎨 *بخش رنگ‌آمیزی هوشمند عکس‌های قدیمی*\n\nاین ابزار با شبکه عصبی عمیق، تصاویر سیاه و سفید یا تک‌رنگ قدیمی شما را با حفظ بافت و روشنایی اصلی به عکس‌های رنگی طبیعی تبدیل می‌کند\\.\n\n📥 *لطفاً عکس سیاه و سفید خود را ارسال کنید:*\n*\\(پشتیبانی از فرمت‌های JPG, PNG, WEBP و فایل تصویری\\)*",
+            "preparing": "🎨 *تصویر دریافت شد\\. در حال رنگ‌آمیزی با هوش مصنوعی\\.\\.\\. ⏳*\n\n⏱️ *زمان سپری‌شده:* {elapsed}",
             "cancel_button": "❌ انصراف",
             "cancelled": "❌ عملیات رنگ‌آمیزی عکس لغو شد\\.",
             "unsupported_format": "فرمت تصویر پشتیبانی نمی‌شود\\. لطفاً یک عکس یا فایل تصویری ارسال کنید\\.",
             "download_failed": "دانلود تصویر با خطا مواجه شد\\. دوباره تلاش کنید\\.",
             "process_failed": "پردازش هوش مصنوعی با خطا مواجه شد\\. دوباره تلاش کنید\\.",
-            "result_caption": "🎨 **تصویر رنگ‌آمیزی‌شده شما آماده است\\!**",
-            "report": "📊 **گزارش رنگ‌آمیزی:**\n└── ⚡ **زمان پردازش:** {processing} ثانیه",
+            "result_caption": "🎨 *تصویر رنگ‌آمیزی‌شده شما آماده است\\!*",
+            "report": "📊 *گزارش رنگ‌آمیزی:*\n└── ⚡ *زمان پردازش:* {processing} ثانیه",
             "quota_weekly_limit": "سقف هفتگی رنگ‌آمیزی عکس \\\\({limit} تصویر در هفته\\\\) پر شده\\\\. برای سهمیه بیشتر رتبه خود را ارتقا دهید\\\\."
         },
         "nobg": {
-            "prompt": "✂️ **بخش حذف پس‌زمینه**\n\n\n📥 **لطفاً تصویر خود را ارسال کنید:**\n*\\(پشتیبانی از JPG, PNG, WEBP — به صورت عکس یا فایل\\)*",
-            "preparing": "✂️ **تصویر دریافت شد\\. در حال حذف پس‌زمینه\\.\\.\\. ⏳**",
+            "prompt": "✂️ *بخش حذف پس‌زمینه*\n\n\n📥 *لطفاً تصویر خود را ارسال کنید:*\n*\\(پشتیبانی از JPG, PNG, WEBP \\— به صورت عکس یا فایل\\)*",
+            "preparing": "✂️ *تصویر دریافت شد\\. در حال حذف پس‌زمینه\\.\\.\\. ⏳*",
             "cancel_button": "❌ انصراف",
             "cancelled": "❌ عملیات حذف پس‌زمینه لغو شد\\.",
             "unsupported_format": "فرمت ارسالی پشتیبانی نمی‌شود\\. لطفاً یک عکس یا فایل تصویری ارسال کنید\\.",
             "download_failed": "دانلود تصویر با خطا مواجه شد\\. دوباره تلاش کنید\\.",
             "process_failed": "پردازش هوش مصنوعی با خطا مواجه شد\\. دوباره تلاش کنید\\.",
-            "result_caption": "✂️ **پس‌زمینه با موفقیت حذف شد\\!**\n\n⚡ **زمان پردازش:** {time} ثانیه",
+            "result_caption": "✂️ *پس‌زمینه با موفقیت حذف شد\\!*\n\n⚡ *زمان پردازش:* {time} ثانیه",
             "quota_weekly_limit": "سقف هفتگی حذف پس‌زمینه \\({limit} تصویر در هفته\\) پر شده\\. برای سهمیه بیشتر رتبه خود را ارتقا دهید\\."
         },
         "stt": {
@@ -117,11 +117,11 @@
             "quota_accurate_file_too_long": "فایل از سقف باقی‌مانده رونویسی دقیق ({remaining}) بلندتر است"
         },
         "denoise": {
-            "prompt": "🎙️ *بخش پاک‌سازی صدا*\n\nاین ابزار با استفاده از هوش مصنوعی، سروصدای پس‌زمینه را از فایل صوتی یا ویدیویی شما حذف می‌کند\\.\n\n✅ **مناسب برای:** پادکست، مصاحبه، جلسه، ویدیوکلیپ، صدای گوینده و ضبط‌هایی که نویز محیطی دارند مانند باد، ترافیک یا صدای جمعیت\n\n❌ **مناسب نیست برای:** موزیک و فایل‌هایی که صدا لایه‌های پیچیده دارد\n\n📥 لطفاً فایل صوتی یا ویدیویی خود را ارسال کنید:",
+            "prompt": "🎙️ *بخش پاک‌سازی صدا*\n\nاین ابزار با استفاده از هوش مصنوعی، سروصدای پس‌زمینه را از فایل صوتی یا ویدیویی شما حذف می‌کند\\.\n\n✅ *مناسب برای:* پادکست، مصاحبه، جلسه، ویدیوکلیپ، صدای گوینده و ضبط‌هایی که نویز محیطی دارند مانند باد، ترافیک یا صدای جمعیت\n\n❌ *مناسب نیست برای:* موزیک و فایل‌هایی که صدا لایه‌های پیچیده دارد\n\n📥 لطفاً فایل صوتی یا ویدیویی خود را ارسال کنید:",
             "preparing": "✅ فایل دریافت شد. در حال آماده‌سازی... ⏳",
             "progress": "🎙️ *در حال نویزگیری و پالایش صدا\\.\\.\\.*\n\n{bar}  {percent}%\n⏱️ *زمان سپری‌شده:* {elapsed}\n⌛ *زمان باقی‌مانده تخمینی:* {eta}",
-            "result_caption": "🎧 **رسانه پالایش‌شده و تمیز شما آماده است\\!**",
-            "report": "📊 **شناسنامه پالایش هوشمند صوتی:**\n├── ⏱ **طول فایل اصلی:** {duration} ثانیه\n├── ⚡ **زمان پردازش هوش مصنوعی:** {processing} ثانیه\n└── 🚀 **راندمان:** {ratio} برابر سریع‌تر از زمان پخش واقعی\\!\n\n✨ *صدای مزاحم پس‌زمینه با موفقیت فیلتر شده و وضوح صدای شما ارتقا یافته است\\.*",
+            "result_caption": "🎧 *رسانه پالایش‌شده و تمیز شما آماده است\\!*",
+            "report": "📊 *شناسنامه پالایش هوشمند صوتی:*\n├── ⏱ *طول فایل اصلی:* {duration} ثانیه\n├── ⚡ *زمان پردازش هوش مصنوعی:* {processing} ثانیه\n└── 🚀 *راندمان:* {ratio} برابر سریع‌تر از زمان پخش واقعی\\!\n\n✨ *صدای مزاحم پس‌زمینه با موفقیت فیلتر شده و وضوح صدای شما ارتقا یافته است\\.*",
             "cancel_button": "لغو عملیات",
             "download_failed": "دانلود فایل با خطا مواجه شد. دوباره تلاش کنید.",
             "convert_failed": "تبدیل فایل صوتی با خطا مواجه شد.",
@@ -131,7 +131,7 @@
             "quota_file_too_long": "این فایل از سهمیه باقی‌مانده شما بیشتر است\nزمان باقی‌مانده: <b>{remaining}</b>"
         },
         "upscale": {
-            "prompt": "🎴 *بخش افزایش کیفیت تصویر*\n\nاین ابزار با استفاده از هوش مصنوعی، رزولوشن تصاویر شما را افزایش می‌دهد\\.\n\n✅ **مناسب برای:** تصاویر با کیفیت پایین، عکس‌های قدیمی، تصاویر مالتی‌مدیا\n\n📥 مدل مورد نظر را انتخاب کنید و سپس عکس خود را ارسال کنید:",
+            "prompt": "🎴 *بخش افزایش کیفیت تصویر*\n\nاین ابزار با استفاده از هوش مصنوعی، رزولوشن تصاویر شما را افزایش می‌دهد\\.\n\n✅ *مناسب برای:* تصاویر با کیفیت پایین، عکس‌های قدیمی، تصاویر مالتی‌مدیا\n\n📥 مدل مورد نظر را انتخاب کنید و سپس عکس خود را ارسال کنید:",
             "cancel_button": "لغو عملیات",
             "model": {
                 "general": "عمومی x4",
@@ -145,8 +145,8 @@
             "unsupported_format": "فرمت تصویر پشتیبانی نمی‌شود. لطفاً یک عکس یا فایل تصویری ارسال کنید.",
             "download_failed": "دانلود تصویر با خطا مواجه شد. دوباره تلاش کنید.",
             "upscale_failed": "پردازش هوش مصنوعی با خطا مواجه شد. دوباره تلاش کنید.",
-            "result_caption": "🎴 **تصویر با کیفیت افزایش‌یافته شما آماده است\\!**",
-            "report": "📊 **گزارش افزایش کیفیت:**\n├── 🔍 **ضریب افزایش:** {scale}\n└── ⚡ **زمان پردازش:** {processing} ثانیه",
+            "result_caption": "🎴 *تصویر با کیفیت افزایش‌یافته شما آماده است\\!*",
+            "report": "📊 *گزارش افزایش کیفیت:*\n├── 🔍 *ضریب افزایش:* {scale}\n└── ⚡ *زمان پردازش:* {processing} ثانیه",
             "processing": "✅ تصویر دریافت شد.\n⏳ در حال افزایش کیفیت...\n\n⏱ {elapsed}",
             "cancelled": "❌ عملیات افزایش کیفیت لغو شد.",
             "quota_weekly_limit": "بزرگ‌نمایی {scale} — {limit} عکس در هفته"
@@ -1440,38 +1440,38 @@
             "dev_cafe_title": "💻 *Programming & Tech Cafe*\n\nSpecialized developer & sysadmin tools:\n\n• 📦 *Package Converter:* Fast & secure package conversion between DEB, RPM, and Pacman\n\n*Select a tool below👇:*"
         },
         "tts": {
-            "enter_text_default": "📝 **Text to Speech**\n\nPlease send the text you want converted to speech \\(max 500 characters\\):",
+            "enter_text_default": "📝 *Text to Speech*\n\nPlease send the text you want converted to speech \\(max 500 characters\\):",
             "cancel_button": "❌ Cancel",
             "cancelled": "❌ Text to speech operation cancelled\\.",
             "preparing": "✅ Text received\\. Processing\\.\\.\\.",
             "progress_body": "🎙 *Generating voice with\\.\\.\\.*\n\n{bar}  {percent}%\n⏱️ *Elapsed time:* {elapsed}\n⏳ *Estimated ETA:* {eta}",
-            "result_caption": "✅ **Voice generated successfully\\!**",
+            "result_caption": "✅ *Voice generated successfully\\!*",
             "process_failed": "AI processing failed\\. Please try again\\.",
             "voice_forbidden_error": "⚠️ *Voice Message Error*\n\nIt seems you have restricted receiving Voice messages in your Telegram Privacy Settings\\.\n\nPlease go to:\n⚙️ `Settings > Privacy and Security > Voice Messages`\nAnd add our bot to the *Exceptions* list, or set the setting to *Everybody* to receive output\\.",
             "quota_weekly_limit": "Weekly text\\-to\\-speech quota \\\\({limit} minutes per week\\\\) exceeded\\\\. Upgrade your rank for more quota\\\\.",
             "text_too_long": "⚠️ Text is too long: {len} characters, the limit is {max}\\. Shorten it and send again\\."
         },
         "deoldify": {
-            "prompt": "🎨 **Smart Image Colorizer**\n\nThis tool uses deep neural networks to convert your old black and white or monochrome photos into natural colored photos while preserving original luminosity\\.\n\n📥 **Please send your black and white photo:**\n*\\(Supports JPG, PNG, WEBP and image documents\\)*",
-            "preparing": "🎨 **Image received\\. Colorizing with AI\\.\\.\\. ⏳**\n\n⏱️ **Elapsed time:** {elapsed}",
+            "prompt": "🎨 *Smart Image Colorizer*\n\nThis tool uses deep neural networks to convert your old black and white or monochrome photos into natural colored photos while preserving original luminosity\\.\n\n📥 *Please send your black and white photo:*\n*\\(Supports JPG, PNG, WEBP and image documents\\)*",
+            "preparing": "🎨 *Image received\\. Colorizing with AI\\.\\.\\. ⏳*\n\n⏱️ *Elapsed time:* {elapsed}",
             "cancel_button": "❌ Cancel",
             "cancelled": "❌ Image colorization operation cancelled\\.",
             "unsupported_format": "Unsupported image format\\. Please send an image or image document\\.",
             "download_failed": "Failed to download image\\. Please try again\\.",
             "process_failed": "AI processing failed\\. Please try again\\.",
-            "result_caption": "🎨 **Your colorized image is ready\\!**",
-            "report": "📊 **Colorization Report:**\n└── ⚡ **Processing Time:** {processing} seconds",
+            "result_caption": "🎨 *Your colorized image is ready\\!*",
+            "report": "📊 *Colorization Report:*\n└── ⚡ *Processing Time:* {processing} seconds",
             "quota_weekly_limit": "Weekly photo colorization quota \\\\({limit} images per week\\\\) exceeded\\\\. Upgrade your rank for more quota\\\\."
         },
         "nobg": {
-            "prompt": "✂️ **Background Removal**\n\n\n📥 **Please send your image:**\n*\\(Supports JPG, PNG, WEBP — as photo or file\\)*",
-            "preparing": "✂️ **Image received\\. Removing background\\.\\.\\. ⏳**",
+            "prompt": "✂️ *Background Removal*\n\n\n📥 *Please send your image:*\n*\\(Supports JPG, PNG, WEBP \\— as photo or file\\)*",
+            "preparing": "✂️ *Image received\\. Removing background\\.\\.\\. ⏳*",
             "cancel_button": "❌ Cancel",
             "cancelled": "❌ Background removal operation cancelled\\.",
             "unsupported_format": "Unsupported format\\. Please send a photo or image file\\.",
             "download_failed": "Image download failed\\. Please try again\\.",
             "process_failed": "AI processing failed\\. Please try again\\.",
-            "result_caption": "✂️ **Background removed successfully\\!**\n\n⚡ **Processing time:** {time} seconds",
+            "result_caption": "✂️ *Background removed successfully\\!*\n\n⚡ *Processing time:* {time} seconds",
             "quota_weekly_limit": "Weekly background removal quota \\({limit} images per week\\) exceeded\\. Upgrade your rank for more quota\\."
         },
         "stt": {
@@ -1514,11 +1514,11 @@
             "quota_accurate_file_too_long": "File exceeds your remaining accurate transcription quota ({remaining})"
         },
         "denoise": {
-            "prompt": "🎙️ *Noise Removal*\n\nThis AI-powered tool removes background noise from your audio or video files\\.\n\n✅ **Suitable for:** podcasts, interviews, meetings, video clips, voiceovers and recordings with ambient noise such as wind, traffic or crowd\n\n❌ **Not suitable for:** music and files with complex layered audio\n\n📥 Please send your audio or video file:",
+            "prompt": "🎙️ *Noise Removal*\n\nThis AI\\-powered tool removes background noise from your audio or video files\\.\n\n✅ *Suitable for:* podcasts, interviews, meetings, video clips, voiceovers and recordings with ambient noise such as wind, traffic or crowd\n\n❌ *Not suitable for:* music and files with complex layered audio\n\n📥 Please send your audio or video file:",
             "preparing": "✅ File received. Preparing... ⏳",
             "progress": "🎙️ *Denoising audio\\.\\.\\.*\n\n{bar}  {percent}%\n⏱️ *Elapsed:* {elapsed}\n⌛ *Estimated ETA:* {eta}",
-            "result_caption": "🎧 **Your clean, filtered media file is ready\\!**",
-            "report": "📊 **Smart Audio Filtering Report:**\n├── ⏱ **Original duration:** {duration}s\n├── ⚡ **AI processing time:** {processing}s\n└── 🚀 **Efficiency:** {ratio}x faster than real playback time\\!\n\n✨ *Background noise successfully filtered and audio clarity enhanced\\.*",
+            "result_caption": "🎧 *Your clean, filtered media file is ready\\!*",
+            "report": "📊 *Smart Audio Filtering Report:*\n├── ⏱ *Original duration:* {duration}s\n├── ⚡ *AI processing time:* {processing}s\n└── 🚀 *Efficiency:* {ratio}x faster than real playback time\\!\n\n✨ *Background noise successfully filtered and audio clarity enhanced\\.*",
             "cancel_button": "Cancel",
             "download_failed": "File download failed. Please try again.",
             "convert_failed": "Audio conversion failed.",
@@ -1528,7 +1528,7 @@
             "quota_file_too_long": "This file exceeds your remaining quota\nRemaining time: <b>{remaining}</b>"
         },
         "upscale": {
-            "prompt": "🎴 *Image Upscaling*\n\nThis AI-powered tool increases the resolution of your images\\.\n\n✅ **Suitable for:** low-quality images, old photos, multimedia visuals\n\n📥 Select a model then send your image:",
+            "prompt": "🎴 *Image Upscaling*\n\nThis AI\\-powered tool increases the resolution of your images\\.\n\n✅ *Suitable for:* low\\-quality images, old photos, multimedia visuals\n\n📥 Select a model then send your image:",
             "cancel_button": "Cancel",
             "model": {
                 "general": "General x4",
@@ -1542,8 +1542,8 @@
             "unsupported_format": "Unsupported image format. Please send a photo or image file.",
             "download_failed": "Image download failed. Please try again.",
             "upscale_failed": "AI processing failed. Please try again.",
-            "result_caption": "🎴 **Your upscaled image is ready\\!**",
-            "report": "📊 **Upscaling Report:**\n├── 🔍 **Scale factor:** {scale}\n└── ⚡ **Processing time:** {processing}s",
+            "result_caption": "🎴 *Your upscaled image is ready\\!*",
+            "report": "📊 *Upscaling Report:*\n├── 🔍 *Scale factor:* {scale}\n└── ⚡ *Processing time:* {processing}s",
             "processing": "✅ Image received.\n⏳ Upscaling...\n\n⏱ {elapsed}",
             "cancelled": "❌ Upscaling cancelled.",
             "quota_weekly_limit": "{scale} upscale — {limit} images per week"
@@ -2229,32 +2229,6 @@
             "errors_fetch_error": "Failed to fetch error list",
             "errors_header": "🐞 Errors in the last 24h: {count}\n",
             "no_errors": "✅ No errors logged in the last 24h.",
-            "tts": {
-                "prompt_mode_select": "🎙 **Sintesi Vocale **\n\nSeleziona la modalità preferita per la generazione vocale:",
-                "mode_default_button": "🗣 1. Usa Voce Predefinita",
-                "mode_clone_button": "🎙 2. Clona la Mia Voce (Personalizzata)",
-                "enter_text_default": "📝 **Modalità voce predefinita selezionata\\\\.**\n\nInvia il testo che vuoi convertire in voce \\(max 500 caratteri\\):",
-                "record_sample_prompt": "🎙 **Registra il Tuo Modello Vocale**\n\nPer consentire al bot di leggere i testi con la tua voce, registra e invia il seguente testo di 30 secondi come **Messaggio Vocale** chiaramente:\n\n📜 *«Questo è un testo di prova di 30 secondi per registrare il mio modello vocale personalizzato in modo che tutti i miei testi futuri vengano generati direttamente con la mia voce\\\\.»*",
-                "sample_saved_enter_text": "✅ **Il tuo modello vocale personalizzato è stato salvato con successo\\!**\n\n📝 **Ora invia il testo che vuoi leggere con la tua voce:**",
-                "cancel_button": "❌ Annulla",
-                "cancelled": "❌ Operazione sintesi vocale annullata\\\\.",
-                "preparing": "✅ Testo ricevuto\\\\. Elaborazione in corso\\\\.\\\\.\\\\.",
-                "progress_body": "🎙 *Generazione voce\\.\\.\\.*\n\n{bar}  {percent}\\\\%\n⏱️ *Tempo trascorso:* {elapsed}\n⏳ *Tempo stimato rimanente:* {eta}",
-                "result_caption": "✅ **Voce generata con successo\\!**",
-                "process_failed": "Elaborazione AI fallita\\\\. Riprova\\\\."
-            },
-            "ai_lab_title": "*Laboratorio AI 🧪*\n\n*🔇 Riduzione Rumore*\nElimina il rumore di fondo da podcast, interviste e registrazioni ambientali — non adatto alla musica\n\n*🖼️ Miglioramento Immagini*\nAumenta la risoluzione fino a 4x — adatto per foto generali e anime, max 20 MB\n\n*🎙️ Testo da Voce*\nConverti messaggi vocali, file audio e video in testo — supporta persiano e inglese, modello piccolo (veloz) o grande (preciso)\n\n*🎵 Separazione Vocale*\nSepara la voce dalla musica di sottofondo — output alta qualità + file compresso per la riproduzione\n\n*✨ Rimozione Filigrana Gemini*\nRimuovi filigrane AI dalle immagini — fino a 3 passaggi, tutti i risultati inviati\n\n*🗣️ Sintesi Vocale*\nConverti testo in voce con voce predefinita o clonata —\n\n*🎨 Colorizzazione Foto*\n\n*✂️ Rimozione Sfondo*",
-            "deoldify": {
-                "prompt": "🎨 **Colorizzazione Foto**\n\nQuesto strumento utilizza reti neurali profonde per convertire le tue vecchie foto in bianco e nero in foto a colori naturali preservando la luminosità originale\\\\.\n\n📥 **Invia la tua foto in bianco e nero:**\n*\\(Supporta JPG, PNG, WEBP e documenti immagine\\)*",
-                "preparing": "🎨 **Immagine ricevuta\\\\. Colorizzazione in corso... ⏳**\n\n⏱️ **Tempo trascorso:** {elapsed}",
-                "cancel_button": "❌ Annulla",
-                "cancelled": "❌ Operazione di colorizzazione annullata\\\\.",
-                "unsupported_format": "Formato immagine non supportato\\\\. Invia un'immagine\\\\.",
-                "download_failed": "Download dell'immagine fallito\\\\. Riprova\\\\.",
-                "process_failed": "Elaborazione AI fallita\\\\. Riprova\\\\.",
-                "result_caption": "🎨 **La tua foto colorata è pronta\\!**",
-                "report": "📊 **Rapporto Colorizzazione:**\n└── ⚡ **Tempo di Elaborazione:** {processing} secondi"
-            },
             "stats_dl_error": "Failed to fetch download stats",
             "stats_error": "Failed to fetch stats",
             "stats_more_header": "📊 More stats\n",
@@ -2655,7 +2629,7 @@
             "expired": "⚠️ *This request expired\\. Send the link again\\.*"
         },
         "studio": {
-            "title": "🎥 *Photo & Video Magic Studio*\n\nProfessional media editing tools:\n\n• ✂️ *Video Trim & Edit:* Multi-range video trimming\n• 🎥 *Advanced Video Compression:* Tune codec, resolution, FPS and bitrate\n• 🎵 *Extract Audio & Subtitles:* Directly extract all audio and subtitle streams\n\n*Select a tool below👇:*",
+            "title": "🎥 *Photo & Video Magic Studio*\n\nProfessional media editing tools:\n\n• ✂️ *Video Trim & Edit:* Multi\\-range video trimming\n• 🎥 *Advanced Video Compression:* Tune codec, resolution, FPS and bitrate\n• 🎵 *Extract Audio & Subtitles:* Directly extract all audio and subtitle streams\n\n*Select a tool below👇:*",
             "trim_button": "Video Trim & Edit",
             "compress_button": "Advanced Video Compression",
             "extract_button": "Extract Audio & Subtitles",
@@ -2863,38 +2837,38 @@
             "dev_cafe_title": "💻 *Caffè Programmazione e Tecnologia*\n\nStrumenti per sviluppatori e amministratori di sistema:\n\n• 📦 *Convertitore di Pacchetti:* Conversione rapida e sicura tra DEB, RPM e Pacman\n\n*Seleziona uno strumento👇:*"
         },
         "tts": {
-            "enter_text_default": "📝 **Sintesi Vocale**\n\nInvia il testo che vuoi convertire in voce \\(max 500 caratteri\\):",
+            "enter_text_default": "📝 *Sintesi Vocale*\n\nInvia il testo che vuoi convertire in voce \\(max 500 caratteri\\):",
             "cancel_button": "❌ Annulla",
             "cancelled": "❌ Operazione sintesi vocale annullata\\.",
             "preparing": "✅ Testo ricevuto\\. Elaborazione in corso\\.\\.\\.",
             "progress_body": "🎙 *Generazione voce\\.\\.\\.*\n\n{bar}  {percent}%\n⏱️ *Tempo trascorso:* {elapsed}\n⏳ *Tempo stimato rimanente:* {eta}",
-            "result_caption": "✅ **Voce generata con successo\\!**",
+            "result_caption": "✅ *Voce generata con successo\\!*",
             "process_failed": "Elaborazione AI fallita\\. Riprova\\.",
             "voice_forbidden_error": "⚠️ *Errore Messaggio Vocale*\n\nSembra che tu abbia limitato la ricezione di messaggi vocali nelle impostazioni della privacy di Telegram\\.\n\nVai su:\n⚙️ `Impostazioni > Privacy e sicurezza > Messaggi vocali`\nE aggiungi il nostro bot alla lista delle *Eccezioni*, oppure imposta su *Tutti* per ricevere l'output di\\.",
             "quota_weekly_limit": "Quota settimanale sintesi vocale \\\\({limit} minuti a settimana\\\\) esaurita\\\\. Aumenta il tuo rango per più quota\\\\.",
             "text_too_long": "⚠️ Il testo è troppo lungo: {len} caratteri, il limite è {max}\\. Accorcialo e riprova\\."
         },
         "deoldify": {
-            "prompt": "🎨 **Colorizzazione Foto**\n\nQuesto strumento utilizza reti neurali profonde per convertire le tue vecchie foto in bianco e nero in foto a colori naturali preservando la luminosità originale\\.\n\n📥 **Invia la tua foto in bianco e nero:**\n*\\(Supporta JPG, PNG, WEBP e documenti immagine\\)*",
-            "preparing": "🎨 **Immagine ricevuta\\. Colorizzazione in corso\\.\\.\\. ⏳**\n\n⏱️ **Tempo trascorso:** {elapsed}",
+            "prompt": "🎨 *Colorizzazione Foto*\n\nQuesto strumento utilizza reti neurali profonde per convertire le tue vecchie foto in bianco e nero in foto a colori naturali preservando la luminosità originale\\.\n\n📥 *Invia la tua foto in bianco e nero:*\n*\\(Supporta JPG, PNG, WEBP e documenti immagine\\)*",
+            "preparing": "🎨 *Immagine ricevuta\\. Colorizzazione in corso\\.\\.\\. ⏳*\n\n⏱️ *Tempo trascorso:* {elapsed}",
             "cancel_button": "❌ Annulla",
             "cancelled": "❌ Operazione di colorizzazione annullata\\.",
             "unsupported_format": "Formato immagine non supportato\\. Invia un'immagine\\.",
             "download_failed": "Download dell'immagine fallito\\. Riprova\\.",
             "process_failed": "Elaborazione AI fallita\\. Riprova\\.",
-            "result_caption": "🎨 **La tua foto colorata è pronta\\!**",
-            "report": "📊 **Rapporto Colorizzazione:**\n└── ⚡ **Tempo di Elaborazione:** {processing} secondi",
+            "result_caption": "🎨 *La tua foto colorata è pronta\\!*",
+            "report": "📊 *Rapporto Colorizzazione:*\n└── ⚡ *Tempo di Elaborazione:* {processing} secondi",
             "quota_weekly_limit": "Quota settimanale colorizzazione foto \\\\({limit} immagini a settimana\\\\) esaurita\\\\. Aumenta il tuo rango per più quota\\\\."
         },
         "nobg": {
-            "prompt": "✂️ **Rimozione Sfondo**\n\n\n📥 **Invia la tua immagine:**\n*\\(Supporta JPG, PNG, WEBP — come foto o file\\)*",
-            "preparing": "✂️ **Immagine ricevuta\\. Rimozione sfondo in corso\\.\\.\\. ⏳**",
+            "prompt": "✂️ *Rimozione Sfondo*\n\n\n📥 *Invia la tua immagine:*\n*\\(Supporta JPG, PNG, WEBP \\— come foto o file\\)*",
+            "preparing": "✂️ *Immagine ricevuta\\. Rimozione sfondo in corso\\.\\.\\. ⏳*",
             "cancel_button": "❌ Annulla",
             "cancelled": "❌ Operazione di rimozione sfondo annullata\\.",
             "unsupported_format": "Formato non supportato\\. Invia una foto o un file immagine\\.",
             "download_failed": "Download immagine fallito\\. Riprova\\.",
             "process_failed": "Elaborazione AI fallita\\. Riprova\\.",
-            "result_caption": "✂️ **Sfondo rimosso con successo\\!**\n\n⚡ **Tempo di elaborazione:** {time} secondi",
+            "result_caption": "✂️ *Sfondo rimosso con successo\\!*\n\n⚡ *Tempo di elaborazione:* {time} secondi",
             "quota_weekly_limit": "Quota settimanale di rimozione sfondo \\({limit} immagini a settimana\\) esaurita\\. Aumenta il tuo rango per più quota\\."
         },
         "stt": {
@@ -2937,11 +2911,11 @@
             "quota_accurate_file_too_long": "Il file supera la quota rimanente trascrizione precisa ({remaining})"
         },
         "denoise": {
-            "prompt": "🎙️ *Riduzione Rumore*\n\nQuesto strumento AI rimuove il rumore di fondo dai tuoi file audio o video\\.\n\n✅ **Adatto per:** podcast, interviste, riunioni, video clip, voci e registrazioni con rumore ambientale\n\n❌ **Non adatto per:** musica e file con audio a strati complessi\n\n📥 Invia il tuo file audio o video:",
+            "prompt": "🎙️ *Riduzione Rumore*\n\nQuesto strumento AI rimuove il rumore di fondo dai tuoi file audio o video\\.\n\n✅ *Adatto per:* podcast, interviste, riunioni, video clip, voci e registrazioni con rumore ambientale\n\n❌ *Non adatto per:* musica e file con audio a strati complessi\n\n📥 Invia il tuo file audio o video:",
             "preparing": "✅ File ricevuto. Preparazione... ⏳",
             "progress": "🎙️ *Riduzione rumore in corso\\.\\.\\.*\n\n{bar}  {percent}%\n⏱️ *Trascorso:* {elapsed}\n⌛ *ETA stimato:* {eta}",
-            "result_caption": "🎧 **Il tuo file multimediale pulito è pronto\\!**",
-            "report": "📊 **Report Filtraggio Audio:**\n├── ⏱ **Durata originale:** {duration}s\n├── ⚡ **Tempo elaborazione AI:** {processing}s\n└── 🚀 **Efficienza:** {ratio}x più veloce del tempo reale\\!\n\n✨ *Rumore di fondo rimosso con successo\\.*",
+            "result_caption": "🎧 *Il tuo file multimediale pulito è pronto\\!*",
+            "report": "📊 *Report Filtraggio Audio:*\n├── ⏱ *Durata originale:* {duration}s\n├── ⚡ *Tempo elaborazione AI:* {processing}s\n└── 🚀 *Efficienza:* {ratio}x più veloce del tempo reale\\!\n\n✨ *Rumore di fondo rimosso con successo\\.*",
             "cancel_button": "Annulla",
             "download_failed": "Download fallito. Riprova.",
             "convert_failed": "Conversione audio fallita.",
@@ -2951,7 +2925,7 @@
             "quota_file_too_long": "Il file supera la quota rimanente\nTempo rimanente: <b>{remaining}</b>"
         },
         "upscale": {
-            "prompt": "🎴 *Miglioramento Immagini*\n\nQuesto strumento AI aumenta la risoluzione delle tue immagini\\.\n\n✅ **Adatto per:** immagini a bassa qualità, foto vecchie, immagini multimediali\n\n📥 Seleziona un modello e invia la tua immagine:",
+            "prompt": "🎴 *Miglioramento Immagini*\n\nQuesto strumento AI aumenta la risoluzione delle tue immagini\\.\n\n✅ *Adatto per:* immagini a bassa qualità, foto vecchie, immagini multimediali\n\n📥 Seleziona un modello e invia la tua immagine:",
             "cancel_button": "Annulla",
             "model": {
                 "general": "Generale x4",
@@ -2965,8 +2939,8 @@
             "unsupported_format": "Formato non supportato. Invia una foto o un file immagine.",
             "download_failed": "Download immagine fallito. Riprova.",
             "upscale_failed": "Elaborazione AI fallita. Riprova.",
-            "result_caption": "🎴 **La tua immagine migliorata è pronta\\!**",
-            "report": "📊 **Report Miglioramento:**\n├── 🔍 **Fattore scala:** {scale}\n└── ⚡ **Tempo elaborazione:** {processing}s",
+            "result_caption": "🎴 *La tua immagine migliorata è pronta\\!*",
+            "report": "📊 *Report Miglioramento:*\n├── 🔍 *Fattore scala:* {scale}\n└── ⚡ *Tempo elaborazione:* {processing}s",
             "processing": "✅ Immagine ricevuta.\n⏳ Miglioramento in corso...\n\n⏱ {elapsed}",
             "cancelled": "❌ Miglioramento annullato.",
             "quota_weekly_limit": "Upscale {scale} — {limit} immagini a settimana"
@@ -4052,7 +4026,7 @@
             "expired": "⚠️ *Richiesta scaduta\\. Invia di nuovo il link\\.*"
         },
         "studio": {
-            "title": "🎥 *Studio Magico Foto e Video*\n\nStrumenti di montaggio e modifica media:\n\n• ✂️ *Taglio e Modifica Video:* Taglio video multi-intervallo\n• 🎥 *Compressione Video Avanzata:* Regola codec, risoluzione, FPS e bitrate\n• 🎵 *Estrai Audio e Sottotitoli:* Estrai direttamente tutte le tracce audio e sottotitoli\n\n*Seleziona uno strumento qui sotto👇:*",
+            "title": "🎥 *Studio Magico Foto e Video*\n\nStrumenti di montaggio e modifica media:\n\n• ✂️ *Taglio e Modifica Video:* Taglio video multi\\-intervallo\n• 🎥 *Compressione Video Avanzata:* Regola codec, risoluzione, FPS e bitrate\n• 🎵 *Estrai Audio e Sottotitoli:* Estrai direttamente tutte le tracce audio e sottotitoli\n\n*Seleziona uno strumento qui sotto👇:*",
             "trim_button": "Taglio e Modifica Video",
             "compress_button": "Compressione Video Avanzata",
             "extract_button": "Estrai Audio e Sottotitoli",
@@ -4203,7 +4177,7 @@
                 "unsupported_format": "❌ *Formato non supportato\\.*\nFormati supportati: \\.deb, \\.rpm, \\.pkg\\.tar\\.zst",
                 "format_mismatch": "❌ *La struttura del file non corrisponde all'estensione\\.*",
                 "archive_too_large": "❌ *Dimensione decompressa superiore al limite* \\(max 500 MB\\)\\.",
-                "too_many_entries": "❌ *Numero di file nel pacchetto superiore al limite* \\(max 10.000\\)\\.",
+                "too_many_entries": "❌ *Numero di file nel pacchetto superiore al limite* \\(max 10\\.000\\)\\.",
                 "malicious_archive": "❌ *Il pacchetto contiene percorsi non sicuri o symlink non validi\\.*",
                 "validate_timeout": "❌ *Tempo limite per la convalida del pacchetto superato\\.*",
                 "parse_failed": "❌ *Struttura del pacchetto danneggiata o non valida\\.*",
@@ -4227,7 +4201,7 @@
             "main_menu": "Главное меню",
             "ai_lab_button": "Лаборатория ИИ",
             "ai_lab_soon": "Скоро...",
-            "ai_lab_title": "*Лаборатория ИИ 🧪*\n\n*🔇 Подавление шума*\nОчистка фонового шума в подкастах, интервью и записях — не подходить для музыки\n\n*🖼️ Улучшение качества фото*\nУвеличение разрешения и качества фото до 4 раз — подходит для фото и аниме, макс\\. 20 МБ\n\n*🎙️ Преобразование речи в текст*\nКонвертация голосовых сообщений, аудио и видео в текст — поддержка персидского и английского, малая \\(быстрая\\) или большая \\(точная\\) модель\n\n*🎵 Разделение вокала и музыки*\nОтделение голоса от фоновой музыки — высокое качество \\+ сжатый файл для воспроизведения\n\n*✨ Удаление водяных знаков Gemini*\nУдаление водяных знаков ИИ с изображений — до 3 этапов обработки, отправляются все результаты\n\n*🗣️ Преобразование текста в речь*\nОзвучка текста стандартным или клонированным голосом\n\n*🎨 Раскрашивание черно-белых фото*\n\n*✂️ Удаление фона на фото*",
+            "ai_lab_title": "*Лаборатория ИИ 🧪*\n\n*🔇 Подавление шума*\nОчистка фонового шума в подкастах, интервью и записях — не подходить для музыки\n\n*🖼️ Улучшение качества фото*\nУвеличение разрешения и качества фото до 4 раз — подходит для фото и аниме, макс\\. 20 МБ\n\n*🎙️ Преобразование речи в текст*\nКонвертация голосовых сообщений, аудио и видео в текст — поддержка персидского и английского, малая \\(быстрая\\) или большая \\(точная\\) модель\n\n*🎵 Разделение вокала и музыки*\nОтделение голоса от фоновой музыки — высокое качество \\+ сжатый файл для воспроизведения\n\n*✨ Удаление водяных знаков Gemini*\nУдаление водяных знаков ИИ с изображений — до 3 этапов обработки, отправляются все результаты\n\n*🗣️ Преобразование текста в речь*\nОзвучка текста стандартным или клонированным голосом\n\n*🎨 Раскрашивание черно\\-белых фото*\n\n*✂️ Удаление фона на фото*",
             "ai_denoise_button": "Подавление шума",
             "ai_upscale_button": "Улучшение качества фото",
             "ai_stt_button": "Речь в текст",
@@ -4242,7 +4216,7 @@
             "panel_button": "Личный кабинет",
             "tools_button": "Полезные инструменты",
             "tools_fc_button": "Сжатие файлов",
-            "tools_title": "🧰 *Полезные и продвинутые инструменты*\n\nВыберите нужный инструмент из списка ниже:\n\n• 📂 *Сжатие файлов:* Создание архивов ZIP, 7Z и RAR с продвинутыми алгоритмами\n• 📄 *Сжатие PDF:* Умное уменьшение размера документов PDF\n• 🌐 *Анализ IP:* Полный анализ IP-адреса, провайдера и безопасности\n• 📥 *Прямая загрузка:* Скачивание и разбивка файлов по прямым ссылкам\n\n*Выберите инструмент ниже👇:*",
+            "tools_title": "🧰 *Полезные и продвинутые инструменты*\n\nВыберите нужный инструмент из списка ниже:\n\n• 📂 *Сжатие файлов:* Создание архивов ZIP, 7Z и RAR с продвинутыми алгоритмами\n• 📄 *Сжатие PDF:* Умное уменьшение размера документов PDF\n• 🌐 *Анализ IP:* Полный анализ IP\\-адреса, провайдера и безопасности\n• 📥 *Прямая загрузка:* Скачивание и разбивка файлов по прямым ссылкам\n\n*Выберите инструмент ниже👇:*",
             "leaderboard_button": "Список лучших",
             "leaderboard_title": "Больше всего рефералов:",
             "leaderboard_empty": "Пока нет рефералов\\.",
@@ -4260,38 +4234,38 @@
             "dev_cafe_title": "💻 *Кафе программирования и технологий*\n\nСпециализированные инструменты для разработчиков и системных администраторов:\n\n• 📦 *Конвертер пакетов:* Быстрая и безопасная конвертация пакетов между DEB, RPM и Pacman\n\n*Выберите инструмент👇:*"
         },
         "tts": {
-            "enter_text_default": "📝 **Преобразование текста в речь**\n\nОтправьте текст для озвучки \\(максимум 500 символов\\):",
+            "enter_text_default": "📝 *Преобразование текста в речь*\n\nОтправьте текст для озвучки \\(максимум 500 символов\\):",
             "cancel_button": "❌ Отмена",
             "cancelled": "❌ Операция озвучки отменена\\.",
             "preparing": "✅ Текст получен\\. Обработка\\.\\.\\.",
             "progress_body": "🎙 *Генерация голоса\\.\\.\\.*\n\n{bar}  {percent}%\n⏱️ *Прошло времени:* {elapsed}\n⏳ *Примерное оставшееся время:* {eta}",
-            "result_caption": "✅ **Аудио успешно создано\\!**",
+            "result_caption": "✅ *Аудио успешно создано\\!*",
             "process_failed": "Ошибка ИИ\\-обработки\\. Попробуйте снова\\.",
-            "voice_forbidden_error": "⚠️ *Ошибка отправки аудио*\n\nПохоже, в настройках конфиденциальности Telegram ограничено получение голосовых сообщений\\.\n\nПерейдите в:\n⚙️ `Настройки > Конфиденциальность > Голосовые сообщения`\nи добавьте бота в исключения.",
+            "voice_forbidden_error": "⚠️ *Ошибка отправки аудио*\n\nПохоже, в настройках конфиденциальности Telegram ограничено получение голосовых сообщений\\.\n\nПерейдите в:\n⚙️ `Настройки > Конфиденциальность > Голосовые сообщения`\nи добавьте бота в исключения\\.",
             "quota_weekly_limit": "Недельный лимит синтеза речи \\\\({limit} минут в неделю\\\\) исчерпан\\\\. Повысьте ранг для увеличения лимита\\\\.",
             "text_too_long": "⚠️ Текст слишком длинный: {len} символов, предел — {max}\\. Сократите и отправьте снова\\."
         },
         "deoldify": {
-            "prompt": "🎨 **Раскрашивание черно-белых фото**\n\nПревращает черно-белые снимки в цветные с помощью глубокой нейросети\\.\n\n📥 **Отправьте черно-белое фото:**\n*\\(Поддерживаются JPG, PNG, WEBP\\)*",
-            "preparing": "🎨 **Изображение получено\\. Раскрашивание с помощью ИИ\\.\\.\\. ⏳**\n\n⏱️ **Прошло времени:** {elapsed}",
+            "prompt": "🎨 *Раскрашивание черно\\-белых фото*\n\nПревращает черно-белые снимки в цветные с помощью глубокой нейросети\\.\n\n📥 *Отправьте черно\\-белое фото:*\n*\\(Поддерживаются JPG, PNG, WEBP\\)*",
+            "preparing": "🎨 *Изображение получено\\. Раскрашивание с помощью ИИ\\.\\.\\. ⏳*\n\n⏱️ *Прошло времени:* {elapsed}",
             "cancel_button": "❌ Отмена",
             "cancelled": "❌ Операция раскрашивания отменена\\.",
             "unsupported_format": "Формат файла не поддерживается\\. Отправьте фото или изображение\\.",
             "download_failed": "Ошибка скачивания изображения\\. Попробуйте снова\\.",
             "process_failed": "Ошибка ИИ\\-обработки\\. Попробуйте снова\\.",
-            "result_caption": "🎨 **Ваше цветное изображение готово\\!**",
-            "report": "📊 **Отчет о раскрашивании:**\n└── ⚡ **Время обработки:** {processing} сек",
+            "result_caption": "🎨 *Ваше цветное изображение готово\\!*",
+            "report": "📊 *Отчет о раскрашивании:*\n└── ⚡ *Время обработки:* {processing} сек",
             "quota_weekly_limit": "Недельный лимит раскраски фото \\\\({limit} фото в неделю\\\\) исчерпан\\\\. Повысьте ранг для увеличения лимита\\\\."
         },
         "nobg": {
-            "prompt": "✂️ **Удаление фона**\n\n\n📥 **Отправьте изображение:**\n*\\(Поддерживаются JPG, PNG, WEBP\\)*",
-            "preparing": "✂️ **Изображение получено\\. Удаление фона\\.\\.\\. ⏳**",
+            "prompt": "✂️ *Удаление фона*\n\n\n📥 *Отправьте изображение:*\n*\\(Поддерживаются JPG, PNG, WEBP\\)*",
+            "preparing": "✂️ *Изображение получено\\. Удаление фона\\.\\.\\. ⏳*",
             "cancel_button": "❌ Отмена",
             "cancelled": "❌ Операция удаления фона отменена\\.",
             "unsupported_format": "Формат не поддерживается\\. Отправьте фото или изображение\\.",
             "download_failed": "Ошибка скачивания изображения\\. Попробуйте снова\\.",
             "process_failed": "Ошибка ИИ\\-обработки\\. Попробуйте снова\\.",
-            "result_caption": "✂️ **Фон успешно удален\\!**\n\n⚡ **Время обработки:** {time} сек",
+            "result_caption": "✂️ *Фон успешно удален\\!*\n\n⚡ *Время обработки:* {time} сек",
             "quota_weekly_limit": "Недельный лимит удаления фона \\({limit} фото в неделю\\) исчерпан\\. Повысьте ранг для увеличения лимита\\."
         },
         "stt": {
@@ -4334,11 +4308,11 @@
             "quota_accurate_file_too_long": "Файл превышает оставшийся лимит точного распознавания ({remaining})"
         },
         "denoise": {
-            "prompt": "🔇 **Подавление шума в аудио \\(DeepFilterNetV3\\)**\n\nОчистка фонового шума в подкастах и записях\\.\n\n📥 **Отправьте аудиофайл:**\n*\\(Поддерживаются OGG, MP3, WAV, M4A\\)*",
-            "preparing": "🧹 **Файл получен\\. Подавление шума\\.\\.\\. ⏳**\n\n⏱️ **Прошло времени:** {elapsed}",
+            "prompt": "🔇 *Подавление шума в аудио \\(DeepFilterNetV3\\)*\n\nОчистка фонового шума в подкастах и записях\\.\n\n📥 *Отправьте аудиофайл:*\n*\\(Поддерживаются OGG, MP3, WAV, M4A\\)*",
+            "preparing": "🧹 *Файл получен\\. Подавление шума\\.\\.\\. ⏳*\n\n⏱️ *Прошло времени:* {elapsed}",
             "progress": "🎙️ *Denoising audio\\.\\.\\.*\n\n{bar}  {percent}%\n⏱️ *Elapsed:* {elapsed}\n⌛ *Estimated ETA:* {eta}",
-            "result_caption": "🔇 **Аудио очищено от шума\\!**\n\n⚡ **Время обработки:** {time} сек",
-            "report": "📊 **Smart Audio Filtering Report:**\n├── ⏱ **Original duration:** {duration}s\n├── ⚡ **AI processing time:** {processing}s\n└── 🚀 **Efficiency:** {ratio}x faster than real playback time\\!\n\n✨ *Background noise successfully filtered and audio clarity enhanced\\.*",
+            "result_caption": "🔇 *Аудио очищено от шума\\!*\n\n⚡ *Время обработки:* {time} сек",
+            "report": "📊 *Smart Audio Filtering Report:*\n├── ⏱ *Original duration:* {duration}s\n├── ⚡ *AI processing time:* {processing}s\n└── 🚀 *Efficiency:* {ratio}x faster than real playback time\\!\n\n✨ *Background noise successfully filtered and audio clarity enhanced\\.*",
             "cancel_button": "❌ Отмена",
             "download_failed": "Ошибка скачивания файла\\. Попробуйте снова\\.",
             "convert_failed": "Audio conversion failed.",
@@ -4348,7 +4322,7 @@
             "quota_file_too_long": "Длительность файла превышает ваш доступный лимит \\({limit}\\)\\."
         },
         "upscale": {
-            "prompt": "🖼️ **Улучшение качества фото \\(Real-ESRGAN\\)**\n\nУвеличение разрешения изображений в 2x, 3x или 4x раза\\.\n\n📥 **Отправьте фото:**\n*\\(Поддерживаются JPG, PNG, WEBP\\)*",
+            "prompt": "🖼️ *Улучшение качества фото \\(Real\\-ESRGAN\\)*\n\nУвеличение разрешения изображений в 2x, 3x или 4x раза\\.\n\n📥 *Отправьте фото:*\n*\\(Поддерживаются JPG, PNG, WEBP\\)*",
             "cancel_button": "❌ Отмена",
             "model": {
                 "general": "General x4",
@@ -4362,8 +4336,8 @@
             "unsupported_format": "Формат не поддерживается\\. Отправьте фото или изображение\\.",
             "download_failed": "Ошибка скачивания изображения\\. Попробуйте снова\\.",
             "upscale_failed": "AI processing failed. Please try again.",
-            "result_caption": "🖼️ **Качество фото улучшено \\({scale}\\)\\!**\n\n⚡ **Время обработки:** {time} сек",
-            "report": "📊 **Upscaling Report:**\n├── 🔍 **Scale factor:** {scale}\n└── ⚡ **Processing time:** {processing}s",
+            "result_caption": "🖼️ *Качество фото улучшено \\({scale}\\)\\!*\n\n⚡ *Время обработки:* {time} сек",
+            "report": "📊 *Upscaling Report:*\n├── 🔍 *Scale factor:* {scale}\n└── ⚡ *Processing time:* {processing}s",
             "processing": "✅ Image received.\n⏳ Upscaling...\n\n⏱ {elapsed}",
             "cancelled": "❌ Операция увеличения отменена\\.",
             "quota_weekly_limit": "Увеличение {scale} — лимит {limit} фото в неделю"
