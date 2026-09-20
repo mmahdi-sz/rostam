@@ -409,7 +409,7 @@ async fn download_single_playlist_item_attempt(
         .arg("--cookies-from-browser")
         .arg(cookie_spec)
         .arg("--extractor-args")
-        .arg("youtube:player_client=android,web;youtubetab:skip=authcheck")
+        .arg("youtubetab:skip=authcheck")
         .arg("--no-warnings")
         .arg("--no-playlist")
         .arg("-f")

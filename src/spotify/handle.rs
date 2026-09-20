@@ -417,7 +417,7 @@ pub async fn run_yt_dlp_audio(
             cmd.arg("--cookies-from-browser").arg(spec);
         }
         cmd.arg("--extractor-args")
-            .arg("youtube:player_client=android,web;youtubetab:skip=authcheck")
+            .arg("youtubetab:skip=authcheck")
             .arg("-x")
             .arg("--audio-format")
             .arg("mp3")

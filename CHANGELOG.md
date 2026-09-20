@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.6.5] - 2026-09-20
+
+### Fixed
+- **YouTube Format Extraction with Browser Cookies (`youtube`, `spotify`)**:
+  - Removed restrictive `youtube:player_client=android,web` extractor argument across single video downloads (`src/youtube/download/single.rs`), playlist downloads (`src/youtube/download/playlist.rs`), subtitle downloads (`src/youtube/download/subtitle/mod.rs`), and Spotify audio downloads (`src/spotify/handle.rs`).
+  - Resolved `Requested format is not available` error caused by yt-dlp skipping the `android` client when browser cookies are attached and failing to fetch AV1 / 480p format IDs from the restricted `web` client alone.
+
+### Added
+- **Automated Test Suite Gate in Deployment Pipeline (`deploy.sh`)**:
+  - Added step `[1/9]` executing `cargo test` and `scripts/run_testapi_suite.sh` automatically before git push, ensuring zero regressions reach production.
+
 ## [2.6.4] - 2026-09-19
 
 ### Fixed
