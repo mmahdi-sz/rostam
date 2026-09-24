@@ -89,6 +89,9 @@ pub fn classify_ytdlp_stderr(stderr: &str) -> YtdlpErrorClassification {
         || lower.contains("sign in to confirm")
         || lower.contains("sign in to confirm you’re not a bot")
         || lower.contains("sign in to confirm you're not a bot")
+        || lower.contains("http error 403")
+        || lower.contains("403: forbidden")
+        || lower.contains("unable to download video data: http error 403")
     {
         let msg = stderr
             .lines()
@@ -736,6 +739,15 @@ mod tests {
     #[test]
     fn test_classify_bad_cookie() {
         let stderr = "ERROR: [youtube] The page needs to be reloaded.";
+        assert!(matches!(
+            classify_ytdlp_stderr(stderr),
+            YtdlpErrorClassification::BadCookie(_)
+        ));
+    }
+
+    #[test]
+    fn test_classify_403_forbidden() {
+        let stderr = "ERROR: unable to download video data: HTTP Error 403: Forbidden";
         assert!(matches!(
             classify_ytdlp_stderr(stderr),
             YtdlpErrorClassification::BadCookie(_)

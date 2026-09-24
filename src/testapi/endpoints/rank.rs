@@ -211,8 +211,8 @@ pub async fn test_free_rank(Json(payload): Json<Value>) -> axum::response::Respo
         }
     }
     let expandable = banner.matches("<blockquote expandable>").count();
-    if expandable != 3 {
-        errors.push(format!("banner has {expandable} expandable quotes, want 3"));
+    if expandable != 5 {
+        errors.push(format!("banner has {expandable} expandable quotes, want 5"));
     }
     let want_glyphs = if lang == "fa" {
         ('╣', '╝')

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.6.6] - 2026-09-25
+
+### Changed
+- **Linux Package Converter Multi-Tier Quotas & Free Tier Enablement (`pkgconvert`, `rank`)**:
+  - Enabled universal package format conversion (`.deb` ↔ `.rpm` ↔ `.pkg.tar.zst`) for free tier `Dalavar` and `Sohrab` with a daily limit of 3 packages ([`src/rank/types.rs`](file:///mnt/data/mahdidev/ros/dev/src/rank/types.rs)).
+  - Increased daily conversion quotas for paid ranks: `Sepahbod` from 5 to 10 packages/day; `Esfandyar` and `Rostam` from 20 to 40 packages/day.
+  - Updated unit test `test_pkgconvert_limits` and TestAPI `/test/pkg/convert` validation assertions for Dalavar and Sepahbod ([`scripts/run_testapi_suite.sh`](file:///mnt/data/mahdidev/ros/dev/scripts/run_testapi_suite.sh)).
+- **Menu & Welcome UI Alignment Across All 4 Languages (`start`, `referral`, `config/i18n.json`)**:
+  - Synchronized start welcome screen (`start.welcome`) and referral invite banner (`referral.banner`) across all 4 languages (`fa`, `en`, `it`, `ru`) to match all 7 inline menu buttons in order.
+  - Added dedicated sections for **Programming & Tech Cafe** (`pkgconvert`) and **Magic Photo & Video Studio** (`studio`) with expandable blockquotes.
+  - Aligned social media downloader guide title (`start.guide_title`) with the main menu button.
+
+### Fixed
+- **YouTube HTTP 403 Forbidden Auto-Retry & Cooldown (`youtube`, `cookie_pool`)**:
+  - Added retry loop over available cookies (up to 4 attempts) on single video downloads in [`src/youtube/download/single.rs`](file:///mnt/data/mahdidev/ros/dev/src/youtube/download/single.rs) when encountering `HTTP Error 403: Forbidden` or `BadCookie`.
+  - Added automatic cooldown (`mark_cookie_cooldown`) for offending cookies in memory and persisted into PostgreSQL `cookie_pool_cooldowns`, preventing recurrent 403 failures across subsequent requests.
+  - Added partial file cleanup (`cleanup_partial_files`) between download retries to avoid session contamination from aborted stream chunks.
+  - Updated `classify_ytdlp_stderr` in [`src/youtube/fetch.rs`](file:///mnt/data/mahdidev/ros/dev/src/youtube/fetch.rs) to classify `HTTP Error 403: Forbidden` as `BadCookie`.
+  - Added unit tests `test_classify_403_forbidden` and `test_mark_cookie_cooldown`.
+  - Deactivated and quarantined failing profile `TAHATF13_1` (`aa0n2f32.TAHATF13_1`) from Firefox profile discovery and active pool cache.
+
 ## [2.6.5] - 2026-09-20
 
 ### Fixed

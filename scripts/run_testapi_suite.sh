@@ -852,13 +852,13 @@ if [ "$(echo "$RES_PKG_V3" | jq -r '.ok')" != "false" ] || [ "$(echo "$RES_PKG_V
     echo "Fail: pkg validate symlink_escape: $RES_PKG_V3"; exit 1;
 fi
 
-echo "Testing /test/pkg/convert (Dalavar paywall)"
+echo "Testing /test/pkg/convert (Dalavar allowed with limit 3)"
 RES_PKG_C1=$(curl -s -X POST "$BASE_URL/test/pkg/convert" -H "Content-Type: application/json" -d '{"src_fmt": "deb", "dst_fmt": "rpm", "rank": "dalavar"}')
-if [ "$(echo "$RES_PKG_C1" | jq -r '.paywall_blocked')" != "true" ]; then echo "Fail: pkg convert paywall: $RES_PKG_C1"; exit 1; fi
+if [ "$(echo "$RES_PKG_C1" | jq -r '.paywall_blocked')" != "false" ] || [ "$(echo "$RES_PKG_C1" | jq -r '.daily_limit')" != "3" ]; then echo "Fail: pkg convert dalavar: $RES_PKG_C1"; exit 1; fi
 
 echo "Testing /test/pkg/convert (Sepahbod alien dispatch)"
 RES_PKG_C2=$(curl -s -X POST "$BASE_URL/test/pkg/convert" -H "Content-Type: application/json" -d '{"src_fmt": "deb", "dst_fmt": "rpm", "rank": "sepahbod"}')
-if [ "$(echo "$RES_PKG_C2" | jq -r '.paywall_blocked')" != "false" ] || [ "$(echo "$RES_PKG_C2" | jq -r '.tool_selected')" != "alien" ]; then
+if [ "$(echo "$RES_PKG_C2" | jq -r '.paywall_blocked')" != "false" ] || [ "$(echo "$RES_PKG_C2" | jq -r '.tool_selected')" != "alien" ] || [ "$(echo "$RES_PKG_C2" | jq -r '.daily_limit')" != "10" ]; then
     echo "Fail: pkg convert sepahbod: $RES_PKG_C2"; exit 1;
 fi
 

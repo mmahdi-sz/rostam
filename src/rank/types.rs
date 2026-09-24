@@ -354,9 +354,9 @@ impl Rank {
     /// Daily package conversion count (0 = feature blocked for this rank).
     pub fn pkgconvert_daily_count(&self) -> u64 {
         match self {
-            Self::Dalavar | Self::Sohrab => 0,
-            Self::Sepahbod => 5,
-            Self::Esfandyar | Self::Rostam => 20,
+            Self::Dalavar | Self::Sohrab => 3,
+            Self::Sepahbod => 10,
+            Self::Esfandyar | Self::Rostam => 40,
         }
     }
 
@@ -418,11 +418,11 @@ mod tests {
 
     #[test]
     fn test_pkgconvert_limits() {
-        assert_eq!(Rank::Dalavar.pkgconvert_daily_count(), 0);
-        assert_eq!(Rank::Sohrab.pkgconvert_daily_count(), 0);
-        assert_eq!(Rank::Sepahbod.pkgconvert_daily_count(), 5);
-        assert_eq!(Rank::Esfandyar.pkgconvert_daily_count(), 20);
-        assert_eq!(Rank::Rostam.pkgconvert_daily_count(), 20);
+        assert_eq!(Rank::Dalavar.pkgconvert_daily_count(), 3);
+        assert_eq!(Rank::Sohrab.pkgconvert_daily_count(), 3);
+        assert_eq!(Rank::Sepahbod.pkgconvert_daily_count(), 10);
+        assert_eq!(Rank::Esfandyar.pkgconvert_daily_count(), 40);
+        assert_eq!(Rank::Rostam.pkgconvert_daily_count(), 40);
 
         assert_eq!(Rank::Dalavar.pkgconvert_next_rank(), Some(Rank::Sepahbod));
         assert_eq!(Rank::Sepahbod.pkgconvert_next_rank(), Some(Rank::Esfandyar));

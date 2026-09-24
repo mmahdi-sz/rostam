@@ -34,6 +34,10 @@ pub fn set_global_cookie_pool(pool: Arc<Mutex<CookiePool>>) {
     let _ = GLOBAL_COOKIE_POOL.set(pool);
 }
 
+pub fn get_global_cookie_pool() -> Option<Arc<Mutex<CookiePool>>> {
+    GLOBAL_COOKIE_POOL.get().cloned()
+}
+
 pub async fn get_global_cookie_spec() -> Option<String> {
     let pool_arc = GLOBAL_COOKIE_POOL.get()?;
     let mut pool = pool_arc.lock().await;

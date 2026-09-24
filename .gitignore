@@ -20,6 +20,7 @@ downloads/
 # Internal planning/working notes — not part of the shipped codebase.
 plans/
 testapi.log
+.*.md-cache.json
 scripts/run_testapi_suite.sh
 scripts/send_*.py
 files/.official_logout_done

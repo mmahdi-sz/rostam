@@ -181,105 +181,201 @@ pub(crate) async fn run_download(
     .await;
 
     let postprocess_template = progress_template.clone();
-    let mut cmd = tokio::process::Command::new("yt-dlp");
-    cmd.arg("--js-runtimes")
-        .arg(format!("deno:{}", crate::config::deno_path()))
-        .arg("--cookies-from-browser")
-        .arg(&req.cookie_spec)
-        .arg("--extractor-args")
-        .arg("youtubetab:skip=authcheck")
-        .arg("--no-warnings")
-        .arg("--no-playlist")
-        .arg("--progress")
-        .arg("--no-color")
-        .arg("-f")
-        .arg(&format_spec);
 
-    if is_audio {
-        cmd.arg("--extract-audio")
-            .arg("--audio-format")
-            .arg("mp3")
-            .arg("--audio-quality")
-            .arg("0");
+    let cookie_pool_opt = req
+        .cookie_pool
+        .clone()
+        .or_else(crate::cookie_pool::get_global_cookie_pool);
+
+    let max_attempts = if let Some(cookie_pool) = cookie_pool_opt.as_ref() {
+        let mut pool = cookie_pool.lock().await;
+        pool.status().available_cookies.clamp(1, 4)
     } else {
-        cmd.arg("--merge-output-format").arg(merge_format);
-    }
-
-    cmd.arg("--newline")
-        .arg("--progress-template")
-        .arg(format!("download:{progress_template}"))
-        .arg("--progress-template")
-        .arg(format!("postprocess:{postprocess_template}"))
-        .arg("--print")
-        .arg("after_move:filepath")
-        .arg("-o")
-        .arg(&output_template);
-
-    if !is_audio && !selection.subtitle_langs.is_empty() {
-        let sub_langs = selection.subtitle_langs.join(",");
-        // Most YouTube subtitle languages (e.g. fa) exist ONLY as auto-generated
-        // captions, so both --write-subs and --write-auto-subs are required —
-        // otherwise yt-dlp reports "no subtitles for the requested languages"
-        // and produces no subtitle output at all.
-        // Always convert to .srt and never use yt-dlp's own --embed-subs: the
-        // post-download `embed_subtitles()` pass is the single place that
-        // muxes subtitles into the mp4 (it also has to add translated tracks
-        // yt-dlp doesn't know about). Letting yt-dlp embed here too would
-        // double-embed the same language when a translation pass follows.
-        cmd.arg("--write-subs")
-            .arg("--write-auto-subs")
-            .arg("--sub-langs")
-            .arg(&sub_langs)
-            .arg("--convert-subs")
-            .arg("srt")
-            .arg("--ignore-errors");
-        log_trace(
-            trace_id,
-            "download_subtitle_args",
-            &format!(
-                "sub_langs={sub_langs} mode={:?} write_auto=true ignore_errors=true",
-                selection.subtitle_mode
-            ),
-        );
-    }
-
-    cmd.arg(&req.webpage_url)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    log_trace(
-        trace_id,
-        "download_args",
-        &format!("cookie_spec={} format_spec={format_spec}", req.cookie_spec),
-    );
-
-    let stream_res = run_ytdlp_process(
-        cmd,
-        &api,
-        status_chat_id,
-        status_message_id,
-        request_id,
-        &quality_label,
-        &mut cancel_fut,
-        trace_id,
-        &dir,
-    )
-    .await;
-
-    let (filepath, stderr_tail, status) = match stream_res {
-        YtdlpStreamResult::Completed {
-            filepath,
-            stderr_tail,
-            status,
-        } => (filepath, stderr_tail, status),
-        YtdlpStreamResult::Cancelled | YtdlpStreamResult::Failed => return,
+        1
     };
 
-    if !status.success() {
+    let mut current_cookie_spec = req.cookie_spec.clone();
+    let mut tried: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if let Some(cookie_pool) = cookie_pool_opt.as_ref() {
+        let pool = cookie_pool.lock().await;
+        if let Some(id) = pool.find_cookie_id(&current_cookie_spec) {
+            tried.insert(id);
+        }
+    }
+
+    let mut final_filepath = None;
+
+    for attempt in 0..max_attempts {
+        let mut cmd = tokio::process::Command::new("yt-dlp");
+        cmd.arg("--js-runtimes")
+            .arg(format!("deno:{}", crate::config::deno_path()))
+            .arg("--cookies-from-browser")
+            .arg(&current_cookie_spec)
+            .arg("--extractor-args")
+            .arg("youtubetab:skip=authcheck")
+            .arg("--no-warnings")
+            .arg("--no-playlist")
+            .arg("--progress")
+            .arg("--no-color")
+            .arg("-f")
+            .arg(&format_spec);
+
+        if is_audio {
+            cmd.arg("--extract-audio")
+                .arg("--audio-format")
+                .arg("mp3")
+                .arg("--audio-quality")
+                .arg("0");
+        } else {
+            cmd.arg("--merge-output-format").arg(merge_format);
+        }
+
+        cmd.arg("--newline")
+            .arg("--progress-template")
+            .arg(format!("download:{progress_template}"))
+            .arg("--progress-template")
+            .arg(format!("postprocess:{postprocess_template}"))
+            .arg("--print")
+            .arg("after_move:filepath")
+            .arg("-o")
+            .arg(&output_template);
+
+        if !is_audio && !selection.subtitle_langs.is_empty() {
+            let sub_langs = selection.subtitle_langs.join(",");
+            // Most YouTube subtitle languages (e.g. fa) exist ONLY as auto-generated
+            // captions, so both --write-subs and --write-auto-subs are required —
+            // otherwise yt-dlp reports "no subtitles for the requested languages"
+            // and produces no subtitle output at all.
+            // Always convert to .srt and never use yt-dlp's own --embed-subs: the
+            // post-download `embed_subtitles()` pass is the single place that
+            // muxes subtitles into the mp4 (it also has to add translated tracks
+            // yt-dlp doesn't know about). Letting yt-dlp embed here too would
+            // double-embed the same language when a translation pass follows.
+            cmd.arg("--write-subs")
+                .arg("--write-auto-subs")
+                .arg("--sub-langs")
+                .arg(&sub_langs)
+                .arg("--convert-subs")
+                .arg("srt")
+                .arg("--ignore-errors");
+            log_trace(
+                trace_id,
+                "download_subtitle_args",
+                &format!(
+                    "sub_langs={sub_langs} mode={:?} write_auto=true ignore_errors=true",
+                    selection.subtitle_mode
+                ),
+            );
+        }
+
+        cmd.arg(&req.webpage_url)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        log_trace(
+            trace_id,
+            "download_args",
+            &format!("cookie_spec={} format_spec={format_spec}", current_cookie_spec),
+        );
+
+        let stream_res = run_ytdlp_process(
+            cmd,
+            &api,
+            status_chat_id,
+            status_message_id,
+            request_id,
+            &quality_label,
+            &mut cancel_fut,
+            trace_id,
+            &dir,
+        )
+        .await;
+
+        let (filepath, stderr_tail, status) = match stream_res {
+            YtdlpStreamResult::Completed {
+                filepath,
+                stderr_tail,
+                status,
+            } => (filepath, stderr_tail, status),
+            YtdlpStreamResult::Cancelled | YtdlpStreamResult::Failed => return,
+        };
+
+        if status.success() {
+            final_filepath = filepath;
+            break;
+        }
+
         let err = if stderr_tail.is_empty() {
             format!("exit {status}")
         } else {
             stderr_tail
         };
+
+        let classification = crate::youtube::classify_ytdlp_stderr(&err);
+        log_trace(
+            trace_id,
+            "download_attempt_failed",
+            &format!("attempt={attempt} max={max_attempts} status={status} err={err}"),
+        );
+
+        let is_403_or_bad = matches!(
+            classification,
+            crate::youtube::YtdlpErrorClassification::BadCookie(_)
+                | crate::youtube::YtdlpErrorClassification::RateLimited
+        ) || err.to_ascii_lowercase().contains("http error 403")
+            || err.to_ascii_lowercase().contains("403: forbidden");
+
+        if is_403_or_bad && attempt + 1 < max_attempts {
+            if let Some(cookie_pool) = cookie_pool_opt.as_ref() {
+                let mut pool = cookie_pool.lock().await;
+                let cooled = pool.mark_cookie_cooldown(&current_cookie_spec);
+                let cookie_id_opt = pool.find_cookie_id(&current_cookie_spec);
+
+                log_trace(
+                    trace_id,
+                    "download_cookie_cooldown",
+                    &format!(
+                        "cookie_spec={current_cookie_spec} id={:?} cooled={cooled}",
+                        cookie_id_opt
+                    ),
+                );
+
+                if let Some(ref cookie_id) = cookie_id_opt {
+                    if let Some(db_pool) = stats::get_pool() {
+                        if let Ok(client) = db_pool.get().await {
+                            let entry = crate::cookie_pool::CooldownEntry {
+                                cookie_id: cookie_id.clone(),
+                                expire_at: std::time::SystemTime::now()
+                                    + std::time::Duration::from_secs(30 * 60),
+                            };
+                            let _ =
+                                crate::database::postgresql::cookie_pool::save_cooldown(
+                                    &client, &entry,
+                                )
+                                .await;
+                        }
+                    }
+                }
+
+                crate::stats::record_error_global(
+                    "youtube",
+                    &format!("download_403_cooldown: {current_cookie_spec}"),
+                )
+                .await;
+
+                if let Some(next) = pool.next_cookie_excluding(&tried) {
+                    tried.insert(next.id.clone());
+                    current_cookie_spec = next.yt_dlp_browser_spec;
+                    log_trace(
+                        trace_id,
+                        "download_retry_with_cookie",
+                        &format!("attempt={attempt} next_cookie_spec={current_cookie_spec}"),
+                    );
+                    cleanup_partial_files(&dir).await;
+                    continue;
+                }
+            }
+        }
+
         log_trace(
             trace_id,
             "download_failed",
@@ -296,7 +392,7 @@ pub(crate) async fn run_download(
         return;
     }
 
-    let mut path = match filepath.or_else(|| pick_largest_file(&dir)) {
+    let mut path = match final_filepath.or_else(|| pick_largest_file(&dir)) {
         Some(p) => p,
         None => {
             log_trace(trace_id, "download_no_filepath", "no output file located");
@@ -322,7 +418,7 @@ pub(crate) async fn run_download(
             &dir,
             &path,
             &selection,
-            &req.cookie_spec,
+            &current_cookie_spec,
             &req.webpage_url,
             req.duration,
             trace_id,
@@ -705,4 +801,17 @@ pub(crate) async fn run_download(
     }
 
     cleanup_dir(&dir, trace_id).await;
+}
+
+async fn cleanup_partial_files(dir: &std::path::Path) {
+    if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                if ext == "part" || ext == "ytdl" || ext == "temp" {
+                    let _ = tokio::fs::remove_file(&path).await;
+                }
+            }
+        }
+    }
 }

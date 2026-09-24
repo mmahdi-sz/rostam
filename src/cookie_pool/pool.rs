@@ -136,7 +136,20 @@ impl CookiePool {
         })
     }
 
-    #[allow(dead_code)]
+    pub fn find_cookie_id(&self, spec_or_id: &str) -> Option<String> {
+        self.available_cookies
+            .iter()
+            .find(|c| c.id == spec_or_id || c.yt_dlp_browser_spec() == spec_or_id || spec_or_id.contains(&c.id))
+            .map(|c| c.id.clone())
+    }
+
+    pub fn mark_cookie_cooldown(&mut self, spec_or_id: &str) -> bool {
+        let cookie_id = self
+            .find_cookie_id(spec_or_id)
+            .unwrap_or_else(|| spec_or_id.to_string());
+        self.mark_rate_limited(&cookie_id)
+    }
+
     pub fn mark_rate_limited(&mut self, cookie_id: &str) -> bool {
         self.cleanup_expired_cooldowns();
         if self.cooldown_list.iter().any(|e| e.cookie_id == cookie_id) {
@@ -308,5 +321,24 @@ mod tests {
 
         let fourth = pool.next_cookie_excluding(&tried);
         assert!(fourth.is_none());
+    }
+
+    #[test]
+    fn test_mark_cookie_cooldown() {
+        let mut pool = CookiePool {
+            available_cookies: vec![dummy_cookie("c1"), dummy_cookie("c2")],
+            last_used_cookie: None,
+            cooldown_list: Vec::new(),
+            cooldown: DEFAULT_COOLDOWN,
+            random_counter: 0,
+        };
+
+        let spec = pool.available_cookies[0].yt_dlp_browser_spec();
+        assert!(pool.mark_cookie_cooldown(&spec));
+        assert_eq!(pool.cooldown_list.len(), 1);
+        assert_eq!(pool.cooldown_list[0].cookie_id, "c1");
+
+        let next = pool.next_cookie().unwrap();
+        assert_eq!(next.id, "c2");
     }
 }
