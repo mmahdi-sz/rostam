@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.6.8] - 2026-09-30
+
+### Fixed
+- **Spotify & MusicSet Audio Download 403 Auto-Retry & Cookie Cooldown (`spotify`, `musicset`)**:
+  - Implemented automatic cleanup of partial and leftover files (`.part`, `.webm`, `.ytdl`, `.temp`, `.mp3`) across retries via `cleanup_stem_files` in `src/spotify/handle.rs`, preventing GoogleVideo CDN 403 Forbidden errors caused by corrupted HTTP Range resumes.
+  - Added cookie pool cooldown handling (`mark_cookie_cooldown`) and PostgreSQL persistence (`save_cooldown`) for cookies encountering HTTP 403, 429, or bot check errors, ensuring flagged cookies enter a 30-minute cooldown.
+  - Implemented non-repeating cookie rotation via `next_cookie_excluding(&tried)` across up to 4 attempts.
+  - Added `-f bestaudio/best` and `--no-playlist` flags to `yt-dlp` invocation in `run_yt_dlp_audio`, preventing accidental video stream downloads and playlist parameter interpretation.
+  - Added unit test `test_cleanup_stem_files` in `src/spotify/handle.rs`.
+
 ## [2.6.7] - 2026-09-28
 
 ### Added

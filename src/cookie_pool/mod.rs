@@ -38,6 +38,7 @@ pub fn get_global_cookie_pool() -> Option<Arc<Mutex<CookiePool>>> {
     GLOBAL_COOKIE_POOL.get().cloned()
 }
 
+#[allow(dead_code)]
 pub async fn get_global_cookie_spec() -> Option<String> {
     let pool_arc = GLOBAL_COOKIE_POOL.get()?;
     let mut pool = pool_arc.lock().await;

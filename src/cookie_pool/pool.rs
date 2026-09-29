@@ -80,6 +80,7 @@ impl CookiePool {
         self.cleanup_expired_cooldowns();
     }
 
+    #[allow(dead_code)]
     pub fn next_cookie(&mut self) -> Option<SelectedCookie> {
         self.next_cookie_excluding(&HashSet::new())
     }

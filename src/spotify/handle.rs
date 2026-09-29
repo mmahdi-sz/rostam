@@ -393,31 +393,56 @@ pub async fn run_yt_dlp_audio(
     let out_template = job_dir.join(format!("{stem}.%(ext)s"));
     let _ = cores; // pinning is handled by the broker; kept for call-site clarity
 
-    const MAX_ATTEMPTS: usize = 3;
+    const MAX_ATTEMPTS: usize = 4;
+    let pool_opt = crate::cookie_pool::get_global_cookie_pool();
+    let mut tried: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    let mut current_cookie_spec = if let Some(ref pool_arc) = pool_opt {
+        let mut pool = pool_arc.lock().await;
+        if let Some(selected) = pool.next_cookie_excluding(&tried) {
+            tried.insert(selected.id.clone());
+            Some(selected.yt_dlp_browser_spec)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     for attempt in 1..=MAX_ATTEMPTS {
         if stop_flag.load(Ordering::SeqCst) {
+            cleanup_stem_files(job_dir, stem).await;
             return DlOutcome::Cancelled;
         }
 
-        let cookie_spec = crate::cookie_pool::get_global_cookie_spec().await;
-        if attempt > 1 {
+        if attempt == 1 {
+            log_ev!(
+                "sp",
+                trace_id,
+                "yt_dlp_dl_start",
+                "cookie_spec" => current_cookie_spec.as_deref().unwrap_or("none")
+            );
+        } else {
             log_ev!(
                 "sp",
                 trace_id,
                 "yt_dlp_retry_attempt",
                 "attempt" => attempt,
-                "cookie_spec" => cookie_spec.as_deref().unwrap_or("none")
+                "cookie_spec" => current_cookie_spec.as_deref().unwrap_or("none")
             );
         }
 
         let mut cmd = Command::new("yt-dlp");
         cmd.arg("--js-runtimes")
             .arg(format!("deno:{}", crate::config::deno_path()));
-        if let Some(ref spec) = cookie_spec {
+        if let Some(ref spec) = current_cookie_spec {
             cmd.arg("--cookies-from-browser").arg(spec);
         }
         cmd.arg("--extractor-args")
             .arg("youtubetab:skip=authcheck")
+            .arg("--no-playlist")
+            .arg("-f")
+            .arg("bestaudio/best")
             .arg("-x")
             .arg("--audio-format")
             .arg("mp3")
@@ -435,6 +460,7 @@ pub async fn run_yt_dlp_audio(
             Ok(c) => c,
             Err(e) => {
                 log_ev!("sp", trace_id, "yt_dlp_spawn_fail", "err" => e.to_string());
+                cleanup_stem_files(job_dir, stem).await;
                 return DlOutcome::Failed;
             }
         };
@@ -459,6 +485,7 @@ pub async fn run_yt_dlp_audio(
                 if let Some(t) = stderr_task {
                     let _ = t.await;
                 }
+                cleanup_stem_files(job_dir, stem).await;
                 return DlOutcome::Cancelled;
             }
 
@@ -486,18 +513,64 @@ pub async fn run_yt_dlp_audio(
                         "err" => err_summary
                     );
 
-                    let retriable = err_summary.contains("confirm you're not a bot")
+                    let classification = crate::youtube::classify_ytdlp_stderr(err_summary);
+                    let is_403_or_bad = matches!(
+                        classification,
+                        crate::youtube::YtdlpErrorClassification::BadCookie(_)
+                            | crate::youtube::YtdlpErrorClassification::RateLimited
+                    ) || err_summary.contains("confirm you're not a bot")
                         || err_summary.contains("confirm you’re not a bot")
                         || err_summary.contains("Sign in to confirm")
-                        || err_summary.contains("HTTP Error 403")
-                        || err_summary.contains("HTTP Error 429")
-                        || err_summary.contains("403: Forbidden");
+                        || err_summary.to_ascii_lowercase().contains("http error 403")
+                        || err_summary.to_ascii_lowercase().contains("http error 429")
+                        || err_summary.to_ascii_lowercase().contains("403: forbidden");
 
-                    if retriable && attempt < MAX_ATTEMPTS {
-                        let mp3_path = job_dir.join(format!("{stem}.mp3"));
-                        let _ = tokio::fs::remove_file(&mp3_path).await;
+                    if is_403_or_bad && attempt < MAX_ATTEMPTS {
+                        if let Some(ref pool_arc) = pool_opt {
+                            let mut pool = pool_arc.lock().await;
+                            if let Some(ref spec) = current_cookie_spec {
+                                let cooled = pool.mark_cookie_cooldown(spec);
+                                let cookie_id_opt = pool.find_cookie_id(spec);
+                                log_ev!(
+                                    "sp",
+                                    trace_id,
+                                    "download_cookie_cooldown",
+                                    "cookie_spec" => spec,
+                                    "id" => cookie_id_opt.as_deref().unwrap_or("none"),
+                                    "cooled" => cooled.to_string()
+                                );
+                                if let Some(ref cookie_id) = cookie_id_opt {
+                                    if let Some(db_pool) = crate::stats::get_pool() {
+                                        if let Ok(client) = db_pool.get().await {
+                                            let entry = crate::cookie_pool::CooldownEntry {
+                                                cookie_id: cookie_id.clone(),
+                                                expire_at: std::time::SystemTime::now()
+                                                    + std::time::Duration::from_secs(30 * 60),
+                                            };
+                                            let _ = crate::database::postgresql::cookie_pool::save_cooldown(
+                                                &client, &entry,
+                                            )
+                                            .await;
+                                        }
+                                    }
+                                }
+                                crate::stats::record_error_global(
+                                    "spotify",
+                                    &format!("download_403_cooldown: {spec}"),
+                                )
+                                .await;
+                            }
+                            if let Some(next) = pool.next_cookie_excluding(&tried) {
+                                tried.insert(next.id.clone());
+                                current_cookie_spec = Some(next.yt_dlp_browser_spec);
+                            } else {
+                                current_cookie_spec = None;
+                            }
+                        }
+                        cleanup_stem_files(job_dir, stem).await;
                         break false; // retry with next cookie
                     }
+                    cleanup_stem_files(job_dir, stem).await;
                     return DlOutcome::Failed;
                 }
                 Ok(None) => {
@@ -506,12 +579,14 @@ pub async fn run_yt_dlp_audio(
                         if let Some(t) = stderr_task {
                             let _ = t.await;
                         }
+                        cleanup_stem_files(job_dir, stem).await;
                         log_ev!("sp", trace_id, "yt_dlp_timeout", "=>" => "timeout");
                         return DlOutcome::Failed;
                     }
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 }
                 Err(e) => {
+                    cleanup_stem_files(job_dir, stem).await;
                     log_ev!("sp", trace_id, "yt_dlp_wait_err", "err" => e.to_string());
                     return DlOutcome::Failed;
                 }
@@ -523,7 +598,21 @@ pub async fn run_yt_dlp_audio(
         }
     }
 
+    cleanup_stem_files(job_dir, stem).await;
     DlOutcome::Failed
+}
+
+/// Remove any partial or leftover files for this stem (.part, .ytdl, .temp, .webm, .m4a, .mp3, etc.)
+pub async fn cleanup_stem_files(job_dir: &std::path::Path, stem: &str) {
+    let prefix = format!("{stem}.");
+    if let Ok(mut entries) = tokio::fs::read_dir(job_dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let fname = entry.file_name().to_string_lossy().to_string();
+            if fname == stem || fname.starts_with(&prefix) {
+                let _ = tokio::fs::remove_file(&entry.path()).await;
+            }
+        }
+    }
 }
 
 pub fn format_spotify_release_date(raw_date: &str, is_fa: bool) -> String {
@@ -569,5 +658,30 @@ mod tests {
             format_spotify_release_date("2025-01-17T00:00:00Z", false),
             "2025-01-17"
         );
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_stem_files() {
+        let temp_dir = std::env::temp_dir().join(format!("test_sp_cleanup_{}", std::process::id()));
+        let _ = tokio::fs::create_dir_all(&temp_dir).await;
+
+        let track_part = temp_dir.join("track.webm.part");
+        let track_mp3 = temp_dir.join("track.mp3");
+        let other_track = temp_dir.join("track_other.mp3");
+        let cover = temp_dir.join("cover.jpg");
+
+        let _ = tokio::fs::write(&track_part, b"partial").await;
+        let _ = tokio::fs::write(&track_mp3, b"audio").await;
+        let _ = tokio::fs::write(&other_track, b"other").await;
+        let _ = tokio::fs::write(&cover, b"cover").await;
+
+        cleanup_stem_files(&temp_dir, "track").await;
+
+        assert!(!track_part.exists());
+        assert!(!track_mp3.exists());
+        assert!(other_track.exists());
+        assert!(cover.exists());
+
+        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
     }
 }
