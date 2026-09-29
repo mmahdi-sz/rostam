@@ -186,7 +186,13 @@ pub async fn run_set_job(
         let track = match &pending.items {
             SetItems::Spotify(items) => {
                 fetch_spotify_track_file(
-                    &job_dir, &stem, &items[idx], &cur_name, &cores, trace_id, &cancel,
+                    &job_dir,
+                    &stem,
+                    &items[idx],
+                    &cur_name,
+                    &cores,
+                    trace_id,
+                    &cancel,
                 )
                 .await
             }

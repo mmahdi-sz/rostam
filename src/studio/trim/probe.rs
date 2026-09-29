@@ -51,7 +51,10 @@ pub async fn run_ffprobe(video_path: &Path) -> anyhow::Result<VideoMetadata> {
     parse_video_metadata_json(&output.stdout, &filename)
 }
 
-pub fn parse_video_metadata_json(json_bytes: &[u8], filename: &str) -> anyhow::Result<VideoMetadata> {
+pub fn parse_video_metadata_json(
+    json_bytes: &[u8],
+    filename: &str,
+) -> anyhow::Result<VideoMetadata> {
     let json: serde_json::Value = serde_json::from_slice(json_bytes)?;
     let format = json.get("format");
     let streams = json.get("streams").and_then(|s| s.as_array());

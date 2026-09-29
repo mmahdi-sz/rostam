@@ -750,7 +750,9 @@ fn run_upscale(
             Ok(Some(status)) => {
                 let elapsed = start.elapsed().as_secs_f64();
                 log_ev!("upscale", trace_id, "realesrgan_exit", "status" => status, "elapsed" => format!("{elapsed:.1}s"));
-                let stderr_output = stderr_reader.and_then(|h| h.join().ok()).unwrap_or_default();
+                let stderr_output = stderr_reader
+                    .and_then(|h| h.join().ok())
+                    .unwrap_or_default();
                 if !status.success() {
                     let err_summary = stderr_output
                         .lines()

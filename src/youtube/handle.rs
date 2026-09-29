@@ -370,7 +370,11 @@ pub async fn handle_youtube_url(
                         log_trace(trace_id, "analyzing_delete_failed", &e.to_string());
                     }
                 }
-                log_trace(trace_id, "fetch_video_unavailable", &format!("url={url} err={msg}"));
+                log_trace(
+                    trace_id,
+                    "fetch_video_unavailable",
+                    &format!("url={url} err={msg}"),
+                );
                 let _ = send_text_md(api, chat_id, &t("youtube.video_unavailable")).await;
                 return Ok(());
             }
@@ -384,7 +388,11 @@ pub async fn handle_youtube_url(
                         log_trace(trace_id, "analyzing_delete_failed", &e.to_string());
                     }
                 }
-                log_trace(trace_id, "fetch_age_restricted", &format!("url={url} err={msg}"));
+                log_trace(
+                    trace_id,
+                    "fetch_age_restricted",
+                    &format!("url={url} err={msg}"),
+                );
                 let _ = send_text_md(api, chat_id, &t("youtube.age_restricted")).await;
                 return Ok(());
             }

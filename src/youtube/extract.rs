@@ -180,7 +180,10 @@ pub fn is_youtube_post_url(raw_url: &str) -> bool {
         return true;
     }
     // Channel community tab: /@user/community or /channel/.../community
-    if segments.iter().any(|&s| s.eq_ignore_ascii_case("community")) {
+    if segments
+        .iter()
+        .any(|&s| s.eq_ignore_ascii_case("community"))
+    {
         return true;
     }
     false
@@ -237,34 +240,74 @@ mod tests {
 
     #[test]
     fn test_is_youtube_channel_url() {
-        assert!(is_youtube_channel_url("https://www.youtube.com/@EasyPeasyEnglish/shorts"));
-        assert!(is_youtube_channel_url("https://www.youtube.com/@EasyPeasyEnglish/streams"));
-        assert!(is_youtube_channel_url("https://www.youtube.com/@EasyPeasyEnglish/podcasts"));
-        assert!(is_youtube_channel_url("https://www.youtube.com/@EasyPeasyEnglish"));
-        assert!(is_youtube_channel_url("https://www.youtube.com/@EasyPeasyEnglish/"));
-        assert!(is_youtube_channel_url("https://www.youtube.com/channel/UC123456789"));
-        assert!(is_youtube_channel_url("https://www.youtube.com/c/SomeChannel"));
-        assert!(is_youtube_channel_url("https://www.youtube.com/user/SomeUser"));
+        assert!(is_youtube_channel_url(
+            "https://www.youtube.com/@EasyPeasyEnglish/shorts"
+        ));
+        assert!(is_youtube_channel_url(
+            "https://www.youtube.com/@EasyPeasyEnglish/streams"
+        ));
+        assert!(is_youtube_channel_url(
+            "https://www.youtube.com/@EasyPeasyEnglish/podcasts"
+        ));
+        assert!(is_youtube_channel_url(
+            "https://www.youtube.com/@EasyPeasyEnglish"
+        ));
+        assert!(is_youtube_channel_url(
+            "https://www.youtube.com/@EasyPeasyEnglish/"
+        ));
+        assert!(is_youtube_channel_url(
+            "https://www.youtube.com/channel/UC123456789"
+        ));
+        assert!(is_youtube_channel_url(
+            "https://www.youtube.com/c/SomeChannel"
+        ));
+        assert!(is_youtube_channel_url(
+            "https://www.youtube.com/user/SomeUser"
+        ));
 
-        assert!(!is_youtube_channel_url("https://www.youtube.com/shorts/bQVU_L-5dDM"));
-        assert!(!is_youtube_channel_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+        assert!(!is_youtube_channel_url(
+            "https://www.youtube.com/shorts/bQVU_L-5dDM"
+        ));
+        assert!(!is_youtube_channel_url(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        ));
         assert!(!is_youtube_channel_url("https://youtu.be/dQw4w9WgXcQ"));
-        assert!(!is_youtube_channel_url("https://www.youtube.com/playlist?list=PLsrak_Tdck7WxloYLlh6mH17IxMyk2tyl"));
+        assert!(!is_youtube_channel_url(
+            "https://www.youtube.com/playlist?list=PLsrak_Tdck7WxloYLlh6mH17IxMyk2tyl"
+        ));
     }
 
     #[test]
     fn test_is_youtube_post_url() {
-        assert!(is_youtube_post_url("https://www.youtube.com/post/Ugkxabc12345XYZ"));
-        assert!(is_youtube_post_url("https://youtube.com/post/Ugkxabc12345XYZ"));
-        assert!(is_youtube_post_url("http://www.youtube.com/post/Ugkxabc12345XYZ?si=123"));
-        assert!(is_youtube_post_url("https://www.youtube.com/@ChannelName/community"));
-        assert!(is_youtube_post_url("https://www.youtube.com/channel/UC123456789/community"));
-        assert!(is_youtube_post_url("https://www.youtube.com/c/SomeChannel/community"));
+        assert!(is_youtube_post_url(
+            "https://www.youtube.com/post/Ugkxabc12345XYZ"
+        ));
+        assert!(is_youtube_post_url(
+            "https://youtube.com/post/Ugkxabc12345XYZ"
+        ));
+        assert!(is_youtube_post_url(
+            "http://www.youtube.com/post/Ugkxabc12345XYZ?si=123"
+        ));
+        assert!(is_youtube_post_url(
+            "https://www.youtube.com/@ChannelName/community"
+        ));
+        assert!(is_youtube_post_url(
+            "https://www.youtube.com/channel/UC123456789/community"
+        ));
+        assert!(is_youtube_post_url(
+            "https://www.youtube.com/c/SomeChannel/community"
+        ));
 
         // Video and shorts must NOT be classified as post URLs
-        assert!(!is_youtube_post_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+        assert!(!is_youtube_post_url(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        ));
         assert!(!is_youtube_post_url("https://youtu.be/dQw4w9WgXcQ"));
-        assert!(!is_youtube_post_url("https://www.youtube.com/shorts/bQVU_L-5dDM"));
-        assert!(!is_youtube_post_url("https://www.youtube.com/playlist?list=PLsrak_Tdck7WxloYLlh6mH17IxMyk2tyl"));
+        assert!(!is_youtube_post_url(
+            "https://www.youtube.com/shorts/bQVU_L-5dDM"
+        ));
+        assert!(!is_youtube_post_url(
+            "https://www.youtube.com/playlist?list=PLsrak_Tdck7WxloYLlh6mH17IxMyk2tyl"
+        ));
     }
 }

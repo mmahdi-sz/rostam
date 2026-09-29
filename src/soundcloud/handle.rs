@@ -120,7 +120,8 @@ pub async fn handle_soundcloud_url(
             } else if err_str.contains("404") || err_str.to_lowercase().contains("not found") {
                 "soundcloud.track_not_found"
             } else {
-                crate::stats::record_error_global("soundcloud", format!("fetch_meta: {err_str}")).await;
+                crate::stats::record_error_global("soundcloud", format!("fetch_meta: {err_str}"))
+                    .await;
                 "soundcloud.track_not_found"
             };
             handle_error(key).await;

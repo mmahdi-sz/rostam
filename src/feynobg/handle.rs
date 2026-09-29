@@ -502,16 +502,28 @@ mod tests {
     #[test]
     fn test_detect_image_format_valid() {
         let png_header = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00];
-        assert_eq!(detect_image_format(&png_header), Some(SupportedImageFormat::Png));
+        assert_eq!(
+            detect_image_format(&png_header),
+            Some(SupportedImageFormat::Png)
+        );
 
         let jpeg_header = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46];
-        assert_eq!(detect_image_format(&jpeg_header), Some(SupportedImageFormat::Jpeg));
+        assert_eq!(
+            detect_image_format(&jpeg_header),
+            Some(SupportedImageFormat::Jpeg)
+        );
 
         let webp_header = b"RIFF\x00\x00\x00\x00WEBPVP8 ";
-        assert_eq!(detect_image_format(webp_header), Some(SupportedImageFormat::Webp));
+        assert_eq!(
+            detect_image_format(webp_header),
+            Some(SupportedImageFormat::Webp)
+        );
 
         let bmp_header = b"BM\x00\x00\x00\x00\x00\x00\x00\x00";
-        assert_eq!(detect_image_format(bmp_header), Some(SupportedImageFormat::Bmp));
+        assert_eq!(
+            detect_image_format(bmp_header),
+            Some(SupportedImageFormat::Bmp)
+        );
     }
 
     #[test]

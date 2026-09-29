@@ -161,9 +161,8 @@ pub async fn handle_video_upload(
 
     if meta.width == 0 || meta.height == 0 {
         log_ev!("studio_compress", trace_id, "invalid_video_dims", "=>" => "fail");
-        let _ =
-            crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.ffprobe_failed"))
-                .await;
+        let _ = crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.ffprobe_failed"))
+            .await;
         return;
     }
 

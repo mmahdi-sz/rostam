@@ -272,7 +272,10 @@ pub(crate) async fn run_download(
         log_trace(
             trace_id,
             "download_args",
-            &format!("cookie_spec={} format_spec={format_spec}", current_cookie_spec),
+            &format!(
+                "cookie_spec={} format_spec={format_spec}",
+                current_cookie_spec
+            ),
         );
 
         let stream_res = run_ytdlp_process(
@@ -315,8 +318,9 @@ pub(crate) async fn run_download(
             &format!("attempt={attempt} max={max_attempts} status={status} err={err}"),
         );
 
-        let is_format_unavailable =
-            err.to_ascii_lowercase().contains("requested format is not available");
+        let is_format_unavailable = err
+            .to_ascii_lowercase()
+            .contains("requested format is not available");
         if is_format_unavailable && !format_fallback_tried {
             format_fallback_tried = true;
             let fallback_format = if is_audio {
@@ -366,11 +370,10 @@ pub(crate) async fn run_download(
                                 expire_at: std::time::SystemTime::now()
                                     + std::time::Duration::from_secs(30 * 60),
                             };
-                            let _ =
-                                crate::database::postgresql::cookie_pool::save_cooldown(
-                                    &client, &entry,
-                                )
-                                .await;
+                            let _ = crate::database::postgresql::cookie_pool::save_cooldown(
+                                &client, &entry,
+                            )
+                            .await;
                         }
                     }
                 }
@@ -840,7 +843,11 @@ mod tests {
     #[test]
     fn test_format_unavailable_classification() {
         let err_sample = "ERROR: [youtube] dQw4w9WgXcQ: Requested format is not available. Use --list-formats for a list of available formats";
-        assert!(err_sample.to_ascii_lowercase().contains("requested format is not available"));
+        assert!(
+            err_sample
+                .to_ascii_lowercase()
+                .contains("requested format is not available")
+        );
     }
 
     #[test]
@@ -852,6 +859,9 @@ mod tests {
         } else {
             format!("bestvideo[height<={height}]+bestaudio/bestvideo+bestaudio/best")
         };
-        assert_eq!(fallback, "bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best");
+        assert_eq!(
+            fallback,
+            "bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best"
+        );
     }
 }

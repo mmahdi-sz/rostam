@@ -84,7 +84,10 @@ impl CookiePool {
         self.next_cookie_excluding(&HashSet::new())
     }
 
-    pub fn next_cookie_excluding(&mut self, excluded_ids: &HashSet<String>) -> Option<SelectedCookie> {
+    pub fn next_cookie_excluding(
+        &mut self,
+        excluded_ids: &HashSet<String>,
+    ) -> Option<SelectedCookie> {
         self.cleanup_expired_cooldowns();
         let cooldown_ids = self
             .cooldown_list
@@ -112,7 +115,10 @@ impl CookiePool {
             selectable_not_excluded
                 .iter()
                 .copied()
-                .filter(|&idx| self.last_used_cookie.as_deref() != Some(self.available_cookies[idx].id.as_str()))
+                .filter(|&idx| {
+                    self.last_used_cookie.as_deref()
+                        != Some(self.available_cookies[idx].id.as_str())
+                })
                 .collect()
         } else {
             Vec::new()
@@ -139,7 +145,11 @@ impl CookiePool {
     pub fn find_cookie_id(&self, spec_or_id: &str) -> Option<String> {
         self.available_cookies
             .iter()
-            .find(|c| c.id == spec_or_id || c.yt_dlp_browser_spec() == spec_or_id || spec_or_id.contains(&c.id))
+            .find(|c| {
+                c.id == spec_or_id
+                    || c.yt_dlp_browser_spec() == spec_or_id
+                    || spec_or_id.contains(&c.id)
+            })
             .map(|c| c.id.clone())
     }
 
@@ -296,11 +306,7 @@ mod tests {
     #[test]
     fn test_next_cookie_excluding() {
         let mut pool = CookiePool {
-            available_cookies: vec![
-                dummy_cookie("c1"),
-                dummy_cookie("c2"),
-                dummy_cookie("c3"),
-            ],
+            available_cookies: vec![dummy_cookie("c1"), dummy_cookie("c2"), dummy_cookie("c3")],
             last_used_cookie: None,
             cooldown_list: Vec::new(),
             cooldown: DEFAULT_COOLDOWN,
