@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use frankenstein::{
     AsyncTelegramApi,
@@ -8,11 +9,14 @@ use frankenstein::{
 };
 
 use crate::bot::{edit_to_ai_lab, send_text_with_back};
+use crate::common::JobRegistry;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, t};
 use crate::log::next_trace_id;
 
 pub const CB_GWM_CANCEL: &str = "gwm:cancel";
+
+pub static ACTIVE_GWM_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 fn cancel_keyboard() -> InlineKeyboardMarkup {
     let icon_id = t("emoji.panel.icons.cancel");
@@ -80,6 +84,16 @@ pub async fn handle_gwm_cancel(
 pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
+
+    if crate::common::CpuBrokerGuard::is_user_busy(user_id).await {
+        let _ = send_text_with_back(api, chat_id, &t("active_job_running")).await;
+        return;
+    }
+
+    let Some((_flag, _job_guard)) = ACTIVE_GWM_JOBS.try_register(user_id) else {
+        let _ = send_text_with_back(api, chat_id, &t("active_job_running")).await;
+        return;
+    };
 
     log_actor_id!("gwm", trace_id, user_id, "clicked" => "photo/doc");
     log_ev!("gwm", trace_id, "image_received", "raw" => format!("user_id={user_id} chat_id={chat_id} has_photo={} has_doc={}",

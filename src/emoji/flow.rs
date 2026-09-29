@@ -181,11 +181,29 @@ impl FlowManager {
     pub fn clear(&self, user_id: i64) {
         write_or_recover(&self.states).remove(&user_id);
     }
+
+    /// Atomically retrieves and removes the flow state for `user_id`.
+    /// Returns `FlowState::Idle` if no state was registered.
+    pub fn take(&self, user_id: i64) -> FlowState {
+        write_or_recover(&self.states)
+            .remove(&user_id)
+            .unwrap_or_default()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_flow_manager_take() {
+        let fm = FlowManager::new();
+        fm.set(42, FlowState::AwaitingDenoiseAudio);
+        let state1 = fm.take(42);
+        assert!(matches!(state1, FlowState::AwaitingDenoiseAudio));
+        let state2 = fm.take(42);
+        assert!(matches!(state2, FlowState::Idle));
+    }
 
     #[test]
     fn test_flow_manager_set_get() {

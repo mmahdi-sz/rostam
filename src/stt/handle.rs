@@ -318,6 +318,11 @@ pub async fn handle_stt_audio(
         return;
     }
 
+    let Some((cancel_flag, _job_guard)) = ACTIVE_STT_JOBS.try_register(user_id) else {
+        let _ = crate::bot::send_text_md(api, chat_id, &crate::i18n::t("active_job_running")).await;
+        return;
+    };
+
     let trace_id = next_trace_id();
     log_actor_id!("stt", trace_id, user_id, "clicked" => "audio/voice");
     log_trace(
@@ -325,9 +330,6 @@ pub async fn handle_stt_audio(
         "stt_audio_received",
         &format!("user_id={user_id} chat_id={chat_id}"),
     );
-
-    // Register cancel flag and RAII guard for this user
-    let (cancel_flag, _job_guard) = ACTIVE_STT_JOBS.register_with_guard(user_id);
 
     // ── Stage 1: Send initial status message & capture message_id ──
     let text_with_emojis = crate::i18n::apply_premium_to_md(&t("stt.stage_downloading"));

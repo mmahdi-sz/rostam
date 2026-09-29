@@ -8,6 +8,7 @@ use super::types::YoutubeRequest;
 struct StoredRequest {
     req: YoutubeRequest,
     created_at: std::time::Instant,
+    in_progress: bool,
 }
 
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
@@ -40,9 +41,24 @@ pub fn store_request(req: YoutubeRequest) -> u64 {
         StoredRequest {
             req,
             created_at: now,
+            in_progress: false,
         },
     );
     id
+}
+
+/// Marks a request as in-progress. Returns true if transition from false -> true succeeded,
+/// or false if already in progress / expired / not found.
+pub fn mark_in_progress(id: u64) -> bool {
+    let mut map = crate::sync_util::lock_or_recover(store());
+    let Some(item) = map.get_mut(&id) else {
+        return false;
+    };
+    if item.created_at.elapsed() > std::time::Duration::from_secs(7200) || item.in_progress {
+        return false;
+    }
+    item.in_progress = true;
+    true
 }
 
 pub fn get_request(id: u64) -> Option<YoutubeRequest> {

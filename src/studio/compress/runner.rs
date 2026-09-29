@@ -22,7 +22,10 @@ use crate::emoji::panel::btn_icon_danger;
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
 use crate::log::next_trace_id;
 use crate::moebius::cpu::trim_memory;
-use crate::studio::pipeline::{TempDirGuard, job_guard, register_active_job};
+use crate::studio::burn::runner::{split_video_into_parts, upload_part_count};
+use crate::studio::pipeline::{TempDirGuard, try_register_active_job};
+
+const MAX_UPLOAD_BYTES: u64 = 2000 * 1024 * 1024;
 
 pub async fn start_compression_job(
     api: &Bot,
@@ -37,17 +40,20 @@ pub async fn start_compression_job(
         return;
     }
 
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let Some(job_guard) = try_register_active_job(user_id, cancel_flag.clone()) else {
+        let _ = crate::bot::send_text_md(api, chat_id, &t("active_job_running")).await;
+        return;
+    };
+
     let trace_id = next_trace_id();
     log_actor_id!("studio_compress", trace_id, user_id, "start_job" => &session.codec);
-
-    let cancel_flag = Arc::new(AtomicBool::new(false));
-    register_active_job(user_id, cancel_flag.clone());
 
     let flow_manager = flow_manager.clone();
     let api = api.clone();
 
     crate::app::spawn_user_task(async move {
-        let _job_guard = job_guard(user_id);
+        let _job_guard = job_guard;
         let cancel_kb = InlineKeyboardMarkup::builder()
             .inline_keyboard(vec![vec![btn_icon_danger(
                 &t("studio.compress.cancel_btn"),
@@ -401,62 +407,117 @@ pub async fn start_compression_job(
             &threads_arg,
         );
 
-        let done_raw = tf(
-            "studio.compress.job_done",
-            &[
-                ("orig_size", &md_escape(&orig_size_str)),
-                ("final_size", &md_escape(&final_size_str)),
-                ("saved_percent", &saved_percent.to_string()),
-                ("compress_time", &md_escape(&format_eta_hms(compress_secs))),
-                ("download_time", &md_escape(&format_eta_hms(download_secs))),
-                ("upload_time", &md_escape(&format_eta_hms(upload_secs))),
-                ("vmaf_score", &md_escape(&vmaf_score)),
-            ],
-        );
-        let done_text = apply_premium_to_md(&done_raw);
+        let mut parts = vec![output_file.clone()];
+        if output_len > MAX_UPLOAD_BYTES {
+            let part_count = upload_part_count(output_len, MAX_UPLOAD_BYTES);
+            log_ev!("studio_compress", trace_id, "output_oversized", "bytes" => output_len, "parts" => part_count);
 
-        let send_params = SendDocumentParams::builder()
-            .chat_id(chat_id)
-            .document(FileUpload::InputFile(InputFile {
-                path: output_file.clone(),
-            }))
-            .caption(&done_text)
-            .parse_mode(ParseMode::MarkdownV2)
-            .build();
+            let ffmpeg_bin = crate::config::ffmpeg_path();
+            let in_path = output_file.clone();
+            let dir_cl = work_dir.clone();
+            let total_dur = session.duration_secs.max(1) as u64;
 
-        let out_bytes = std::fs::metadata(&output_file)
-            .map(|m| m.len())
-            .unwrap_or(0);
-        let up_start = std::time::Instant::now();
+            let split_res = tokio::task::spawn_blocking(move || {
+                split_video_into_parts(&ffmpeg_bin, &in_path, &dir_cl, total_dur, part_count)
+            })
+            .await;
 
-        use crate::bot::send_file_with_upload_ticker;
-        let send_res = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-            &api,
-            "sendDocument",
-            &send_params,
-            &output_file,
-            chat_id,
-            message_id,
-            "transfer.stage.sending_document",
-            None,
-        )
-        .await;
+            match split_res {
+                Ok(Ok(p)) if !p.is_empty() => {
+                    log_ev!("studio_compress", trace_id, "split_done", "parts" => p.len());
+                    parts = p;
+                }
+                Ok(Ok(_)) => {
+                    log_ev!("studio_compress", trace_id, "split_empty", "parts" => 0);
+                }
+                Ok(Err(e)) => {
+                    log_ev!("studio_compress", trace_id, "split_failed", "err" => format!("{e}"));
+                }
+                Err(e) => {
+                    log_ev!("studio_compress", trace_id, "split_join_failed", "err" => format!("{e}"));
+                }
+            }
+        }
+
+        let total_parts = parts.len();
         clear_session(user_id).await;
 
-        if let Err(e) = send_res {
-            log_ev!("studio_compress", trace_id, "upload_failed", "=>" => format!("fail err={e}"));
-            let _ = crate::bot::send_text_md(
+        use crate::bot::send_file_with_upload_ticker;
+        let mut total_uploaded_bytes: u64 = 0;
+        let up_start = std::time::Instant::now();
+
+        for (idx, part_path) in parts.iter().enumerate() {
+            let done_raw = if total_parts > 1 {
+                tf(
+                    "studio.compress.job_done_part",
+                    &[
+                        ("filename", &md_escape(&session.filename)),
+                        ("part", &md_escape(&(idx + 1).to_string())),
+                        ("total", &md_escape(&total_parts.to_string())),
+                        ("orig_size", &md_escape(&orig_size_str)),
+                        ("final_size", &md_escape(&final_size_str)),
+                        ("saved_percent", &saved_percent.to_string()),
+                        ("compress_time", &md_escape(&format_eta_hms(compress_secs))),
+                        ("download_time", &md_escape(&format_eta_hms(download_secs))),
+                        ("upload_time", &md_escape(&format_eta_hms(upload_secs))),
+                        ("vmaf_score", &md_escape(&vmaf_score)),
+                    ],
+                )
+            } else {
+                tf(
+                    "studio.compress.job_done",
+                    &[
+                        ("orig_size", &md_escape(&orig_size_str)),
+                        ("final_size", &md_escape(&final_size_str)),
+                        ("saved_percent", &saved_percent.to_string()),
+                        ("compress_time", &md_escape(&format_eta_hms(compress_secs))),
+                        ("download_time", &md_escape(&format_eta_hms(download_secs))),
+                        ("upload_time", &md_escape(&format_eta_hms(upload_secs))),
+                        ("vmaf_score", &md_escape(&vmaf_score)),
+                    ],
+                )
+            };
+            let done_text = apply_premium_to_md(&done_raw);
+
+            let send_params = SendDocumentParams::builder()
+                .chat_id(chat_id)
+                .document(FileUpload::InputFile(InputFile {
+                    path: part_path.clone(),
+                }))
+                .caption(&done_text)
+                .parse_mode(ParseMode::MarkdownV2)
+                .build();
+
+            let part_bytes = std::fs::metadata(part_path).map(|m| m.len()).unwrap_or(0);
+            total_uploaded_bytes += part_bytes;
+
+            let send_res = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
                 &api,
+                "sendDocument",
+                &send_params,
+                part_path,
                 chat_id,
-                &t("studio.compress.error.compress_failed"),
+                message_id,
+                "transfer.stage.sending_document",
+                None,
             )
             .await;
-            return;
+
+            if let Err(e) = send_res {
+                log_ev!("studio_compress", trace_id, "upload_failed", "=>" => format!("fail err={e}"));
+                let _ = crate::bot::send_text_md(
+                    &api,
+                    chat_id,
+                    &t("studio.compress.error.compress_failed"),
+                )
+                .await;
+                return;
+            }
         }
 
         let up_elapsed = up_start.elapsed();
         let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
-            out_bytes as f64 / up_elapsed.as_secs_f64()
+            total_uploaded_bytes as f64 / up_elapsed.as_secs_f64()
         } else {
             0.0
         };
@@ -464,7 +525,7 @@ pub async fn start_compression_job(
             crate::stats::record_upload_done(
                 jid,
                 user_id,
-                out_bytes as i64,
+                total_uploaded_bytes as i64,
                 Some(up_speed as i64),
                 Some(1),
             )

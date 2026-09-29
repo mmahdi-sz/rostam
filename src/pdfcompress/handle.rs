@@ -443,8 +443,8 @@ async fn run_pdf_compress(
         0
     };
 
-    let before_str = fmt_bytes(orig_size);
-    let after_str = fmt_bytes(compressed_size);
+    let before_str = escape_md(&fmt_bytes(orig_size));
+    let after_str = escape_md(&fmt_bytes(compressed_size));
 
     let report = tf(
         "pdfcompress.result_report",
@@ -589,7 +589,9 @@ async fn run_gs(
     #[cfg(unix)]
     unsafe {
         cmd.pre_exec(move || {
-            let mem_limit = 4 * 1024 * 1024 * 1024; // 4GB
+            // Raised from 4GB to 8GB: Ghostscript rasterizing large scanned PDFs requires
+            // significant virtual address space. The server has 16GB RAM + 8GB zram.
+            let mem_limit = 8 * 1024 * 1024 * 1024; // 8GB
             let rlim_mem = libc::rlimit {
                 rlim_cur: mem_limit,
                 rlim_max: mem_limit,
@@ -598,7 +600,9 @@ async fn run_gs(
                 return Err(std::io::Error::last_os_error());
             }
 
-            let cpu_limit = (timeout_secs.max(1)) as libc::rlim_t; // use the config timeout
+            // CPU time limit: allow 2x timeout_secs of CPU computation so multi-threaded core bursts
+            // don't trigger kernel SIGKILL before wall-clock timeout is reached.
+            let cpu_limit = (timeout_secs.max(1).saturating_mul(2)) as libc::rlim_t;
             let rlim_cpu = libc::rlimit {
                 rlim_cur: cpu_limit,
                 rlim_max: cpu_limit,
@@ -882,5 +886,15 @@ mod tests {
         assert!(!flag2.load(Ordering::SeqCst));
         drop(_guard);
         assert!(!ACTIVE_PDF_JOBS.is_active(&user_id_2));
+    }
+
+    #[test]
+    fn test_pdf_compress_rlimit_values() {
+        let timeout_secs = 1800u64;
+        let cpu_limit = timeout_secs.max(1).saturating_mul(2);
+        assert_eq!(cpu_limit, 3600);
+
+        let mem_limit_gb = 8u64 * 1024 * 1024 * 1024;
+        assert_eq!(mem_limit_gb, 8_589_934_592);
     }
 }

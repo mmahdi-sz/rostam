@@ -21,6 +21,14 @@ pub fn register_active_job(user_id: i64, cancel_flag: Arc<AtomicBool>) {
     ACTIVE_STUDIO_JOBS.register_custom(user_id, cancel_flag);
 }
 
+/// Attempts to register an active Studio job atomically. Returns None if a job is already active.
+pub fn try_register_active_job(
+    user_id: i64,
+    cancel_flag: Arc<AtomicBool>,
+) -> Option<JobGuard<i64>> {
+    ACTIVE_STUDIO_JOBS.try_register_custom(user_id, cancel_flag)
+}
+
 /// Creates an RAII unregistration guard for a user's Studio job.
 pub fn job_guard(user_id: i64) -> JobGuard<i64> {
     ACTIVE_STUDIO_JOBS.guard(user_id)

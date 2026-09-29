@@ -19,5 +19,5 @@ mod upload;
 pub use cancel::cancel_download;
 pub use runner::spawn_download;
 pub use selection_helpers::{codecs_for_height, init_selection, with_selection};
-pub use store::{get_request, store_request};
+pub use store::{get_request, mark_in_progress, store_request};
 pub use types::{Selection, SelectionView, SubtitleMode, YoutubeRequest};

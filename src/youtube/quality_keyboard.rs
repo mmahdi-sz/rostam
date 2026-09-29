@@ -418,6 +418,10 @@ async fn handle_audio_quality_callback(api: &Bot, cq: &CallbackQuery, data: &str
         answer_callback(api, cq, "youtube.download.request_expired").await;
         return true;
     }
+    if !super::download::mark_in_progress(request_id) {
+        answer_callback(api, cq, "active_job_running").await;
+        return true;
+    }
 
     use super::download::spawn_download;
     use super::download::types::{Selection, SelectionView, SubtitleMode};

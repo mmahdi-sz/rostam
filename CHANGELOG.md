@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.6.7] - 2026-09-28
+
+### Added
+- **Studio Compress Multi-Part Video Splitting for >2000 MB Outputs (`studio_compress`, `config/i18n.json`)**:
+  - Implemented automatic keyframe-aligned segment splitting (`split_video_into_parts`) when compressed video output exceeds Telegram's 2000 MB single-file upload cap, resolving `Telegram error: Bad Request: FILE_PARTS_INVALID`.
+  - Added localized multi-part delivery notifications (`studio.compress.job_done_part`) displaying filename, part index (`Part X of Y`), original/final sizes, compression duration, and VMAF scores across Persian, English, Italian, and Russian.
+  - Added unit test `test_studio_compress_oversized_part_count` in `src/studio/compress/mod.rs`.
+- **Pre-Separation Audio Transcoding & Container Normalization (`separation`)**:
+  - Added `needs_audio_conversion` helper identifying audio formats unsupported by `libsndfile` (`.m4a`, `.aac`, `.oga`, `.opus`, `.wma`) and files exceeding 50 MB.
+  - Routed non-conforming audio inputs through `extract_and_prepare_audio` to transcode them to 320kbps MP3 via FFmpeg before forwarding to the separation microservice on port 6589, permanently eliminating `HTTP 500: Format not recognised` crashes.
+  - Added unit test `test_needs_audio_conversion` covering extension and filesize thresholds.
+- **YouTube Community Post Detection & Early Filter (`youtube`, `config/i18n.json`)**:
+  - Added `is_youtube_post_url` in `src/youtube/extract.rs` detecting `/post/` endpoints and `/community` channel tabs.
+  - Intercepted community posts early in `handle_youtube_url`, preventing failed invocations of `yt-dlp` and returning friendly localized guidance (`youtube.post_url_not_supported`).
+  - Added unit test `test_is_youtube_post_url`.
+- **Magic-Byte Image Format Verification in FeyNobg (`feynobg`)**:
+  - Added `detect_image_format` inspecting magic bytes for PNG, JPEG, WebP, and BMP.
+  - Implemented pre-model validation in `handle_nobg_image` to reject non-image uploads (such as PDFs or corrupted files) immediately, refunding quotas and returning `nobg.unsupported_format` without touching ONNX or recording false error alerts.
+  - Added automated file extension alignment (`input.png` / `input.jpg` / `input.webp`) to eliminate image-rs `Invalid PNG signature` decoding errors.
+  - Added unit tests `test_detect_image_format_valid` and `test_detect_image_format_invalid`.
+- **System-Level Persistent Virtual Display Service (`xvfb.service`)**:
+  - Configured and enabled `xvfb.service` on `DISPLAY=:10` as a persistent systemd service, ensuring headless browser cookie-warming sessions survive server reboots.
+
+### Fixed
+- **Atomic Concurrency Registrations & Anti-Spam Locking (`common::job`, `emoji::flow`, all modules)**:
+  - Added `try_register` and `try_register_custom` to `JobRegistry`, performing atomic check-and-insert before background async jobs spawn to prevent parallel duplicate tasks on rapid button taps.
+  - Added atomic `take` to `FlowManager`, clearing user states upon dispatch to prevent consecutive triggers from photo albums or rapid inputs.
+  - Added pre-download concurrency guards to `feynobg`, `gemini_watermark`, `denoise`, `deoldify`, `stt`, `surge_dl`, `separation`, and `studio_compress`.
+  - Added Telegram callback acknowledgment (`answer_callback_query`) inside the 500ms global rate limiter in `src/app/dispatch/mod.rs`, eliminating spinning loading indicators on user buttons.
+- **Temporary Storage Migration from RAM to Disk (`TMPDIR`)**:
+  - Redirected `TMPDIR` from the 16 GB memory-backed `tmpfs` (`/tmp`) to dedicated persistent NVMe storage (`/mnt/data/mahdidev/ros/production/tmp`), preventing `No space left on device (os error 28)` errors when multiple large video jobs execute concurrently.
+- **YouTube "Requested format is not available" Resilient Fallback (`youtube`)**:
+  - Upgraded H264 format specifier in `src/youtube/download/single.rs` with multi-tier fallback chains.
+  - Added automated retry switching to `bestvideo+bestaudio/best` upon receiving `Requested format is not available` from `yt-dlp`, salvaging downloads without consuming extra session attempts.
+  - Fixed race condition where duplicate clicks on `yt:s:go` dropped active cancellation tokens and corrupted status messages.
+- **Ghostscript Resource Ceilings for PDF Compression (`pdfcompress`)**:
+  - Raised Ghostscript virtual memory ceiling (`RLIMIT_AS`) from 4 GB to 8 GB in `src/pdfcompress/handle.rs`, resolving kernel `SIGKILL (signal 9)` terminations on heavy scanned documents.
+  - Increased `RLIMIT_CPU` limit to `2 * timeout_secs` to accommodate multi-threaded CPU bursts without prematurely aborting jobs.
+  - Escaped literal dot characters (`.`) in output size reports (`escape_md`) to satisfy Telegram MarkdownV2 syntax constraints.
+- **Cookie Profile Cache Ownership & Permissions**:
+  - Restored `mahdi:mahdi` ownership and `775` permissions on `/mnt/data/mahdidev/ros/production/cookie_profiles_cache`, enabling the background cookie refresher to update SQLite session caches without `Permission denied` errors.
+
 ## [2.6.6] - 2026-09-25
 
 ### Changed

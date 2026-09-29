@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
@@ -9,6 +10,7 @@ use frankenstein::{
 
 use super::engine::run_nobg;
 use crate::bot::{CB_NOBG_CANCEL, edit_to_ai_lab, send_text};
+use crate::common::JobRegistry;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf, to_fa_digits};
@@ -18,6 +20,8 @@ use crate::rank::{
     quota::{QuotaKind, refund_usage, reserve_usage},
 };
 use crate::stats;
+
+pub static ACTIVE_NOBG_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 pub fn nobg_cancel_keyboard() -> InlineKeyboardMarkup {
     crate::common::job_cancel_keyboard(&t("nobg.cancel_button"), CB_NOBG_CANCEL, "cancel")
@@ -78,6 +82,11 @@ pub async fn handle_nobg_image(
         let _ = crate::bot::send_text(api, message.chat.id, &t("active_job_running")).await;
         return;
     }
+
+    let Some((_flag, _job_guard)) = ACTIVE_NOBG_JOBS.try_register(user_id) else {
+        let _ = crate::bot::send_text(api, message.chat.id, &t("active_job_running")).await;
+        return;
+    };
 
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
@@ -290,6 +299,52 @@ pub async fn handle_nobg_image(
         .await;
     }
 
+    // Validate image format by reading initial magic bytes
+    let detected_format = match tokio::fs::File::open(&input_path).await {
+        Ok(mut f) => {
+            use tokio::io::AsyncReadExt;
+            let mut buf = [0u8; 16];
+            let n = f.read(&mut buf).await.unwrap_or(0);
+            detect_image_format(&buf[..n])
+        }
+        Err(_) => None,
+    };
+
+    let Some(img_format) = detected_format else {
+        log_ev!("feynobg", trace_id, "invalid_image_format", "file_id" => &file_id);
+        if let Some(msg) = status_msg {
+            let _ = api
+                .delete_message(
+                    &DeleteMessageParams::builder()
+                        .chat_id(chat_id)
+                        .message_id(msg.message_id)
+                        .build(),
+                )
+                .await;
+        }
+        let text = apply_premium_to_md(&t("nobg.unsupported_format"));
+        let _ = api
+            .send_message(
+                &SendMessageParams::builder()
+                    .chat_id(chat_id)
+                    .text(&text)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .build(),
+            )
+            .await;
+        refund!("invalid_image_format");
+        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+        return;
+    };
+
+    // If extension on disk does not match actual detected format, rename it
+    // so image::open doesn't stumble on mismatched extension
+    let correct_input_path = temp_dir.join(format!("input.{}", img_format.extension()));
+    if correct_input_path != input_path {
+        let _ = tokio::fs::rename(&input_path, &correct_input_path).await;
+    }
+    let input_path = correct_input_path;
+
     // Run FeyNobg ONNX model
     log_ev!("feynobg", trace_id, "process_start");
     let result = run_nobg(&input_path, &output_path, user_id, trace_id).await;
@@ -402,4 +457,68 @@ pub async fn handle_nobg_image(
 
     // Clean up temp dir
     let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SupportedImageFormat {
+    Png,
+    Jpeg,
+    Webp,
+    Bmp,
+}
+
+impl SupportedImageFormat {
+    pub fn extension(&self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpeg => "jpg",
+            Self::Webp => "webp",
+            Self::Bmp => "bmp",
+        }
+    }
+}
+
+pub fn detect_image_format(bytes: &[u8]) -> Option<SupportedImageFormat> {
+    if bytes.len() < 4 {
+        return None;
+    }
+    if bytes.starts_with(b"\x89PNG") {
+        Some(SupportedImageFormat::Png)
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some(SupportedImageFormat::Jpeg)
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        Some(SupportedImageFormat::Webp)
+    } else if bytes.starts_with(b"BM") {
+        Some(SupportedImageFormat::Bmp)
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_image_format_valid() {
+        let png_header = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00];
+        assert_eq!(detect_image_format(&png_header), Some(SupportedImageFormat::Png));
+
+        let jpeg_header = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46];
+        assert_eq!(detect_image_format(&jpeg_header), Some(SupportedImageFormat::Jpeg));
+
+        let webp_header = b"RIFF\x00\x00\x00\x00WEBPVP8 ";
+        assert_eq!(detect_image_format(webp_header), Some(SupportedImageFormat::Webp));
+
+        let bmp_header = b"BM\x00\x00\x00\x00\x00\x00\x00\x00";
+        assert_eq!(detect_image_format(bmp_header), Some(SupportedImageFormat::Bmp));
+    }
+
+    #[test]
+    fn test_detect_image_format_invalid() {
+        assert_eq!(detect_image_format(b""), None);
+        assert_eq!(detect_image_format(b"%PDF-1.5"), None);
+        assert_eq!(detect_image_format(b"Hello world text"), None);
+        assert_eq!(detect_image_format(b"PK\x03\x04zipfile"), None);
+    }
 }

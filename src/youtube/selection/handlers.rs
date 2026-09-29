@@ -416,6 +416,10 @@ async fn handle_go(api: &Bot, cq: &CallbackQuery, rest: &str, database: &Option<
         answer(api, cq, "youtube.download.request_expired").await;
         return;
     };
+    if !crate::youtube::download::mark_in_progress(request_id) {
+        answer(api, cq, "active_job_running").await;
+        return;
+    };
     let Some(message) = extract_message(cq) else {
         answer(api, cq, "").await;
         return;

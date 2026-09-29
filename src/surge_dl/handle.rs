@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use frankenstein::{
     AsyncTelegramApi,
     client_reqwest::Bot,
@@ -6,6 +8,7 @@ use frankenstein::{
 };
 
 use crate::bot::edit_to_tools;
+use crate::common::JobRegistry;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{entities_for_text, t, tf};
@@ -17,6 +20,8 @@ use crate::surge_dl::probe::{
 };
 use crate::surge_dl::types::{CB_SURGE_CONFIRM_ORIGINAL, CB_SURGE_CONFIRM_RENAME, CB_TOOLS_SURGE};
 use crate::surge_dl::ui::{cancel_keyboard, confirm_keyboard, fmt_bytes, fmt_traffic_fa};
+
+pub static ACTIVE_SURGE_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 // ── menu entry ───────────────────────────────────────────────────────────────
 
@@ -218,6 +223,11 @@ async fn start_surge_job(
     rename_to: Option<String>,
     trace_id: u64,
 ) {
+    let Some((_flag, job_guard)) = ACTIVE_SURGE_JOBS.try_register(user_id) else {
+        let _ = crate::bot::send_text(api, chat_id, &t("active_job_running")).await;
+        return;
+    };
+
     let text = t("surge.queued");
     let entities = entities_for_text(&text);
     let mut params = EditMessageTextParams::builder()
@@ -233,6 +243,7 @@ async fn start_surge_job(
     }
     let api2 = api.clone();
     crate::app::spawn_user_task(async move {
+        let _guard = job_guard;
         run_surge_download(api2, chat_id, message_id, user_id, url, rename_to, trace_id).await;
     });
 }

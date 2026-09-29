@@ -128,4 +128,13 @@ mod tests {
             has_braces
         );
     }
+
+    #[test]
+    fn test_studio_compress_oversized_part_count() {
+        use crate::studio::burn::runner::upload_part_count;
+        const CAP: u64 = 2000 * 1024 * 1024;
+        assert_eq!(upload_part_count(CAP - 1, CAP), 2);
+        assert_eq!(upload_part_count(CAP + 1, CAP), 2);
+        assert_eq!(upload_part_count(CAP * 2 + 1, CAP), 3);
+    }
 }

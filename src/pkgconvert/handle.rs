@@ -191,7 +191,7 @@ pub async fn handle_pkg_file(
         let _ = send_text_md(
             api,
             chat_id,
-            &tf("pkg.error.file_too_large", &[("max", "200 MB")]),
+            &tf("pkg.error.file_too_large", &[("max", "500 MB")]),
         )
         .await;
         send_pkg_prompt(api, chat_id, user_id, flow_manager).await;
@@ -561,7 +561,7 @@ async fn run_pkg_worker(
                 crate::stats::record_error_global("pkgconvert", "symlink_escape").await;
                 "pkg.error.malicious_archive"
             }
-            super::validate::ValidateError::FileTooLarge(_) => "pkg.error.archive_too_large",
+            super::validate::ValidateError::FileTooLarge(_) => "pkg.error.single_file_too_large",
             super::validate::ValidateError::Timeout => {
                 crate::stats::record_error_global("pkgconvert", "validate_timeout").await;
                 "pkg.error.validate_timeout"

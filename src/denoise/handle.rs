@@ -6,10 +6,12 @@ use crate::common::job::JobRegistry;
 
 static ACTIVE_DENOISE_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
+#[allow(dead_code)]
 pub fn register_denoise_cancel(user_id: i64) -> Arc<AtomicBool> {
     ACTIVE_DENOISE_JOBS.register(user_id)
 }
 
+#[allow(dead_code)]
 pub fn unregister_denoise_cancel(user_id: i64) {
     ACTIVE_DENOISE_JOBS.unregister(&user_id);
 }
@@ -18,6 +20,7 @@ pub fn cancel_denoise_job(user_id: i64) -> bool {
     ACTIVE_DENOISE_JOBS.cancel(&user_id)
 }
 
+#[allow(dead_code)]
 pub struct DenoiseUnregisterGuard(pub i64);
 impl Drop for DenoiseUnregisterGuard {
     fn drop(&mut self) {
@@ -124,11 +127,14 @@ pub async fn handle_denoise_audio(
         return;
     }
 
+    let Some((cancel_flag, _cancel_guard)) = ACTIVE_DENOISE_JOBS.try_register(user_id) else {
+        let _ = send_text(api, message.chat.id, &t("active_job_running")).await;
+        return;
+    };
+
     // Flow state is cleared by the dispatcher before spawning this task.
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
-    let cancel_flag = register_denoise_cancel(user_id);
-    let _cancel_guard = DenoiseUnregisterGuard(user_id);
     log_actor_id!("denoise", trace_id, user_id, "clicked" => "audio/voice");
 
     let file_id = message

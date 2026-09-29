@@ -256,6 +256,7 @@ pub async fn handle_compress_cb(
                     .await;
             return true;
         };
+        clear_session(user_id).await;
         start_compression_job(api, chat_id, message_id, user_id, session, flow_manager).await;
         true
     } else if let Some(rest) = cb_data.strip_prefix("stc:set:") {

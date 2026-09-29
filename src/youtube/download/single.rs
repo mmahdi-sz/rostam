@@ -38,19 +38,12 @@ pub(crate) async fn run_download(
     status_message_id: i32,
     cancel: Arc<Notify>,
 ) {
-    let _cancel_guard = cancel_guard(request_id);
     let height = selection.height;
     let codec = selection.codec;
     let Some(req) = take_request(request_id) else {
-        edit_status(
-            &api,
-            status_chat_id,
-            status_message_id,
-            t("youtube.download.request_expired"),
-        )
-        .await;
         return;
     };
+    let _cancel_guard = cancel_guard(request_id);
     let mut cancel_fut = std::pin::pin!(cancel.notified());
     let trace_id = req.trace_id;
     let user_id = req.user_id.unwrap_or(0);
@@ -108,7 +101,7 @@ pub(crate) async fn run_download(
         ),
     );
 
-    let (format_spec, merge_format, is_h264) = if let Some(aq) = selection.audio_only {
+    let (mut format_spec, merge_format, is_h264) = if let Some(aq) = selection.audio_only {
         (aq.format_spec().to_string(), "mp3", false)
     } else {
         let Some(fmt) = find_format(&req, height, codec) else {
@@ -130,7 +123,11 @@ pub(crate) async fn run_download(
         let is_h264 = codec == super::super::types::VideoCodec::H264;
         let merge_format = if is_h264 { "mp4" } else { "mkv" };
         let format_spec = match codec {
-            super::super::types::VideoCodec::H264 => format!("{format_id}+bestaudio/best"),
+            super::super::types::VideoCodec::H264 => {
+                format!(
+                    "{format_id}+bestaudio/{format_id}/bestvideo[height<={height}][vcodec^=avc]+bestaudio/bestvideo[height<={height}]+bestaudio/best"
+                )
+            }
             _ => {
                 format!(
                     "{format_id}+bestaudio/{format_id}/bestvideo[height<={height}]+bestaudio/best"
@@ -204,6 +201,7 @@ pub(crate) async fn run_download(
     }
 
     let mut final_filepath = None;
+    let mut format_fallback_tried = false;
 
     for attempt in 0..max_attempts {
         let mut cmd = tokio::process::Command::new("yt-dlp");
@@ -316,6 +314,27 @@ pub(crate) async fn run_download(
             "download_attempt_failed",
             &format!("attempt={attempt} max={max_attempts} status={status} err={err}"),
         );
+
+        let is_format_unavailable =
+            err.to_ascii_lowercase().contains("requested format is not available");
+        if is_format_unavailable && !format_fallback_tried {
+            format_fallback_tried = true;
+            let fallback_format = if is_audio {
+                "bestaudio/best".to_string()
+            } else {
+                format!("bestvideo[height<={height}]+bestaudio/bestvideo+bestaudio/best")
+            };
+            if format_spec != fallback_format {
+                log_trace(
+                    trace_id,
+                    "download_format_fallback",
+                    &format!("old_fmt={format_spec} new_fmt={fallback_format}"),
+                );
+                format_spec = fallback_format;
+                cleanup_partial_files(&dir).await;
+                continue;
+            }
+        }
 
         let is_403_or_bad = matches!(
             classification,
@@ -813,5 +832,26 @@ async fn cleanup_partial_files(dir: &std::path::Path) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_format_unavailable_classification() {
+        let err_sample = "ERROR: [youtube] dQw4w9WgXcQ: Requested format is not available. Use --list-formats for a list of available formats";
+        assert!(err_sample.to_ascii_lowercase().contains("requested format is not available"));
+    }
+
+    #[test]
+    fn test_fallback_format_spec() {
+        let height = 1080;
+        let is_audio = false;
+        let fallback = if is_audio {
+            "bestaudio/best".to_string()
+        } else {
+            format!("bestvideo[height<={height}]+bestaudio/bestvideo+bestaudio/best")
+        };
+        assert_eq!(fallback, "bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best");
     }
 }

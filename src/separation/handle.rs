@@ -1,5 +1,5 @@
 use std::sync::{
-    Arc,
+    Arc, LazyLock,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -8,10 +8,13 @@ use frankenstein::{
 };
 
 use crate::bot::{edit_to_ai_lab, send_text_with_ai_back};
+use crate::common::JobRegistry;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{entities_for_text, t};
 use crate::log::next_trace_id;
+
+pub static ACTIVE_SEP_JOBS: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
 
 use super::client::fetch_cpu_status;
 use super::format::delete_message;
@@ -225,6 +228,9 @@ pub async fn handle_separation_callback(
         if let FlowState::AwaitingSeparationQueued { cancel } = flow_manager.get(user_id) {
             cancel.store(true, Ordering::Relaxed);
         }
+        if let Some(flag) = ACTIVE_SEP_JOBS.get(&user_id) {
+            flag.store(true, Ordering::Relaxed);
+        }
         flow_manager.clear(user_id);
         let r = edit_to_ai_lab(api, chat_id, message_id).await;
         log_trace(trace_id, "queue_cancel_done", &format!("ok={}", r.is_ok()));
@@ -268,8 +274,8 @@ pub async fn handle_separation_callback(
         &format!("user_id={user_id} mode={mode_label}"),
     );
 
-    // Read stored file info from flow state.
-    let (file_id, filename, is_video) = match flow_manager.get(user_id) {
+    // Read and atomically consume stored file info from flow state.
+    let (file_id, filename, is_video) = match flow_manager.take(user_id) {
         FlowState::AwaitingSeparationMode {
             file_id,
             filename,
@@ -290,8 +296,11 @@ pub async fn handle_separation_callback(
         return;
     }
 
-    // Clear flow — processing starts.
-    flow_manager.clear(user_id);
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let Some(job_guard) = ACTIVE_SEP_JOBS.try_register_custom(user_id, cancel_flag.clone()) else {
+        let _ = send_text_with_ai_back(api, chat_id, &t("active_job_running")).await;
+        return;
+    };
 
     // Edit keyboard message to "processing…"
     let processing_text = if is_video {
@@ -348,21 +357,22 @@ pub async fn handle_separation_callback(
         &format!("bytes={}", file_bytes.len()),
     );
 
-    // If video: extract audio with ffmpeg, then compress if needed.
     let tmp_dir = std::env::temp_dir().join(format!("sep_{trace_id}"));
     std::fs::create_dir_all(&tmp_dir).ok();
 
-    let audio_bytes = if is_video {
+    // If video or unsupported/oversized audio: extract or convert to standard 320k MP3
+    let requires_conversion = is_video || needs_audio_conversion(&filename, file_bytes.len());
+    let (audio_bytes, audio_filename) = if requires_conversion {
         match extract_and_prepare_audio(&file_bytes, &tmp_dir, message_id, chat_id, api, trace_id)
             .await
         {
-            Ok(b) => b,
+            Ok(b) => (b, "audio.mp3".to_string()),
             Err(e) => {
                 log_trace(trace_id, "extract_failed", &format!("err={e}"));
                 crate::stats::record_event_user(user_id, "separation", mode_label, "fail", 0).await;
                 crate::stats::record_error_global(
                     "separation",
-                    &format!("audio extraction failed: {e}"),
+                    &format!("audio extraction/conversion failed: {e}"),
                 )
                 .await;
                 let _ = send_text_with_ai_back(
@@ -377,7 +387,7 @@ pub async fn handle_separation_callback(
             }
         }
     } else {
-        file_bytes
+        (file_bytes, filename.clone())
     };
     log_trace(
         trace_id,
@@ -416,11 +426,6 @@ pub async fn handle_separation_callback(
 
     // Call separation service.
     log_trace(trace_id, "separate_start", &format!("mode={mode_label}"));
-    let audio_filename: String = if is_video {
-        "audio.mp3".to_string()
-    } else {
-        filename.clone()
-    };
 
     // Check server load before showing any message.
     let cpu_status = fetch_cpu_status().await;
@@ -437,8 +442,6 @@ pub async fn handle_separation_callback(
         crate::stats::record_event_user(user_id, "cpu", "queue", "separation", 0).await;
     }
 
-    // Cancel token: set to true if user presses cancel while in queue.
-    let cancel_flag = Arc::new(AtomicBool::new(false));
     flow_manager.set(
         user_id,
         FlowState::AwaitingSeparationQueued {
@@ -492,5 +495,43 @@ pub async fn handle_separation_callback(
         stats_job_id,
         trace_id,
     };
-    crate::app::spawn_user_task(run_separation_task(task_params));
+    crate::app::spawn_user_task(async move {
+        let _guard = job_guard;
+        run_separation_task(task_params).await;
+    });
+}
+
+/// Returns true if an audio file requires ffmpeg conversion/transcoding to standard MP3 before
+/// being passed to the separation service (e.g. m4a/aac which soundfile cannot read, or >50MB files).
+pub fn needs_audio_conversion(filename: &str, size_bytes: usize) -> bool {
+    const MAX_SEPARATION_BYTES: usize = 50 * 1024 * 1024;
+    let lower = filename.to_ascii_lowercase();
+    let unsupported_by_soundfile = lower.ends_with(".m4a")
+        || lower.ends_with(".aac")
+        || lower.ends_with(".oga")
+        || lower.ends_with(".opus")
+        || lower.ends_with(".wma");
+    let oversized = size_bytes > MAX_SEPARATION_BYTES;
+    unsupported_by_soundfile || oversized
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_needs_audio_conversion() {
+        assert!(needs_audio_conversion("song.m4a", 10 * 1024 * 1024));
+        assert!(needs_audio_conversion("AUDIO.M4A", 10 * 1024 * 1024));
+        assert!(needs_audio_conversion("track.aac", 5 * 1024 * 1024));
+        assert!(needs_audio_conversion("voice.oga", 2 * 1024 * 1024));
+        assert!(needs_audio_conversion("voice.opus", 2 * 1024 * 1024));
+        assert!(needs_audio_conversion("track.wma", 15 * 1024 * 1024));
+
+        assert!(needs_audio_conversion("long_set.mp3", 60 * 1024 * 1024));
+
+        assert!(!needs_audio_conversion("track.mp3", 10 * 1024 * 1024));
+        assert!(!needs_audio_conversion("track.wav", 20 * 1024 * 1024));
+        assert!(!needs_audio_conversion("track.flac", 30 * 1024 * 1024));
+    }
 }

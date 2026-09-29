@@ -31,17 +31,10 @@ pub(crate) async fn run_playlist_download(
     status_message_id: i32,
     _cancel: Arc<Notify>,
 ) {
-    let _cancel_guard = cancel_guard(request_id);
     let Some(mut req) = super::store::take_request(request_id) else {
-        edit_status(
-            &api,
-            status_chat_id,
-            status_message_id,
-            t("youtube.download.request_expired"),
-        )
-        .await;
         return;
     };
+    let _cancel_guard = cancel_guard(request_id);
     let trace_id = req.trace_id;
     let user_id = req.user_id.unwrap_or(0);
     let stats_job_id = stats::record_download_start(user_id, "youtube").await;

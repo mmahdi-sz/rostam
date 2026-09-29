@@ -92,6 +92,16 @@ pub async fn handle_update(
         if let Some(last) = state.user_last_update.get(&uid) {
             if now.duration_since(*last) < std::time::Duration::from_millis(500) {
                 eprintln!("[rate_limit] dropped update from user_id={uid}");
+                if let UpdateContent::CallbackQuery(ref cq) = content {
+                    let _ = state
+                        .api
+                        .answer_callback_query(
+                            &AnswerCallbackQueryParams::builder()
+                                .callback_query_id(&cq.id)
+                                .build(),
+                        )
+                        .await;
+                }
                 return Ok(());
             }
         }

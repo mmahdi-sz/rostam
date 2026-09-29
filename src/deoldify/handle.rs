@@ -72,6 +72,11 @@ pub async fn handle_deoldify_image(
         return;
     }
 
+    let Some((cancel_flag, _job_guard)) = ACTIVE_DEOLDIFY_JOBS.try_register(user_id) else {
+        let _ = crate::bot::send_text(api, message.chat.id, &t("active_job_running")).await;
+        return;
+    };
+
     let trace_id = next_trace_id();
     let chat_id = message.chat.id;
     log_ev!("deoldify", trace_id, "handle_image", "user_id" => user_id, "chat_id" => chat_id);
@@ -202,9 +207,7 @@ pub async fn handle_deoldify_image(
         }
     };
 
-    // Cancel flag + elapsed time ticker on status message
-    let cancel_flag = ACTIVE_DEOLDIFY_JOBS.register(user_id);
-    let _job_guard = ACTIVE_DEOLDIFY_JOBS.guard(user_id);
+    // Elapsed time ticker on status message
     let ticker_handle = crate::common::ProgressTicker::new(api, chat_id, status_msg.message_id)
         .with_cancel_flag(cancel_flag.clone())
         .with_keyboard(deoldify_cancel_keyboard())

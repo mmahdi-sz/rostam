@@ -321,6 +321,7 @@ pub(super) async fn handle_flow_message(
 
     if matches!(flow_manager.get(uid), FlowState::AwaitingNobgImage) {
         if message.photo.is_some() || message.document.is_some() {
+            flow_manager.clear(uid);
             let trace_id = next_trace_id();
             log_trace(
                 trace_id,

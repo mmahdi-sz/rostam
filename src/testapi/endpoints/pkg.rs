@@ -318,7 +318,7 @@ pub async fn test_pkg_ux(Json(req): Json<UxReq>) -> (axum::http::StatusCode, Jso
     let mut error_texts = HashMap::new();
     error_texts.insert(
         "file_too_large".to_string(),
-        crate::i18n::tf("pkg.error.file_too_large", &[("max", "200 MB")]),
+        crate::i18n::tf("pkg.error.file_too_large", &[("max", "500 MB")]),
     );
     error_texts.insert(
         "malicious_archive".to_string(),

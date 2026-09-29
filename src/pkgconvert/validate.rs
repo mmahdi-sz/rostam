@@ -11,11 +11,11 @@ use std::time::Duration;
 
 use super::detect::PkgFormat;
 
-pub const MAX_DECOMPRESSED_BYTES: u64 = 500 * 1024 * 1024; // 500 MB
-pub const MAX_SINGLE_FILE_BYTES: u64 = 200 * 1024 * 1024; // 200 MB
+pub const MAX_DECOMPRESSED_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GB
+pub const MAX_SINGLE_FILE_BYTES: u64 = 500 * 1024 * 1024; // 500 MB
 pub const MAX_ENTRY_COUNT: usize = 10_000;
 pub const VALIDATE_TIMEOUT_SECS: u64 = 60;
-pub const MAX_INPUT_FILE_BYTES: u64 = 200 * 1024 * 1024; // 200 MB
+pub const MAX_INPUT_FILE_BYTES: u64 = 500 * 1024 * 1024; // 500 MB
 
 #[derive(Debug, thiserror::Error)]
 pub enum ValidateError {

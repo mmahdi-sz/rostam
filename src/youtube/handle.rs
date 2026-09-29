@@ -16,7 +16,7 @@ use crate::cookie_pool::{CookiePool, CookieSource, save_snapshot};
 use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::t;
 
-use super::extract::is_youtube_channel_url;
+use super::extract::{is_youtube_channel_url, is_youtube_post_url};
 use super::fetch::fetch_video_info;
 use super::format::{build_caption, build_description_blockquotes};
 use super::quality_keyboard::send_quality_prompt;
@@ -114,6 +114,12 @@ pub async fn handle_youtube_url(
         anyhow::bail!("invalid url");
     };
     let url = &url_str;
+
+    if is_youtube_post_url(url) {
+        log_trace(trace_id, "post_url_rejected", url);
+        let _ = send_text_md(api, chat_id, &t("youtube.post_url_not_supported")).await;
+        return Ok(());
+    }
 
     if is_youtube_channel_url(url) {
         log_trace(trace_id, "channel_url_rejected", url);

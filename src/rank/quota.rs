@@ -732,16 +732,16 @@ pub mod tests {
 
     #[test]
     fn test_feature_size_and_duration_caps_boundaries() {
-        // Test 4b: Package Converter input cap (200 MB).
+        // Test 4b: Package Converter input cap (500 MB).
         let pkg_max = crate::pkgconvert::validate::MAX_INPUT_FILE_BYTES;
-        assert_eq!(pkg_max, 200 * 1024 * 1024);
+        assert_eq!(pkg_max, 500 * 1024 * 1024);
         assert!(
             !(pkg_max > crate::pkgconvert::validate::MAX_INPUT_FILE_BYTES),
-            "Exact 200MB must pass"
+            "Exact 500MB must pass"
         );
         assert!(
             pkg_max + 1 > crate::pkgconvert::validate::MAX_INPUT_FILE_BYTES,
-            "200MB + 1 must be rejected"
+            "500MB + 1 must be rejected"
         );
 
         // Test 4c: Studio Hardsub Video Burn duration cap (7200s / 2 hours).

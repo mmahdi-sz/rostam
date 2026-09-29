@@ -51,6 +51,17 @@ impl<K: Eq + Hash + Clone + 'static, V: Clone + 'static> JobRegistry<K, V> {
         lock_or_recover(&self.jobs).insert(key, val);
     }
 
+    /// Atomically registers a custom token ONLY if no active job exists for `key`.
+    /// Returns `Some(guard)` on success, or `None` if a job is already active.
+    pub fn try_register_custom(&'static self, key: K, val: V) -> Option<JobGuard<K, V>> {
+        let mut map = lock_or_recover(&self.jobs);
+        if map.contains_key(&key) {
+            return None;
+        }
+        map.insert(key.clone(), val);
+        Some(self.guard(key))
+    }
+
     /// Creates an RAII guard for the given key that will unregister it upon drop.
     pub fn guard(&'static self, key: K) -> JobGuard<K, V> {
         JobGuard {
@@ -89,6 +100,31 @@ impl<K: Eq + Hash + Clone + 'static> JobRegistry<K, Arc<AtomicBool>> {
     ) -> JobGuard<K, Arc<AtomicBool>> {
         self.register_custom(key.clone(), flag);
         self.guard(key)
+    }
+
+    /// Atomically registers a new cancel flag for `key` ONLY if not already active.
+    /// Returns `Some((flag, guard))` on success, or `None` if already active.
+    pub fn try_register(
+        &'static self,
+        key: K,
+    ) -> Option<(Arc<AtomicBool>, JobGuard<K, Arc<AtomicBool>>)> {
+        let mut map = lock_or_recover(&self.jobs);
+        if map.contains_key(&key) {
+            return None;
+        }
+        let flag = Arc::new(AtomicBool::new(false));
+        map.insert(key.clone(), flag.clone());
+        Some((flag, self.guard(key)))
+    }
+
+    /// Atomically registers a pre-existing cancel flag for `key` ONLY if not already active.
+    /// Returns `Some(guard)` on success, or `None` if already active.
+    pub fn try_register_flag(
+        &'static self,
+        key: K,
+        flag: Arc<AtomicBool>,
+    ) -> Option<JobGuard<K, Arc<AtomicBool>>> {
+        self.try_register_custom(key, flag)
     }
 
     /// Signals cancellation by setting the flag to true (using SeqCst) and returns whether an active job was found.
@@ -286,5 +322,25 @@ mod tests {
             assert!(NOTIFY_REG.is_active(&req_id_2));
         }
         assert!(!NOTIFY_REG.is_active(&req_id_2));
+    }
+
+    #[test]
+    fn test_try_register_concurrency() {
+        static REG: LazyLock<JobRegistry<i64>> = LazyLock::new(JobRegistry::new);
+        let user = 999_888i64;
+        let first = REG.try_register(user);
+        assert!(first.is_some());
+        assert!(REG.is_active(&user));
+
+        // Second registration must fail while first is active
+        let second = REG.try_register(user);
+        assert!(second.is_none());
+
+        // Dropping guard frees the registration
+        drop(first);
+        assert!(!REG.is_active(&user));
+
+        let third = REG.try_register(user);
+        assert!(third.is_some());
     }
 }
