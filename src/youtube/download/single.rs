@@ -823,6 +823,7 @@ pub(crate) async fn run_download(
     }
 
     cleanup_dir(&dir, trace_id).await;
+    crate::moebius::cpu::trim_memory();
 }
 
 async fn cleanup_partial_files(dir: &std::path::Path) {

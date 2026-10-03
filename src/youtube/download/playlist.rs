@@ -269,6 +269,13 @@ pub(crate) async fn run_playlist_download(
     if let Some(job_id) = stats_job_id {
         stats::record_download_done(job_id, (sent as i64) * 100_000_000, None, None, None).await;
     }
+
+    let parent_dir = std::path::PathBuf::from(format!(
+        "{}/{trace_id}",
+        crate::config::youtube_download_root()
+    ));
+    cleanup_dir(&parent_dir, trace_id).await;
+    crate::moebius::cpu::trim_memory();
 }
 
 async fn download_single_playlist_item_with_retry(
@@ -397,6 +404,7 @@ async fn download_single_playlist_item_attempt(
 
     let output_template = format!("{}/%(id)s.%(ext)s", dir.display());
     let mut cmd = tokio::process::Command::new("yt-dlp");
+    cmd.kill_on_drop(true);
     cmd.arg("--js-runtimes")
         .arg(format!("deno:{}", crate::config::deno_path()))
         .arg("--cookies-from-browser")

@@ -66,14 +66,44 @@ pub async fn is_user_cpu_busy(user_id: i64) -> bool {
     }
 }
 
-/// Hands freed heap pages back to the kernel. glibc parks them in per-thread
-/// arenas instead, so after one big job (Vosk model, whole-file buffer) RSS
-/// stays at the high-water mark through hours of idle. Only walks the free
-/// lists — safe to call on every job exit.
+unsafe extern "C" {
+    #[link_name = "_rjem_mallctl"]
+    fn je_mallctl(
+        name: *const libc::c_char,
+        oldp: *mut libc::c_void,
+        oldlenp: *mut libc::size_t,
+        newp: *mut libc::c_void,
+        newlen: libc::size_t,
+    ) -> libc::c_int;
+}
+
+/// Hands freed heap pages back to the kernel.
+/// Walks both glibc free lists (via malloc_trim) and flushes/purges jemalloc arenas
+/// (via _rjem_mallctl arena.4096.purge and thread.tcache.flush).
 pub fn trim_memory() {
     #[cfg(target_env = "gnu")]
     unsafe {
         libc::malloc_trim(0);
+    }
+
+    unsafe {
+        let tcache_cmd = b"thread.tcache.flush\0".as_ptr() as *const libc::c_char;
+        je_mallctl(
+            tcache_cmd,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            0,
+        );
+
+        let purge_cmd = b"arena.4096.purge\0".as_ptr() as *const libc::c_char;
+        je_mallctl(
+            purge_cmd,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            0,
+        );
     }
 }
 

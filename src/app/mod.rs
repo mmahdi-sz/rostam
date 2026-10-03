@@ -91,6 +91,18 @@ pub async fn run() -> anyhow::Result<()> {
     crate::feynobg::engine::spawn_session_reaper();
     crate::deoldify::engine::spawn_session_reaper();
     crate::moebius::spawn_session_reaper();
+    crate::youtube::translator::spawn_session_reaper();
+
+    // Periodic memory trimmer: walks both glibc and jemalloc arenas every 3 minutes
+    // to purge idle cached pages back to the Linux kernel.
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(180));
+        loop {
+            interval.tick().await;
+            crate::moebius::cpu::trim_memory();
+        }
+    });
+
     set_bot_commands(&api).await;
 
     println!("Bot is running. Send /start to open the green button.");

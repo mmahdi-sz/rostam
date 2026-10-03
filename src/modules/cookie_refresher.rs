@@ -215,12 +215,14 @@ async fn open_firefox(
     if let Some(xdg_runtime_dir) = crate::config::cookie_refresh_xdg_runtime_dir() {
         cmd.env("XDG_RUNTIME_DIR", xdg_runtime_dir);
     }
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| anyhow::anyhow!("failed to spawn firefox: {e}"))?;
 
-    // Detach: we don't wait on this child; we track firefox by profile path via pgrep.
-    drop(child);
+    // Reaping task: wait on child exit so it doesn't become a zombie in the process table.
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
     println!(
         "[cookie_refresh profile={p} event=firefox_open] url={}",
         links[0]
@@ -306,6 +308,7 @@ async fn kill_firefox(profile_path: &str, profile_name: &str) {
         sleep(Duration::from_secs(1)).await;
     }
     reap_orphan_firefox_processes(p).await;
+    crate::moebius::cpu::trim_memory();
 }
 
 /// Firefox spawns helper processes (crashhelper) that reparent to init (PPID=1)

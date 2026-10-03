@@ -32,6 +32,10 @@
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
+#[unsafe(no_mangle)]
+pub static _rjem_malloc_conf: &[u8] =
+    b"background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:0,narenas:2\0";
+
 #[macro_use]
 mod log;
 mod admin;

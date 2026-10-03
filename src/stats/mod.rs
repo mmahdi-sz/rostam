@@ -32,6 +32,15 @@ fn lang_cache() -> &'static StdRwLock<HashMap<i64, String>> {
     LANG_CACHE.get_or_init(|| StdRwLock::new(HashMap::new()))
 }
 
+fn insert_lang_cache(user_id: i64, lang: String) {
+    if let Ok(mut guard) = lang_cache().write() {
+        if guard.len() >= 10_000 {
+            guard.clear();
+        }
+        guard.insert(user_id, lang);
+    }
+}
+
 async fn redis_conn() -> Option<MultiplexedConnection> {
     REDIS_CONN
         .get_or_try_init(|| async {
@@ -73,9 +82,7 @@ pub async fn get_user_language(user_id: i64) -> Option<String> {
             .ok()
             .flatten();
         if let Some(ref l) = res {
-            if let Ok(mut guard) = lang_cache().write() {
-                guard.insert(user_id, l.clone());
-            }
+            insert_lang_cache(user_id, l.clone());
             return Some(l.clone());
         }
     }
@@ -93,9 +100,7 @@ pub async fn get_user_language(user_id: i64) -> Option<String> {
         .and_then(|row| row.get(0));
 
     if let Some(ref l) = lang {
-        if let Ok(mut guard) = lang_cache().write() {
-            guard.insert(user_id, l.clone());
-        }
+        insert_lang_cache(user_id, l.clone());
         if let Some(mut c) = redis_conn().await {
             let key = format!("user:lang:{user_id}");
             let _: Result<(), _> = redis::cmd("SET").arg(&key).arg(l).query_async(&mut c).await;
@@ -105,10 +110,8 @@ pub async fn get_user_language(user_id: i64) -> Option<String> {
 }
 
 pub async fn set_user_language(user_id: i64, lang: &str) {
-    // 1. RAM Cache
-    if let Ok(mut guard) = lang_cache().write() {
-        guard.insert(user_id, lang.to_string());
-    }
+    // 1. RAM Cache (capped to 10k items)
+    insert_lang_cache(user_id, lang.to_string());
 
     // 2. Redis Persistent Cache
     if let Some(mut c) = redis_conn().await {

@@ -1,7 +1,8 @@
 //! SRT subtitle translation using local NLLB model via CTranslate2 (`ct2rs`).
 
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use ct2rs::{Config, Translator};
 
@@ -11,8 +12,83 @@ type NllbTranslator = Translator<ct2rs::tokenizers::auto::Tokenizer>;
 /// Path to NLLB model directory.
 const MODEL_DIR: &str = "files/models/nllb";
 
-/// Cached translator instance.
-static TRANSLATOR: OnceLock<Result<NllbTranslator, String>> = OnceLock::new();
+const SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(180);
+
+struct NllbHolder {
+    translator: Option<NllbTranslator>,
+    last_used: Instant,
+}
+
+impl NllbHolder {
+    fn new() -> Self {
+        Self {
+            translator: None,
+            last_used: Instant::now(),
+        }
+    }
+
+    fn get_or_load(&mut self) -> Result<&NllbTranslator, String> {
+        if self.translator.is_none() {
+            let dir = Path::new(MODEL_DIR);
+            if !dir.join("model.bin").exists() {
+                return Err(format!(
+                    "NLLB model not found at {MODEL_DIR}/model.bin (deploy copies files/models/)"
+                ));
+            }
+            eprintln!("[translator] Loading NLLB model (first use / after idle unload)");
+            let t = Translator::new(dir, &Config::default())
+                .map_err(|e| format!("Failed to load NLLB translator from {MODEL_DIR}: {e}"))?;
+            self.translator = Some(t);
+        }
+        self.last_used = Instant::now();
+        Ok(self.translator.as_ref().unwrap())
+    }
+
+    fn unload(&mut self) -> bool {
+        if self.translator.is_some() {
+            self.translator = None;
+            eprintln!("[translator] NLLB model unloaded (idle timeout)");
+            return true;
+        }
+        false
+    }
+
+    fn is_idle(&self) -> bool {
+        self.translator.is_some() && self.last_used.elapsed() >= SESSION_IDLE_TIMEOUT
+    }
+}
+
+static HOLDER: OnceLock<Arc<Mutex<NllbHolder>>> = OnceLock::new();
+
+fn holder() -> &'static Arc<Mutex<NllbHolder>> {
+    HOLDER.get_or_init(|| Arc::new(Mutex::new(NllbHolder::new())))
+}
+
+/// Periodically unloads NLLB translator if idle for >180s.
+pub fn spawn_session_reaper() {
+    static STARTED: OnceLock<()> = OnceLock::new();
+    if STARTED.set(()).is_err() {
+        return;
+    }
+
+    let h = holder().clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            let unloaded = {
+                let mut guard = h.lock().unwrap_or_else(|e| e.into_inner());
+                if guard.is_idle() {
+                    guard.unload()
+                } else {
+                    false
+                }
+            };
+            if unloaded {
+                crate::moebius::cpu::trim_memory();
+            }
+        }
+    });
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SrtItem {
@@ -72,29 +148,11 @@ pub fn map_language_code(tgt: &str) -> Option<&'static str> {
     }
 }
 
-/// Returns cached NLLB translator instance.
-fn translator() -> Result<&'static NllbTranslator, String> {
-    TRANSLATOR
-        .get_or_init(|| {
-            let dir = Path::new(MODEL_DIR);
-            if !dir.join("model.bin").exists() {
-                return Err(format!(
-                    "NLLB model not found at {MODEL_DIR}/model.bin (deploy copies files/models/)"
-                ));
-            }
-            Translator::new(dir, &Config::default())
-                .map_err(|e| format!("Failed to load NLLB translator from {MODEL_DIR}: {e}"))
-        })
-        .as_ref()
-        .map_err(|e| e.clone())
-}
-
 /// Translates batch of texts to target NLLB language code. Blocking (CPU-bound).
 fn translate_batch_blocking(texts: &[String], target_lang: &str) -> Result<Vec<String>, String> {
     if texts.is_empty() {
         return Ok(Vec::new());
     }
-    let t = translator()?;
 
     // Join multi-line texts with spaces.
     let sources: Vec<String> = texts
@@ -107,9 +165,12 @@ fn translate_batch_blocking(texts: &[String], target_lang: &str) -> Result<Vec<S
         .map(|_| vec![target_lang.to_string()])
         .collect();
 
-    let results = t
-        .translate_batch_with_target_prefix(&sources, &prefixes, &Default::default(), None)
-        .map_err(|e| format!("translate_batch failed: {e}"))?;
+    let results = {
+        let mut guard = holder().lock().unwrap_or_else(|e| e.into_inner());
+        let t = guard.get_or_load()?;
+        t.translate_batch_with_target_prefix(&sources, &prefixes, &Default::default(), None)
+            .map_err(|e| format!("translate_batch failed: {e}"))?
+    };
 
     Ok(results
         .into_iter()
