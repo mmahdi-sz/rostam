@@ -61,11 +61,12 @@ pub fn extract_spotify_track_id(text: &str) -> Option<String> {
     None
 }
 
-/// Album vs playlist — the embed/API path differs only in this one segment.
+/// Album vs playlist vs artist — the embed/API path differs only in this one segment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpotifySetKind {
     Album,
     Playlist,
+    Artist,
 }
 
 impl SpotifySetKind {
@@ -73,11 +74,12 @@ impl SpotifySetKind {
         match self {
             Self::Album => "album",
             Self::Playlist => "playlist",
+            Self::Artist => "artist",
         }
     }
 }
 
-/// Extract a Spotify album or playlist ID from URLs or URIs in `text`.
+/// Extract a Spotify album, playlist, or artist ID from URLs or URIs in `text`.
 ///
 /// Same token/segment walk as `extract_spotify_track_id`; `track` is deliberately
 /// not matched here so callers can branch on set-vs-track.
@@ -96,6 +98,7 @@ pub fn extract_spotify_set(text: &str) -> Option<(SpotifySetKind, String)> {
         for (prefix, kind) in [
             ("spotify:album:", SpotifySetKind::Album),
             ("spotify:playlist:", SpotifySetKind::Playlist),
+            ("spotify:artist:", SpotifySetKind::Artist),
         ] {
             if let Some(rest) = token.strip_prefix(prefix) {
                 let id = rest.split(['?', '&', '#', '/']).next().unwrap_or("");
@@ -122,6 +125,7 @@ pub fn extract_spotify_set(text: &str) -> Option<(SpotifySetKind, String)> {
         for (seg, kind) in [
             ("album", SpotifySetKind::Album),
             ("playlist", SpotifySetKind::Playlist),
+            ("artist", SpotifySetKind::Artist),
         ] {
             if let Some(pos) = segments.iter().position(|&s| s == seg) {
                 if pos + 1 < segments.len() {
@@ -137,6 +141,51 @@ pub fn extract_spotify_set(text: &str) -> Option<(SpotifySetKind, String)> {
         }
     }
 
+    None
+}
+
+/// Detects whether text points to a Spotify show or podcast episode (which use DRM).
+pub fn is_spotify_podcast(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("spotify:episode:")
+        || lower.contains("spotify:show:")
+        || (lower.contains("open.spotify.com")
+            && (lower.contains("/episode/") || lower.contains("/show/")))
+}
+
+/// Resolves mobile `spotify.link` shortlinks to canonical `open.spotify.com` URLs by following redirects.
+pub async fn resolve_spotify_shortlink(text: &str) -> Option<String> {
+    const SHORT_HOST: &str = concat!("spotify", ".link");
+    for token in text.split(|c: char| c.is_whitespace()) {
+        let token = token.trim_matches(|c: char| {
+            matches!(
+                c,
+                '<' | '>' | '"' | '\'' | ',' | ';' | '!' | '?' | ')' | '(' | '[' | ']'
+            )
+        });
+        let lower = token.to_ascii_lowercase();
+        if lower.contains(SHORT_HOST) {
+            let url = if lower.starts_with("http://") || lower.starts_with("https://") {
+                token.to_string()
+            } else {
+                format!("https://{token}")
+            };
+            let Ok(client) = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::limited(10))
+                .timeout(std::time::Duration::from_secs(10))
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                .build()
+            else {
+                continue;
+            };
+            if let Ok(resp) = client.get(&url).send().await {
+                let final_url = resp.url().as_str().to_string();
+                if final_url.contains("open.spotify.com") {
+                    return Some(text.replace(token, &final_url));
+                }
+            }
+        }
+    }
     None
 }
 
@@ -202,6 +251,31 @@ mod tests {
             extract_spotify_set("spotify:album:1ATL5GLyefJaxhQzSPVrLX"),
             Some((SpotifySetKind::Album, "1ATL5GLyefJaxhQzSPVrLX".to_string()))
         );
+        assert_eq!(
+            extract_spotify_set("https://open.spotify.com/artist/0gxyHStUsqpMadRV0Di1Qt?si=abc"),
+            Some((SpotifySetKind::Artist, "0gxyHStUsqpMadRV0Di1Qt".to_string()))
+        );
+        assert_eq!(
+            extract_spotify_set("spotify:artist:0gxyHStUsqpMadRV0Di1Qt"),
+            Some((SpotifySetKind::Artist, "0gxyHStUsqpMadRV0Di1Qt".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_podcast_detection() {
+        assert!(is_spotify_podcast(
+            "https://open.spotify.com/episode/7makk4oTQel546B0PZlDM5"
+        ));
+        assert!(is_spotify_podcast(
+            "https://open.spotify.com/show/4rOoJ6Egrf8K2IrywzwOMk"
+        ));
+        assert!(is_spotify_podcast("spotify:episode:7makk4oTQel546B0PZlDM5"));
+        assert!(!is_spotify_podcast(
+            "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT"
+        ));
+        assert!(!is_spotify_podcast(
+            "https://open.spotify.com/album/1ATL5GLyefJaxhQzSPVrLX"
+        ));
     }
 
     #[test]

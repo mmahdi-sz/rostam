@@ -218,6 +218,26 @@ pub(super) async fn handle_message(
                 }
 
                 if let Some(uid) = user_id {
+                    let resolved_text;
+                    let text = if text.contains(concat!("spotify", ".link")) {
+                        resolved_text = crate::spotify::extract::resolve_spotify_shortlink(text)
+                            .await
+                            .unwrap_or_else(|| text.to_string());
+                        &resolved_text
+                    } else {
+                        text
+                    };
+
+                    if crate::spotify::extract::is_spotify_podcast(text) {
+                        let _ = crate::bot::send_text(
+                            api,
+                            message.chat.id,
+                            &crate::i18n::t("spotify.podcast_unsupported"),
+                        )
+                        .await;
+                        return Ok(());
+                    }
+
                     if crate::musicset::try_route_set(api, message.chat.id, uid, database, text) {
                         return Ok(());
                     }
