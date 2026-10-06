@@ -7,6 +7,9 @@ export no_proxy="127.0.0.1,localhost"
 PORT=${TESTAPI_PORT:-14379}
 BASE_URL="http://127.0.0.1:$PORT"
 
+# Ensure no stale test leases hold CPU broker
+redis-cli del "cpu:reserved" "cpu:queue" >/dev/null 2>&1 || true
+
 echo "Building dev mode..."
 cargo build --features testapi
 
@@ -24,6 +27,7 @@ function cleanup {
         cat testapi.log
     fi
     rm -f testapi.log
+    redis-cli del "cpu:reserved" "cpu:queue" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
