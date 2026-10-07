@@ -349,8 +349,10 @@ async fn fetch_spotify_track_file(
         };
     }
 
-    let cand = crate::spotify::search::find_best_youtube_match(
+    let cand = crate::spotify::search::find_best_youtube_match_fallback(
         &meta.primary_artist,
+        &meta.artists_joined,
+        &meta.album_name,
         &meta.title,
         meta.duration_ms,
         trace_id,

@@ -20,7 +20,7 @@ use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
 use crate::spotify::cancel::{SpotifyUnregisterGuard, register_spotify_cancel};
 use crate::spotify::client::fetch_spotify_track;
-use crate::spotify::search::find_best_youtube_match;
+use crate::spotify::search::find_best_youtube_match_fallback;
 use crate::spotify::tagging::apply_id3_tags;
 
 pub async fn handle_spotify_url(
@@ -152,8 +152,10 @@ pub async fn handle_spotify_url(
     );
     edit_status(search_msg).await;
 
-    let match_cand = match find_best_youtube_match(
+    let match_cand = match find_best_youtube_match_fallback(
         &meta.primary_artist,
+        &meta.artists_joined,
+        &meta.album_name,
         &meta.title,
         meta.duration_ms,
         trace_id,

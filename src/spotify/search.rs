@@ -20,20 +20,108 @@ pub struct YtCandidate {
     pub score: f64,
 }
 
+#[allow(dead_code)]
 pub async fn find_best_youtube_match(
     primary_artist: &str,
     title: &str,
     spotify_duration_ms: u64,
     trace_id: u64,
 ) -> anyhow::Result<YtCandidate> {
-    let query = format!("{primary_artist} - {title}");
+    find_best_youtube_match_fallback(primary_artist, "", "", title, spotify_duration_ms, trace_id)
+        .await
+}
+
+pub async fn find_best_youtube_match_fallback(
+    primary_artist: &str,
+    artists_joined: &str,
+    album_name: &str,
+    title: &str,
+    spotify_duration_ms: u64,
+    trace_id: u64,
+) -> anyhow::Result<YtCandidate> {
+    // Build candidate queries in priority order
+    let mut queries: Vec<String> = Vec::new();
+    let mut seen_queries = std::collections::HashSet::new();
+
+    let mut add_query = |q: String| {
+        let trimmed = q.trim().to_string();
+        if !trimmed.is_empty() && seen_queries.insert(trimmed.to_lowercase()) {
+            queries.push(trimmed);
+        }
+    };
+
+    // 1. Primary query: "Artist - Title"
+    add_query(format!("{primary_artist} - {title}"));
+
+    // 2. If artists_joined is present and has multiple artists, try subsequent artists
+    // e.g. "Minecraft, Peter Hont" -> "Peter Hont - Title", and full joined: "Minecraft, Peter Hont - Title"
+    if !artists_joined.is_empty() {
+        for part in artists_joined.split([',', '&', '/']) {
+            let part = part.trim();
+            if !part.is_empty() && !part.eq_ignore_ascii_case(primary_artist) {
+                add_query(format!("{part} - {title}"));
+            }
+        }
+        add_query(format!("{artists_joined} - {title}"));
+    }
+
+    // 3. Try with album name if available
+    if !album_name.is_empty() && !album_name.eq_ignore_ascii_case(title) {
+        add_query(format!("{primary_artist} {album_name} {title}"));
+        if !artists_joined.is_empty() && !artists_joined.eq_ignore_ascii_case(primary_artist) {
+            add_query(format!("{artists_joined} {album_name} {title}"));
+        }
+    }
+
+    // 4. Try title with "Audio" suffix
+    add_query(format!("{primary_artist} - {title} Audio"));
+
+    let mut last_err = anyhow!("No suitable YouTube match found for this track");
+    for (q_idx, query) in queries.iter().enumerate() {
+        if q_idx > 0 {
+            log_ev!(
+                "sp",
+                trace_id,
+                "yt_search_fallback_attempt",
+                "idx" => q_idx,
+                "query" => query
+            );
+        }
+        match search_youtube_query(
+            query,
+            primary_artist,
+            artists_joined,
+            title,
+            spotify_duration_ms,
+            trace_id,
+        )
+        .await
+        {
+            Ok(cand) => return Ok(cand),
+            Err(e) => {
+                last_err = e;
+            }
+        }
+    }
+
+    Err(last_err)
+}
+
+async fn search_youtube_query(
+    query: &str,
+    primary_artist: &str,
+    artists_joined: &str,
+    title: &str,
+    spotify_duration_ms: u64,
+    trace_id: u64,
+) -> anyhow::Result<YtCandidate> {
     let search_arg = format!("ytsearch5:{query}");
 
     log_ev!(
         "sp",
         trace_id,
         "yt_search_start",
-        "query" => &query,
+        "query" => query,
         "spotify_dur_ms" => spotify_duration_ms
     );
 
@@ -75,7 +163,12 @@ pub async fn find_best_youtube_match(
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let target_duration_secs = (spotify_duration_ms + 500) / 1000;
-    let target_label = format!("{primary_artist} {title}").to_lowercase();
+    let target_label_primary = format!("{primary_artist} {title}").to_lowercase();
+    let target_label_joined = if !artists_joined.is_empty() {
+        format!("{artists_joined} {title}").to_lowercase()
+    } else {
+        target_label_primary.clone()
+    };
 
     let mut candidates: Vec<YtCandidate> = Vec::new();
 
@@ -135,7 +228,9 @@ pub async fn find_best_youtube_match(
         }
 
         let cand_label = format!("{cand_title} {uploader}").to_lowercase();
-        let score = strsim::jaro_winkler(&target_label, &cand_label);
+        let score_primary = strsim::jaro_winkler(&target_label_primary, &cand_label);
+        let score_joined = strsim::jaro_winkler(&target_label_joined, &cand_label);
+        let score = score_primary.max(score_joined);
 
         if score < MIN_SIMILARITY_SCORE {
             log_ev!(
@@ -158,8 +253,10 @@ pub async fn find_best_youtube_match(
     }
 
     if candidates.is_empty() {
-        log_ev!("sp", trace_id, "yt_search_no_match", "=>" => "no_candidates");
-        return Err(anyhow!("No suitable YouTube match found for this track"));
+        log_ev!("sp", trace_id, "yt_search_no_match", "query" => query, "=>" => "no_candidates");
+        return Err(anyhow!(
+            "No suitable YouTube match found for query '{query}'"
+        ));
     }
 
     // Sort by highest similarity score, breaking ties with lowest duration difference
