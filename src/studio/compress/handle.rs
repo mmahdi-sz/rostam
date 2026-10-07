@@ -249,10 +249,25 @@ pub async fn handle_compress_cb(
         log_ev!("studio_compress", trace_id, "job_cancel_result", "cancelled" => cancelled);
         true
     } else if cb_data == CB_STUDIO_COMPRESS_START {
+        if crate::studio::pipeline::ACTIVE_STUDIO_JOBS.is_active(&user_id)
+            || crate::common::CpuBrokerGuard::is_user_busy(user_id).await
+        {
+            log_ev!(
+                "studio_compress",
+                trace_id,
+                "start_ignored_already_active",
+                "user_id" => user_id
+            );
+            return true;
+        }
+
         let Some(session) = load_session(user_id).await else {
-            let _ =
-                crate::bot::send_text_md(api, chat_id, &t("studio.compress.error.compress_failed"))
-                    .await;
+            log_ev!(
+                "studio_compress",
+                trace_id,
+                "start_ignored_no_session",
+                "user_id" => user_id
+            );
             return true;
         };
         clear_session(user_id).await;
