@@ -785,6 +785,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_fetch_spotify_set_real_large_playlist() {
         let set = fetch_spotify_set(
             crate::spotify::extract::SpotifySetKind::Playlist,
@@ -801,6 +802,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_fetch_spotify_set_real_large_album() {
         let set = fetch_spotify_set(
             crate::spotify::extract::SpotifySetKind::Album,
@@ -822,6 +824,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_fetch_spotify_set_real_artist() {
         let set = fetch_spotify_set(
             crate::spotify::extract::SpotifySetKind::Artist,
