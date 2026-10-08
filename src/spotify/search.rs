@@ -39,6 +39,29 @@ pub async fn find_best_youtube_match_fallback(
     spotify_duration_ms: u64,
     trace_id: u64,
 ) -> anyhow::Result<YtCandidate> {
+    let mut cands = find_best_youtube_candidates_fallback(
+        primary_artist,
+        artists_joined,
+        album_name,
+        title,
+        spotify_duration_ms,
+        trace_id,
+    )
+    .await?;
+    if cands.is_empty() {
+        return Err(anyhow!("No suitable YouTube match found for this track"));
+    }
+    Ok(cands.remove(0))
+}
+
+pub async fn find_best_youtube_candidates_fallback(
+    primary_artist: &str,
+    artists_joined: &str,
+    album_name: &str,
+    title: &str,
+    spotify_duration_ms: u64,
+    trace_id: u64,
+) -> anyhow::Result<Vec<YtCandidate>> {
     // Build candidate queries in priority order
     let mut queries: Vec<String> = Vec::new();
     let mut seen_queries = std::collections::HashSet::new();
@@ -87,7 +110,7 @@ pub async fn find_best_youtube_match_fallback(
                 "query" => query
             );
         }
-        match search_youtube_query(
+        match search_youtube_query_candidates(
             query,
             primary_artist,
             artists_joined,
@@ -97,7 +120,8 @@ pub async fn find_best_youtube_match_fallback(
         )
         .await
         {
-            Ok(cand) => return Ok(cand),
+            Ok(cands) if !cands.is_empty() => return Ok(cands),
+            Ok(_) => {}
             Err(e) => {
                 last_err = e;
             }
@@ -107,14 +131,14 @@ pub async fn find_best_youtube_match_fallback(
     Err(last_err)
 }
 
-async fn search_youtube_query(
+async fn search_youtube_query_candidates(
     query: &str,
     primary_artist: &str,
     artists_joined: &str,
     title: &str,
     spotify_duration_ms: u64,
     trace_id: u64,
-) -> anyhow::Result<YtCandidate> {
+) -> anyhow::Result<Vec<YtCandidate>> {
     let search_arg = format!("ytsearch5:{query}");
 
     log_ev!(
@@ -281,5 +305,5 @@ async fn search_youtube_query(
         "score" => best.score
     );
 
-    Ok(best)
+    Ok(candidates)
 }

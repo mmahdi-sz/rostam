@@ -113,8 +113,27 @@ pub async fn run_set_job(
 
     // ── Live ticker: updates progress counter and clock every 3s ──
     let done_idx = Arc::new(AtomicUsize::new(0));
-    // Current track title written by main loop before download.
-    let cur_name = Arc::new(Mutex::new(String::from("...")));
+    let initial_name = match &pending.items {
+        SetItems::Spotify(items) => {
+            if let Some(first) = items.first() {
+                if first.artist.is_empty() {
+                    first.title.clone()
+                } else {
+                    format!("{} - {}", first.artist, first.title)
+                }
+            } else {
+                String::from("...")
+            }
+        }
+        SetItems::Soundcloud(urls) => {
+            if let Some(first) = urls.first() {
+                sc_slug(first)
+            } else {
+                String::from("...")
+            }
+        }
+    };
+    let cur_name = Arc::new(Mutex::new(initial_name));
     let ticker_done_idx = done_idx.clone();
     let ticker_cur_name = cur_name.clone();
     let title = md_escape(&pending.title);
@@ -152,56 +171,105 @@ pub async fn run_set_job(
     } else {
         None
     };
-    let cores = cpu_guard
-        .as_ref()
-        .map(|g| g.cores().to_vec())
-        .unwrap_or_default();
+    let cores = Arc::new(
+        cpu_guard
+            .as_ref()
+            .map(|g| g.cores().to_vec())
+            .unwrap_or_default(),
+    );
+
+    const MAX_CONCURRENT_DOWNLOADS: usize = 3;
+    const MAX_IN_FLIGHT: usize = 4;
+
+    let dl_sem = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<(usize, tokio::task::JoinHandle<Option<Track>>)>(
+        MAX_IN_FLIGHT,
+    );
+
+    let producer_cancel = cancel.clone();
+    let producer_job_dir = job_dir.clone();
+    let producer_cores = cores.clone();
+    let producer_pending = pending.clone();
+
+    tokio::spawn(async move {
+        for idx in 0..total {
+            if producer_cancel.load(Ordering::SeqCst) {
+                break;
+            }
+
+            let task_dir = producer_job_dir.clone();
+            let task_cores = producer_cores.clone();
+            let task_cancel = producer_cancel.clone();
+            let task_dl_sem = dl_sem.clone();
+
+            let handle = match &producer_pending.items {
+                SetItems::Spotify(items) => {
+                    let item = items[idx].clone();
+                    tokio::spawn(async move {
+                        let _permit = match task_dl_sem.acquire().await {
+                            Ok(p) => p,
+                            Err(_) => return None,
+                        };
+                        if task_cancel.load(Ordering::SeqCst) {
+                            return None;
+                        }
+                        let stem = format!("t{:03}", idx + 1);
+                        fetch_spotify_track_file(
+                            &task_dir,
+                            &stem,
+                            &item,
+                            &task_cores,
+                            trace_id,
+                            &task_cancel,
+                        )
+                        .await
+                    })
+                }
+                SetItems::Soundcloud(urls) => {
+                    let url = urls[idx].clone();
+                    tokio::spawn(async move {
+                        let _permit = match task_dl_sem.acquire().await {
+                            Ok(p) => p,
+                            Err(_) => return None,
+                        };
+                        if task_cancel.load(Ordering::SeqCst) {
+                            return None;
+                        }
+                        let stem = format!("t{:03}", idx + 1);
+                        fetch_soundcloud_track_file(
+                            &task_dir,
+                            &stem,
+                            &url,
+                            user_id,
+                            trace_id,
+                            &task_cancel,
+                        )
+                        .await
+                    })
+                }
+            };
+
+            if tx.send((idx, handle)).await.is_err() {
+                break;
+            }
+        }
+    });
 
     let mut ready: Vec<Track> = Vec::new();
     let mut failed = 0usize;
     let mut cancelled = false;
 
-    for idx in 0..total {
+    while let Some((idx, handle)) = rx.recv().await {
         if cancel.load(Ordering::SeqCst) {
             cancelled = true;
+            handle.abort();
             break;
         }
-        let stem = format!("t{:03}", idx + 1);
-        // Spotify has title in advance; SoundCloud falls back to slug until metadata arrives.
-        {
-            let guess = match &pending.items {
-                SetItems::Spotify(items) => {
-                    if items[idx].artist.is_empty() {
-                        items[idx].title.clone()
-                    } else {
-                        format!("{} - {}", items[idx].artist, items[idx].title)
-                    }
-                }
-                SetItems::Soundcloud(urls) => sc_slug(&urls[idx]),
-            };
-            if let Ok(mut g) = cur_name.lock() {
-                *g = guess;
-            }
-        }
-        let track = match &pending.items {
-            SetItems::Spotify(items) => {
-                fetch_spotify_track_file(
-                    &job_dir,
-                    &stem,
-                    &items[idx],
-                    &cur_name,
-                    &cores,
-                    trace_id,
-                    &cancel,
-                )
-                .await
-            }
-            SetItems::Soundcloud(urls) => {
-                fetch_soundcloud_track_file(
-                    &job_dir, &stem, &urls[idx], &cur_name, user_id, trace_id, &cancel,
-                )
-                .await
-            }
+
+        let track = match handle.await {
+            Ok(Some(t)) => Some(t),
+            Ok(None) => None,
+            Err(_) => None,
         };
 
         let track = match track {
@@ -329,7 +397,6 @@ async fn fetch_spotify_track_file(
     job_dir: &std::path::Path,
     stem: &str,
     item: &crate::spotify::client::SpotifySetItem,
-    cur_name: &Arc<Mutex<String>>,
     cores: &[i32],
     trace_id: u64,
     cancel: &Arc<AtomicBool>,
@@ -341,15 +408,7 @@ async fn fetch_spotify_track_file(
         .await
         .ok()?;
 
-    if let Ok(mut g) = cur_name.lock() {
-        *g = if meta.artists_joined.is_empty() {
-            meta.title.clone()
-        } else {
-            format!("{} - {}", meta.artists_joined, meta.title)
-        };
-    }
-
-    let cand = crate::spotify::search::find_best_youtube_match_fallback(
+    let candidates = crate::spotify::search::find_best_youtube_candidates_fallback(
         &meta.primary_artist,
         &meta.artists_joined,
         &meta.album_name,
@@ -360,9 +419,32 @@ async fn fetch_spotify_track_file(
     .await
     .ok()?;
 
-    match run_yt_dlp_audio(job_dir, stem, &cand.webpage_url, cores, trace_id, cancel).await {
-        DlOutcome::Ok => {}
-        DlOutcome::Cancelled | DlOutcome::Failed => return None,
+    let mut dl_ok = false;
+    for cand in candidates.iter().take(3) {
+        if cancel.load(Ordering::SeqCst) {
+            return None;
+        }
+        match run_yt_dlp_audio(job_dir, stem, &cand.webpage_url, cores, trace_id, cancel).await {
+            DlOutcome::Ok => {
+                dl_ok = true;
+                break;
+            }
+            DlOutcome::Cancelled => return None,
+            DlOutcome::Failed => {
+                log_ev!(
+                    "ms",
+                    trace_id,
+                    "cand_dl_fail_retry_next",
+                    "url" => &cand.webpage_url,
+                    "stem" => stem
+                );
+                continue;
+            }
+        }
+    }
+
+    if !dl_ok {
+        return None;
     }
 
     let mp3 = job_dir.join(format!("{stem}.mp3"));
@@ -387,7 +469,6 @@ async fn fetch_soundcloud_track_file(
     job_dir: &std::path::Path,
     stem: &str,
     sc_url: &str,
-    cur_name: &Arc<Mutex<String>>,
     user_id: i64,
     trace_id: u64,
     cancel: &Arc<AtomicBool>,
@@ -396,13 +477,6 @@ async fn fetch_soundcloud_track_file(
         .await
         .ok()?;
 
-    if let Ok(mut g) = cur_name.lock() {
-        *g = if meta.artist.is_empty() {
-            meta.title.clone()
-        } else {
-            format!("{} - {}", meta.artist, meta.title)
-        };
-    }
     let mp3 = crate::soundcloud::handle::download_soundcloud_audio(
         job_dir, stem, sc_url, user_id, trace_id, cancel,
     )

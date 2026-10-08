@@ -527,40 +527,52 @@ pub async fn run_yt_dlp_audio(
                         || err_summary.to_ascii_lowercase().contains("http error 429")
                         || err_summary.to_ascii_lowercase().contains("403: forbidden");
 
-                    if is_403_or_bad && attempt < MAX_ATTEMPTS {
+                    let is_network_or_unavailable =
+                        err_summary.to_ascii_lowercase().contains("unavailable")
+                            || err_summary.contains("Connection refused")
+                            || err_summary.contains("Failed to establish a new connection")
+                            || err_summary.contains("Network is unreachable")
+                            || err_summary.to_ascii_lowercase().contains("timed out");
+
+                    let should_retry =
+                        (is_403_or_bad || is_network_or_unavailable) && attempt < MAX_ATTEMPTS;
+
+                    if should_retry {
                         if let Some(ref pool_arc) = pool_opt {
                             let mut pool = pool_arc.lock().await;
                             if let Some(ref spec) = current_cookie_spec {
-                                let cooled = pool.mark_cookie_cooldown(spec);
-                                let cookie_id_opt = pool.find_cookie_id(spec);
-                                log_ev!(
-                                    "sp",
-                                    trace_id,
-                                    "download_cookie_cooldown",
-                                    "cookie_spec" => spec,
-                                    "id" => cookie_id_opt.as_deref().unwrap_or("none"),
-                                    "cooled" => cooled.to_string()
-                                );
-                                if let Some(ref cookie_id) = cookie_id_opt {
-                                    if let Some(db_pool) = crate::stats::get_pool() {
-                                        if let Ok(client) = db_pool.get().await {
-                                            let entry = crate::cookie_pool::CooldownEntry {
-                                                cookie_id: cookie_id.clone(),
-                                                expire_at: std::time::SystemTime::now()
-                                                    + std::time::Duration::from_secs(30 * 60),
-                                            };
-                                            let _ = crate::database::postgresql::cookie_pool::save_cooldown(
-                                                &client, &entry,
-                                            )
-                                            .await;
+                                if is_403_or_bad {
+                                    let cooled = pool.mark_cookie_cooldown(spec);
+                                    let cookie_id_opt = pool.find_cookie_id(spec);
+                                    log_ev!(
+                                        "sp",
+                                        trace_id,
+                                        "download_cookie_cooldown",
+                                        "cookie_spec" => spec,
+                                        "id" => cookie_id_opt.as_deref().unwrap_or("none"),
+                                        "cooled" => cooled.to_string()
+                                    );
+                                    if let Some(ref cookie_id) = cookie_id_opt {
+                                        if let Some(db_pool) = crate::stats::get_pool() {
+                                            if let Ok(client) = db_pool.get().await {
+                                                let entry = crate::cookie_pool::CooldownEntry {
+                                                    cookie_id: cookie_id.clone(),
+                                                    expire_at: std::time::SystemTime::now()
+                                                        + std::time::Duration::from_secs(30 * 60),
+                                                };
+                                                let _ = crate::database::postgresql::cookie_pool::save_cooldown(
+                                                    &client, &entry,
+                                                )
+                                                .await;
+                                            }
                                         }
                                     }
+                                    crate::stats::record_error_global(
+                                        "spotify",
+                                        &format!("download_403_cooldown: {spec}"),
+                                    )
+                                    .await;
                                 }
-                                crate::stats::record_error_global(
-                                    "spotify",
-                                    &format!("download_403_cooldown: {spec}"),
-                                )
-                                .await;
                             }
                             if let Some(next) = pool.next_cookie_excluding(&tried) {
                                 tried.insert(next.id.clone());
@@ -570,6 +582,9 @@ pub async fn run_yt_dlp_audio(
                             }
                         }
                         cleanup_stem_files(job_dir, stem).await;
+                        if is_network_or_unavailable {
+                            tokio::time::sleep(Duration::from_millis(1500)).await;
+                        }
                         break false; // retry with next cookie
                     }
                     cleanup_stem_files(job_dir, stem).await;
