@@ -251,6 +251,19 @@ pub async fn handle_spotify_url(
         return Ok(());
     }
 
+    // Rename track.mp3 to real clean filename (e.g. Artist - Title.mp3)
+    let safe_name = crate::common::format::safe_music_filename(&meta.artists_joined, &meta.title);
+    let target_mp3 = job_dir.join(&safe_name);
+    let mp3_path = if target_mp3 != mp3_path {
+        if tokio::fs::rename(&mp3_path, &target_mp3).await.is_ok() {
+            target_mp3
+        } else {
+            mp3_path
+        }
+    } else {
+        mp3_path
+    };
+
     // ── STAGE 5: Upload Audio Message ────────────────────────────────────────
     log_ev!("sp", trace_id, "upload_enter", "file" => mp3_path.display().to_string());
     edit_status(t("spotify.uploading")).await;

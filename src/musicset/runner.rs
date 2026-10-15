@@ -272,7 +272,7 @@ pub async fn run_set_job(
             Err(_) => None,
         };
 
-        let track = match track {
+        let mut track = match track {
             Some(t) => t,
             None => {
                 if cancel.load(Ordering::SeqCst) {
@@ -285,6 +285,21 @@ pub async fn run_set_job(
                 continue;
             }
         };
+
+        // Rename downloaded file (e.g. t001.mp3) to real name (e.g. Artist - Title.mp3)
+        let safe_name = crate::common::format::safe_music_filename(&track.artist, &track.title);
+        let mut target_path = job_dir.join(&safe_name);
+        let mut counter = 2;
+        let base_stem = safe_name.strip_suffix(".mp3").unwrap_or(&safe_name);
+        while target_path.exists() && target_path != track.mp3 {
+            target_path = job_dir.join(format!("{base_stem} ({counter}).mp3"));
+            counter += 1;
+        }
+        if target_path != track.mp3 {
+            if tokio::fs::rename(&track.mp3, &target_path).await.is_ok() {
+                track.mp3 = target_path;
+            }
+        }
 
         if let Ok(mut g) = cur_name.lock() {
             *g = if track.artist.is_empty() {
@@ -343,7 +358,16 @@ pub async fn run_set_job(
         )
         .await;
         let ok = archive_and_upload(
-            &api, chat_id, user_id, trace_id, &job_dir, &ready, &cancel, &cores, &database,
+            &api,
+            chat_id,
+            user_id,
+            trace_id,
+            &job_dir,
+            &pending.title,
+            &ready,
+            &cancel,
+            &cores,
+            &database,
         )
         .await;
         if let Some(mut g) = cpu_guard.take() {
@@ -576,6 +600,7 @@ async fn archive_and_upload(
     user_id: i64,
     trace_id: u64,
     job_dir: &std::path::Path,
+    set_title: &str,
     tracks: &[Track],
     cancel: &Arc<AtomicBool>,
     cores: &[i32],
@@ -621,15 +646,37 @@ async fn archive_and_upload(
     };
     log_ev!("ms", trace_id, "archive_enter", "=>" => "ok", "parts" => result.output_paths.len());
 
+    let safe_base = crate::common::format::safe_archive_stem(set_title);
     let parts = result.output_paths.len();
-    for (i, path) in result.output_paths.iter().enumerate() {
+    let mut final_paths = Vec::with_capacity(parts);
+    for (i, p) in result.output_paths.iter().enumerate() {
+        let new_name = if parts == 1 {
+            format!("{safe_base}.7z")
+        } else {
+            format!("{safe_base}.7z.{:03}", i + 1)
+        };
+        let target = p.with_file_name(&new_name);
+        if target != *p {
+            if tokio::fs::rename(p, &target).await.is_ok() {
+                final_paths.push(target);
+                continue;
+            }
+        }
+        final_paths.push(p.clone());
+    }
+
+    for (i, path) in final_paths.iter().enumerate() {
         if cancel.load(Ordering::SeqCst) {
             return false;
         }
-        let caption = tf(
-            "musicset.part_caption",
-            &[("i", &(i + 1).to_string()), ("n", &parts.to_string())],
-        );
+        let caption = if parts > 1 {
+            tf(
+                "musicset.part_caption",
+                &[("i", &(i + 1).to_string()), ("n", &parts.to_string())],
+            )
+        } else {
+            format!("📦 *{}*", md_escape(set_title))
+        };
         let params = SendDocumentParams::builder()
             .chat_id(chat_id)
             .document(path.clone())

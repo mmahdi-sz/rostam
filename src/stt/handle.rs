@@ -762,12 +762,18 @@ pub async fn handle_stt_audio(
     }
 
     let cores_pin = cpu_guard.cores().to_vec();
+    let cancel_flag_transcribe = cancel_flag.clone();
     let transcribed = tokio::task::spawn_blocking(move || {
         // Pin from inside the blocking task; threads Vosk spawns inherit it.
         if !cores_pin.is_empty() {
             crate::moebius::cpu::pin_current_thread(&cores_pin, trace_id);
         }
-        vosk::transcribe(&config_clone, &audio_source).map_err(|e| e.to_string())
+        vosk::transcribe(
+            &config_clone,
+            &audio_source,
+            Some(&cancel_flag_transcribe),
+        )
+        .map_err(|e| e.to_string())
     })
     .await
     .unwrap_or_else(|e| Err(e.to_string()));

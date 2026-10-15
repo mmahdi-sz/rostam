@@ -313,6 +313,10 @@ mod tests {
             Some("test.mp4".to_string())
         );
         assert_eq!(
+            extract_content_disposition_filename("attachment; filename=Iran The Making of a War.mp4"),
+            Some("Iran The Making of a War.mp4".to_string())
+        );
+        assert_eq!(
             extract_content_disposition_filename(
                 "attachment; filename*=UTF-8''%D9%81%D8%A7%DB%8C%D9%84.mp4"
             ),

@@ -2,7 +2,11 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
-use frankenstein::{client_reqwest::Bot, methods::SendDocumentParams};
+use frankenstein::{
+    client_reqwest::Bot,
+    input_file::{FileUpload, InputFile},
+    methods::{SendDocumentParams, SendVideoParams},
+};
 
 use crate::common::cpu_broker::CpuBrokerGuard;
 use crate::common::dir::TempDirGuard;
@@ -76,10 +80,11 @@ pub(crate) async fn run_surge_download(
                     "percent" => percent, "speed" => fmt_speed(d.speed));
                 if percent != last_percent {
                     last_percent = percent;
+                    let display_name = rename_to.as_deref().unwrap_or(&d.filename);
                     let body = tf(
                         "surge.progress",
                         &[
-                            ("name", &d.filename),
+                            ("name", display_name),
                             ("bar", &build_bar(percent as f32)),
                             ("percent", &percent.to_string()),
                             ("downloaded", &fmt_bytes(d.downloaded)),
@@ -112,21 +117,34 @@ pub(crate) async fn run_surge_download(
     log_ev!("surge_dl", trace_id, "download_done", "filename" => &detail.filename, "path" => file_path.display(),
         "size" => fmt_bytes(detail.downloaded), "avg_speed" => fmt_speed(detail.avg_speed));
     edit_status(&api, chat_id, message_id, &t("surge.done")).await;
-    let file_path = match rename_to {
+    let target_name = match rename_to {
         Some(new_name) => {
-            let renamed = file_path.with_file_name(&new_name);
-            match tokio::fs::rename(&file_path, &renamed).await {
-                Ok(()) => {
-                    log_ev!("surge_dl", trace_id, "renamed", "to" => &new_name);
-                    renamed
+            if !new_name.contains('.') {
+                if let Some(ext) = Path::new(&detail.filename).extension().and_then(|e| e.to_str()) {
+                    format!("{new_name}.{ext}")
+                } else {
+                    new_name
                 }
-                Err(e) => {
-                    log_ev!("surge_dl", trace_id, "rename_failed", "=>" => format!("fail err={e}"));
-                    file_path
-                }
+            } else {
+                new_name
             }
         }
-        None => file_path,
+        None => detail.filename.clone(),
+    };
+    let file_path = if target_name != detail.filename {
+        let renamed = file_path.with_file_name(&target_name);
+        match tokio::fs::rename(&file_path, &renamed).await {
+            Ok(()) => {
+                log_ev!("surge_dl", trace_id, "renamed", "to" => &target_name);
+                renamed
+            }
+            Err(e) => {
+                log_ev!("surge_dl", trace_id, "rename_failed", "=>" => format!("fail err={e}"));
+                file_path
+            }
+        }
+    } else {
+        file_path
     };
     let upload_start = std::time::Instant::now();
     let result = if detail.downloaded <= MAX_PART_BYTES {
@@ -190,11 +208,72 @@ pub(crate) async fn send_single_file(
     message_id: i32,
     path: &Path,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use crate::bot::send_file_with_upload_ticker;
+
+    // If file is an H.264 video, send as video with streaming and thumbnail
+    if let Ok(meta) = crate::common::ffmpeg::probe_metadata(path).await {
+        let codec = meta.codec.to_lowercase();
+        let is_h264 = (codec == "h264" || codec == "avc1") && meta.width > 0 && meta.height > 0;
+        if is_h264 {
+            let thumb_path = path.with_extension("thumb.jpg");
+            let _ = tokio::process::Command::new(crate::config::ffmpeg_path())
+                .args(["-y", "-hide_banner", "-nostdin", "-ss", "00:00:01", "-i"])
+                .arg(path)
+                .args(["-vframes", "1", "-q:v", "3"])
+                .arg(&thumb_path)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .await;
+
+            let mut params = SendVideoParams::builder()
+                .chat_id(chat_id)
+                .video(path.to_path_buf())
+                .supports_streaming(true)
+                .build();
+            if meta.width > 0 {
+                params.width = Some(meta.width);
+            }
+            if meta.height > 0 {
+                params.height = Some(meta.height);
+            }
+            if meta.duration_secs > 0 {
+                params.duration = Some(meta.duration_secs as u32);
+            }
+            if thumb_path.exists()
+                && std::fs::metadata(&thumb_path)
+                    .map(|m| m.len() > 0)
+                    .unwrap_or(false)
+            {
+                params.thumbnail = Some(FileUpload::InputFile(InputFile {
+                    path: thumb_path.clone(),
+                }));
+            }
+
+            let video_res = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                api,
+                "sendVideo",
+                &params,
+                path,
+                chat_id,
+                message_id,
+                "transfer.stage.sending_video",
+                None,
+            )
+            .await;
+
+            let _ = tokio::fs::remove_file(&thumb_path).await;
+
+            if video_res.is_ok() {
+                return Ok(());
+            }
+        }
+    }
+
     let params = SendDocumentParams::builder()
         .chat_id(chat_id)
         .document(path.to_path_buf())
         .build();
-    use crate::bot::send_file_with_upload_ticker;
     send_file_with_upload_ticker::<_, frankenstein::types::Message>(
         api,
         "sendDocument",

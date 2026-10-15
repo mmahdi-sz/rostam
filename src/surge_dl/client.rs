@@ -8,6 +8,9 @@ pub(crate) fn surge_cmd(args: &[&str]) -> tokio::process::Command {
     cmd.args(args)
         .arg("--host")
         .arg(crate::config::surge_host());
+    if let Some(token) = crate::config::surge_token() {
+        cmd.arg("--token").arg(token);
+    }
     cmd
 }
 

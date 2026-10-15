@@ -159,6 +159,11 @@ pub fn surge_host() -> String {
     config_value("SURGE_HOST").unwrap_or_else(|| "127.0.0.1:1700".to_string())
 }
 
+/// Optional auth token for the `surge server` daemon.
+pub fn surge_token() -> Option<String> {
+    config_value("SURGE_TOKEN")
+}
+
 /// Root directory containing Firefox profiles used for cookie discovery
 /// (`~/.mozilla/firefox` equivalent). Falls back to `$HOME/.mozilla/firefox`
 /// when unset; if `$HOME` is also unset, cookie discovery finds no profiles.

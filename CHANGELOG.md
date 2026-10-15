@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.1] - 2026-10-15
+
+### Fixed
+- **STT Audio Chunking with FireRedVAD (`stt`)**:
+  - Integrated `wavekat-vad` (FireRedVAD backend running on ONNX Runtime) in `src/stt/vad.rs` to detect natural silence intervals (prob < 0.35) and slice audio into 30–45s chunks.
+  - Reset Vosk recognizer after each chunk, eliminating the FST lattice explosion on long audio files that previously consumed 10+ GB RAM and hung the bot process.
+  - Added cancellation flag propagation into `vosk::transcribe` so user cancellation (`stt:cancel`) halts transcription immediately between chunks without consuming CPU.
+  - Added unit test suite covering short-audio bypass, fallback chunking, and live VAD splitting.
+
+## [2.7.0] - 2026-10-09
+
+### Added
+- **Surge DL H.264 Video Detection & Native Video Streaming (`surge_dl`)**:
+  - Probed media metadata via `crate::common::ffmpeg::probe_metadata` before upload in `src/surge_dl/engine.rs`.
+  - When video stream codec is H.264 (`h264` / `avc1`), uploaded using `sendVideo` with `supports_streaming(true)`, video dimensions, duration, and an FFmpeg-extracted video thumbnail instead of generic document upload.
+  - Added graceful fallback to `sendDocument` if `sendVideo` fails or if the stream is non-H.264 / non-video.
+- **Surge DL Daemon Auth Token Support (`config`, `surge_dl`)**:
+  - Added `SURGE_TOKEN` environment variable support in `src/config.rs`.
+  - Injected `--token` into all Surge CLI invocations in `src/surge_dl/client.rs` to allow non-root dev processes to communicate with the root-owned daemon, eliminating `401 Unauthorized` errors.
+- **Human-Readable Track & Archive Naming (`common`, `musicset`, `spotify`, `soundcloud`)**:
+  - Added `safe_music_filename` and `safe_archive_stem` in `src/common/format.rs` with illegal character sanitization and UTF-8 byte boundary truncation.
+  - Automatically renamed downloaded tracks in Spotify, SoundCloud, and MusicSet to clean `Artist - Title.mp3` filenames before upload.
+  - Renamed MusicSet archive outputs to `{Album Name}.7z` or `{Album Name}.7z.{part}` with localized single-archive captions.
+
+### Fixed
+- **Surge DL Original Filename Retention & Progress Display (`surge_dl`)**:
+  - Preserved the probed `Content-Disposition` / URL filename when confirming download with original name in `handle_surge_confirm_original` instead of passing `None`.
+  - Synced live progress ticker in `src/surge_dl/engine.rs` to display the active target filename rather than raw daemon task identifiers.
+  - Added automatic post-download file renaming to the target filename with preserved extension.
+  - Added unit test in `src/surge_dl/probe.rs` verifying unquoted `Content-Disposition` header parsing.
+- **FileCompress Single Volume 7z Suffix Strip (`filecompress`)**:
+  - Automatically stripped redundant `.001` suffix when 7z generates a single archive part, renaming `archive.7z.001` to `archive.7z`.
+
 ## [2.6.8] - 2026-09-30
 
 ### Fixed

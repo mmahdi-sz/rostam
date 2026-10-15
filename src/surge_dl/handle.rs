@@ -257,12 +257,12 @@ pub async fn handle_surge_confirm_original(
 ) {
     let trace_id = next_trace_id();
     log_actor_id!("surge_dl", trace_id, user_id, "clicked" => CB_SURGE_CONFIRM_ORIGINAL);
-    let FlowState::AwaitingSurgeConfirm { url, .. } = flow_manager.get(user_id) else {
+    let FlowState::AwaitingSurgeConfirm { url, filename } = flow_manager.get(user_id) else {
         log_ev!("surge_dl", trace_id, "confirm_stale", "=>" => "ignored");
         return;
     };
     flow_manager.clear(user_id);
-    start_surge_job(api, chat_id, message_id, user_id, url, None, trace_id).await;
+    start_surge_job(api, chat_id, message_id, user_id, url, Some(filename), trace_id).await;
 }
 
 pub async fn handle_surge_confirm_rename(

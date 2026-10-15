@@ -181,6 +181,19 @@ pub async fn handle_soundcloud_url(
         return Ok(());
     }
 
+    // Rename track.mp3 to real clean filename (e.g. Artist - Title.mp3)
+    let safe_name = crate::common::format::safe_music_filename(&meta.artist, &meta.title);
+    let final_mp3_path = job_dir.join(&safe_name);
+    let target_mp3 = if final_mp3_path != target_mp3 {
+        if tokio::fs::rename(&target_mp3, &final_mp3_path).await.is_ok() {
+            final_mp3_path
+        } else {
+            target_mp3
+        }
+    } else {
+        target_mp3
+    };
+
     // ── STAGE 5: Upload Audio Message ────────────────────────────────────────
     log_ev!("sc", trace_id, "upload_enter", "file" => target_mp3.display().to_string());
     edit_status(t("soundcloud.uploading")).await;

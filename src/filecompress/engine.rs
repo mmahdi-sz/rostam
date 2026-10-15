@@ -354,6 +354,21 @@ fn collect_outputs(work_dir: &Path, archive_base: &str, config: &CompressConfig)
     }
 
     files.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+
+    // If there is only 1 volume part generated (e.g. archive.7z.001),
+    // rename it to the base archive name (archive.7z) so it is not treated as a multi-part split.
+    if files.len() == 1 {
+        let single = files[0].clone();
+        if let Some(fname) = single.file_name().and_then(|n| n.to_str()) {
+            if let Some(stem) = fname.strip_suffix(".001") {
+                let clean_target = single.with_file_name(stem);
+                if std::fs::rename(&single, &clean_target).is_ok() {
+                    files[0] = clean_target;
+                }
+            }
+        }
+    }
+
     files
 }
 
@@ -509,6 +524,40 @@ mod tests {
         let out = collect_outputs(&dir, "archive", &cfg);
         assert_eq!(out.len(), 1);
         assert!(out[0].ends_with("archive.tar.zst"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_collect_outputs_single_7z_strip_001() {
+        let dir = std::env::temp_dir().join(format!("fc_7z_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("archive.7z.001"), b"7z data").unwrap();
+        let cfg = CompressConfig {
+            fmt: CompressFmt::SevenZ,
+            ..CompressConfig::default()
+        };
+        let out = collect_outputs(&dir, "archive", &cfg);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].ends_with("archive.7z"));
+        assert!(!dir.join("archive.7z.001").exists());
+        assert!(dir.join("archive.7z").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_collect_outputs_multi_7z_keeps_001() {
+        let dir = std::env::temp_dir().join(format!("fc_7z_multi_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("archive.7z.001"), b"7z data part 1").unwrap();
+        std::fs::write(dir.join("archive.7z.002"), b"7z data part 2").unwrap();
+        let cfg = CompressConfig {
+            fmt: CompressFmt::SevenZ,
+            ..CompressConfig::default()
+        };
+        let out = collect_outputs(&dir, "archive", &cfg);
+        assert_eq!(out.len(), 2);
+        assert!(out[0].ends_with("archive.7z.001"));
+        assert!(out[1].ends_with("archive.7z.002"));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

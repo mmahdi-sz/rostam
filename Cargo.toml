@@ -32,6 +32,7 @@ futures = "0.3"
 rand = "0.8"
 hound = "3.5"
 vosk = "0.3"
+wavekat-vad = { version = "0.1.17", default-features = false, features = ["firered"] }
 libc = "0.2"
 redis = { version = "0.27", features = ["tokio-comp"] }
 ort = "=2.0.0-rc.12"
@@ -62,6 +63,7 @@ dashmap = "6"
 
 [profile.dev]
 opt-level = 0
+debug = 0
 
 [features]
 axum = ["dep:axum"]

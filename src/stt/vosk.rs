@@ -1,6 +1,9 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::stt::types::SttConfig;
+use crate::stt::vad;
 
 /// Reads 16000Hz mono 16-bit PCM samples from a WAV file, correctly handling all RIFF chunks.
 pub fn read_wav_samples(wav_path: &str) -> crate::error::Result<Vec<i16>> {
@@ -25,7 +28,23 @@ pub fn read_wav_samples(wav_path: &str) -> crate::error::Result<Vec<i16>> {
     Ok(samples)
 }
 
-pub fn transcribe(config: &SttConfig, wav_path: &str) -> crate::error::Result<(String, f64)> {
+pub fn transcribe(
+    config: &SttConfig,
+    wav_path: &str,
+    cancel_flag: Option<&Arc<AtomicBool>>,
+) -> crate::error::Result<(String, f64)> {
+    let samples = read_wav_samples(wav_path)?;
+
+    // Check cancellation before heavy work
+    if let Some(flag) = cancel_flag {
+        if flag.load(Ordering::Relaxed) {
+            anyhow::bail!("STT cancelled before Vosk transcription");
+        }
+    }
+
+    // Split audio using FireRedVAD (chunked at silence to prevent memory explosion)
+    let chunks = vad::get_speech_chunks(&samples, 16000, cancel_flag);
+
     let model_dir = config.model_path("files/models/vosk");
 
     let model =
@@ -34,27 +53,41 @@ pub fn transcribe(config: &SttConfig, wav_path: &str) -> crate::error::Result<(S
     let mut recognizer = vosk::Recognizer::new(&model, 16000.0)
         .ok_or_else(|| anyhow::anyhow!("Vosk Recognizer creation failed"))?;
 
-    let samples = read_wav_samples(wav_path)?;
-
     recognizer.set_words(true);
 
     let start = Instant::now();
-    for chunk in samples.chunks(8000) {
-        if let Ok(state) = recognizer.accept_waveform(chunk) {
-            match state {
-                vosk::DecodingState::Finalized => {
-                    let _ = recognizer.partial_result();
-                }
-                vosk::DecodingState::Running | vosk::DecodingState::Failed => {}
+    let mut text_parts = Vec::new();
+
+    for (start_idx, end_idx) in chunks {
+        if let Some(flag) = cancel_flag {
+            if flag.load(Ordering::Relaxed) {
+                anyhow::bail!("STT cancelled during Vosk transcription");
             }
         }
+
+        let chunk = &samples[start_idx..end_idx];
+        for sub_chunk in chunk.chunks(8000) {
+            if let Ok(state) = recognizer.accept_waveform(sub_chunk) {
+                match state {
+                    vosk::DecodingState::Finalized => {
+                        let _ = recognizer.partial_result();
+                    }
+                    vosk::DecodingState::Running | vosk::DecodingState::Failed => {}
+                }
+            }
+        }
+
+        let result = recognizer.final_result();
+        if let Some(single) = result.single() {
+            let trimmed = single.text.trim();
+            if !trimmed.is_empty() {
+                text_parts.push(trimmed.to_string());
+            }
+        }
+        recognizer.reset();
     }
 
-    let result = recognizer.final_result();
-    let text = result
-        .single()
-        .map(|s| s.text.to_string())
-        .unwrap_or_default();
+    let text = text_parts.join(" ");
     let elapsed = start.elapsed().as_secs_f64();
 
     Ok((text, elapsed))

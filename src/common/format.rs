@@ -48,6 +48,71 @@ pub fn fmt_secs(secs: i64) -> String {
     }
 }
 
+/// Create a clean, safe OS filename for a music track (e.g. "Artist - Title.mp3").
+/// Replaces illegal filesystem characters (/ \ : * ? " < > | \0) with spaces,
+/// collapses whitespace, and bounds UTF-8 byte length to prevent filesystem errors.
+pub fn safe_music_filename(artist: &str, title: &str) -> String {
+    let raw = if artist.trim().is_empty() {
+        title.trim().to_string()
+    } else if title.trim().is_empty() {
+        artist.trim().to_string()
+    } else {
+        format!("{} - {}", artist.trim(), title.trim())
+    };
+
+    let mut clean = String::with_capacity(raw.len());
+    for c in raw.chars() {
+        match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\0' => clean.push(' '),
+            _ => clean.push(c),
+        }
+    }
+    let normalized = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+    let base = if normalized.is_empty() {
+        "track".to_string()
+    } else {
+        let mut byte_count = 0;
+        let mut cutoff = normalized.len();
+        for (idx, ch) in normalized.char_indices() {
+            let ch_len = ch.len_utf8();
+            if byte_count + ch_len > 180 {
+                cutoff = idx;
+                break;
+            }
+            byte_count += ch_len;
+        }
+        normalized[..cutoff].trim_end().to_string()
+    };
+    format!("{base}.mp3")
+}
+
+/// Create a clean, safe OS base filename for an archive (e.g. "Album Name").
+pub fn safe_archive_stem(title: &str) -> String {
+    let mut clean = String::with_capacity(title.len());
+    for c in title.chars() {
+        match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\0' => clean.push(' '),
+            _ => clean.push(c),
+        }
+    }
+    let normalized = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        "archive".to_string()
+    } else {
+        let mut byte_count = 0;
+        let mut cutoff = normalized.len();
+        for (idx, ch) in normalized.char_indices() {
+            let ch_len = ch.len_utf8();
+            if byte_count + ch_len > 100 {
+                cutoff = idx;
+                break;
+            }
+            byte_count += ch_len;
+        }
+        normalized[..cutoff].trim_end().to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -65,5 +130,31 @@ mod tests {
         assert_eq!(format_clock(45), "00:45");
         assert_eq!(format_clock(65), "01:05");
         assert_eq!(format_clock(3665), "01:01:05");
+    }
+
+    #[test]
+    fn test_safe_music_filename() {
+        assert_eq!(
+            safe_music_filename("Shadmehr Aghili", "Taghdir"),
+            "Shadmehr Aghili - Taghdir.mp3"
+        );
+        assert_eq!(
+            safe_music_filename("", "Bohemian Rhapsody"),
+            "Bohemian Rhapsody.mp3"
+        );
+        assert_eq!(
+            safe_music_filename("AC/DC", "Back in Black: Special*Edition?"),
+            "AC DC - Back in Black Special Edition.mp3"
+        );
+        assert_eq!(safe_music_filename("", ""), "track.mp3");
+    }
+
+    #[test]
+    fn test_safe_archive_stem() {
+        assert_eq!(
+            safe_archive_stem("The Dark Side of the Moon: Remastered"),
+            "The Dark Side of the Moon Remastered"
+        );
+        assert_eq!(safe_archive_stem(""), "archive");
     }
 }
