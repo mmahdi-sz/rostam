@@ -13,6 +13,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   - Reset Vosk recognizer after each chunk, eliminating the FST lattice explosion on long audio files that previously consumed 10+ GB RAM and hung the bot process.
   - Added cancellation flag propagation into `vosk::transcribe` so user cancellation (`stt:cancel`) halts transcription immediately between chunks without consuming CPU.
   - Added unit test suite covering short-audio bypass, fallback chunking, and live VAD splitting.
+- **YouTube Cookie Auto-Blacklisting (`cookie_pool`, `youtube`)**:
+  - Added `mark_bad_cookie` in `src/cookie_pool/pool.rs` to automatically quarantine bot-flagged cookies into a 30-day cooldown.
+  - Persisted bad cookie status to PostgreSQL `cookie_pool_cooldowns` across all fetch and download paths (`handle.rs`, `single.rs`, `playlist.rs`).
+- **CI & Security Audit Compliance (`ci`, `security`)**:
+  - Upgraded `rustls` to `0.23.46` and `quinn-proto` to `0.11.19`, resolving 9 RUSTSEC vulnerability advisories in `cargo audit`.
+  - Fixed clippy lints (`manual_range_contains`, `let_unit_value`, `manual_c_str_literals`) and enforced `cargo fmt` across the repository.
+- **Broadcast Status Redundant Edits (`admin`)**:
+  - Suppressed identical status edits during user broadcasts to eliminate Telegram `message is not modified` API errors.
 
 ## [2.7.0] - 2026-10-09
 
