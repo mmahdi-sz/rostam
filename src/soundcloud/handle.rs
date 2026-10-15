@@ -185,7 +185,10 @@ pub async fn handle_soundcloud_url(
     let safe_name = crate::common::format::safe_music_filename(&meta.artist, &meta.title);
     let final_mp3_path = job_dir.join(&safe_name);
     let target_mp3 = if final_mp3_path != target_mp3 {
-        if tokio::fs::rename(&target_mp3, &final_mp3_path).await.is_ok() {
+        if tokio::fs::rename(&target_mp3, &final_mp3_path)
+            .await
+            .is_ok()
+        {
             final_mp3_path
         } else {
             target_mp3

@@ -87,7 +87,7 @@ pub fn trim_memory() {
     }
 
     unsafe {
-        let tcache_cmd = b"thread.tcache.flush\0".as_ptr() as *const libc::c_char;
+        let tcache_cmd = c"thread.tcache.flush".as_ptr();
         je_mallctl(
             tcache_cmd,
             std::ptr::null_mut(),
@@ -96,7 +96,7 @@ pub fn trim_memory() {
             0,
         );
 
-        let purge_cmd = b"arena.4096.purge\0".as_ptr() as *const libc::c_char;
+        let purge_cmd = c"arena.4096.purge".as_ptr();
         je_mallctl(
             purge_cmd,
             std::ptr::null_mut(),

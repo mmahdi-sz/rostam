@@ -161,6 +161,31 @@ impl CookiePool {
         self.mark_rate_limited(&cookie_id)
     }
 
+    /// Mark a broken/bot-flagged cookie so it is excluded from pool for 30 days.
+    pub fn mark_bad_cookie(&mut self, spec_or_id: &str) -> Option<String> {
+        let cookie_id = self
+            .find_cookie_id(spec_or_id)
+            .unwrap_or_else(|| spec_or_id.to_string());
+        self.cleanup_expired_cooldowns();
+        let expire_at = SystemTime::now() + Duration::from_secs(30 * 24 * 3600);
+        if let Some(entry) = self
+            .cooldown_list
+            .iter_mut()
+            .find(|e| e.cookie_id == cookie_id)
+        {
+            entry.expire_at = expire_at;
+            return Some(cookie_id);
+        }
+        if self.cooldown_list.len() < self.available_cookies.len() {
+            self.cooldown_list.push(CooldownEntry {
+                cookie_id: cookie_id.clone(),
+                expire_at,
+            });
+            return Some(cookie_id);
+        }
+        None
+    }
+
     pub fn mark_rate_limited(&mut self, cookie_id: &str) -> bool {
         self.cleanup_expired_cooldowns();
         if self.cooldown_list.iter().any(|e| e.cookie_id == cookie_id) {

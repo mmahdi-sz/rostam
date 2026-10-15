@@ -349,15 +349,23 @@ pub(crate) async fn run_download(
 
         if is_403_or_bad && attempt + 1 < max_attempts {
             if let Some(cookie_pool) = cookie_pool_opt.as_ref() {
+                let is_bad = matches!(
+                    classification,
+                    crate::youtube::YtdlpErrorClassification::BadCookie(_)
+                );
                 let mut pool = cookie_pool.lock().await;
-                let cooled = pool.mark_cookie_cooldown(&current_cookie_spec);
+                let cooled = if is_bad {
+                    pool.mark_bad_cookie(&current_cookie_spec).is_some()
+                } else {
+                    pool.mark_cookie_cooldown(&current_cookie_spec)
+                };
                 let cookie_id_opt = pool.find_cookie_id(&current_cookie_spec);
 
                 log_trace(
                     trace_id,
                     "download_cookie_cooldown",
                     &format!(
-                        "cookie_spec={current_cookie_spec} id={:?} cooled={cooled}",
+                        "cookie_spec={current_cookie_spec} id={:?} cooled={cooled} is_bad={is_bad}",
                         cookie_id_opt
                     ),
                 );
@@ -365,10 +373,11 @@ pub(crate) async fn run_download(
                 if let Some(ref cookie_id) = cookie_id_opt {
                     if let Some(db_pool) = stats::get_pool() {
                         if let Ok(client) = db_pool.get().await {
+                            let duration_secs = if is_bad { 30 * 24 * 3600 } else { 30 * 60 };
                             let entry = crate::cookie_pool::CooldownEntry {
                                 cookie_id: cookie_id.clone(),
                                 expire_at: std::time::SystemTime::now()
-                                    + std::time::Duration::from_secs(30 * 60),
+                                    + std::time::Duration::from_secs(duration_secs),
                             };
                             let _ = crate::database::postgresql::cookie_pool::save_cooldown(
                                 &client, &entry,

@@ -120,7 +120,10 @@ pub(crate) async fn run_surge_download(
     let target_name = match rename_to {
         Some(new_name) => {
             if !new_name.contains('.') {
-                if let Some(ext) = Path::new(&detail.filename).extension().and_then(|e| e.to_str()) {
+                if let Some(ext) = Path::new(&detail.filename)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                {
                     format!("{new_name}.{ext}")
                 } else {
                     new_name

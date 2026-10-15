@@ -262,7 +262,16 @@ pub async fn handle_surge_confirm_original(
         return;
     };
     flow_manager.clear(user_id);
-    start_surge_job(api, chat_id, message_id, user_id, url, Some(filename), trace_id).await;
+    start_surge_job(
+        api,
+        chat_id,
+        message_id,
+        user_id,
+        url,
+        Some(filename),
+        trace_id,
+    )
+    .await;
 }
 
 pub async fn handle_surge_confirm_rename(

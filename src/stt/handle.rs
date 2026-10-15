@@ -768,12 +768,8 @@ pub async fn handle_stt_audio(
         if !cores_pin.is_empty() {
             crate::moebius::cpu::pin_current_thread(&cores_pin, trace_id);
         }
-        vosk::transcribe(
-            &config_clone,
-            &audio_source,
-            Some(&cancel_flag_transcribe),
-        )
-        .map_err(|e| e.to_string())
+        vosk::transcribe(&config_clone, &audio_source, Some(&cancel_flag_transcribe))
+            .map_err(|e| e.to_string())
     })
     .await
     .unwrap_or_else(|e| Err(e.to_string()));

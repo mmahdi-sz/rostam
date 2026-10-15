@@ -338,12 +338,32 @@ pub async fn handle_youtube_url(
             }
             Err(FetchError::BadCookie(msg)) => {
                 crate::stats::record_error_global("youtube", &format!("bad_cookie: {msg}")).await;
-                eprintln!("bad cookie {}: {msg}; trying next", cookie.id);
+                eprintln!(
+                    "bad cookie {}: {msg}; cooling down and trying next",
+                    cookie.id
+                );
                 log_trace(
                     trace_id,
                     "fetch_bad_cookie",
                     &format!("cookie_id={} error={msg}", cookie.id),
                 );
+                {
+                    let mut pool_guard = cookie_pool.lock().await;
+                    pool_guard.mark_bad_cookie(&cookie.id);
+                }
+                if let Some(db_pool) = crate::stats::get_pool() {
+                    if let Ok(client) = db_pool.get().await {
+                        let entry = crate::cookie_pool::CooldownEntry {
+                            cookie_id: cookie.id.clone(),
+                            expire_at: std::time::SystemTime::now()
+                                + std::time::Duration::from_secs(30 * 24 * 3600),
+                        };
+                        let _ = crate::database::postgresql::cookie_pool::save_cooldown(
+                            &client, &entry,
+                        )
+                        .await;
+                    }
+                }
                 continue;
             }
             Err(FetchError::MembersOnly) => {

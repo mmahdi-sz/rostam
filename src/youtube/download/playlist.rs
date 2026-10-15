@@ -339,6 +339,23 @@ async fn download_single_playlist_item_with_retry(
                     crate::youtube::YtdlpErrorClassification::BadCookie(_)
                     | crate::youtube::YtdlpErrorClassification::AgeRestricted(_) => {
                         let mut pool = cookie_pool.lock().await;
+                        let cookie_id_opt = pool.mark_bad_cookie(current_cookie_spec);
+                        if let Some(ref cid) = cookie_id_opt {
+                            if let Some(db_pool) = stats::get_pool() {
+                                if let Ok(client) = db_pool.get().await {
+                                    let entry = crate::cookie_pool::CooldownEntry {
+                                        cookie_id: cid.clone(),
+                                        expire_at: std::time::SystemTime::now()
+                                            + std::time::Duration::from_secs(30 * 24 * 3600),
+                                    };
+                                    let _ =
+                                        crate::database::postgresql::cookie_pool::save_cooldown(
+                                            &client, &entry,
+                                        )
+                                        .await;
+                                }
+                            }
+                        }
                         if let Some(next) = pool.next_cookie_excluding(&tried) {
                             tried.insert(next.id.clone());
                             *current_cookie_spec = next.yt_dlp_browser_spec;

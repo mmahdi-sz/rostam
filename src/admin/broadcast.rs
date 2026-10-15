@@ -163,6 +163,7 @@ pub fn spawn_broadcast_job(
         let mut success_count = 0i64;
         let mut _blocked_count = 0i64;
         let mut last_update_time = std::time::Instant::now();
+        let mut last_status_text = initial_text;
 
         for (idx, &uid) in user_ids.iter().enumerate() {
             let send_res: Result<i32, frankenstein::Error> = match mode {
@@ -226,11 +227,22 @@ pub fn spawn_broadcast_job(
                     let progress_text =
                         format_broadcast_status(mode, processed, total, elapsed_secs);
 
-                    if let Err(e) =
-                        crate::bot::edit_text_md(&api, admin_chat_id, msg_id, &progress_text, None)
-                            .await
-                    {
-                        eprintln!("[broadcast] failed to edit status message: {e:?}");
+                    if progress_text != last_status_text {
+                        if let Err(e) = crate::bot::edit_text_md(
+                            &api,
+                            admin_chat_id,
+                            msg_id,
+                            &progress_text,
+                            None,
+                        )
+                        .await
+                        {
+                            let err_msg = e.to_string();
+                            if !err_msg.contains("message is not modified") {
+                                eprintln!("[broadcast] failed to edit status message: {e:?}");
+                            }
+                        }
+                        last_status_text = progress_text;
                     }
                     last_update_time = now;
                 }

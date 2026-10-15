@@ -1,8 +1,8 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{info, warn};
-use wavekat_vad::backends::firered::FireRedVad;
 use wavekat_vad::VoiceActivityDetector;
+use wavekat_vad::backends::firered::FireRedVad;
 
 /// Finds split points in audio using FireRedVAD to avoid Vosk lattice explosion on long files.
 ///
@@ -104,7 +104,7 @@ fn split_with_vad(
                     best_silence_point = None;
                     best_silence_prob = 1.0;
                     consecutive_silence_frames = 0;
-                    let _ = vad.reset();
+                    vad.reset();
                 }
             }
         }
@@ -170,7 +170,7 @@ mod tests {
         let mut samples = Vec::with_capacity(16000 * 60);
         for i in 0..(16000 * 60) {
             let t = i as f64 / 16000.0;
-            if t >= 32.0 && t <= 36.0 {
+            if (32.0..=36.0).contains(&t) {
                 samples.push(0i16);
             } else {
                 // 440Hz sine wave
@@ -181,7 +181,11 @@ mod tests {
 
         let chunks = get_speech_chunks(&samples, 16000, None);
         // Should have split into at least 2 chunks around the silence
-        assert!(chunks.len() >= 2, "Expected multiple chunks, got {:?}", chunks);
+        assert!(
+            chunks.len() >= 2,
+            "Expected multiple chunks, got {:?}",
+            chunks
+        );
         println!("VAD chunks generated: {:?}", chunks);
     }
 }
