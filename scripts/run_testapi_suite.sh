@@ -11,7 +11,7 @@ BASE_URL="http://127.0.0.1:$PORT"
 redis-cli del "cpu:reserved" "cpu:queue" >/dev/null 2>&1 || true
 
 echo "Building dev mode..."
-cargo build --features testapi
+cargo build --features testapi -j 8
 
 echo "Starting test API server..."
 TESTAPI_ENABLED=1 BOT_API_BASE_URL="http://127.0.0.1:$PORT/bot" ./target/debug/rostam-dev > testapi.log 2>&1 &
