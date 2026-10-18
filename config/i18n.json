@@ -1162,7 +1162,9 @@
         "download_failed": "دانلود با مشکل مواجه شد، دوباره امتحان کن.",
         "send_failed": "فایل دانلود شد ولی ارسالش به مشکل خورد، دوباره امتحان کن.",
         "invalid_name": "این اسم فایل معتبر نیست، یک اسم دیگه بفرست.",
-        "too_large": "حجم این فایل بیشتر از حد مجاز دیسک سرور است (حداکثر {max})."
+        "too_large": "حجم این فایل بیشتر از حد مجاز دیسک سرور است (حداکثر {max}).",
+        "cloudflare_captcha": "❌ این لینک توسط سیستم امنیتی Cloudflare مسدود شده است (کپچا) و امکان دانلود خودکار آن وجود ندارد. لطفاً از یک لینک مستقیم دیگر استفاده کنید.",
+        "auth_required": "❌ دانلود از این لینک نیاز به ورود به حساب کاربری دارد (HTTP 401). فقط لینک‌های عمومی مستقیم قابل دانلود هستند."
       },
       "unsupported_platform": "⚠️ دانلودر {platform} در دست توسعه است. لطفاً اخبار را در کانال دنبال کنید."
     },
@@ -2563,7 +2565,9 @@
         "download_failed": "The download failed, try again.",
         "send_failed": "The file was downloaded but sending it failed, try again.",
         "invalid_name": "That file name is not valid, send another one.",
-        "too_large": "The file size exceeds the server's available disk space limit (max {max})."
+        "too_large": "The file size exceeds the server's available disk space limit (max {max}).",
+        "cloudflare_captcha": "❌ This link is protected by a Cloudflare challenge (captcha) and cannot be downloaded automatically. Please provide an open direct link.",
+        "auth_required": "❌ This link requires account authorization (HTTP 401). Only public direct links are supported."
       },
       "unsupported_platform": "⚠️ The downloader for {platform} is under development. Please follow our news channel for updates."
     },
@@ -3964,7 +3968,9 @@
         "download_failed": "Il download non è riuscito, riprova.",
         "send_failed": "Il file è stato scaricato ma l'invio è fallito, riprova.",
         "invalid_name": "Questo nome file non è valido, inviane un altro.",
-        "too_large": "La dimensione del file supera il limite di spazio su disco disponibile (max {max})."
+        "too_large": "La dimensione del file supera il limite di spazio su disco disponibile (max {max}).",
+        "cloudflare_captcha": "❌ Questo link è protetto da Cloudflare (captcha) e non può essere scaricato automaticamente. Usa un link diretto pubblico.",
+        "auth_required": "❌ Questo link richiede l'accesso a un account (HTTP 401). Sono supportati solo link diretti pubblici."
       },
       "unsupported_platform": "⚠️ Il downloader per {platform} è in fase di sviluppo. Segui il nostro canale per aggiornamenti."
     },
@@ -5365,7 +5371,9 @@
         "download_failed": "The download failed, try again.",
         "send_failed": "The file was downloaded but sending it failed, try again.",
         "invalid_name": "That file name is not valid, send another one.",
-        "too_large": "The file size exceeds the server's available disk space limit (max {max})."
+        "too_large": "The file size exceeds the server's available disk space limit (max {max}).",
+        "cloudflare_captcha": "❌ Эта ссылка защищена проверкой Cloudflare (капча) и не может быть загружена автоматически. Используйте открытую прямую ссылку.",
+        "auth_required": "❌ Для скачивания по этой ссылке требуется авторизация (HTTP 401). Поддерживаются только публичные прямые ссылки."
       },
       "unsupported_platform": "⚠️ Загрузчик для {platform} находится в разработке. Пожалуйста, следите за новостями на нашем канале."
     },

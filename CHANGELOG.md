@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.2] - 2026-10-18
+
+### Added
+- **Surge DL Cloudflare & Auth Protection Detection (`surge_dl`)**:
+  - Enhanced `probe_url` in `src/surge_dl/probe.rs` with `ProbeResult` to detect Cloudflare Managed Challenges (`cf-mitigated: challenge` / 403) and authorization-restricted endpoints (`HTTP 401 Unauthorized`).
+  - Added user-facing error notices `surge.error.cloudflare_captcha` and `surge.error.auth_required` in `config/i18n.json` across all supported languages (`fa`, `en`, `it`, `ru`).
+  - Early-rejected blocked and auth-gated links before sending them to the Surge download queue in `src/surge_dl/handle.rs`.
+
 ## [2.7.1] - 2026-10-15
 
 ### Fixed

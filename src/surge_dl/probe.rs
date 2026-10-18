@@ -221,20 +221,63 @@ pub(crate) fn extract_content_disposition_filename(header: &str) -> Option<Strin
     None
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ProbeResult {
+    Ok {
+        filename: String,
+        size_bytes: Option<u64>,
+    },
+    CloudflareChallenge,
+    AuthRequired,
+}
+
 /// Probes filename and size via HEAD request before download.
-pub(crate) async fn probe_url(url: &str) -> (String, Option<u64>) {
+pub(crate) async fn probe_url(url: &str) -> ProbeResult {
     let fallback = filename_from_url(url);
     // User-Agent prevents 403 error page size from being misreported as file size.
     let resp = match crate::http::client()
         .head(url)
-        .header(reqwest::header::USER_AGENT, "Mozilla/5.0")
+        .header(
+            reqwest::header::USER_AGENT,
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        )
         .timeout(Duration::from_secs(10))
         .send()
         .await
     {
-        Ok(r) if r.status().is_success() => r,
-        _ => return (fallback, None),
+        Ok(r) => r,
+        Err(_) => return ProbeResult::Ok { filename: fallback, size_bytes: None },
     };
+
+    let status = resp.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return ProbeResult::AuthRequired;
+    }
+
+    let is_cf_challenge = resp
+        .headers()
+        .get("cf-mitigated")
+        .and_then(|v| v.to_str().ok())
+        == Some("challenge")
+        || (status == reqwest::StatusCode::FORBIDDEN
+            && resp
+                .headers()
+                .get(reqwest::header::SERVER)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_lowercase().contains("cloudflare"))
+                .unwrap_or(false));
+
+    if is_cf_challenge {
+        return ProbeResult::CloudflareChallenge;
+    }
+
+    if !status.is_success() {
+        return ProbeResult::Ok {
+            filename: fallback,
+            size_bytes: None,
+        };
+    }
+
     let filename = resp
         .headers()
         .get(reqwest::header::CONTENT_DISPOSITION)
@@ -247,15 +290,30 @@ pub(crate) async fn probe_url(url: &str) -> (String, Option<u64>) {
         .get(reqwest::header::CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok());
-    (filename, size)
+    ProbeResult::Ok {
+        filename,
+        size_bytes: size,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         available_disk_space, detect_social_platform, extract_content_disposition_filename,
-        is_direct_link, safe_download_filename, sanitize_rename,
+        is_direct_link, safe_download_filename, sanitize_rename, ProbeResult,
     };
+
+    #[test]
+    fn test_probe_result_variants() {
+        let r1 = ProbeResult::CloudflareChallenge;
+        let r2 = ProbeResult::AuthRequired;
+        let r3 = ProbeResult::Ok {
+            filename: "file.zip".to_string(),
+            size_bytes: Some(1024),
+        };
+        assert_ne!(r1, r2);
+        assert_ne!(r1, r3);
+    }
 
     #[test]
     fn test_play_store_is_an_unsupported_platform_not_a_file() {
