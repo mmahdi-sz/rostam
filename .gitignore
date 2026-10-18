@@ -26,6 +26,7 @@ scripts/send_*.py
 files/.official_logout_done
 node_modules/
 .codegraph/
+.cargo/
 package.json
 package-lock.json
 .superpowers/
