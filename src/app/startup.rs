@@ -76,29 +76,43 @@ pub async fn build_bot_api(token: &str) -> anyhow::Result<Bot> {
 pub async fn init_database(
     cookie_pool: &mut CookiePool,
     database_url: &str,
-) -> Option<PostgresDatabase> {
-    match PostgresDatabase::connect(database_url).await {
-        Ok(database) => {
-            match database.load_state().await {
-                Ok((last_used_cookie, cooldown_list)) => {
-                    cookie_pool.restore_state(last_used_cookie, cooldown_list);
+) -> anyhow::Result<PostgresDatabase> {
+    const MAX_RETRIES: u32 = 6;
+    let mut attempt = 0;
+    let mut delay = Duration::from_secs(2);
+
+    let database = loop {
+        attempt += 1;
+        match PostgresDatabase::connect(database_url).await {
+            Ok(db) => break db,
+            Err(e) => {
+                if attempt >= MAX_RETRIES {
+                    eprintln!("failed to connect to PostgreSQL after {attempt} attempts: {e}");
+                    anyhow::bail!("failed to connect to PostgreSQL after {attempt} attempts: {e}");
                 }
-                Err(e) => eprintln!("failed to load cookie pool state: {e}"),
+                eprintln!(
+                    "PostgreSQL connection attempt {attempt}/{MAX_RETRIES} failed: {e}. Retrying in {delay:?}..."
+                );
+                tokio::time::sleep(delay).await;
+                delay = (delay * 2).min(Duration::from_secs(10));
             }
-            if let Err(e) = database.save_snapshot(&cookie_pool.snapshot()).await {
-                eprintln!("failed to save cookie pool snapshot: {e}");
-            }
-            // init stats with pool safely
-            stats::init(database.pool().clone());
-            crate::rank::prices::load();
-            println!("PostgreSQL cookie pool storage is enabled.");
-            Some(database)
         }
-        Err(e) => {
-            eprintln!("failed to connect to PostgreSQL: {e}");
-            None
+    };
+
+    match database.load_state().await {
+        Ok((last_used_cookie, cooldown_list)) => {
+            cookie_pool.restore_state(last_used_cookie, cooldown_list);
         }
+        Err(e) => eprintln!("failed to load cookie pool state: {e}"),
     }
+    if let Err(e) = database.save_snapshot(&cookie_pool.snapshot()).await {
+        eprintln!("failed to save cookie pool snapshot: {e}");
+    }
+    // init stats with pool safely
+    stats::init(database.pool().clone());
+    crate::rank::prices::load();
+    println!("PostgreSQL cookie pool storage is enabled.");
+    Ok(database)
 }
 
 pub async fn init_emoji_cache(database: &PostgresDatabase) {
@@ -330,6 +344,21 @@ async fn cookie_worker_cycle(
                     crate::stats::record_error_global("cookie_worker", &e.to_string()).await;
                 }
                 let _ = fresh::unlock(&mut conn, profile_name).await;
+                let cookie_id = std::path::Path::new(profile_path)
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .unwrap_or(profile_name);
+                if let Some(pool_arc) = crate::cookie_pool::get_global_cookie_pool() {
+                    pool_arc.lock().await.remove_from_cooldown(cookie_id);
+                }
+                if let Some(db_pool) = crate::stats::get_pool() {
+                    if let Ok(client) = db_pool.get().await {
+                        let _ = crate::database::postgresql::cookie_pool::delete_cooldown(
+                            &client, cookie_id,
+                        )
+                        .await;
+                    }
+                }
                 println!(
                     "[cookie_worker profile={profile_name} event=refresh_done] fresh_ttl={fresh_ttl}s"
                 );

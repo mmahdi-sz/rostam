@@ -161,13 +161,13 @@ impl CookiePool {
         self.mark_rate_limited(&cookie_id)
     }
 
-    /// Mark a broken/bot-flagged cookie so it is excluded from pool for 30 days.
+    /// Mark a broken/bot-flagged cookie so it is excluded from pool for the configured cooldown (default 2h).
     pub fn mark_bad_cookie(&mut self, spec_or_id: &str) -> Option<String> {
         let cookie_id = self
             .find_cookie_id(spec_or_id)
             .unwrap_or_else(|| spec_or_id.to_string());
         self.cleanup_expired_cooldowns();
-        let expire_at = SystemTime::now() + Duration::from_secs(30 * 24 * 3600);
+        let expire_at = SystemTime::now() + Duration::from_secs(crate::config::cookie_bad_cooldown_secs());
         if let Some(entry) = self
             .cooldown_list
             .iter_mut()
@@ -372,5 +372,25 @@ mod tests {
 
         let next = pool.next_cookie().unwrap();
         assert_eq!(next.id, "c2");
+    }
+
+    #[test]
+    fn test_mark_bad_cookie_and_remove() {
+        let mut pool = CookiePool {
+            available_cookies: vec![dummy_cookie("c1"), dummy_cookie("c2")],
+            last_used_cookie: None,
+            cooldown_list: Vec::new(),
+            cooldown: DEFAULT_COOLDOWN,
+            random_counter: 0,
+        };
+
+        let marked = pool.mark_bad_cookie("c1");
+        assert_eq!(marked, Some("c1".to_string()));
+        assert_eq!(pool.cooldown_list.len(), 1);
+        assert_eq!(pool.status().selectable_cookies, 1);
+
+        pool.remove_from_cooldown("c1");
+        assert_eq!(pool.cooldown_list.len(), 0);
+        assert_eq!(pool.status().selectable_cookies, 2);
     }
 }

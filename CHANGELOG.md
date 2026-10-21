@@ -5,7 +5,18 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-## [2.7.2] - 2026-10-18
+## [2.7.2] - 2026-10-21
+
+### Fixed
+- **PostgreSQL Connection Pool Timeout & Startup Silent Degradation (`database`, `startup`)**:
+  - Increased deadpool connection pool timeouts in `src/database/postgresql/mod.rs` (`create` from 3s to 15s, `wait` to 5s, `recycle` to 2s) to prevent timeout failures during system boot and crash recovery.
+  - Added exponential backoff retry loop in `src/app/startup.rs` (`init_database`), attempting up to 6 times (~35s total window) to establish PostgreSQL connection before failing.
+  - Eliminated silent bot degradation: `init_database` now returns `anyhow::Result<PostgresDatabase>`, exiting cleanly so systemd (`Restart=always`, `RestartSec=3`) restarts the service rather than running as a degraded zombie bot without database.
+  - Updated `/etc/systemd/system/rostam.service` `ExecStartPre` to verify credentials for the production database before launch.
+- **YouTube Anti-Bot Detection Handling & Cookie Cooldown (`youtube`, `cookie_pool`)**:
+  - Added user-facing `video_bot_restricted` notice in `config/i18n.json` across all 4 languages (`fa`, `en`, `it`, `ru`).
+  - Added `check_cookie_canary` in `src/youtube/fetch.rs` to validate cookies against a lightweight canary video.
+  - Reduced bad-cookie quarantine duration from 30 days to 2 hours via `COOKIE_BAD_COOLDOWN_SECS` in `src/config.rs` and `src/cookie_pool/pool.rs`.
 
 ### Added
 - **Surge DL Cloudflare & Auth Protection Detection (`surge_dl`)**:

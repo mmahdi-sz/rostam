@@ -111,6 +111,61 @@ pub fn classify_ytdlp_stderr(stderr: &str) -> YtdlpErrorClassification {
     YtdlpErrorClassification::Other(msg.to_string())
 }
 
+const CANARY_URL: &str = "https://www.youtube.com/watch?v=jNQXAC9IVRw";
+const CANARY_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Quickly tests if a cookie works on a lightweight, neutral YouTube video.
+/// Returns `true` if the cookie does NOT trigger a bot/bad-cookie error on the canary video.
+pub async fn check_cookie_canary(trace_id: u64, yt_dlp_browser_spec: &str) -> bool {
+    log_trace(
+        trace_id,
+        "cookie_canary_start",
+        yt_dlp_browser_spec,
+    );
+    let mut cmd = Command::new("yt-dlp");
+    cmd.arg("--js-runtimes")
+        .arg(format!("deno:{}", crate::config::deno_path()))
+        .arg("--cookies-from-browser")
+        .arg(yt_dlp_browser_spec)
+        .arg("--dump-single-json")
+        .arg("--no-download")
+        .arg("--no-warnings")
+        .arg(CANARY_URL)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            log_trace(trace_id, "cookie_canary_spawn_err", &e.to_string());
+            return false;
+        }
+    };
+
+    match tokio::time::timeout(CANARY_TIMEOUT, child.wait_with_output()).await {
+        Ok(Ok(output)) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let classification = classify_ytdlp_stderr(&stderr);
+            let is_bad = matches!(classification, YtdlpErrorClassification::BadCookie(_));
+            log_trace(
+                trace_id,
+                "cookie_canary_done",
+                &format!("spec={yt_dlp_browser_spec} status={} is_bad={is_bad}", output.status),
+            );
+            !is_bad
+        }
+        Ok(Err(e)) => {
+            log_trace(trace_id, "cookie_canary_run_err", &e.to_string());
+            false
+        }
+        Err(_) => {
+            log_trace(trace_id, "cookie_canary_timeout", "10s exceeded");
+            false
+        }
+    }
+}
+
 pub async fn fetch_video_info(
     trace_id: u64,
     url: &str,

@@ -141,6 +141,20 @@ pub async fn cleanup_expired_cooldowns(client: &Client) -> Result<(), tokio_post
     Ok(())
 }
 
+pub async fn delete_cooldown(
+    client: &Client,
+    cookie_id: &str,
+) -> Result<(), tokio_postgres::Error> {
+    client
+        .execute(
+            "DELETE FROM cookie_pool_cooldowns WHERE cookie_id = $1",
+            &[&cookie_id],
+        )
+        .await?;
+
+    Ok(())
+}
+
 fn path_to_string(path: &PathBuf) -> String {
     path.to_string_lossy().into_owned()
 }

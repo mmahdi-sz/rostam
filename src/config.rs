@@ -78,6 +78,14 @@ pub fn cookie_refresh_lock_ttl_secs() -> u64 {
         .unwrap_or(30 * 60)
 }
 
+/// Cooldown applied when yt-dlp reports a bad/broken cookie (bot challenge, 403).
+/// Default: 2 hours (7200s), replacing legacy 30-day lockout.
+pub fn cookie_bad_cooldown_secs() -> u64 {
+    config_value("COOKIE_BAD_COOLDOWN_SECS")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2 * 3600)
+}
+
 /// Short label identifying this deployment (used as the Redis refresh-lock owner
 /// for diagnostics). Falls back to dev/prod based on DEV_MODE.
 pub fn env_label() -> String {

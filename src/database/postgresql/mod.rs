@@ -80,6 +80,17 @@ impl PostgresDatabase {
             .map_err(|e| anyhow::anyhow!("{e}"))
     }
 
+    #[allow(dead_code)]
+    pub async fn delete_cooldown(&self, cookie_id: &str) -> anyhow::Result<()> {
+        let client = self
+            .get()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to get db client: {e}"))?;
+        cookie_pool::delete_cooldown(&client, cookie_id)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))
+    }
+
     async fn init_schema(client: &mut tokio_postgres::Client) -> anyhow::Result<()> {
         mod embedded {
             use refinery::embed_migrations;
@@ -111,12 +122,26 @@ fn create_pool(database_url: &str) -> anyhow::Result<Pool> {
     });
     let mut pool_cfg = PoolConfig::new(config::database_pool_size());
     pool_cfg.timeouts = Timeouts {
-        wait: Some(Duration::from_millis(2000)),
-        create: Some(Duration::from_millis(3000)),
-        recycle: Some(Duration::from_millis(1000)),
+        wait: Some(Duration::from_millis(5000)),
+        create: Some(Duration::from_millis(15000)),
+        recycle: Some(Duration::from_millis(2000)),
     };
     cfg.pool = Some(pool_cfg);
 
     let pool = cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
     Ok(pool)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_pool_timeouts_configuration() {
+        let pool = create_pool("postgres://postgres:postgres@localhost:5432/test").unwrap();
+        let timeouts = pool.timeouts();
+        assert_eq!(timeouts.create, Some(Duration::from_millis(15000)));
+        assert_eq!(timeouts.wait, Some(Duration::from_millis(5000)));
+        assert_eq!(timeouts.recycle, Some(Duration::from_millis(2000)));
+    }
 }

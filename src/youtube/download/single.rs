@@ -373,7 +373,11 @@ pub(crate) async fn run_download(
                 if let Some(ref cookie_id) = cookie_id_opt {
                     if let Some(db_pool) = stats::get_pool() {
                         if let Ok(client) = db_pool.get().await {
-                            let duration_secs = if is_bad { 30 * 24 * 3600 } else { 30 * 60 };
+                            let duration_secs = if is_bad {
+                                crate::config::cookie_bad_cooldown_secs()
+                            } else {
+                                30 * 60
+                            };
                             let entry = crate::cookie_pool::CooldownEntry {
                                 cookie_id: cookie_id.clone(),
                                 expire_at: std::time::SystemTime::now()

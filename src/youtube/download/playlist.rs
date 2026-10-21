@@ -329,10 +329,12 @@ async fn download_single_playlist_item_with_retry(
                         let mut pool = cookie_pool.lock().await;
                         pool.mark_last_rate_limited();
                         crate::stats::record_event_global("cookie", "429", "rate_limit", 0).await;
-                        if let Some(next) = pool.next_cookie_excluding(&tried) {
-                            tried.insert(next.id.clone());
-                            *current_cookie_spec = next.yt_dlp_browser_spec;
-                            continue;
+                        if tried.len() < 3 {
+                            if let Some(next) = pool.next_cookie_excluding(&tried) {
+                                tried.insert(next.id.clone());
+                                *current_cookie_spec = next.yt_dlp_browser_spec;
+                                continue;
+                            }
                         }
                         return Err(raw_err);
                     }
@@ -346,7 +348,7 @@ async fn download_single_playlist_item_with_retry(
                                     let entry = crate::cookie_pool::CooldownEntry {
                                         cookie_id: cid.clone(),
                                         expire_at: std::time::SystemTime::now()
-                                            + std::time::Duration::from_secs(30 * 24 * 3600),
+                                            + std::time::Duration::from_secs(crate::config::cookie_bad_cooldown_secs()),
                                     };
                                     let _ =
                                         crate::database::postgresql::cookie_pool::save_cooldown(
@@ -356,10 +358,12 @@ async fn download_single_playlist_item_with_retry(
                                 }
                             }
                         }
-                        if let Some(next) = pool.next_cookie_excluding(&tried) {
-                            tried.insert(next.id.clone());
-                            *current_cookie_spec = next.yt_dlp_browser_spec;
-                            continue;
+                        if tried.len() < 3 {
+                            if let Some(next) = pool.next_cookie_excluding(&tried) {
+                                tried.insert(next.id.clone());
+                                *current_cookie_spec = next.yt_dlp_browser_spec;
+                                continue;
+                            }
                         }
                         return Err(raw_err);
                     }

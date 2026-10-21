@@ -17,11 +17,13 @@ use crate::database::postgresql::PostgresDatabase;
 use crate::i18n::t;
 
 use super::extract::{is_youtube_channel_url, is_youtube_post_url};
-use super::fetch::fetch_video_info;
+use super::fetch::{check_cookie_canary, fetch_video_info};
 use super::format::{build_caption, build_description_blockquotes};
 use super::quality_keyboard::send_quality_prompt;
 use super::trace::log_trace;
 use super::types::FetchError;
+
+const MAX_COOKIE_ATTEMPTS: usize = 3;
 
 static LAST_COOKIE_OUTAGE_ALERT: AtomicU64 = AtomicU64::new(0);
 
@@ -334,12 +336,30 @@ pub async fn handle_youtube_url(
                     "fetch_rate_limited",
                     &format!("cookie_id={}", cookie.id),
                 );
+
+                if tried.len() >= MAX_COOKIE_ATTEMPTS {
+                    log_trace(
+                        trace_id,
+                        "cookie_circuit_breaker_tripped_rate_limited",
+                        &format!("attempts={}", tried.len()),
+                    );
+                    if let Some(amid) = analyzing_msg_id {
+                        let del = DeleteMessageParams::builder()
+                            .chat_id(chat_id)
+                            .message_id(amid)
+                            .build();
+                        let _ = api.delete_message(&del).await;
+                    }
+                    let _ = send_text(api, chat_id, &t("cookie.youtube_unavailable")).await;
+                    anyhow::bail!("circuit breaker tripped after {} rate-limited cookies", tried.len());
+                }
+
                 continue;
             }
             Err(FetchError::BadCookie(msg)) => {
                 crate::stats::record_error_global("youtube", &format!("bad_cookie: {msg}")).await;
                 eprintln!(
-                    "bad cookie {}: {msg}; cooling down and trying next",
+                    "bad cookie {}: {msg}; checking canary",
                     cookie.id
                 );
                 log_trace(
@@ -347,6 +367,28 @@ pub async fn handle_youtube_url(
                     "fetch_bad_cookie",
                     &format!("cookie_id={} error={msg}", cookie.id),
                 );
+
+                // Run canary test on a lightweight neutral video to verify whether the
+                // cookie itself is invalid or YouTube is restricting this specific video.
+                let canary_ok = check_cookie_canary(trace_id, &cookie.yt_dlp_browser_spec).await;
+                if canary_ok {
+                    log_trace(
+                        trace_id,
+                        "canary_passed_video_restricted",
+                        &format!("cookie_id={}", cookie.id),
+                    );
+                    if let Some(amid) = analyzing_msg_id {
+                        let del = DeleteMessageParams::builder()
+                            .chat_id(chat_id)
+                            .message_id(amid)
+                            .build();
+                        let _ = api.delete_message(&del).await;
+                    }
+                    let _ = send_text_md(api, chat_id, &t("youtube.video_bot_restricted")).await;
+                    return Ok(());
+                }
+
+                // Canary failed: cookie is genuinely bad. Cool it down.
                 {
                     let mut pool_guard = cookie_pool.lock().await;
                     pool_guard.mark_bad_cookie(&cookie.id);
@@ -356,7 +398,7 @@ pub async fn handle_youtube_url(
                         let entry = crate::cookie_pool::CooldownEntry {
                             cookie_id: cookie.id.clone(),
                             expire_at: std::time::SystemTime::now()
-                                + std::time::Duration::from_secs(30 * 24 * 3600),
+                                + std::time::Duration::from_secs(crate::config::cookie_bad_cooldown_secs()),
                         };
                         let _ = crate::database::postgresql::cookie_pool::save_cooldown(
                             &client, &entry,
@@ -364,6 +406,24 @@ pub async fn handle_youtube_url(
                         .await;
                     }
                 }
+
+                if tried.len() >= MAX_COOKIE_ATTEMPTS {
+                    log_trace(
+                        trace_id,
+                        "cookie_circuit_breaker_tripped_bad_cookie",
+                        &format!("attempts={}", tried.len()),
+                    );
+                    if let Some(amid) = analyzing_msg_id {
+                        let del = DeleteMessageParams::builder()
+                            .chat_id(chat_id)
+                            .message_id(amid)
+                            .build();
+                        let _ = api.delete_message(&del).await;
+                    }
+                    let _ = send_text(api, chat_id, &t("cookie.youtube_unavailable")).await;
+                    anyhow::bail!("circuit breaker tripped after {} bad cookies", tried.len());
+                }
+
                 continue;
             }
             Err(FetchError::MembersOnly) => {

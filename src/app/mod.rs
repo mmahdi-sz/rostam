@@ -68,12 +68,10 @@ pub async fn run() -> anyhow::Result<()> {
     let mut cookie_pool = CookiePool::from_default_firefox();
 
     let database = if let Some(database_url) = config::config_value("DATABASE_URL") {
-        let db = init_database(&mut cookie_pool, &database_url).await;
-        if let Some(ref db_inst) = db {
-            init_emoji_cache(db_inst).await;
-            spawn_redeem_sweeper(db_inst.clone());
-        }
-        db
+        let db = init_database(&mut cookie_pool, &database_url).await?;
+        init_emoji_cache(&db).await;
+        spawn_redeem_sweeper(db.clone());
+        Some(db)
     } else {
         println!("DATABASE_URL is not set; cookie pool state is in-memory only.");
         None
@@ -221,6 +219,14 @@ pub async fn run() -> anyhow::Result<()> {
                 .lock()
                 .await
                 .remove_from_cooldown(&cookie_id);
+            if let Some(db_pool) = crate::stats::get_pool() {
+                if let Ok(client) = db_pool.get().await {
+                    let _ = crate::database::postgresql::cookie_pool::delete_cooldown(
+                        &client, &cookie_id,
+                    )
+                    .await;
+                }
+            }
         }
 
         while let Ok(source) = rate_limit_rx.try_recv() {
