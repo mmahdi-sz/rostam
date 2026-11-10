@@ -18,7 +18,6 @@ use super::helpers::{
     cleanup_dir, fetch_thumbnail, maybe_send_non_h264_notice, pick_largest_file, quality_label_for,
     sanitize_video_filename,
 };
-use super::selection_helpers::find_format;
 use super::status::edit_status;
 use super::types::{Selection, SubtitleMode, YoutubeRequest};
 use super::upload::{build_single_doc_params, build_single_params};
@@ -245,12 +244,6 @@ pub(crate) async fn run_playlist_download(
     ));
     edit_status(&api, status_chat_id, status_message_id, lines.join("\n")).await;
 
-    let is_h264 = selection.codec == crate::youtube::types::VideoCodec::H264;
-    if sent > 0 && !is_h264 {
-        let codec_name = t(selection.codec.label_key());
-        maybe_send_non_h264_notice(&api, req.chat_id, &codec_name, trace_id).await;
-    }
-
     // Unpin status message once completed.
     let _ = api
         .unpin_chat_message(
@@ -450,11 +443,7 @@ async fn download_single_playlist_item_attempt(
             .arg("--write-auto-subs")
             .arg("--sub-langs")
             .arg(&sub_langs);
-        if let SubtitleMode::Embedded = selection.subtitle_mode {
-            cmd.arg("--embed-subs");
-        } else {
-            cmd.arg("--convert-subs").arg("srt");
-        }
+        cmd.arg("--convert-subs").arg("srt").arg("--ignore-errors");
     }
 
     cmd.arg(video_url)
@@ -518,7 +507,7 @@ async fn download_single_playlist_item_attempt(
         .map(|s| s.to_string())
         .filter(|p| std::path::Path::new(p).exists())
         .or_else(|| pick_largest_file(&dir));
-    let Some(path) = path else {
+    let Some(mut path) = path else {
         log_trace(
             trace_id,
             "playlist_item_no_file",
@@ -532,9 +521,53 @@ async fn download_single_playlist_item_attempt(
         ));
     };
 
-    if selection.subtitle_mode == SubtitleMode::Embedded && !selection.subtitle_langs.is_empty() {
-        super::helpers::fix_embedded_subtitle_flags(&path, trace_id).await;
+    match super::helpers::process_subtitle_pipeline(
+        api,
+        req.chat_id,
+        0,
+        &dir,
+        &path,
+        selection,
+        cookie_spec,
+        video_url,
+        req.duration,
+        trace_id,
+        req.user_id.unwrap_or(0),
+    )
+    .await
+    {
+        super::helpers::SubtitlePipelineResult::VideoUpdated(updated) => path = updated,
+        super::helpers::SubtitlePipelineResult::Failed => {
+            cleanup_dir(&dir, trace_id).await;
+            let err = t("youtube.download.subtitle_failed");
+            return Err((
+                crate::youtube::YtdlpErrorClassification::Other(err.clone()),
+                err,
+            ));
+        }
+        _ => {}
     }
+    let (output_path, meta) = match super::helpers::prepare_video_output(&path, trace_id).await {
+        Ok(meta) => meta,
+        Err(e) => {
+            log_trace(trace_id, "output_probe_failed", &format!("{e} => fail"));
+            crate::stats::record_error_global("youtube", "output verification failed").await;
+            cleanup_dir(&dir, trace_id).await;
+            let err = t("youtube.download.failed");
+            return Err((
+                crate::youtube::YtdlpErrorClassification::Other(err.clone()),
+                err,
+            ));
+        }
+    };
+    path = output_path;
+    let is_h264 = meta.codec == "h264";
+    let height = meta.height;
+    let output_ext = std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or(merge_format)
+        .to_string();
 
     let file_size_bytes = tokio::fs::metadata(&path)
         .await
@@ -543,11 +576,12 @@ async fn download_single_playlist_item_attempt(
 
     // Caption formatted like single download
     let quality_label = quality_label_for(height);
-    let codec_name = t(codec.label_key());
-    let bitrate_str = find_format(req, height, codec)
-        .and_then(|f| f.bitrate)
-        .map(|b| format!("{b:.0}"))
-        .unwrap_or_else(|| "?".to_string());
+    let codec_name = super::helpers::output_codec_label(&meta.codec);
+    let bitrate_str = if meta.bitrate > 0 {
+        (meta.bitrate / 1000).to_string()
+    } else {
+        "?".to_string()
+    };
     let sub_tag = match (selection.subtitle_mode, selection.subtitle_langs.is_empty()) {
         (SubtitleMode::Hardsub, false) => " | Hardsub",
         (SubtitleMode::Embedded, false) => " | Softsub",
@@ -560,7 +594,7 @@ async fn download_single_playlist_item_attempt(
         &quality_label,
         &codec_name,
         &bitrate_str,
-        merge_format,
+        &output_ext,
     );
     let new_path = dir.join(&clean_name);
     let path = if tokio::fs::rename(&path, &new_path).await.is_ok() {
@@ -629,6 +663,12 @@ async fn download_single_playlist_item_attempt(
                 "playlist_item_upload_ok",
                 &format!("num={video_num}"),
             );
+            if selection.subtitle_mode == SubtitleMode::File {
+                super::helpers::send_subtitle_files(api, &dir, req.chat_id, item_title, &selection.subtitle_langs, trace_id).await;
+            }
+            if !is_h264 {
+                maybe_send_non_h264_notice(api, req.chat_id, &codec_name, trace_id).await;
+            }
             Ok(file_size_bytes)
         }
         Err(e) => {

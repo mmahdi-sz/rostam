@@ -107,3 +107,63 @@ pub async fn fetch_thumbnail(
         }
     }
 }
+
+/// Reads the delivered codec and remuxes H.264 into Telegram's MP4 container.
+pub async fn prepare_video_output(
+    path: &str,
+    trace_id: u64,
+) -> anyhow::Result<(String, crate::common::ffmpeg::MediaMetadata)> {
+    let mut output_path = path.to_string();
+    let mut meta = crate::common::ffmpeg::probe_metadata(std::path::Path::new(path)).await?;
+    if meta.codec == "h264" && !path.ends_with(".mp4") {
+        let output = std::path::Path::new(path).with_extension("telegram.mp4");
+        log_trace(trace_id, "output_remux", "h264 => mp4");
+        let result = tokio::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-i",
+                path,
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-map",
+                "0:s?",
+                "-c",
+                "copy",
+                "-c:s",
+                "mov_text",
+                "-movflags",
+                "+faststart",
+            ])
+            .arg(&output)
+            .kill_on_drop(true)
+            .output()
+            .await?;
+        anyhow::ensure!(
+            result.status.success(),
+            "H.264 MP4 remux failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        meta = crate::common::ffmpeg::probe_metadata(&output).await?;
+        output_path = output.to_string_lossy().into_owned();
+    }
+    log_trace(
+        trace_id,
+        "output_probed",
+        &format!(
+            "codec={} height={} bitrate={} path={} => ok",
+            meta.codec, meta.height, meta.bitrate, meta.filename
+        ),
+    );
+    Ok((output_path, meta))
+}
+
+pub fn output_codec_label(codec: &str) -> String {
+    let key = if codec == "hevc" { "h265" } else { codec };
+    crate::youtube::types::VideoCodec::from_key(key)
+        .map(|codec| crate::i18n::t(codec.label_key()))
+        .unwrap_or_else(|| codec.to_string())
+}

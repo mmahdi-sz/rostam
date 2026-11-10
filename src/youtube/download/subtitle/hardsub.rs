@@ -3,7 +3,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 
 use frankenstein::client_reqwest::Bot;
 
-use crate::youtube::download::cpu::{acquire_cpu, release_cpu};
+use crate::common::cpu_broker::CpuBrokerGuard;
 use crate::youtube::download::status::edit_status;
 use crate::youtube::format::format_duration;
 use crate::youtube::trace::log_trace;
@@ -44,9 +44,7 @@ pub async fn hardsub_subtitles(
         "hardsub_subtitles_started",
         &format!("video={video_path}"),
     );
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Ok(video_path.to_string());
-    };
+    let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
     let mut srts = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
@@ -63,7 +61,7 @@ pub async fn hardsub_subtitles(
 
     if srts.is_empty() {
         log_trace(trace_id, "hardsub_skipped", "no srt found");
-        return Ok(video_path.to_string());
+        return Err("no selected SRT subtitles available".to_string());
     }
 
     srts.sort_by(|a, b| {
@@ -107,12 +105,18 @@ pub async fn hardsub_subtitles(
         .await;
     }
 
-    let cores = acquire_cpu(user_id, trace_id).await;
-    let num_threads = if cores.is_empty() { 4 } else { cores.len() };
+    if crate::moebius::cpu::is_user_cpu_busy(user_id).await {
+        return Err("active CPU job running".to_string());
+    }
+    let mut broker = CpuBrokerGuard::acquire(user_id, trace_id, "yt").await;
+    if !broker.is_acquired() {
+        return Err("CPU broker unavailable".to_string());
+    }
+    let num_threads = broker.cores().len().max(1);
 
     let out_path = format!("{}_hardsub.mp4", video_path.trim_end_matches(".mp4"));
     let mut cmd = tokio::process::Command::new("ffmpeg");
-    cmd.current_dir(dir)
+    cmd.kill_on_drop(true).current_dir(dir)
        .arg("-y")
        .arg("-i").arg(video_path)
        .arg("-vf").arg("subtitles=hardsub_input.srt:force_style='FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1'")
@@ -120,7 +124,9 @@ pub async fn hardsub_subtitles(
        .arg("-preset").arg("fast")
        .arg("-crf").arg("23")
        .arg("-threads").arg(num_threads.to_string())
-       .arg("-c:a").arg("copy")
+       .arg("-pix_fmt").arg("yuv420p")
+       .arg("-c:a").arg("aac")
+       .arg("-movflags").arg("+faststart")
        .arg("-progress").arg("pipe:1")
        .arg("-nostats")
        .arg(&out_path)
@@ -136,18 +142,18 @@ pub async fn hardsub_subtitles(
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            release_cpu(cores, trace_id).await;
+            broker.release().await;
             log_trace(trace_id, "hardsub_spawn_failed", &e.to_string());
             return Err(e.to_string());
         }
     };
 
     let Some(stdout) = child.stdout.take() else {
-        release_cpu(cores, trace_id).await;
+        broker.release().await;
         return Err("piped stdout missing".to_string());
     };
     let Some(stderr) = child.stderr.take() else {
-        release_cpu(cores, trace_id).await;
+        broker.release().await;
         return Err("piped stderr missing".to_string());
     };
 
@@ -205,7 +211,7 @@ pub async fn hardsub_subtitles(
 
     let stderr_tail = stderr_task.await.unwrap_or_default();
     let status = child.wait().await;
-    release_cpu(cores, trace_id).await;
+    broker.release().await;
 
     match status {
         Ok(s) if s.success() => {

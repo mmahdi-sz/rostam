@@ -77,3 +77,59 @@ pub async fn test_youtube_cancel(Json(req): Json<CancelReq>) -> Json<CancelResp>
         cancelled,
     })
 }
+
+#[derive(Deserialize)]
+pub struct SubtitleReq {
+    pub scenario: String,
+}
+
+/// Exercises the real subtitle encoder and delivery probe using tiny local fixtures.
+pub async fn test_youtube_subtitle(Json(req): Json<SubtitleReq>) -> Json<serde_json::Value> {
+    let trace = crate::log::next_trace_id();
+    crate::youtube::trace::log_trace(
+        trace,
+        "test_subtitle",
+        &format!("scenario={} => start", req.scenario),
+    );
+    let result: anyhow::Result<serde_json::Value> = async {
+        let dir = crate::common::dir::TempDirGuard::create("yt_subtitle_test", trace)?;
+        let api = frankenstein::client_reqwest::Bot::new_url("http://127.0.0.1:14379/bot".to_string());
+        let langs = vec!["fa".to_string()];
+        if req.scenario == "missing" {
+            let result = crate::youtube::download::subtitle::hardsub_subtitles(&api, 0, 0, dir.path(), "missing.mkv", &langs, Some(1), trace, 0).await;
+            anyhow::ensure!(result.is_err(), "missing subtitle incorrectly succeeded");
+            return Ok(serde_json::json!({"ok": true, "rejected": true, "trace": trace}));
+        }
+        if req.scenario == "translation" {
+            tokio::fs::write(dir.path().join("sub.en-orig.srt"), "1\n00:00:00,000 --> 00:00:01,000\nHello world.\n").await?;
+            crate::youtube::download::subtitle::translate_subtitles(&api, 0, 0, trace, dir.path(), &langs, 0).await.map_err(anyhow::Error::msg)?;
+            anyhow::ensure!(crate::youtube::download::subtitle::subtitle_file_exists_for_lang(dir.path(), "fa"), "local translation missing");
+        } else {
+            anyhow::ensure!(req.scenario == "hardsub" || req.scenario == "remux" || req.scenario == "codec", "unknown scenario");
+            tokio::fs::write(dir.path().join("sub.fa.srt"), "1\n00:00:00,000 --> 00:00:01,000\nسلام دنیا\n").await?;
+        }
+        let video = dir.path().join("input.mkv");
+        let fixture_codec = if req.scenario == "remux" { "libx264" } else { "ffv1" };
+        let fixture = tokio::process::Command::new("ffmpeg").args(["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=320x180:d=1", "-c:v", fixture_codec, "-threads", "1"]).arg(&video).output().await?;
+        anyhow::ensure!(fixture.status.success(), "fixture failed");
+        let path = if req.scenario == "remux" || req.scenario == "codec" { video.to_string_lossy().into_owned() } else {
+            crate::youtube::download::subtitle::hardsub_subtitles(&api, 0, 0, dir.path(), &video.to_string_lossy(), &langs, Some(1), trace, 0).await.map_err(anyhow::Error::msg)?
+        };
+        let (output_path, meta) = crate::youtube::download::helpers::prepare_video_output(&path, trace).await?;
+        let is_video = meta.codec == "h264";
+        if req.scenario == "codec" {
+            anyhow::ensure!(!is_video && meta.codec == "ffv1", "codec incorrectly reported as H264");
+        } else {
+            anyhow::ensure!(is_video && output_path.ends_with(".mp4"), "output is not H264 MP4");
+        }
+        if req.scenario == "hardsub" || req.scenario == "translation" {
+            let pixels = tokio::process::Command::new("ffmpeg").args(["-v", "error", "-i", &output_path, "-frames:v", "1", "-pix_fmt", "gray", "-f", "rawvideo", "pipe:1"]).output().await?;
+            anyhow::ensure!(pixels.status.success() && pixels.stdout.iter().filter(|pixel| **pixel > 200).count() > 20, "subtitle pixels absent from black fixture");
+        }
+        Ok(serde_json::json!({"ok": true, "codec": meta.codec, "codec_label": crate::youtube::download::helpers::output_codec_label(&meta.codec), "container": if is_video { "mp4" } else { "mkv" }, "send_method": if is_video { "sendVideo" } else { "sendDocument" }, "trace": trace}))
+    }.await;
+    match result {
+        Ok(result) => Json(result),
+        Err(e) => Json(serde_json::json!({"ok": false, "error": e.to_string(), "trace": trace})),
+    }
+}

@@ -8,7 +8,6 @@ use tokio::sync::Notify;
 use crate::i18n::{entities_for_text, t, tf};
 use crate::stats;
 use crate::youtube::trace::log_trace;
-use crate::youtube::types::VideoCodec;
 
 use super::cancel::cancel_guard;
 use super::helpers::{
@@ -101,8 +100,8 @@ pub(crate) async fn run_download(
         ),
     );
 
-    let (mut format_spec, merge_format, is_h264) = if let Some(aq) = selection.audio_only {
-        (aq.format_spec().to_string(), "mp3", false)
+    let (mut format_spec, merge_format) = if let Some(aq) = selection.audio_only {
+        (aq.format_spec().to_string(), "mp3")
     } else {
         let Some(fmt) = find_format(&req, height, codec) else {
             log_trace(
@@ -134,7 +133,7 @@ pub(crate) async fn run_download(
                 )
             }
         };
-        (format_spec, merge_format, is_h264)
+        (format_spec, merge_format)
     };
 
     let dir = PathBuf::from(format!(
@@ -446,7 +445,7 @@ pub(crate) async fn run_download(
     log_trace(trace_id, "download_complete", &format!("path={path}"));
 
     if !is_audio {
-        let sub_pipeline_res = super::helpers::process_subtitle_pipeline(
+        let sub_pipeline = super::helpers::process_subtitle_pipeline(
             &api,
             status_chat_id,
             status_message_id,
@@ -458,14 +457,44 @@ pub(crate) async fn run_download(
             req.duration,
             trace_id,
             user_id,
-        )
-        .await;
+        );
+        let sub_pipeline_res = sub_pipeline.await;
 
-        if let super::helpers::SubtitlePipelineResult::VideoUpdated(new_path) = sub_pipeline_res {
-            path = new_path;
+        match sub_pipeline_res {
+            super::helpers::SubtitlePipelineResult::VideoUpdated(new_path) => {
+                path = new_path;
+            }
+            super::helpers::SubtitlePipelineResult::Failed => {
+                cleanup_dir(&dir, trace_id).await;
+                return;
+            }
+            _ => {}
         }
     }
 
+    let output_meta = if is_audio {
+        None
+    } else {
+        match super::helpers::prepare_video_output(&path, trace_id).await {
+            Ok((output_path, meta)) => {
+                path = output_path;
+                Some(meta)
+            }
+            Err(e) => {
+                log_trace(trace_id, "output_probe_failed", &format!("{e} => fail"));
+                stats::record_error_global("youtube", "output verification failed").await;
+                edit_status(
+                    &api,
+                    status_chat_id,
+                    status_message_id,
+                    t("youtube.download.failed"),
+                )
+                .await;
+                cleanup_dir(&dir, trace_id).await;
+                return;
+            }
+        }
+    };
     let file_size_bytes = tokio::fs::metadata(&path)
         .await
         .map(|m| m.len())
@@ -482,36 +511,41 @@ pub(crate) async fn run_download(
         stats::record_download_done(jid, file_size_bytes as i64, duration_i32, bitrate, None).await;
     }
 
-    let hardsub_transcoded = matches!(selection.subtitle_mode, SubtitleMode::Hardsub)
-        && !selection.subtitle_langs.is_empty();
-    let codec_name = if is_audio {
-        "MP3".to_string()
-    } else if hardsub_transcoded {
-        t(VideoCodec::H264.label_key())
+    let is_h264 = output_meta
+        .as_ref()
+        .is_some_and(|meta| meta.codec == "h264");
+    let height = output_meta
+        .as_ref()
+        .map(|meta| meta.height)
+        .unwrap_or(height);
+    let quality_label = if is_audio {
+        quality_label
     } else {
-        t(selection.codec.label_key())
+        quality_label_for(height)
     };
-    let bitrate_str = if is_audio {
-        req.duration
-            .and_then(|d| {
-                if d > 0 {
-                    Some(format!(
-                        "{:.0}",
-                        (file_size_bytes as f64 * 8.0) / (d as f64 * 1000.0)
-                    ))
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| "?".to_string())
-    } else if hardsub_transcoded {
-        "?".to_string()
-    } else {
-        find_format(&req, height, codec)
-            .and_then(|f| f.bitrate)
-            .map(|b| format!("{b:.0}"))
-            .unwrap_or_else(|| "?".to_string())
-    };
+    let output_ext = std::path::Path::new(&path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or(merge_format)
+        .to_string();
+    let codec_name = output_meta
+        .as_ref()
+        .map(|meta| super::helpers::output_codec_label(&meta.codec))
+        .unwrap_or_else(|| "MP3".to_string());
+    let bitrate_str = output_meta
+        .as_ref()
+        .filter(|meta| meta.bitrate > 0)
+        .map(|meta| (meta.bitrate / 1000).to_string())
+        .or_else(|| {
+            if is_audio {
+                req.duration
+                    .filter(|d| *d > 0)
+                    .map(|d| ((file_size_bytes * 8) / d / 1000).to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "?".to_string());
     let sub_tag = match (selection.subtitle_mode, selection.subtitle_langs.is_empty()) {
         (SubtitleMode::Hardsub, false) => " | Hardsub",
         (SubtitleMode::Embedded, false) => " | Softsub",
@@ -527,7 +561,7 @@ pub(crate) async fn run_download(
             &quality_label,
             &codec_name,
             &bitrate_str,
-            merge_format,
+            &output_ext,
         )
     };
     let new_path = dir.join(&clean_name);

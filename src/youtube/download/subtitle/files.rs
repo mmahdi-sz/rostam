@@ -47,7 +47,15 @@ pub fn subtitle_file_exists_for_lang(dir: &std::path::Path, lang: &str) -> bool 
     let lang = lang.to_lowercase();
     entries.flatten().any(|e| {
         let name = e.file_name().to_string_lossy().to_string();
-        subtitle_lang_of(&name).map(|l| l == lang).unwrap_or(false)
+        e.path().extension().and_then(|ext| ext.to_str()) == Some("srt")
+            && subtitle_matches_selection(&name, std::slice::from_ref(&lang))
+            && std::fs::read_to_string(e.path())
+                .map(|text| {
+                    crate::youtube::translator::parse_srt(&text)
+                        .iter()
+                        .any(|cue| cue.timestamp.contains("-->") && !cue.text.is_empty())
+                })
+                .unwrap_or(false)
     })
 }
 
@@ -130,4 +138,35 @@ pub async fn send_subtitle_files(
         &format!("sent={sent} found={}", subs.len()),
     );
     sent
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn subtitle_source_accepts_original_english_but_rejects_vtt_and_empty_files() {
+        let dir = crate::common::dir::TempDirGuard::create(
+            "yt_subtitle_regression",
+            crate::log::next_trace_id(),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("sub.en-orig.vtt"),
+            "WEBVTT\n00:00:00.000 --> 00:00:01.000\nHello",
+        )
+        .unwrap();
+        assert!(!subtitle_file_exists_for_lang(dir.path(), "en"));
+        std::fs::write(dir.path().join("sub.en-orig.srt"), "").unwrap();
+        assert!(!subtitle_file_exists_for_lang(dir.path(), "en"));
+        std::fs::write(
+            dir.path().join("sub.en-orig.srt"),
+            "1\n00:00:00,000 --> 00:00:01,000\nHello\n",
+        )
+        .unwrap();
+        assert!(subtitle_file_exists_for_lang(dir.path(), "en"));
+        assert!(!subtitle_file_exists_for_lang(dir.path(), "fa"));
+        assert!(!subtitle_file_exists_for_lang(dir.path(), "en-US"));
+    }
+
 }

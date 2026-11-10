@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.3] - 2026-11-10
+
+### Fixed
+- **YouTube subtitle acquisition and local translation**: retry missing subtitle languages independently, retrieve original English captions (`en-orig`) when translated captions are rate-limited, and feed them into the existing local NLLB translation pipeline. Validate usable SRT content and translate each missing language even when another selected language is already available.
+- **YouTube hardsub failure handling**: stop delivery when requested subtitles or subtitle burning fail instead of uploading the original video with a false Hardsub label. Use guarded CPU broker leases for translation and burning.
+- **YouTube output codec and Telegram delivery**: probe the final file for the real codec, resolution and bitrate; preserve its actual extension; remux H.264/MKV into MP4 for native video delivery. Burned output uses H.264, AAC, YUV420p and fast-start MP4. Apply the shared subtitle pipeline and output probing to playlist items as well.
+
+### Added
+- Regression coverage for original English subtitle detection, missing subtitles, actual burned subtitle pixels, H.264/MKV remuxing and truthful output codec reporting through the unit and TestAPI suites.
+
 ## [2.7.2] - 2026-10-21
 
 ### Fixed

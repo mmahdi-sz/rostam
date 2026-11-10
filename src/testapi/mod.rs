@@ -30,6 +30,7 @@ pub async fn run() -> anyhow::Result<()> {
             "/test/router/callback",
             post(endpoints::router::test_callback),
         )
+        .route("/test/youtube/subtitle", post(endpoints::youtube::test_youtube_subtitle))
         .route(
             "/test/youtube/format",
             post(endpoints::youtube::test_youtube_format),

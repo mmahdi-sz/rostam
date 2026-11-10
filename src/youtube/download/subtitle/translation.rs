@@ -1,6 +1,6 @@
 use frankenstein::client_reqwest::Bot;
 
-use crate::youtube::download::cpu::{acquire_cpu, release_cpu};
+use crate::common::cpu_broker::CpuBrokerGuard;
 use crate::youtube::download::status::edit_status;
 use crate::youtube::format::format_duration;
 use crate::youtube::trace::log_trace;
@@ -15,6 +15,7 @@ pub async fn translate_subtitles(
     trace_id: u64,
     dir: &std::path::Path,
     target_langs: &[String],
+    user_id: i64,
 ) -> Result<(), String> {
     if target_langs.is_empty() {
         return Ok(());
@@ -24,8 +25,6 @@ pub async fn translate_subtitles(
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Ok(());
     };
-    let mut srts = Vec::new();
-    let mut has_target = false;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -36,23 +35,10 @@ pub async fn translate_subtitles(
                 .to_str()
                 .unwrap_or_default()
                 .to_string();
-            srts.push(path.clone());
-            for tgt in target_langs {
-                if fname.contains(&format!(".{tgt}."))
-                    || fname.contains(&format!(".{tgt}-"))
-                    || fname.contains(&format!("_{tgt}.srt"))
-                {
-                    has_target = true;
-                }
-            }
             if fname.contains(".en.") || fname.contains(".en-") || fname.contains("_en.srt") {
                 english_srt = Some(path.clone());
             }
         }
-    }
-
-    if has_target {
-        return Ok(());
     }
 
     let Some(english_srt) = english_srt else {
@@ -70,7 +56,7 @@ pub async fn translate_subtitles(
     }
 
     for tgt in target_langs {
-        if tgt == "en" || tgt.starts_with("en-") {
+        if subtitle_file_exists_for_lang(dir, tgt) || tgt == "en" || tgt.starts_with("en-") {
             continue;
         }
 
@@ -80,8 +66,14 @@ pub async fn translate_subtitles(
 
         let out_path = dir.join(format!("translated_{tgt}.srt"));
 
-        let cores = acquire_cpu(0, trace_id).await;
-        let num_threads = if cores.is_empty() { 4 } else { cores.len() };
+        if CpuBrokerGuard::is_user_busy(user_id).await {
+            return Err("active translation job running".to_string());
+        }
+        let mut broker = CpuBrokerGuard::acquire(user_id, trace_id, "yt").await;
+        if !broker.is_acquired() {
+            return Err("CPU broker unavailable".to_string());
+        }
+        let num_threads = broker.cores().len().max(1);
 
         let progress_api = api.clone();
         let mut last_edit = std::time::Instant::now() - std::time::Duration::from_secs(2);
@@ -123,7 +115,7 @@ pub async fn translate_subtitles(
             },
         ).await;
 
-        release_cpu(cores, trace_id).await;
+        broker.release().await;
 
         match res {
             Ok(()) => {
@@ -151,25 +143,35 @@ pub async fn ensure_translated_subtitles(
     dir: &std::path::Path,
     target_langs: &[String],
     trace_id: u64,
+    user_id: i64,
 ) {
-    let missing_translatable: Vec<String> = target_langs
+    let missing: Vec<String> = target_langs
         .iter()
-        .filter(|l| *l != "en" && !l.starts_with("en-"))
-        .filter(|l| crate::youtube::translator::map_language_code(l).is_some())
-        .filter(|l| !subtitle_file_exists_for_lang(dir, l))
+        .filter(|lang| !subtitle_file_exists_for_lang(dir, lang))
         .cloned()
         .collect();
-
+    if missing.is_empty() {
+        return;
+    }
+    super::download_subtitles_separately(cookie_spec, webpage_url, dir, &missing, trace_id).await;
+    let missing_translatable: Vec<String> = missing
+        .into_iter()
+        .filter(|lang| !subtitle_file_exists_for_lang(dir, lang))
+        .filter(|lang| crate::youtube::translator::map_language_code(lang).is_some())
+        .collect();
     if missing_translatable.is_empty() {
         return;
     }
-
-    if !subtitle_file_exists_for_lang(dir, "en") {
-        super::download_subtitles_separately(cookie_spec, webpage_url, dir, &[], trace_id).await;
-    }
-
-    if let Err(e) =
-        translate_subtitles(api, chat_id, msg_id, trace_id, dir, &missing_translatable).await
+    if let Err(e) = translate_subtitles(
+        api,
+        chat_id,
+        msg_id,
+        trace_id,
+        dir,
+        &missing_translatable,
+        user_id,
+    )
+    .await
     {
         log_trace(trace_id, "ensure_translate_failed", &format!("err={e}"));
     }

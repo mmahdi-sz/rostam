@@ -647,6 +647,7 @@
         "translating_progress": "⏳ در حال ترجمه هوشمند زیرنویس...\n🔘 {bar}  {percent}\n📝 {done} از {total} خط ترجمه شده\n⏱️ {elapsed}   ⌛ {eta}",
         "hardsubbing": "🎬 در حال چسباندن (هاردساب) زیرنویس روی ویدیو...\nلطفاً شکیبا باشید، این پردازش کمی زمان می‌برد.",
         "hardsub_progress": "🎬 در حال چسباندن (هاردساب) زیرنویس...\n🔘 {bar}  {percent}\n⏱️ {elapsed} / {total}   ⌛ {eta}",
+        "subtitle_failed": "⚠️ آماده‌سازی زیرنویس انجام نشد؛ لطفاً دوباره تلاش کنید.",
         "hardsub_failed": "⚠️ چسباندن زیرنویس روی ویدیو با خطا مواجه شد: {error}",
         "subtitle_caption": "📄 زیرنویس {lang}\n{title}",
         "playlist": {
@@ -2051,6 +2052,7 @@
         "translating_progress": "⏳ Translating subtitle...\n🔘 {bar}  {percent}\n📝 {done} of {total} lines translated\n⏱️ {elapsed}   ⌛ {eta}",
         "hardsubbing": "🎬 Burning subtitles into video (hardsub)...\nPlease wait, this processing takes a moment.",
         "hardsub_progress": "🎬 Burning subtitles (hardsub)...\n🔘 {bar}  {percent}\n⏱️ {elapsed} / {total}   ⌛ {eta}",
+        "subtitle_failed": "⚠️ Subtitle processing failed; please try again.",
         "hardsub_failed": "⚠️ Burning subtitles into video failed: {error}",
         "subtitle_caption": "📄 Subtitle {lang}\n{title}",
         "playlist": {
@@ -3455,6 +3457,7 @@
         "translating_progress": "⏳ Traduzione dei sottotitoli in corso...\n🔘 {bar}  {percent}\n📝 {done} di {total} righe tradotte\n⏱️ {elapsed}   ⌛ {eta}",
         "hardsubbing": "🎬 Impressione dei sottotitoli nel video (hardsub) in corso...\nAttendere, questo processo richiede un momento.",
         "hardsub_progress": "🎬 Impressione dei sottotitoli (hardsub) in corso...\n🔘 {bar}  {percent}\n⏱️ {elapsed} / {total}   ⌛ {eta}",
+        "subtitle_failed": "⚠️ Elaborazione dei sottotitoli fallita; riprova.",
         "hardsub_failed": "⚠️ Impressione dei sottotitoli fallita: {error}",
         "subtitle_caption": "📄 Sottotitoli {lang}\n{title}",
         "playlist": {
@@ -4859,6 +4862,7 @@
         "translating_progress": "⏳ Translating subtitle...\n🔘 {bar}  {percent}\n📝 {done} of {total} lines translated\n⏱️ {elapsed}   ⌛ {eta}",
         "hardsubbing": "🎬 Burning subtitles into video (hardsub)...\nPlease wait, this processing takes a moment.",
         "hardsub_progress": "🎬 Burning subtitles (hardsub)...\n🔘 {bar}  {percent}\n⏱️ {elapsed} / {total}   ⌛ {eta}",
+        "subtitle_failed": "⚠️ Не удалось обработать субтитры; повторите попытку.",
         "hardsub_failed": "⚠️ Burning subtitles into video failed: {error}",
         "subtitle_caption": "📄 Subtitle {lang}\n{title}",
         "playlist": {
