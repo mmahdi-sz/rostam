@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.5] - 2026-11-10
+
+### Fixed
+- Remove YouTube rolling-caption carryover and duplicate 10ms animation cues before local translation and subtitle delivery, preserving cue timestamps, short speech, numeric captions and repetitions after pauses.
+- Force Persian subtitle paragraph direction with Unicode RTL embedding in downloaded and translated SRT files, including embedded subtitles and hardsub rendering, while preserving Latin text and numbers.
+
+### Added
+- Real YouTube caption regression fixture and TestAPI coverage for rolling-caption cleanup and idempotent Persian RTL preparation.
+
 ## [2.7.4] - 2026-11-10
 
 ### Fixed

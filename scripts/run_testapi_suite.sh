@@ -995,7 +995,7 @@ echo "✅ Force Join tests passed!"
 echo "✅ Extended TestAPI Endpoint Suite passed!"
 
 echo ""
-for YT_SCENARIO in missing hardsub remux codec; do
+for YT_SCENARIO in missing hardsub remux codec rolling; do
     echo "Testing /test/youtube/subtitle ($YT_SCENARIO)"
     YT_SUB=$(curl --fail --max-time 180 -s -X POST "$BASE_URL/test/youtube/subtitle" -H 'Content-Type: application/json' -d "{\"scenario\":\"$YT_SCENARIO\"}")
     echo "$YT_SUB" | jq -e '.ok == true' >/dev/null || { echo "$YT_SUB"; exit 1; }

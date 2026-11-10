@@ -75,6 +75,19 @@ pub async fn process_subtitle_pipeline(
         return SubtitlePipelineResult::Failed;
     }
 
+    if let Err(e) = clean_subtitles_in_dir(dir) {
+        log_trace(trace_id, "subtitle_prepare", &format!("=> fail err={e}"));
+        crate::stats::record_error_global("youtube", "subtitle preparation failed").await;
+        edit_status(
+            api,
+            chat_id,
+            msg_id,
+            crate::i18n::t("youtube.download.subtitle_failed"),
+        )
+        .await;
+        return SubtitlePipelineResult::Failed;
+    }
+
     // Dispatch only after every selected language is available.
     match selection.subtitle_mode {
         SubtitleMode::Hardsub => {

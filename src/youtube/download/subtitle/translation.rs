@@ -21,6 +21,7 @@ pub async fn translate_subtitles(
         return Ok(());
     }
 
+    super::files::clean_subtitles_in_dir(dir)?;
     let mut english_srt = None;
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Ok(());

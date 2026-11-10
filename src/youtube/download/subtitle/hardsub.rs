@@ -44,6 +44,7 @@ pub async fn hardsub_subtitles(
         "hardsub_subtitles_started",
         &format!("video={video_path}"),
     );
+    super::files::clean_subtitles_in_dir(dir)?;
     let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
     let mut srts = Vec::new();
     for entry in entries.flatten() {

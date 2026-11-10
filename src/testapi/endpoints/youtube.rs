@@ -95,15 +95,28 @@ pub async fn test_youtube_subtitle(Json(req): Json<SubtitleReq>) -> Json<serde_j
         let dir = crate::common::dir::TempDirGuard::create("yt_subtitle_test", trace)?;
         let api = frankenstein::client_reqwest::Bot::new_url("http://127.0.0.1:14379/bot".to_string());
         let langs = vec!["fa".to_string()];
+        if req.scenario == "rolling" {
+            let raw = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/youtube_rolling.srt"));
+            let cleaned = crate::youtube::download::subtitle::prepare_subtitle(raw, "en");
+            let cues = crate::youtube::translator::parse_srt(&cleaned);
+            anyhow::ensure!(cues.len() == 7 && cues[1].text == "next, cuz obviously the Democrats just", "rolling carryover remains");
+            let rtl = crate::youtube::download::subtitle::prepare_subtitle("1\n00:00:00,000 --> 00:00:01,000\nYouTube نسخه 2026: سلام!\n\n", "fa");
+            anyhow::ensure!(rtl.contains("\u{202b}YouTube نسخه 2026: سلام!\u{202c}"), "Persian direction missing");
+            return Ok(serde_json::json!({"ok": true, "cues": cues.len(), "rtl": true, "trace": trace}));
+        }
         if req.scenario == "missing" {
             let result = crate::youtube::download::subtitle::hardsub_subtitles(&api, 0, 0, dir.path(), "missing.mkv", &langs, Some(1), trace, 0).await;
             anyhow::ensure!(result.is_err(), "missing subtitle incorrectly succeeded");
             return Ok(serde_json::json!({"ok": true, "rejected": true, "trace": trace}));
         }
         if req.scenario == "translation" {
-            tokio::fs::write(dir.path().join("sub.en-orig.srt"), "1\n00:00:00,000 --> 00:00:01,000\nHello world.\n").await?;
+            tokio::fs::write(dir.path().join("sub.en-orig.srt"), include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/youtube_rolling.srt"))).await?;
             crate::youtube::download::subtitle::translate_subtitles(&api, 0, 0, trace, dir.path(), &langs, 0).await.map_err(anyhow::Error::msg)?;
             anyhow::ensure!(crate::youtube::download::subtitle::subtitle_file_exists_for_lang(dir.path(), "fa"), "local translation missing");
+            crate::youtube::download::subtitle::clean_subtitles_in_dir(dir.path()).map_err(anyhow::Error::msg)?;
+            let translated = tokio::fs::read_to_string(dir.path().join("translated_fa.srt")).await?;
+            let cues = crate::youtube::translator::parse_srt(&translated);
+            anyhow::ensure!(cues.len() == 7 && cues.iter().all(|c| c.text.starts_with('\u{202b}')), "translation did not receive cleaned cues or Persian direction");
         } else {
             anyhow::ensure!(req.scenario == "hardsub" || req.scenario == "remux" || req.scenario == "codec", "unknown scenario");
             tokio::fs::write(dir.path().join("sub.fa.srt"), "1\n00:00:00,000 --> 00:00:01,000\nسلام دنیا\n").await?;
