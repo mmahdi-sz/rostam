@@ -1,0 +1,13 @@
+[Unit]
+Description=Surge download manager daemon
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Environment=HOME=/root
+ExecStart=/usr/local/bin/surge server start -p 1700 -o /mnt/data/mahdidev/ros/downloads
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -299,8 +299,9 @@ pub(crate) async fn probe_url(url: &str) -> ProbeResult {
 #[cfg(test)]
 mod tests {
     use super::{
-        available_disk_space, detect_social_platform, extract_content_disposition_filename,
-        is_direct_link, safe_download_filename, sanitize_rename, ProbeResult,
+        ProbeResult, available_disk_space, detect_social_platform,
+        extract_content_disposition_filename, is_direct_link, safe_download_filename,
+        sanitize_rename,
     };
 
     #[test]

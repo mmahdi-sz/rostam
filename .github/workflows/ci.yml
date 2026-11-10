@@ -102,6 +102,28 @@ jobs:
           unzip -qo /tmp/vosk.zip -d /tmp/vosk
           cp $(find /tmp/vosk -name libvosk.so | head -1) files/runtime/libvosk.so
           rm -rf /tmp/vosk /tmp/vosk.zip
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install media test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg redis-tools fonts-dejavu-core espeak-ng-data
+          python -m pip install edge-tts
+          mkdir -p models/piper/fa_IR
+          # Use a public Persian Piper fixture with the engine's configured filenames.
+          PIPER_BASE=https://huggingface.co/rhasspy/piper-voices/resolve/cf910fb59f1d79ab3b625a63993a108751c6c25d/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx
+          curl --fail --location --retry 3 "$PIPER_BASE" -o models/piper/fa_IR/fa_IR-mantatts-par.onnx
+          curl --fail --location --retry 3 "$PIPER_BASE.json" -o models/piper/fa_IR/fa_IR-mantatts-par.onnx.json
+      - name: Start test CPU broker
+        run: |
+          python -m unittest discover -s tests -p test_cpu_broker_fixture.py
+          python scripts/testapi_cpu_broker.py > /tmp/testapi_cpu_broker.log 2>&1 &
+          for i in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:6589/cpu/user_cores; then break; fi
+            sleep 0.2
+          done
+          curl --fail --silent http://127.0.0.1:6589/cpu/user_cores | python -c 'import json,sys; assert json.load(sys.stdin)["is_busy"] is False'
       - name: Configure test environment
         run: |
           cat << 'EOF' > .env

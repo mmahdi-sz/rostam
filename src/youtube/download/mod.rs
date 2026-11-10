@@ -1,5 +1,4 @@
 mod cancel;
-pub mod cpu;
 pub mod helpers;
 pub mod notice;
 pub mod playlist;

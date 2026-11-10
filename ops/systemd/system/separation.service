@@ -1,0 +1,22 @@
+[Unit]
+Description=Vocal/Instrumental Separation Service
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+# Runs unprivileged: mahdi:mahdi owns the repo tree. Requires downloads/,
+# cookie_profiles_cache/ and separation-service/ to be mahdi-owned (chowned
+# 2026-08-07). os.sched_setaffinity on own threads needs no capability.
+User=mahdi
+Group=mahdi
+NoNewPrivileges=yes
+WorkingDirectory=/mnt/data/mahdidev/ros/dev
+ExecStart=/mnt/data/mahdidev/ros/dev/separation-service/start.sh
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

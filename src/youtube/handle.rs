@@ -351,17 +351,17 @@ pub async fn handle_youtube_url(
                         let _ = api.delete_message(&del).await;
                     }
                     let _ = send_text(api, chat_id, &t("cookie.youtube_unavailable")).await;
-                    anyhow::bail!("circuit breaker tripped after {} rate-limited cookies", tried.len());
+                    anyhow::bail!(
+                        "circuit breaker tripped after {} rate-limited cookies",
+                        tried.len()
+                    );
                 }
 
                 continue;
             }
             Err(FetchError::BadCookie(msg)) => {
                 crate::stats::record_error_global("youtube", &format!("bad_cookie: {msg}")).await;
-                eprintln!(
-                    "bad cookie {}: {msg}; checking canary",
-                    cookie.id
-                );
+                eprintln!("bad cookie {}: {msg}; checking canary", cookie.id);
                 log_trace(
                     trace_id,
                     "fetch_bad_cookie",
@@ -398,7 +398,9 @@ pub async fn handle_youtube_url(
                         let entry = crate::cookie_pool::CooldownEntry {
                             cookie_id: cookie.id.clone(),
                             expire_at: std::time::SystemTime::now()
-                                + std::time::Duration::from_secs(crate::config::cookie_bad_cooldown_secs()),
+                                + std::time::Duration::from_secs(
+                                    crate::config::cookie_bad_cooldown_secs(),
+                                ),
                         };
                         let _ = crate::database::postgresql::cookie_pool::save_cooldown(
                             &client, &entry,

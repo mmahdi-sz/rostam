@@ -376,8 +376,7 @@ async fn test_pool_connection_hoarding_stress_and_recovery() {
     );
     assert_eq!(
         final_status.size, pool_size,
-        "Pool size should equal configured max_size ({})",
-        pool_size
+        "Pool size should equal configured max_size ({pool_size})"
     );
 
     println!("\n✅ Pool Hoarding Stress Test Passed Successfully!");

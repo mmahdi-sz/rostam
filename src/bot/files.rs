@@ -35,7 +35,7 @@ impl TransferResult {
         } else if bps >= 1_000.0 {
             format!("{:.0} KB/s", bps / 1_000.0)
         } else {
-            format!("{:.0} B/s", bps)
+            format!("{bps:.0} B/s")
         }
     }
 }

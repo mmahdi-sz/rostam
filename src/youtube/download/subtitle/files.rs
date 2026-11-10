@@ -168,5 +168,4 @@ mod tests {
         assert!(!subtitle_file_exists_for_lang(dir.path(), "fa"));
         assert!(!subtitle_file_exists_for_lang(dir.path(), "en-US"));
     }
-
 }

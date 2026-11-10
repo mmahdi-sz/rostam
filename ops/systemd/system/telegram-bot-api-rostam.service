@@ -1,0 +1,20 @@
+[Unit]
+Description=Telegram Bot API Server (rostam, isolated)
+After=network.target
+
+[Service]
+EnvironmentFile=/etc/ros-telegram-bot/telegram-bot-api-rostam.env
+Type=simple
+ExecStart=/usr/local/bin/telegram-bot-api \
+    --local \
+    --dir=/mnt/data/telegram-bot-api-rostam/data \
+    --temp-dir=/mnt/data/telegram-bot-api-rostam/temp \
+    --log=/mnt/data/telegram-bot-api-rostam/logs/server.log \
+    --verbosity=2 \
+    --http-port=8082 \
+    --http-ip-address=127.0.0.1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

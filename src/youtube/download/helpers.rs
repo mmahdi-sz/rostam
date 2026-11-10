@@ -2,8 +2,6 @@ use std::path::PathBuf;
 
 use crate::youtube::trace::log_trace;
 
-#[allow(unused_imports)]
-pub use super::cpu::*;
 pub use super::notice::*;
 pub use super::sanitize::*;
 pub use super::subtitle::*;

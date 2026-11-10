@@ -167,7 +167,8 @@ impl CookiePool {
             .find_cookie_id(spec_or_id)
             .unwrap_or_else(|| spec_or_id.to_string());
         self.cleanup_expired_cooldowns();
-        let expire_at = SystemTime::now() + Duration::from_secs(crate::config::cookie_bad_cooldown_secs());
+        let expire_at =
+            SystemTime::now() + Duration::from_secs(crate::config::cookie_bad_cooldown_secs());
         if let Some(entry) = self
             .cooldown_list
             .iter_mut()

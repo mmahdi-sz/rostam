@@ -16,8 +16,8 @@ use crate::log::next_trace_id;
 use crate::rank;
 use crate::surge_dl::engine::run_surge_download;
 use crate::surge_dl::probe::{
-    available_disk_space, detect_social_platform, is_direct_link, probe_url, sanitize_rename,
-    ProbeResult,
+    ProbeResult, available_disk_space, detect_social_platform, is_direct_link, probe_url,
+    sanitize_rename,
 };
 use crate::surge_dl::types::{CB_SURGE_CONFIRM_ORIGINAL, CB_SURGE_CONFIRM_RENAME, CB_TOOLS_SURGE};
 use crate::surge_dl::ui::{cancel_keyboard, confirm_keyboard, fmt_bytes, fmt_traffic_fa};
@@ -111,25 +111,21 @@ pub async fn handle_surge_text(
     log_ev!("surge_dl", trace_id, "url_accepted", "url" => url);
 
     let (filename, size_bytes) = match probe_url(url).await {
-        ProbeResult::Ok { filename, size_bytes } => (filename, size_bytes),
+        ProbeResult::Ok {
+            filename,
+            size_bytes,
+        } => (filename, size_bytes),
         ProbeResult::CloudflareChallenge => {
             log_ev!("surge_dl", trace_id, "probe_blocked_cloudflare", "url" => url, "=>" => "reject");
-            let _ = crate::bot::send_text_with_back(
-                api,
-                chat_id,
-                &t("surge.error.cloudflare_captcha"),
-            )
-            .await;
+            let _ =
+                crate::bot::send_text_with_back(api, chat_id, &t("surge.error.cloudflare_captcha"))
+                    .await;
             return;
         }
         ProbeResult::AuthRequired => {
             log_ev!("surge_dl", trace_id, "probe_auth_required", "url" => url, "=>" => "reject");
-            let _ = crate::bot::send_text_with_back(
-                api,
-                chat_id,
-                &t("surge.error.auth_required"),
-            )
-            .await;
+            let _ = crate::bot::send_text_with_back(api, chat_id, &t("surge.error.auth_required"))
+                .await;
             return;
         }
     };

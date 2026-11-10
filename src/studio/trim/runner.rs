@@ -372,7 +372,7 @@ pub async fn execute_trim_job(
             }
 
             if success {
-                let thumb_name = format!("thumb_{}_{}.jpg", current_idx, trace_id);
+                let thumb_name = format!("thumb_{current_idx}_{trace_id}.jpg");
                 let thumb_path = work_dir_inner.join(&thumb_name);
                 let _ = std::process::Command::new(crate::config::ffmpeg_path())
                     .args([

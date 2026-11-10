@@ -111,22 +111,18 @@ mod tests {
             &[("elapsed", &crate::i18n::md_escape("0s")), ("detail", "")],
         );
         let status_text = crate::i18n::apply_premium_to_md(&status_raw);
-        println!("status_text = {:?}", status_text);
+        println!("status_text = {status_text:?}");
         assert!(
             !status_text.contains('{') && !status_text.contains('}'),
-            "MarkdownV2 status text still has raw braces: {:?}",
-            status_text
+            "MarkdownV2 status text still has raw braces: {status_text:?}"
         );
 
         // Also test via start_compression_job path: t() without tf() leaves placeholders
         let bad_text =
             crate::i18n::apply_premium_to_md(&crate::i18n::t("studio.compress.status_downloading"));
-        println!("bad_text (t without tf) = {:?}", bad_text);
+        println!("bad_text (t without tf) = {bad_text:?}");
         let has_braces = bad_text.contains('{') || bad_text.contains('}');
-        println!(
-            "Has unescaped braces (start_compression_job bug): {}",
-            has_braces
-        );
+        println!("Has unescaped braces (start_compression_job bug): {has_braces}");
     }
 
     #[test]

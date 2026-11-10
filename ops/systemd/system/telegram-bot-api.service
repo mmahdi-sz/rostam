@@ -1,0 +1,21 @@
+[Unit]
+Description=Telegram Bot API Server
+After=network.target
+
+[Service]
+EnvironmentFile=/etc/ros-telegram-bot/telegram-bot-api.env
+UMask=0022
+Type=simple
+ExecStart=/usr/local/bin/telegram-bot-api \
+    --local \
+    --dir=/mnt/data/telegram-bot-api/data \
+    --temp-dir=/mnt/data/telegram-bot-api/temp \
+    --log=/mnt/data/telegram-bot-api/logs/server.log \
+    --verbosity=3 \
+    --http-port=8081 \
+    --http-ip-address=127.0.0.1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

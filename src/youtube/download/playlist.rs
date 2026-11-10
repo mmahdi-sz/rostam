@@ -341,7 +341,9 @@ async fn download_single_playlist_item_with_retry(
                                     let entry = crate::cookie_pool::CooldownEntry {
                                         cookie_id: cid.clone(),
                                         expire_at: std::time::SystemTime::now()
-                                            + std::time::Duration::from_secs(crate::config::cookie_bad_cooldown_secs()),
+                                            + std::time::Duration::from_secs(
+                                                crate::config::cookie_bad_cooldown_secs(),
+                                            ),
                                     };
                                     let _ =
                                         crate::database::postgresql::cookie_pool::save_cooldown(
@@ -664,7 +666,15 @@ async fn download_single_playlist_item_attempt(
                 &format!("num={video_num}"),
             );
             if selection.subtitle_mode == SubtitleMode::File {
-                super::helpers::send_subtitle_files(api, &dir, req.chat_id, item_title, &selection.subtitle_langs, trace_id).await;
+                super::helpers::send_subtitle_files(
+                    api,
+                    &dir,
+                    req.chat_id,
+                    item_title,
+                    &selection.subtitle_langs,
+                    trace_id,
+                )
+                .await;
             }
             if !is_h264 {
                 maybe_send_non_h264_notice(api, req.chat_id, &codec_name, trace_id).await;

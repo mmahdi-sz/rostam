@@ -100,7 +100,7 @@ pub fn spawn_download_ticker(
             } else if speed_bps >= 1_000.0 {
                 format!("{:.0} KB/s", speed_bps / 1_000.0)
             } else {
-                format!("{:.0} B/s", speed_bps)
+                format!("{speed_bps:.0} B/s")
             };
 
             let detail_key = format!("{domain_prefix}.status_downloading_detail");

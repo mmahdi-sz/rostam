@@ -736,7 +736,7 @@ pub mod tests {
         let pkg_max = crate::pkgconvert::validate::MAX_INPUT_FILE_BYTES;
         assert_eq!(pkg_max, 500 * 1024 * 1024);
         assert!(
-            !(pkg_max > crate::pkgconvert::validate::MAX_INPUT_FILE_BYTES),
+            (pkg_max <= crate::pkgconvert::validate::MAX_INPUT_FILE_BYTES),
             "Exact 500MB must pass"
         );
         assert!(
@@ -748,7 +748,7 @@ pub mod tests {
         let burn_max_dur = crate::studio::burn::MAX_BURN_DURATION_SECS;
         assert_eq!(burn_max_dur, 7200);
         assert!(
-            !(burn_max_dur > crate::studio::burn::MAX_BURN_DURATION_SECS),
+            (burn_max_dur <= crate::studio::burn::MAX_BURN_DURATION_SECS),
             "Exact 7200s must pass"
         );
         assert!(
@@ -760,7 +760,7 @@ pub mod tests {
         let burn_max_upload = crate::studio::burn::MAX_UPLOAD_BYTES;
         assert_eq!(burn_max_upload, 2000 * 1024 * 1024);
         assert!(
-            !(burn_max_upload > crate::studio::burn::MAX_UPLOAD_BYTES),
+            (burn_max_upload <= crate::studio::burn::MAX_UPLOAD_BYTES),
             "Exact 2000MB must pass"
         );
         assert!(
@@ -772,7 +772,7 @@ pub mod tests {
         let tts_max = crate::moss_tts::handle::TTS_MAX_CHARS;
         assert_eq!(tts_max, 500);
         assert!(
-            !(tts_max > crate::moss_tts::handle::TTS_MAX_CHARS),
+            (tts_max <= crate::moss_tts::handle::TTS_MAX_CHARS),
             "Exact 500 chars must pass"
         );
         assert!(
@@ -783,7 +783,7 @@ pub mod tests {
         // Test 4f: PDF Compress default max cap.
         let pdf_max = crate::config::pdf_compress_max_bytes();
         assert!(pdf_max > 0);
-        assert!(!(pdf_max > pdf_max), "Exact PDF max bytes must pass");
+        assert!((pdf_max <= pdf_max), "Exact PDF max bytes must pass");
         assert!(pdf_max + 1 > pdf_max, "PDF max bytes + 1 must be rejected");
     }
 }

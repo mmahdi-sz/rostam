@@ -1,0 +1,9 @@
+[Unit]
+Description=Run telegram-bot-api log cleanup daily (deleting logs older than 2 days)
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

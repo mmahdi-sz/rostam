@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.4] - 2026-11-10
+
+### Fixed
+- Restore CI formatting and strict clippy checks; remove obsolete YouTube CPU wrapper functions after adopting the shared broker guard.
+- Update seven locked dependencies to address eight RustSec advisories affecting constant-time operations, TLS trust validation and Zstandard processing.
+- Provision the TestAPI runner's real media tools and Persian Piper fixture, and start a CI-only broker fixture so subtitle encoding tests do not depend on the production broker.
+
+### Changed
+- Track ten project systemd unit/drop-in files under `ops/systemd/`, with live system and user unit paths symlinked to the canonical dev sources. Keep Telegram API credentials in root-owned mode-0600 environment files outside Git.
+
 ## [2.7.3] - 2026-11-10
 
 ### Fixed

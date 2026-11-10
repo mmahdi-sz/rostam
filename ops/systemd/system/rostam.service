@@ -1,0 +1,18 @@
+[Unit]
+Description=Rostam Telegram Bot (Production)
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/data/mahdidev/ros/production
+EnvironmentFile=-/mnt/data/mahdidev/ros/production/.env
+Environment=LD_LIBRARY_PATH=/mnt/data/mahdidev/ros/production
+Environment=TMPDIR=/mnt/data/mahdidev/ros/production/tmp
+ExecStartPre=/usr/bin/pg_isready -h localhost -p 5432 -U postgres -d ros_telegram_bot_production -t 30
+ExecStart=/mnt/data/mahdidev/ros/production/rostam
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

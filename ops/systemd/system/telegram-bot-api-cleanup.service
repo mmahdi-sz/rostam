@@ -1,0 +1,6 @@
+[Unit]
+Description=Clean telegram-bot-api logs older than 2 days
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/find /data/telegram-bot-api/logs -type f -mtime +2 -delete

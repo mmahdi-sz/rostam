@@ -183,9 +183,8 @@ mod tests {
         // Should have split into at least 2 chunks around the silence
         assert!(
             chunks.len() >= 2,
-            "Expected multiple chunks, got {:?}",
-            chunks
+            "Expected multiple chunks, got {chunks:?}"
         );
-        println!("VAD chunks generated: {:?}", chunks);
+        println!("VAD chunks generated: {chunks:?}");
     }
 }

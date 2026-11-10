@@ -255,7 +255,7 @@ impl TransferProgress {
 
         TransferSnapshot {
             stage: stage_str,
-            percent: pct.map(|p| format!("{:.1}%", p)).unwrap_or_default(),
+            percent: pct.map(|p| format!("{p:.1}%")).unwrap_or_default(),
             bar: build_bar(pct.unwrap_or(0.0) as f32),
             done: fmt_bytes(done),
             total: if total == 0 {
@@ -280,7 +280,7 @@ pub fn fmt_speed(bps: f64) -> String {
     } else if bps >= 1_000.0 {
         format!("{:.0} KB/s", bps / 1_000.0)
     } else {
-        format!("{:.0} B/s", bps)
+        format!("{bps:.0} B/s")
     }
 }
 
@@ -293,7 +293,7 @@ pub fn fmt_bytes(b: u64) -> String {
     } else if b >= 1_000.0 {
         format!("{:.0} KB", b / 1_000.0)
     } else {
-        format!("{:.0} B", b)
+        format!("{b:.0} B")
     }
 }
 
@@ -479,10 +479,10 @@ where
     if !status.is_success() {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
             if let Some(desc) = json.get("description").and_then(|v| v.as_str()) {
-                return Err(anyhow::anyhow!("Telegram error: {}", desc));
+                return Err(anyhow::anyhow!("Telegram error: {desc}"));
             }
         }
-        return Err(anyhow::anyhow!("HTTP error {}: {}", status, body));
+        return Err(anyhow::anyhow!("HTTP error {status}: {body}"));
     }
 
     progress.set_stage(Stage::Done);

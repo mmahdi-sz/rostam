@@ -271,10 +271,7 @@ pub(crate) async fn run_download(
         log_trace(
             trace_id,
             "download_args",
-            &format!(
-                "cookie_spec={} format_spec={format_spec}",
-                current_cookie_spec
-            ),
+            &format!("cookie_spec={current_cookie_spec} format_spec={format_spec}"),
         );
 
         let stream_res = run_ytdlp_process(
@@ -364,8 +361,7 @@ pub(crate) async fn run_download(
                     trace_id,
                     "download_cookie_cooldown",
                     &format!(
-                        "cookie_spec={current_cookie_spec} id={:?} cooled={cooled} is_bad={is_bad}",
-                        cookie_id_opt
+                        "cookie_spec={current_cookie_spec} id={cookie_id_opt:?} cooled={cooled} is_bad={is_bad}"
                     ),
                 );
 

@@ -1,0 +1,14 @@
+[Unit]
+Description=Rostam bot-api watchdog (sync error & getDifference loop auto-cure)
+After=telegram-bot-api-rostam.service
+Wants=telegram-bot-api-rostam.service
+
+[Service]
+Type=simple
+EnvironmentFile=/mnt/data/telegram-bot-api-rostam/watchdog.env
+ExecStart=/usr/bin/python3 /mnt/data/telegram-bot-api-rostam/watchdog.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

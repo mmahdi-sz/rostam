@@ -117,11 +117,7 @@ const CANARY_TIMEOUT: Duration = Duration::from_secs(10);
 /// Quickly tests if a cookie works on a lightweight, neutral YouTube video.
 /// Returns `true` if the cookie does NOT trigger a bot/bad-cookie error on the canary video.
 pub async fn check_cookie_canary(trace_id: u64, yt_dlp_browser_spec: &str) -> bool {
-    log_trace(
-        trace_id,
-        "cookie_canary_start",
-        yt_dlp_browser_spec,
-    );
+    log_trace(trace_id, "cookie_canary_start", yt_dlp_browser_spec);
     let mut cmd = Command::new("yt-dlp");
     cmd.arg("--js-runtimes")
         .arg(format!("deno:{}", crate::config::deno_path()))
@@ -151,7 +147,10 @@ pub async fn check_cookie_canary(trace_id: u64, yt_dlp_browser_spec: &str) -> bo
             log_trace(
                 trace_id,
                 "cookie_canary_done",
-                &format!("spec={yt_dlp_browser_spec} status={} is_bad={is_bad}", output.status),
+                &format!(
+                    "spec={yt_dlp_browser_spec} status={} is_bad={is_bad}",
+                    output.status
+                ),
             );
             !is_bad
         }
@@ -386,8 +385,7 @@ pub async fn fetch_video_info(
                 &format!("cookie_spec={yt_dlp_browser_spec}"),
             );
             return Err(FetchError::BadCookie(format!(
-                "0 formats extracted with cookie {}",
-                yt_dlp_browser_spec
+                "0 formats extracted with cookie {yt_dlp_browser_spec}"
             )));
         }
     }
