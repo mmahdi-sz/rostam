@@ -104,6 +104,56 @@ pub fn clean_rolling_subtitles(content: &str) -> String {
     format_srt(&cleaned)
 }
 
+/// Render simultaneous captions as one chronological block so newer text stays below.
+pub fn stack_subtitles_chronologically(content: &str) -> String {
+    let items = crate::youtube::translator::parse_srt(content);
+    let timed: Vec<_> = items
+        .iter()
+        .filter_map(|item| {
+            cue_times(&item.timestamp)
+                .filter(|(start, end)| start < end)
+                .map(|(start, end)| (start, end, item))
+        })
+        .collect();
+    let mut boundaries: Vec<_> = timed
+        .iter()
+        .flat_map(|(start, end, _)| [*start, *end])
+        .collect();
+    boundaries.sort_unstable();
+    boundaries.dedup();
+    let stamp = |ms: u64| {
+        format!(
+            "{:02}:{:02}:{:02},{:03}",
+            ms / 3600000,
+            ms / 60000 % 60,
+            ms / 1000 % 60,
+            ms % 1000
+        )
+    };
+    let mut output = Vec::new();
+    for window in boundaries.windows(2) {
+        let (start, end) = (window[0], window[1]);
+        let mut active: Vec<_> = timed
+            .iter()
+            .filter(|(a, b, _)| *a <= start && *b > start)
+            .collect();
+        active.sort_by_key(|(a, _, item)| (*a, item.index));
+        if active.is_empty() {
+            continue;
+        }
+        output.push(crate::youtube::translator::SrtItem {
+            index: output.len() + 1,
+            timestamp: format!("{} --> {}", stamp(start), stamp(end)),
+            text: active
+                .iter()
+                .map(|(_, _, item)| item.text.as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        });
+    }
+    crate::youtube::translator::format_srt(&output)
+}
+
 /// Set Persian paragraph direction while preserving Latin words and numbers.
 pub fn prepare_subtitle(content: &str, lang: &str) -> String {
     let cleaned = clean_rolling_subtitles(content);
@@ -283,6 +333,20 @@ pub async fn send_subtitle_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overlapping_captions_keep_old_above_new() {
+        let raw =
+            "1\n00:00:00,000 --> 00:00:04,000\nOld\n\n2\n00:00:02,000 --> 00:00:05,000\nNew\n\n";
+        let result = stack_subtitles_chronologically(raw);
+        let cues = crate::youtube::translator::parse_srt(&result);
+        assert_eq!(cues.len(), 3);
+        assert_eq!(cues[0].text, "Old");
+        assert_eq!(cues[1].timestamp, "00:00:02,000 --> 00:00:04,000");
+        assert_eq!(cues[1].text, "Old\nNew");
+        assert_eq!(cues[2].text, "New");
+        assert_eq!(stack_subtitles_chronologically(&result), result);
+    }
 
     #[test]
     fn real_youtube_rollup_preserves_words_without_carryover() {

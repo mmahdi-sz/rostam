@@ -96,6 +96,10 @@ pub async fn test_youtube_subtitle(Json(req): Json<SubtitleReq>) -> Json<serde_j
         let api = frankenstein::client_reqwest::Bot::new_url("http://127.0.0.1:14379/bot".to_string());
         let langs = vec!["fa".to_string()];
         if req.scenario == "rolling" {
+            let stacked = crate::youtube::download::subtitle::stack_subtitles_chronologically("1\n00:00:00,000 --> 00:00:04,000\nOld\n\n2\n00:00:02,000 --> 00:00:05,000\nNew\n\n");
+            let blocks = crate::youtube::translator::parse_srt(&stacked);
+            anyhow::ensure!(blocks.len() == 3 && blocks[1].text == "Old\nNew", "caption stacking order incorrect");
+
             let raw = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/youtube_rolling.srt"));
             let cleaned = crate::youtube::download::subtitle::prepare_subtitle(raw, "en");
             let cues = crate::youtube::translator::parse_srt(&cleaned);

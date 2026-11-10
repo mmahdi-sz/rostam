@@ -91,7 +91,11 @@ pub async fn hardsub_subtitles(
 
     let primary_srt = &srts[0];
     let hardsub_srt = dir.join("hardsub_input.srt");
-    if let Err(e) = tokio::fs::copy(primary_srt, &hardsub_srt).await {
+    let source = tokio::fs::read_to_string(primary_srt)
+        .await
+        .map_err(|e| e.to_string())?;
+    let prepared = super::files::stack_subtitles_chronologically(&source);
+    if let Err(e) = tokio::fs::write(&hardsub_srt, prepared).await {
         log_trace(trace_id, "hardsub_copy_srt_failed", &e.to_string());
         return Err(e.to_string());
     }

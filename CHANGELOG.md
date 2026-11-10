@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.6] - 2026-11-10
+
+### Fixed
+- Render overlapping YouTube hardsub captions in one chronological block: older text above newer text, preserving original visibility times.
+
 ## [2.7.5] - 2026-11-10
 
 ### Fixed
