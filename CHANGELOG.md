@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.7] - 2026-11-12
+
+### Fixed
+- Keep playlist subtitle files until delivery finishes; clean up after both successful and failed video uploads, guard subtitle delivery for video selections with requested languages, and log the number of files sent.
+
 ## [2.7.6] - 2026-11-10
 
 ### Fixed

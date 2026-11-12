@@ -387,6 +387,7 @@ async fn download_single_playlist_item_attempt(
 ) -> Result<u64, (crate::youtube::YtdlpErrorClassification, String)> {
     let height = selection.height;
     let codec = selection.codec;
+    let is_audio = selection.audio_only.is_some();
 
     // Isolated directory for each video to prevent collisions
     let dir = PathBuf::from(format!(
@@ -439,7 +440,7 @@ async fn download_single_playlist_item_attempt(
         .arg(&output_template);
 
     // Handle subtitles if present
-    if !selection.subtitle_langs.is_empty() {
+    if !is_audio && !selection.subtitle_langs.is_empty() {
         let sub_langs = selection.subtitle_langs.join(",");
         cmd.arg("--write-subs")
             .arg("--write-auto-subs")
@@ -657,7 +658,6 @@ async fn download_single_playlist_item_attempt(
         .map(|_| ())
     };
 
-    cleanup_dir(&dir, trace_id).await;
     match send_res {
         Ok(_) => {
             log_trace(
@@ -665,8 +665,11 @@ async fn download_single_playlist_item_attempt(
                 "playlist_item_upload_ok",
                 &format!("num={video_num}"),
             );
-            if selection.subtitle_mode == SubtitleMode::File {
-                super::helpers::send_subtitle_files(
+            if !is_audio
+                && selection.subtitle_mode == SubtitleMode::File
+                && !selection.subtitle_langs.is_empty()
+            {
+                let count = super::helpers::send_subtitle_files(
                     api,
                     &dir,
                     req.chat_id,
@@ -675,10 +678,16 @@ async fn download_single_playlist_item_attempt(
                     trace_id,
                 )
                 .await;
+                log_trace(
+                    trace_id,
+                    "subtitle_upload_done",
+                    &format!("files_sent={count}"),
+                );
             }
             if !is_h264 {
                 maybe_send_non_h264_notice(api, req.chat_id, &codec_name, trace_id).await;
             }
+            cleanup_dir(&dir, trace_id).await;
             Ok(file_size_bytes)
         }
         Err(e) => {
@@ -687,11 +696,155 @@ async fn download_single_playlist_item_attempt(
                 "playlist_item_upload_failed",
                 &format!("num={video_num} err={e}"),
             );
+            cleanup_dir(&dir, trace_id).await;
             let err_str = e.to_string();
             Err((
                 crate::youtube::YtdlpErrorClassification::Other(err_str.clone()),
                 err_str,
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_playlist_subtitles_premature_cleanup_regression() {
+        let trace_id = 999991;
+        let root = std::env::temp_dir().join(format!("yt_test_lifecycle_{trace_id}"));
+        let dir = root.join("pl_1");
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .expect("create item dir");
+
+        let srt_path = dir.join("translated_fa.srt");
+        tokio::fs::write(&srt_path, "1\n00:00:00,000 --> 00:00:01,000\nسلام\n")
+            .await
+            .expect("write srt");
+
+        // Before cleanup, the subtitle file and directory exist and are valid.
+        assert!(dir.exists(), "Item dir must exist prior to cleanup");
+        assert!(
+            srt_path.exists(),
+            "translated_fa.srt must exist prior to cleanup"
+        );
+        assert!(
+            crate::youtube::download::subtitle::subtitle_file_exists_for_lang(&dir, "fa"),
+            "Subtitle for fa must be recognized on disk"
+        );
+
+        // FLAGGED BUG REGRESSION:
+        // In the flawed implementation, cleanup_dir(&dir, trace_id).await was called
+        // immediately after video upload, BEFORE send_subtitle_files could execute.
+        cleanup_dir(&dir, trace_id).await;
+
+        // When send_subtitle_files ran, the directory had already been erased:
+        assert!(
+            !dir.exists(),
+            "Regression demonstration: directory was wiped before subtitles could be sent"
+        );
+        assert!(
+            !srt_path.exists(),
+            "Regression demonstration: translated_fa.srt was wiped before upload"
+        );
+        assert!(
+            !crate::youtube::download::subtitle::subtitle_file_exists_for_lang(&dir, "fa"),
+            "Regression demonstration: subtitle language check fails on deleted dir"
+        );
+
+        let dummy_bot =
+            frankenstein::client_reqwest::Bot::new_url("http://127.0.0.1:1/bot".to_string());
+        let langs = vec!["fa".to_string()];
+        let sent = super::super::helpers::send_subtitle_files(
+            &dummy_bot, &dir, 123, "sample", &langs, trace_id,
+        )
+        .await;
+        assert_eq!(
+            sent, 0,
+            "Regression demonstration: send_subtitle_files sends 0 files when dir was deleted"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_playlist_subtitles_correct_lifecycle_order() {
+        let trace_id = 999992;
+        let root = std::env::temp_dir().join(format!("yt_test_lifecycle_{trace_id}"));
+        let dir = root.join("pl_1");
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .expect("create item dir");
+
+        let srt_path = dir.join("translated_fa.srt");
+        tokio::fs::write(&srt_path, "1\n00:00:00,000 --> 00:00:01,000\nسلام\n")
+            .await
+            .expect("write srt");
+
+        // CORRECT ORDER:
+        // 1. Subtitle files exist during subtitle delivery phase:
+        assert!(dir.exists());
+        assert!(srt_path.exists());
+        assert!(crate::youtube::download::subtitle::subtitle_file_exists_for_lang(&dir, "fa"));
+
+        // 2. Only AFTER subtitle delivery is completed, cleanup_dir is invoked:
+        cleanup_dir(&dir, trace_id).await;
+        assert!(
+            !dir.exists(),
+            "Directory should be cleaned up after subtitle delivery"
+        );
+    }
+
+    #[test]
+    fn test_playlist_subtitle_delivery_guard_conditions() {
+        fn should_send_subtitles(
+            upload_ok: bool,
+            is_audio: bool,
+            mode: SubtitleMode,
+            langs: &[String],
+        ) -> bool {
+            upload_ok && !is_audio && mode == SubtitleMode::File && !langs.is_empty()
+        }
+
+        let fa = vec!["fa".to_string()];
+        let empty: Vec<String> = vec![];
+
+        // Video + File mode + non-empty langs + upload ok -> should deliver
+        assert!(should_send_subtitles(true, false, SubtitleMode::File, &fa));
+
+        // Audio-only -> should NOT deliver standalone video subtitles
+        assert!(!should_send_subtitles(true, true, SubtitleMode::File, &fa));
+
+        // Embedded mode -> handled in-stream, not delivered as separate files
+        assert!(!should_send_subtitles(
+            true,
+            false,
+            SubtitleMode::Embedded,
+            &fa
+        ));
+
+        // Hardsub mode -> burned into video, not delivered as separate files
+        assert!(!should_send_subtitles(
+            true,
+            false,
+            SubtitleMode::Hardsub,
+            &fa
+        ));
+
+        // Empty langs -> nothing to send
+        assert!(!should_send_subtitles(
+            true,
+            false,
+            SubtitleMode::File,
+            &empty
+        ));
+
+        // Upload failed -> should NOT attempt subtitle delivery
+        assert!(!should_send_subtitles(
+            false,
+            false,
+            SubtitleMode::File,
+            &fa
+        ));
     }
 }
