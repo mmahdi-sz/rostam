@@ -348,7 +348,8 @@ pub(crate) async fn run_download(
                 let is_bad = matches!(
                     classification,
                     crate::youtube::YtdlpErrorClassification::BadCookie(_)
-                );
+                ) && !err.to_ascii_lowercase().contains("http error 403")
+                    && !err.to_ascii_lowercase().contains("403: forbidden");
                 let mut pool = cookie_pool.lock().await;
                 let cooled = if is_bad {
                     pool.mark_bad_cookie(&current_cookie_spec).is_some()

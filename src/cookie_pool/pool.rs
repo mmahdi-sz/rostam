@@ -108,12 +108,37 @@ impl CookiePool {
             })
             .collect();
 
-        if selectable_not_excluded.is_empty() {
-            return None;
-        }
-
-        let filtered: Vec<usize> = if selectable_not_excluded.len() > 1 {
+        let candidate_pool_indices: Vec<usize> = if !selectable_not_excluded.is_empty() {
             selectable_not_excluded
+        } else {
+            // Fallback: When all cookies are on cooldown, avoid complete service outage.
+            // Pick candidate from available cookies not in excluded_ids whose cooldown expires soonest.
+            let mut fallback_candidates: Vec<(usize, SystemTime)> = self
+                .available_cookies
+                .iter()
+                .enumerate()
+                .filter(|(_, cookie)| !excluded_ids.contains(&cookie.id))
+                .map(|(index, cookie)| {
+                    let expire = self
+                        .cooldown_list
+                        .iter()
+                        .find(|e| e.cookie_id == cookie.id)
+                        .map(|e| e.expire_at)
+                        .unwrap_or(SystemTime::UNIX_EPOCH);
+                    (index, expire)
+                })
+                .collect();
+
+            if fallback_candidates.is_empty() {
+                return None;
+            }
+
+            fallback_candidates.sort_by_key(|&(_, expire)| expire);
+            vec![fallback_candidates[0].0]
+        };
+
+        let filtered: Vec<usize> = if candidate_pool_indices.len() > 1 {
+            candidate_pool_indices
                 .iter()
                 .copied()
                 .filter(|&idx| {
@@ -126,7 +151,7 @@ impl CookiePool {
         };
 
         let candidate_pool = if filtered.is_empty() {
-            &selectable_not_excluded
+            &candidate_pool_indices
         } else {
             &filtered
         };
@@ -393,5 +418,28 @@ mod tests {
         pool.remove_from_cooldown("c1");
         assert_eq!(pool.cooldown_list.len(), 0);
         assert_eq!(pool.status().selectable_cookies, 2);
+    }
+
+    #[test]
+    fn test_all_cookies_on_cooldown_fallback() {
+        let mut pool = CookiePool {
+            available_cookies: vec![dummy_cookie("c1"), dummy_cookie("c2")],
+            last_used_cookie: None,
+            cooldown_list: Vec::new(),
+            cooldown: DEFAULT_COOLDOWN,
+            random_counter: 0,
+        };
+
+        pool.mark_bad_cookie("c1");
+        pool.mark_bad_cookie("c2");
+        assert_eq!(pool.status().selectable_cookies, 0);
+
+        let fallback = pool.next_cookie();
+        assert!(fallback.is_some());
+
+        let mut excluded = HashSet::new();
+        excluded.insert("c1".to_string());
+        excluded.insert("c2".to_string());
+        assert!(pool.next_cookie_excluding(&excluded).is_none());
     }
 }

@@ -32,3 +32,10 @@ package-lock.json
 tmp/
 
 .superpowers/
+
+# Telegram test session runtime files
+*.session
+*.session-journal
+*.session.lock
+.telegram_account/
+docs/lessons.md

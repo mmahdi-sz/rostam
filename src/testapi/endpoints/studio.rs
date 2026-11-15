@@ -1,7 +1,8 @@
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
-use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
+use crate::i18n::{apply_premium_to_html, apply_premium_to_md, md_escape, t, tf};
+use crate::studio::is_telegram_audio_guaranteed;
 use crate::studio::trim::{
     DEFAULT_MAX_CUT_RANGES, RangeError, cancel_keyboard, format_timestamp, parse_cut_ranges,
 };
@@ -12,6 +13,14 @@ pub struct StudioTrimReq {
     pub user_id: Option<i64>,
     pub input_ranges: Option<String>,
     pub duration_secs: Option<u64>,
+    pub media_kind: Option<String>,
+    pub filename: Option<String>,
+    pub mime_type: Option<String>,
+    pub audio_codec: Option<String>,
+    pub audio_bitrate: Option<u64>,
+    pub simulate_busy: Option<bool>,
+    pub simulate_paywall: Option<bool>,
+    pub simulate_quota_exhausted: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -40,6 +49,20 @@ pub struct StudioTrimResp {
     pub status_job_ticker: String,
     pub not_a_video_err_sample: String,
     pub errors: Vec<String>,
+
+    pub detected_media_kind: String,
+    pub is_audio: bool,
+    pub delivery_method: String,
+    pub rendered_info_card: String,
+    pub sample_ffmpeg_args: Vec<String>,
+    pub busy_blocked: bool,
+    pub busy_error_text: Option<String>,
+    pub paywall_blocked: bool,
+    pub paywall_error_text: Option<String>,
+    pub quota_blocked: bool,
+    pub quota_error_text: Option<String>,
+    pub stats_events: Vec<String>,
+    pub trace: u64,
 }
 
 fn dump(kbd: &frankenstein::types::InlineKeyboardMarkup) -> Vec<Vec<ButtonDto>> {
@@ -130,6 +153,71 @@ pub async fn test_studio_trim(
         }
     }
 
+    let detected_media_kind = if let Some(ref k) = req.media_kind {
+        match k.to_lowercase().as_str() {
+            "audio" | "voice" | "music" => "audio".to_string(),
+            "unsupported" | "document" | "pdf" | "archive" => "unsupported".to_string(),
+            "video" => "video".to_string(),
+            _ => "video".to_string(),
+        }
+    } else if let Some(ref mime) = req.mime_type {
+        let m = mime.to_lowercase();
+        if m.starts_with("audio/") {
+            "audio".to_string()
+        } else if m.starts_with("video/") {
+            "video".to_string()
+        } else if m == "application/pdf"
+            || m == "application/zip"
+            || m == "application/x-rar-compressed"
+            || m == "application/x-7z-compressed"
+        {
+            "unsupported".to_string()
+        } else {
+            "video".to_string()
+        }
+    } else if let Some(ref name) = req.filename {
+        let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
+        if matches!(
+            ext.as_str(),
+            "mp3" | "wav" | "flac" | "m4a" | "ogg" | "opus" | "aac"
+        ) {
+            "audio".to_string()
+        } else if matches!(
+            ext.as_str(),
+            "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv" | "m4v"
+        ) {
+            "video".to_string()
+        } else if matches!(ext.as_str(), "pdf" | "zip" | "rar" | "7z" | "txt" | "exe") {
+            "unsupported".to_string()
+        } else {
+            "video".to_string()
+        }
+    } else {
+        "video".to_string()
+    };
+
+    if detected_media_kind == "unsupported" {
+        is_valid = false;
+        err_strings.push(t("studio.trim.error.not_a_video"));
+    }
+
+    let is_audio = detected_media_kind == "audio";
+    let delivery_method = if is_audio {
+        let codec = req.audio_codec.as_deref().unwrap_or("mp3");
+        let ext = req
+            .filename
+            .as_deref()
+            .and_then(|f| f.rsplit('.').next())
+            .unwrap_or(codec);
+        if is_telegram_audio_guaranteed(ext) {
+            "sendAudio".to_string()
+        } else {
+            "sendDocument".to_string()
+        }
+    } else {
+        "sendVideo".to_string()
+    };
+
     let prompt_text = apply_premium_to_md(&t("studio.trim.ranges_prompt"));
     let prompt_keyboard = dump(&cancel_keyboard());
 
@@ -146,6 +234,147 @@ pub async fn test_studio_trim(
         ],
     );
     let info_template = apply_premium_to_md(&raw_info);
+
+    let rendered_info_card = if is_audio {
+        let audio_filename = req.filename.as_deref().unwrap_or("track.mp3");
+        let audio_codec = req.audio_codec.as_deref().unwrap_or("mp3");
+        let bitrate_str = req
+            .audio_bitrate
+            .map(|b| format!("{} kbps", b / 1000))
+            .unwrap_or_else(|| "320 kbps".to_string());
+        let raw_audio = tf(
+            "studio.trim.info_audio_template",
+            &[
+                ("filename", &md_escape(audio_filename)),
+                ("duration", &md_escape(&format_timestamp(duration_secs))),
+                ("bitrate", &md_escape(&bitrate_str)),
+                ("codec", &md_escape(audio_codec)),
+            ],
+        );
+        apply_premium_to_md(&raw_audio)
+    } else {
+        let video_filename = req.filename.as_deref().unwrap_or("test.mp4");
+        let raw_video = tf(
+            "studio.trim.info_template",
+            &[
+                ("filename", &md_escape(video_filename)),
+                ("width", "1920"),
+                ("height", "1080"),
+                ("bitrate", &md_escape("2500 kbps")),
+                ("fps", "30"),
+                ("codec", &md_escape("h264")),
+                ("duration", &md_escape(&format_timestamp(duration_secs))),
+            ],
+        );
+        apply_premium_to_md(&raw_video)
+    };
+
+    let sample_ffmpeg_args = if is_audio {
+        let codec = req.audio_codec.as_deref().unwrap_or("mp3");
+        if codec == "flac" {
+            vec![
+                "-y".to_string(),
+                "-ss".to_string(),
+                "00:00:00".to_string(),
+                "-to".to_string(),
+                "00:01:00".to_string(),
+                "-i".to_string(),
+                "input.flac".to_string(),
+                "-map".to_string(),
+                "0".to_string(),
+                "-c:a".to_string(),
+                "flac".to_string(),
+            ]
+        } else if codec == "wav" {
+            vec![
+                "-y".to_string(),
+                "-ss".to_string(),
+                "00:00:00".to_string(),
+                "-to".to_string(),
+                "00:01:00".to_string(),
+                "-i".to_string(),
+                "input.wav".to_string(),
+                "-map".to_string(),
+                "0".to_string(),
+                "-c".to_string(),
+                "copy".to_string(),
+                "-avoid_negative_ts".to_string(),
+                "make_zero".to_string(),
+            ]
+        } else {
+            vec![
+                "-y".to_string(),
+                "-ss".to_string(),
+                "00:00:00".to_string(),
+                "-to".to_string(),
+                "00:01:00".to_string(),
+                "-i".to_string(),
+                "input.mp3".to_string(),
+                "-map".to_string(),
+                "0".to_string(),
+                "-c".to_string(),
+                "copy".to_string(),
+            ]
+        }
+    } else {
+        vec![
+            "-y".to_string(),
+            "-ss".to_string(),
+            "00:00:00".to_string(),
+            "-to".to_string(),
+            "00:01:00".to_string(),
+            "-i".to_string(),
+            "input.mp4".to_string(),
+            "-c".to_string(),
+            "copy".to_string(),
+            "-avoid_negative_ts".to_string(),
+            "make_zero".to_string(),
+            "-movflags".to_string(),
+            "+faststart".to_string(),
+        ]
+    };
+
+    let busy_blocked = req.simulate_busy.unwrap_or(false);
+    let busy_error_text = if busy_blocked {
+        Some(t("active_job_running"))
+    } else {
+        None
+    };
+
+    let paywall_blocked = req.simulate_paywall.unwrap_or(false);
+    let paywall_error_text = if paywall_blocked {
+        Some(apply_premium_to_html(&tf(
+            "rank.paywall_feature",
+            &[("feature", "studio_trim"), ("min_rank", "سپهبد")],
+        )))
+    } else {
+        None
+    };
+
+    let quota_blocked = req.simulate_quota_exhausted.unwrap_or(false);
+    let quota_error_text = if quota_blocked {
+        Some(apply_premium_to_html(&tf(
+            "rank.paywall_limit",
+            &[("limit", "10"), ("min_rank", "سپهبد")],
+        )))
+    } else {
+        None
+    };
+
+    let trace = crate::log::next_trace_id();
+    let mut stats_events = Vec::new();
+    if paywall_blocked {
+        stats_events.push("paywall:feature:sepahbod".to_string());
+    } else if quota_blocked {
+        stats_events.push("paywall:limit:sepahbod".to_string());
+    } else if busy_blocked {
+        stats_events.push("studio_trim:busy_blocked".to_string());
+    } else if detected_media_kind == "unsupported" {
+        stats_events.push("studio_trim:invalid_media".to_string());
+    } else {
+        stats_events.push("studio_trim:ranges_parsed".to_string());
+        stats_events.push(format!("studio_trim:media:{detected_media_kind}"));
+    }
 
     let raw_ticker = tf(
         "studio.trim.status_job_ticker",
@@ -172,6 +401,19 @@ pub async fn test_studio_trim(
             status_job_ticker,
             not_a_video_err_sample,
             errors: err_strings,
+            detected_media_kind,
+            is_audio,
+            delivery_method,
+            rendered_info_card,
+            sample_ffmpeg_args,
+            busy_blocked,
+            busy_error_text,
+            paywall_blocked,
+            paywall_error_text,
+            quota_blocked,
+            quota_error_text,
+            stats_events,
+            trace,
         }),
     )
 }

@@ -221,58 +221,17 @@ pub fn is_video_message_metadata(msg: &frankenstein::types::Message) -> bool {
     if msg.video.is_some() || msg.animation.is_some() || msg.video_note.is_some() {
         return true;
     }
+    if msg.audio.is_some() || msg.voice.is_some() {
+        return false;
+    }
     if let Some(doc) = &msg.document {
-        if let Some(mime) = &doc.mime_type {
-            let mime_lower = mime.to_lowercase();
-            if mime_lower.starts_with("video/")
-                || mime_lower == "application/octet-stream"
-                || mime_lower == "binary/octet-stream"
-                || mime_lower == "application/x-matroska"
-                || mime_lower == "application/x-flash-video"
-                || mime_lower == "application/mxf"
-                || mime_lower == "application/vnd.rn-realmedia"
-            {
-                return true;
-            }
-        }
+        // Priority 1: If document filename has a recognizable audio extension, it is audio, not video.
+        // Critical: iOS/Android Telegram clients frequently send .m4a audio files with mime_type="video/mp4".
         if let Some(name) = &doc.file_name {
-            let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
-            if matches!(
-                ext.as_str(),
-                "mp4"
-                    | "mkv"
-                    | "avi"
-                    | "mov"
-                    | "webm"
-                    | "flv"
-                    | "wmv"
-                    | "m4v"
-                    | "3gp"
-                    | "3g2"
-                    | "ts"
-                    | "mts"
-                    | "m2ts"
-                    | "vob"
-                    | "ogv"
-                    | "qt"
-                    | "f4v"
-                    | "asf"
-                    | "rm"
-                    | "rmvb"
-                    | "mpg"
-                    | "mpeg"
-                    | "mpe"
-                    | "mpv"
-                    | "divx"
-                    | "xvid"
-                    | "m2v"
-                    | "264"
-                    | "h264"
-                    | "265"
-                    | "h265"
-                    | "hevc"
-                    | "av1"
-            ) {
+            if is_audio_filename(name) {
+                return false;
+            }
+            if is_video_filename(name) {
                 return true;
             }
         }
@@ -287,6 +246,16 @@ pub fn is_video_message_metadata(msg: &frankenstein::types::Message) -> bool {
                 || mime_lower == "application/x-7z-compressed"
             {
                 return false;
+            }
+            if mime_lower.starts_with("video/")
+                || mime_lower == "application/octet-stream"
+                || mime_lower == "binary/octet-stream"
+                || mime_lower == "application/x-matroska"
+                || mime_lower == "application/x-flash-video"
+                || mime_lower == "application/mxf"
+                || mime_lower == "application/vnd.rn-realmedia"
+            {
+                return true;
             }
         }
         if let Some(name) = &doc.file_name {
@@ -317,6 +286,145 @@ pub fn is_video_message_metadata(msg: &frankenstein::types::Message) -> bool {
         return true;
     }
     false
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TrimMediaKind {
+    Video,
+    Audio,
+}
+
+/// Checks if a file name has an audio file extension.
+pub fn is_audio_filename(filename: &str) -> bool {
+    let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
+    matches!(
+        ext.as_str(),
+        "mp3" | "m4a" | "flac" | "ogg" | "opus" | "wav" | "aac" | "wma" | "alac" | "aiff"
+    )
+}
+
+/// Checks if an audio file extension is officially guaranteed by Telegram Bot API for `sendAudio` (strictly MP3 and M4A).
+pub fn is_telegram_audio_guaranteed(ext: &str) -> bool {
+    matches!(ext.to_lowercase().as_str(), "mp3" | "m4a")
+}
+
+/// Checks if a file name has a video file extension.
+pub fn is_video_filename(filename: &str) -> bool {
+    let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
+    matches!(
+        ext.as_str(),
+        "mp4"
+            | "mkv"
+            | "avi"
+            | "mov"
+            | "webm"
+            | "flv"
+            | "wmv"
+            | "m4v"
+            | "3gp"
+            | "3g2"
+            | "ts"
+            | "mts"
+            | "m2ts"
+            | "vob"
+            | "ogv"
+            | "qt"
+            | "f4v"
+            | "asf"
+            | "rm"
+            | "rmvb"
+            | "mpg"
+            | "mpeg"
+            | "mpe"
+            | "mpv"
+            | "divx"
+            | "xvid"
+            | "m2v"
+            | "264"
+            | "h264"
+            | "265"
+            | "h265"
+            | "hevc"
+            | "av1"
+    )
+}
+
+/// Detects whether an incoming Telegram update message represents a video or audio file for trimming.
+///
+/// Recognizes native `video`, `animation`, `video_note`, and `audio`, `voice`, as well as
+/// `document` uploads with corresponding audio/video MIME types or file extensions.
+/// Returns `None` if the message contains unsupported document types or no media.
+pub fn detect_trim_media(msg: &frankenstein::types::Message) -> Option<TrimMediaKind> {
+    if msg.video.is_some() || msg.animation.is_some() || msg.video_note.is_some() {
+        return Some(TrimMediaKind::Video);
+    }
+    if msg.audio.is_some() || msg.voice.is_some() {
+        return Some(TrimMediaKind::Audio);
+    }
+    if let Some(doc) = &msg.document {
+        // Priority 1: Check filename extension first.
+        // Mobile Telegram clients (iOS/Android) frequently send .m4a audio files with mime_type="video/mp4".
+        // Prioritizing is_audio_filename prevents misclassifying .m4a documents as Video.
+        if let Some(name) = &doc.file_name {
+            if is_audio_filename(name) {
+                return Some(TrimMediaKind::Audio);
+            }
+            if is_video_filename(name) {
+                return Some(TrimMediaKind::Video);
+            }
+        }
+
+        // Priority 2: MIME type inspection.
+        if let Some(mime) = &doc.mime_type {
+            let mime_lower = mime.to_lowercase();
+            if mime_lower.starts_with("audio/")
+                || mime_lower == "application/ogg"
+                || mime_lower == "application/x-flac"
+                || mime_lower == "audio/mp4"
+                || mime_lower == "audio/x-m4a"
+                || mime_lower == "audio/m4a"
+                || mime_lower == "audio/aac"
+                || mime_lower == "audio/x-aac"
+            {
+                return Some(TrimMediaKind::Audio);
+            }
+            if mime_lower.starts_with("video/")
+                || mime_lower == "application/x-matroska"
+                || mime_lower == "application/x-flash-video"
+                || mime_lower == "application/mxf"
+                || mime_lower == "application/vnd.rn-realmedia"
+            {
+                return Some(TrimMediaKind::Video);
+            }
+        }
+
+        // Priority 3: Fallback for generic octet-stream
+        if let Some(mime) = &doc.mime_type {
+            let mime_lower = mime.to_lowercase();
+            if mime_lower == "application/octet-stream" || mime_lower == "binary/octet-stream" {
+                if let Some(name) = &doc.file_name {
+                    let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
+                    if matches!(
+                        ext.as_str(),
+                        "pdf"
+                            | "zip"
+                            | "rar"
+                            | "7z"
+                            | "txt"
+                            | "jpg"
+                            | "jpeg"
+                            | "png"
+                            | "gif"
+                            | "webp"
+                    ) {
+                        return None;
+                    }
+                }
+                return Some(TrimMediaKind::Video);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -414,5 +522,242 @@ mod tests {
         )
         .unwrap();
         assert!(!is_video_message_metadata(&pdf_msg));
+
+        // Test audio document with video/mp4 MIME (standard iOS/Android behavior)
+        let m4a_doc_msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 5,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d4",
+                    "file_unique_id": "ud4",
+                    "file_name": "track.m4a",
+                    "mime_type": "video/mp4",
+                    "file_size": 4000
+                }
+            }"#,
+        )
+        .unwrap();
+        assert!(!is_video_message_metadata(&m4a_doc_msg));
+    }
+
+    #[test]
+    fn test_detect_trim_media() {
+        // Native video
+        let video_msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 10,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "video": {
+                    "file_id": "v1",
+                    "file_unique_id": "u1",
+                    "width": 1920,
+                    "height": 1080,
+                    "duration": 60
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_trim_media(&video_msg), Some(TrimMediaKind::Video));
+
+        // Native audio
+        let audio_msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 11,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "audio": {
+                    "file_id": "a1",
+                    "file_unique_id": "ua1",
+                    "duration": 180,
+                    "title": "Song Title",
+                    "performer": "Artist"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_trim_media(&audio_msg), Some(TrimMediaKind::Audio));
+
+        // Native audio with mime_type: "audio/mp4"
+        let audio_mp4_msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 111,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "audio": {
+                    "file_id": "a2",
+                    "file_unique_id": "ua2",
+                    "duration": 200,
+                    "mime_type": "audio/mp4"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            detect_trim_media(&audio_mp4_msg),
+            Some(TrimMediaKind::Audio)
+        );
+
+        // Native voice
+        let voice_msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 12,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "voice": {
+                    "file_id": "vo1",
+                    "file_unique_id": "uvo1",
+                    "duration": 30
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_trim_media(&voice_msg), Some(TrimMediaKind::Audio));
+
+        // Audio document with video/mp4 MIME and track.m4a filename (critical iOS/Android case)
+        let doc_m4a_video_mime: Message = serde_json::from_str(
+            r#"{
+                "message_id": 125,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d_m4a",
+                    "file_unique_id": "ud_m4a",
+                    "file_name": "track.m4a",
+                    "mime_type": "video/mp4"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            detect_trim_media(&doc_m4a_video_mime),
+            Some(TrimMediaKind::Audio)
+        );
+
+        // Audio document with audio/mp4 MIME
+        let doc_audio_mp4: Message = serde_json::from_str(
+            r#"{
+                "message_id": 126,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d_amp4",
+                    "file_unique_id": "ud_amp4",
+                    "file_name": "unknown_file",
+                    "mime_type": "audio/mp4"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            detect_trim_media(&doc_audio_mp4),
+            Some(TrimMediaKind::Audio)
+        );
+
+        // Audio document with audio/x-m4a MIME
+        let doc_audio_xm4a: Message = serde_json::from_str(
+            r#"{
+                "message_id": 127,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d_axm4a",
+                    "file_unique_id": "ud_axm4a",
+                    "file_name": "audio_track",
+                    "mime_type": "audio/x-m4a"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(
+            detect_trim_media(&doc_audio_xm4a),
+            Some(TrimMediaKind::Audio)
+        );
+
+        // Audio document via extension (e.g. mp3)
+        let doc_mp3: Message = serde_json::from_str(
+            r#"{
+                "message_id": 13,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d_mp3",
+                    "file_unique_id": "ud_mp3",
+                    "file_name": "song.mp3",
+                    "mime_type": "application/octet-stream"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_trim_media(&doc_mp3), Some(TrimMediaKind::Audio));
+
+        // Audio document via audio/* MIME
+        let doc_flac: Message = serde_json::from_str(
+            r#"{
+                "message_id": 14,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d_flac",
+                    "file_unique_id": "ud_flac",
+                    "file_name": "track.flac",
+                    "mime_type": "audio/flac"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_trim_media(&doc_flac), Some(TrimMediaKind::Audio));
+
+        // Video document with file_name: video.mp4 and mime_type: video/mp4
+        let doc_mp4: Message = serde_json::from_str(
+            r#"{
+                "message_id": 15,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d_mp4",
+                    "file_unique_id": "ud_mp4",
+                    "file_name": "video.mp4",
+                    "mime_type": "video/mp4"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_trim_media(&doc_mp4), Some(TrimMediaKind::Video));
+
+        // Unsupported documents
+        let doc_pdf: Message = serde_json::from_str(
+            r#"{
+                "message_id": 16,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d_pdf",
+                    "file_unique_id": "ud_pdf",
+                    "file_name": "report.pdf",
+                    "mime_type": "application/pdf"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_trim_media(&doc_pdf), None);
+
+        let doc_zip: Message = serde_json::from_str(
+            r#"{
+                "message_id": 17,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d_zip",
+                    "file_unique_id": "ud_zip",
+                    "file_name": "archive.zip",
+                    "mime_type": "application/zip"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_trim_media(&doc_zip), None);
     }
 }

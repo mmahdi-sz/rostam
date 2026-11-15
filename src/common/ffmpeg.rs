@@ -180,9 +180,61 @@ pub async fn convert_to_wav(
     Ok(())
 }
 
+/// Returns optimal FFmpeg video encoder arguments tailored to the target codec for CRF encoding.
+///
+/// Ensures AV1/VP9/HEVC sources maintain compression efficiency without file bloat.
+/// AV1 is configured with libsvtav1 preset 9 (sweet spot between encode speed & ratio).
+/// pix_fmt is only forced on the x264 path, elsewhere ffmpeg keeps the source format.
+pub fn video_encoder_args(source_codec: &str) -> Vec<&'static str> {
+    match source_codec.trim().to_ascii_lowercase().as_str() {
+        "av1" | "svtav1" | "libsvtav1" | "av01" => {
+            vec!["-c:v", "libsvtav1", "-preset", "9", "-crf", "32"]
+        }
+        "hevc" | "h265" | "libx265" | "hvc1" | "dvh1" => {
+            vec!["-c:v", "libx265", "-preset", "medium", "-crf", "26"]
+        }
+        "vp9" | "libvpx-vp9" | "vp09" => {
+            vec!["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-row-mt", "1"]
+        }
+        _ => {
+            vec!["-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p"]
+        }
+    }
+}
+
+/// Helper mapping standard codec keys to ffmpeg encoder names.
+pub fn codec_to_vcodec(codec: &str) -> &'static str {
+    match codec.trim().to_ascii_lowercase().as_str() {
+        "av1" | "svtav1" | "libsvtav1" | "av01" => "libsvtav1",
+        "hevc" | "h265" | "libx265" | "hvc1" | "dvh1" => "libx265",
+        "vp9" | "libvpx-vp9" | "vp09" => "libvpx-vp9",
+        _ => "libx264",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_video_encoder_args_codecs() {
+        assert_eq!(video_encoder_args("av1"), vec!["-c:v", "libsvtav1", "-preset", "9", "-crf", "32"]);
+        assert_eq!(video_encoder_args("AV1"), vec!["-c:v", "libsvtav1", "-preset", "9", "-crf", "32"]);
+        assert_eq!(video_encoder_args("av01"), vec!["-c:v", "libsvtav1", "-preset", "9", "-crf", "32"]);
+        assert_eq!(video_encoder_args("hevc"), vec!["-c:v", "libx265", "-preset", "medium", "-crf", "26"]);
+        assert_eq!(video_encoder_args("h265"), vec!["-c:v", "libx265", "-preset", "medium", "-crf", "26"]);
+        assert_eq!(video_encoder_args("vp9"), vec!["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-row-mt", "1"]);
+        assert_eq!(video_encoder_args("h264"), vec!["-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p"]);
+        assert_eq!(video_encoder_args("unknown_codec"), vec!["-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p"]);
+    }
+
+    #[test]
+    fn test_codec_to_vcodec() {
+        assert_eq!(codec_to_vcodec("av1"), "libsvtav1");
+        assert_eq!(codec_to_vcodec("hevc"), "libx265");
+        assert_eq!(codec_to_vcodec("vp9"), "libvpx-vp9");
+        assert_eq!(codec_to_vcodec("h264"), "libx264");
+    }
 
     #[test]
     fn test_parse_ffprobe_json() {

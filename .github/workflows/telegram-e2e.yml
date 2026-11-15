@@ -1,0 +1,146 @@
+name: Telegram Live E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_bot:
+        description: 'Allowed bot username to test against (must match TELEGRAM_TEST_ALLOWED_BOTS). If empty, defaults to first allowed bot.'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-live-e2e-session
+  cancel-in-progress: false
+
+jobs:
+  live-e2e:
+    name: Real-Telegram Live E2E
+    if: github.ref == 'refs/heads/dev'
+    runs-on: [self-hosted, linux, telegram-e2e]
+    timeout-minutes: 10
+    environment: telegram-test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Setup Isolated Runner Virtual Environment
+        run: |
+          python3 -m venv "$RUNNER_TEMP/e2e-venv"
+          "$RUNNER_TEMP/e2e-venv/bin/python3" -m pip install --upgrade pip
+          "$RUNNER_TEMP/e2e-venv/bin/python3" -m pip install -r scripts/telegram_account/requirements.txt
+
+      - name: Pre-flight Security & Session Verification (Fail-Closed)
+        env:
+          TELEGRAM_TEST_API_ID: ${{ secrets.TELEGRAM_TEST_API_ID }}
+          TELEGRAM_TEST_API_HASH: ${{ secrets.TELEGRAM_TEST_API_HASH }}
+          TELEGRAM_TEST_ALLOWED_BOTS: ${{ secrets.TELEGRAM_TEST_ALLOWED_BOTS || vars.TELEGRAM_TEST_ALLOWED_BOTS }}
+          TELEGRAM_TEST_SESSION_PATH: ${{ secrets.TELEGRAM_TEST_SESSION_PATH || vars.TELEGRAM_TEST_SESSION_PATH }}
+        run: |
+          "$RUNNER_TEMP/e2e-venv/bin/python3" -c "
+          import os, sys, pathlib
+
+          # 1. Validate required environment variables (canonical TELEGRAM_TEST_* names only)
+          required = [
+              'TELEGRAM_TEST_API_ID',
+              'TELEGRAM_TEST_API_HASH',
+              'TELEGRAM_TEST_ALLOWED_BOTS',
+              'TELEGRAM_TEST_SESSION_PATH',
+          ]
+          missing = [k for k in required if not os.environ.get(k)]
+          if missing:
+              print(f'::error::Missing required environment variables/secrets: {missing}', file=sys.stderr)
+              print('Configure canonical TELEGRAM_TEST_* secrets/variables on the self-hosted runner/environment before dispatching live E2E.', file=sys.stderr)
+              sys.exit(1)
+
+          # 2. Assert session path is an absolute path OUTSIDE the repository checkout
+          raw_session_path = os.environ['TELEGRAM_TEST_SESSION_PATH'].strip()
+          session_p = pathlib.Path(raw_session_path)
+
+          if not session_p.is_absolute():
+              print(f'::error::Security violation: TELEGRAM_TEST_SESSION_PATH must be an absolute path: {raw_session_path}', file=sys.stderr)
+              sys.exit(1)
+
+          resolved_session = session_p.resolve()
+          workspace = pathlib.Path(os.environ.get('GITHUB_WORKSPACE', '.')).resolve()
+
+          if workspace in resolved_session.parents or resolved_session == workspace:
+              print(f'::error::Security violation: TELEGRAM_TEST_SESSION_PATH ({resolved_session}) must reside OUTSIDE workspace ({workspace})', file=sys.stderr)
+              sys.exit(1)
+
+          # 3. Assert session file actually exists (fail-closed; never run interactive login in CI)
+          if resolved_session.suffix == '.session':
+              session_file = resolved_session
+          else:
+              session_file = resolved_session.with_suffix('.session')
+
+          if not session_file.exists():
+              if resolved_session.exists() and resolved_session.is_file():
+                  session_file = resolved_session
+              else:
+                  print(f'::error::Session file does not exist at {session_file}. One-time interactive login must be performed on the runner host before live CI runs.', file=sys.stderr)
+                  sys.exit(1)
+
+          if not session_file.is_file():
+              print(f'::error::Session path {session_file} exists but is not a regular file.', file=sys.stderr)
+              sys.exit(1)
+
+          # 4. Check permissions and log confirmation
+          st_mode = session_file.stat().st_mode
+          if st_mode & 0o077:
+              print(f'::warning::Session file permissions {oct(st_mode)} are broader than 0600. Tightening permissions.', file=sys.stderr)
+              try:
+                  session_file.chmod(0o600)
+              except Exception as e:
+                  print(f'::warning::Could not chmod session file: {e}', file=sys.stderr)
+
+          # 5. Validate that TELEGRAM_TEST_ALLOWED_BOTS contains at least one bot
+          raw_bots = [b.strip().lstrip('@').lower() for b in os.environ['TELEGRAM_TEST_ALLOWED_BOTS'].split(',') if b.strip()]
+          if not raw_bots:
+              print('::error::TELEGRAM_TEST_ALLOWED_BOTS must contain at least one valid bot username.', file=sys.stderr)
+              sys.exit(1)
+
+          print(f'Pre-flight security check passed: session file verified at {session_file} (outside workspace), environment configured.')
+          "
+
+      - name: Run Real-Telegram Smoke Scenario
+        timeout-minutes: 5
+        env:
+          TELEGRAM_TEST_API_ID: ${{ secrets.TELEGRAM_TEST_API_ID }}
+          TELEGRAM_TEST_API_HASH: ${{ secrets.TELEGRAM_TEST_API_HASH }}
+          TELEGRAM_TEST_ALLOWED_BOTS: ${{ secrets.TELEGRAM_TEST_ALLOWED_BOTS || vars.TELEGRAM_TEST_ALLOWED_BOTS }}
+          TELEGRAM_TEST_SESSION_PATH: ${{ secrets.TELEGRAM_TEST_SESSION_PATH || vars.TELEGRAM_TEST_SESSION_PATH }}
+          INPUT_TARGET_BOT: ${{ github.event.inputs.target_bot }}
+        run: |
+          TARGET_BOT=$("$RUNNER_TEMP/e2e-venv/bin/python3" -c "
+          import os, sys
+
+          allowed_raw = os.environ.get('TELEGRAM_TEST_ALLOWED_BOTS', '')
+          allowed = [b.strip().lstrip('@').lower() for b in allowed_raw.split(',') if b.strip()]
+          if not allowed:
+              print('::error::TELEGRAM_TEST_ALLOWED_BOTS is empty or contains no valid bot usernames', file=sys.stderr)
+              sys.exit(1)
+
+          input_bot = os.environ.get('INPUT_TARGET_BOT', '').strip().lstrip('@').lower()
+          if input_bot:
+              if input_bot not in allowed:
+                  print(f'::error::Target bot \"{input_bot}\" is not in TELEGRAM_TEST_ALLOWED_BOTS ({allowed})', file=sys.stderr)
+                  sys.exit(1)
+              target = input_bot
+          else:
+              target = allowed[0]
+
+          print(target)
+          ")
+
+          echo "Running smoke test against target bot: $TARGET_BOT"
+          "$RUNNER_TEMP/e2e-venv/bin/python3" scripts/telegram_account/cli.py smoke \
+            --session "$TELEGRAM_TEST_SESSION_PATH" \
+            --bot "$TARGET_BOT"

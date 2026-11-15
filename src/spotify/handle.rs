@@ -406,7 +406,7 @@ pub async fn run_yt_dlp_audio(
     stop_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> DlOutcome {
     let out_template = job_dir.join(format!("{stem}.%(ext)s"));
-    let _ = cores; // pinning is handled by the broker; kept for call-site clarity
+    crate::moebius::cpu::pin_current_thread(cores, trace_id);
 
     const MAX_ATTEMPTS: usize = 4;
     let pool_opt = crate::cookie_pool::get_global_cookie_pool();

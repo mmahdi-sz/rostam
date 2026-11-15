@@ -205,6 +205,22 @@ pub(crate) async fn run_surge_download(
     }
 }
 
+/// Determines if a media file is a streamable MP4 video supported for inline Telegram video playback.
+///
+/// Supported streamable codecs: H.264 (avc1), HEVC/H.265 (hvc1, hev1), AV1 (av01), VP9 (vp09).
+pub(crate) fn is_streamable_video(codec: &str, path: &Path, width: u32, height: u32) -> bool {
+    let is_supported_codec = matches!(
+        codec.to_lowercase().as_str(),
+        "h264" | "avc1" | "hevc" | "h265" | "hvc1" | "hev1" | "av1" | "av01" | "vp9" | "vp09"
+    );
+    let is_mp4 = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("mp4"))
+        .unwrap_or(false);
+    is_supported_codec && is_mp4 && width > 0 && height > 0
+}
+
 pub(crate) async fn send_single_file(
     api: &Bot,
     chat_id: i64,
@@ -213,11 +229,10 @@ pub(crate) async fn send_single_file(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use crate::bot::send_file_with_upload_ticker;
 
-    // If file is an H.264 video, send as video with streaming and thumbnail
+    // If file is a streamable video (.mp4 with supported codec), send as video with streaming and thumbnail
     if let Ok(meta) = crate::common::ffmpeg::probe_metadata(path).await {
-        let codec = meta.codec.to_lowercase();
-        let is_h264 = (codec == "h264" || codec == "avc1") && meta.width > 0 && meta.height > 0;
-        if is_h264 {
+        let is_streamable = is_streamable_video(&meta.codec, path, meta.width, meta.height);
+        if is_streamable {
             let thumb_path = path.with_extension("thumb.jpg");
             let _ = tokio::process::Command::new(crate::config::ffmpeg_path())
                 .args(["-y", "-hide_banner", "-nostdin", "-ss", "00:00:01", "-i"])
@@ -378,4 +393,43 @@ async fn list_rar_parts(archive_base: &Path) -> Result<Vec<PathBuf>, std::io::Er
     }
     parts.sort();
     Ok(parts)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_streamable_video() {
+        let mp4_path = Path::new("test_video.mp4");
+        let mkv_path = Path::new("test_video.mkv");
+        let uppercase_mp4 = Path::new("TEST_VIDEO.MP4");
+
+        // Supported codecs on MP4 containers
+        for codec in &[
+            "h264", "avc1", "hevc", "h265", "hvc1", "hev1", "av1", "av01", "vp9", "vp09",
+            "H264", "HEVC", "AV1",
+        ] {
+            assert!(
+                is_streamable_video(codec, mp4_path, 1920, 1080),
+                "Codec {codec} on .mp4 should be streamable"
+            );
+            assert!(
+                is_streamable_video(codec, uppercase_mp4, 1920, 1080),
+                "Codec {codec} on .MP4 should be streamable"
+            );
+            assert!(
+                !is_streamable_video(codec, mkv_path, 1920, 1080),
+                "Codec {codec} on .mkv should NOT be streamable as MP4 video"
+            );
+        }
+
+        // Unsupported codecs
+        assert!(!is_streamable_video("prores", mp4_path, 1920, 1080));
+        assert!(!is_streamable_video("mpeg2video", mp4_path, 1920, 1080));
+
+        // Invalid dimensions
+        assert!(!is_streamable_video("h264", mp4_path, 0, 1080));
+        assert!(!is_streamable_video("h264", mp4_path, 1920, 0));
+    }
 }

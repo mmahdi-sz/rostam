@@ -42,12 +42,29 @@ pub enum StreamKind {
 pub struct ExtractedStreamInfo {
     pub index: usize,
     pub kind: StreamKind,
-    #[allow(dead_code)]
     pub codec_name: String,
     pub language: Option<String>,
     #[allow(dead_code)]
     pub title: Option<String>,
     pub suggested_ext: String,
+}
+
+/// Returns the FFmpeg codec arguments for extracting a given stream.
+///
+/// Subtitles formatted as `mov_text` or targeting `.srt` are transcoded to `srt`
+/// (`-c:s srt`) because FFmpeg cannot stream-copy `mov_text` into SubRip format.
+/// All other streams (audio and other subtitle formats) use stream copy (`-c copy`).
+pub fn stream_extract_codec_args(
+    kind: &StreamKind,
+    codec_name: &str,
+    suggested_ext: &str,
+) -> (&'static str, &'static str) {
+    let codec = codec_name.to_lowercase();
+    if *kind == StreamKind::Subtitle && (codec == "mov_text" || suggested_ext == "srt") {
+        ("-c:s", "srt")
+    } else {
+        ("-c", "copy")
+    }
 }
 
 pub fn cancel_keyboard() -> InlineKeyboardMarkup {
@@ -538,8 +555,13 @@ pub async fn handle_video_upload(
         for item in &outputs_to_extract {
             ffmpeg_args.push("-map".to_string());
             ffmpeg_args.push(format!("0:{}", item.info.index));
-            ffmpeg_args.push("-c".to_string());
-            ffmpeg_args.push("copy".to_string());
+            let (codec_flag, codec_val) = stream_extract_codec_args(
+                &item.info.kind,
+                &item.info.codec_name,
+                &item.info.suggested_ext,
+            );
+            ffmpeg_args.push(codec_flag.to_string());
+            ffmpeg_args.push(codec_val.to_string());
             ffmpeg_args.push(item.out_path.to_str().unwrap_or_default().to_string());
         }
 
@@ -800,6 +822,34 @@ mod tests {
         assert_eq!(map_codec_to_ext(&StreamKind::Audio, "opus"), "opus");
         assert_eq!(map_codec_to_ext(&StreamKind::Audio, "ac3"), "ac3");
         assert_eq!(map_codec_to_ext(&StreamKind::Audio, "dts"), "dts");
+    }
+
+    #[test]
+    fn test_stream_extract_codec_args() {
+        assert_eq!(
+            stream_extract_codec_args(&StreamKind::Subtitle, "mov_text", "srt"),
+            ("-c:s", "srt")
+        );
+        assert_eq!(
+            stream_extract_codec_args(&StreamKind::Subtitle, "subrip", "srt"),
+            ("-c:s", "srt")
+        );
+        assert_eq!(
+            stream_extract_codec_args(&StreamKind::Subtitle, "ass", "ass"),
+            ("-c", "copy")
+        );
+        assert_eq!(
+            stream_extract_codec_args(&StreamKind::Subtitle, "webvtt", "vtt"),
+            ("-c", "copy")
+        );
+        assert_eq!(
+            stream_extract_codec_args(&StreamKind::Audio, "aac", "m4a"),
+            ("-c", "copy")
+        );
+        assert_eq!(
+            stream_extract_codec_args(&StreamKind::Audio, "mp3", "mp3"),
+            ("-c", "copy")
+        );
     }
 
     #[test]

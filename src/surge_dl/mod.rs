@@ -7,6 +7,8 @@ pub mod probe;
 pub mod types;
 pub mod ui;
 
+#[allow(unused_imports)]
+pub use crate::common::link::extract_surge_url;
 pub use handle::{
     enter_surge_dl, handle_surge_cancel, handle_surge_confirm_original,
     handle_surge_confirm_rename, handle_surge_rename_text, handle_surge_text,

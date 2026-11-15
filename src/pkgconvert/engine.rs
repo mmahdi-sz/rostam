@@ -247,17 +247,10 @@ pub fn run_convert_sync(
     let mut child = match spawn_bwrap(work_dir, &input_name, src, dst) {
         Ok(c) => c,
         Err(e) => {
-            // Fallback: if bwrap fails to spawn (e.g., in minimal dev environment without bwrap),
-            // log event and attempt direct execution if bwrap is missing
-            log_ev!("pkgconvert", trace_id, "bwrap_fallback", "err" => format!("{e}"));
-            let (cmd, args) = build_tool_cmd(src, dst, &input_name);
-            std::process::Command::new(&cmd)
-                .args(&args)
-                .current_dir(work_dir)
-                .stdout(Stdio::null())
-                .stderr(Stdio::piped())
-                .spawn()
-                .map_err(|err| ConvertError::SpawnFailed(err.to_string()))?
+            log_ev!("pkgconvert", trace_id, "bwrap_spawn_failed", "err" => format!("{e}"));
+            return Err(ConvertError::SpawnFailed(format!(
+                "bwrap sandbox execution failed: sandbox required ({e})"
+            )));
         }
     };
 

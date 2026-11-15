@@ -218,178 +218,193 @@ pub(super) async fn handle_message(
                 }
 
                 if let Some(uid) = user_id {
-                    let resolved_text;
-                    let text = if text.contains(concat!("spotify", ".link")) {
-                        resolved_text = crate::spotify::extract::resolve_spotify_shortlink(text)
-                            .await
-                            .unwrap_or_else(|| text.to_string());
-                        &resolved_text
-                    } else {
-                        text
-                    };
-
-                    if crate::spotify::extract::is_spotify_podcast(text) {
-                        let _ = crate::bot::send_text(
-                            api,
-                            message.chat.id,
-                            &crate::i18n::t("spotify.podcast_unsupported"),
-                        )
-                        .await;
-                        return Ok(());
+                    let candidate_links = crate::common::link::extract_message_links(&message);
+                    let mut candidates = candidate_links;
+                    let raw_trimmed = text.trim();
+                    if !raw_trimmed.is_empty() && !candidates.iter().any(|c| c == raw_trimmed) {
+                        candidates.push(raw_trimmed.to_string());
                     }
 
-                    if crate::musicset::try_route_set(api, message.chat.id, uid, database, text) {
-                        return Ok(());
-                    }
-                    if let Some(track_id) = crate::spotify::extract_spotify_track_id(text) {
-                        let trace_id = next_trace_id();
-                        log_trace(
-                            trace_id,
-                            "route_spotify_url",
-                            &format!(
-                                "user_id={uid} chat_id={} track_id={track_id}",
-                                message.chat.id
-                            ),
-                        );
-                        let api2 = api.clone();
-                        let chat_id2 = message.chat.id;
-                        let msg_id2 = message.message_id;
-                        let db2 = database.clone();
-                        crate::app::spawn_user_task(async move {
-                            if let Err(e) = crate::spotify::handle_spotify_url(
-                                &api2, chat_id2, msg_id2, uid, trace_id, &track_id, &db2,
-                            )
-                            .await
-                            {
-                                crate::stats::record_error_global("spotify", e).await;
-                            }
-                        });
-                        return Ok(());
-                    }
-
-                    if let Some(sc_url) = crate::soundcloud::extract_soundcloud_url(text) {
-                        let trace_id = next_trace_id();
-                        log_trace(
-                            trace_id,
-                            "route_soundcloud_url",
-                            &format!("user_id={uid} chat_id={} url={sc_url}", message.chat.id),
-                        );
-                        let api2 = api.clone();
-                        let chat_id2 = message.chat.id;
-                        let msg_id2 = message.message_id;
-                        let db2 = database.clone();
-                        crate::app::spawn_user_task(async move {
-                            if let Err(e) = crate::soundcloud::handle_soundcloud_url(
-                                &api2, chat_id2, msg_id2, uid, trace_id, &sc_url, &db2,
-                            )
-                            .await
-                            {
-                                crate::stats::record_error_global("soundcloud", e).await;
-                            }
-                        });
-                        return Ok(());
-                    }
-
-                    let yt_urls = extract_youtube_urls(text);
-                    if let Some(target_url) = yt_urls.into_iter().next() {
-                        let trace_id = next_trace_id();
-                        log_trace(
-                            trace_id,
-                            "route_youtube_url",
-                            &format!("user_id={uid} chat_id={} url={target_url}", message.chat.id),
-                        );
-                        let api2 = api.clone();
-                        let chat_id2 = message.chat.id;
-                        let msg_id2 = message.message_id;
-                        let pool2 = cookie_pool.clone();
-                        let db2 = database.clone();
-                        let rl_tx2 = rate_limit_tx.clone();
-                        crate::app::spawn_user_task(async move {
-                            if let Err(e) = handle_youtube_url(
-                                &api2,
-                                chat_id2,
-                                msg_id2,
-                                Some(uid),
-                                trace_id,
-                                &target_url,
-                                pool2,
-                                &db2,
-                                &rl_tx2,
-                            )
-                            .await
-                            {
-                                log_ev!("yt", trace_id, "handle_url_failed", "err" => format!("{e}"));
-                            }
-                        });
-                        return Ok(());
-                    }
-
-                    if let Some(platform) = crate::surge_dl::detect_social_platform(text) {
-                        if platform == "youtube" {
-                            // Handled above
-                        } else if platform == "spotify" {
-                            let api2 = api.clone();
-                            let chat_id2 = message.chat.id;
-                            crate::app::spawn_user_task(async move {
-                                let _ = crate::bot::send_text(
-                                    &api2,
-                                    chat_id2,
-                                    &t("spotify.only_single_tracks"),
-                                )
-                                .await;
-                            });
-                            return Ok(());
-                        } else if platform == "soundcloud" {
-                            let api2 = api.clone();
-                            let chat_id2 = message.chat.id;
-                            crate::app::spawn_user_task(async move {
-                                let _ = crate::bot::send_text(
-                                    &api2,
-                                    chat_id2,
-                                    &t("soundcloud.only_single_tracks"),
-                                )
-                                .await;
-                            });
-                            return Ok(());
+                    for candidate in candidates {
+                        let resolved_candidate;
+                        let cand = if candidate.contains(concat!("spotify", ".link")) {
+                            resolved_candidate =
+                                crate::spotify::extract::resolve_spotify_shortlink(&candidate)
+                                    .await
+                                    .unwrap_or_else(|| candidate.clone());
+                            &resolved_candidate
                         } else {
+                            &candidate
+                        };
+
+                        if crate::spotify::extract::is_spotify_podcast(cand) {
+                            let _ = crate::bot::send_text(
+                                api,
+                                message.chat.id,
+                                &crate::i18n::t("spotify.podcast_unsupported"),
+                            )
+                            .await;
+                            return Ok(());
+                        }
+
+                        if crate::musicset::try_route_set(api, message.chat.id, uid, database, cand)
+                        {
+                            return Ok(());
+                        }
+                        if let Some(track_id) = crate::spotify::extract_spotify_track_id(cand) {
                             let trace_id = next_trace_id();
                             log_trace(
                                 trace_id,
-                                "route_unsupported_social_platform",
+                                "route_spotify_url",
                                 &format!(
-                                    "user_id={uid} chat_id={} platform={platform} url={text}",
+                                    "user_id={uid} chat_id={} track_id={track_id}",
                                     message.chat.id
                                 ),
                             );
-                            let platform_name = t(&format!("platforms.{platform}"));
-                            let msg_text = tf(
-                                "surge.unsupported_platform",
-                                &[("platform", &platform_name)],
-                            );
                             let api2 = api.clone();
                             let chat_id2 = message.chat.id;
+                            let msg_id2 = message.message_id;
+                            let db2 = database.clone();
                             crate::app::spawn_user_task(async move {
-                                let _ = crate::bot::send_text(&api2, chat_id2, &msg_text).await;
-                                let _ = crate::bot::send_tools_menu(&api2, chat_id2).await;
+                                if let Err(e) = crate::spotify::handle_spotify_url(
+                                    &api2, chat_id2, msg_id2, uid, trace_id, &track_id, &db2,
+                                )
+                                .await
+                                {
+                                    crate::stats::record_error_global("spotify", e).await;
+                                }
                             });
                             return Ok(());
                         }
-                    }
 
-                    if crate::surge_dl::is_direct_link(text) {
-                        let trace_id = next_trace_id();
-                        log_trace(
-                            trace_id,
-                            "route_surge_dl_url",
-                            &format!("user_id={uid} chat_id={} url={text}", message.chat.id),
-                        );
-                        let api2 = api.clone();
-                        let msg2 = message.clone();
-                        let fm2 = flow_manager.clone();
-                        let db2 = database.clone();
-                        crate::app::spawn_user_task(async move {
-                            handle_surge_text(&api2, &msg2, uid, &fm2, &db2).await;
-                        });
+                        if let Some(sc_url) = crate::soundcloud::extract_soundcloud_url(cand) {
+                            let trace_id = next_trace_id();
+                            log_trace(
+                                trace_id,
+                                "route_soundcloud_url",
+                                &format!("user_id={uid} chat_id={} url={sc_url}", message.chat.id),
+                            );
+                            let api2 = api.clone();
+                            let chat_id2 = message.chat.id;
+                            let msg_id2 = message.message_id;
+                            let db2 = database.clone();
+                            crate::app::spawn_user_task(async move {
+                                if let Err(e) = crate::soundcloud::handle_soundcloud_url(
+                                    &api2, chat_id2, msg_id2, uid, trace_id, &sc_url, &db2,
+                                )
+                                .await
+                                {
+                                    crate::stats::record_error_global("soundcloud", e).await;
+                                }
+                            });
+                            return Ok(());
+                        }
+
+                        let yt_urls = extract_youtube_urls(cand);
+                        if let Some(target_url) = yt_urls.into_iter().next() {
+                            let trace_id = next_trace_id();
+                            log_trace(
+                                trace_id,
+                                "route_youtube_url",
+                                &format!(
+                                    "user_id={uid} chat_id={} url={target_url}",
+                                    message.chat.id
+                                ),
+                            );
+                            let api2 = api.clone();
+                            let chat_id2 = message.chat.id;
+                            let msg_id2 = message.message_id;
+                            let pool2 = cookie_pool.clone();
+                            let db2 = database.clone();
+                            let rl_tx2 = rate_limit_tx.clone();
+                            crate::app::spawn_user_task(async move {
+                                if let Err(e) = handle_youtube_url(
+                                    &api2,
+                                    chat_id2,
+                                    msg_id2,
+                                    Some(uid),
+                                    trace_id,
+                                    &target_url,
+                                    pool2,
+                                    &db2,
+                                    &rl_tx2,
+                                )
+                                .await
+                                {
+                                    log_ev!("yt", trace_id, "handle_url_failed", "err" => format!("{e}"));
+                                }
+                            });
+                            return Ok(());
+                        }
+
+                        if let Some(platform) = crate::surge_dl::detect_social_platform(cand) {
+                            if platform == "youtube" {
+                                // Handled above
+                            } else if platform == "spotify" {
+                                let api2 = api.clone();
+                                let chat_id2 = message.chat.id;
+                                crate::app::spawn_user_task(async move {
+                                    let _ = crate::bot::send_text(
+                                        &api2,
+                                        chat_id2,
+                                        &t("spotify.only_single_tracks"),
+                                    )
+                                    .await;
+                                });
+                                return Ok(());
+                            } else if platform == "soundcloud" {
+                                let api2 = api.clone();
+                                let chat_id2 = message.chat.id;
+                                crate::app::spawn_user_task(async move {
+                                    let _ = crate::bot::send_text(
+                                        &api2,
+                                        chat_id2,
+                                        &t("soundcloud.only_single_tracks"),
+                                    )
+                                    .await;
+                                });
+                                return Ok(());
+                            } else {
+                                let trace_id = next_trace_id();
+                                log_trace(
+                                    trace_id,
+                                    "route_unsupported_social_platform",
+                                    &format!(
+                                        "user_id={uid} chat_id={} platform={platform} url={cand}",
+                                        message.chat.id
+                                    ),
+                                );
+                                let platform_name = t(&format!("platforms.{platform}"));
+                                let msg_text = tf(
+                                    "surge.unsupported_platform",
+                                    &[("platform", &platform_name)],
+                                );
+                                let api2 = api.clone();
+                                let chat_id2 = message.chat.id;
+                                crate::app::spawn_user_task(async move {
+                                    let _ = crate::bot::send_text(&api2, chat_id2, &msg_text).await;
+                                    let _ = crate::bot::send_tools_menu(&api2, chat_id2).await;
+                                });
+                                return Ok(());
+                            }
+                        }
+
+                        if crate::surge_dl::is_direct_link(cand) {
+                            let trace_id = next_trace_id();
+                            log_trace(
+                                trace_id,
+                                "route_surge_dl_url",
+                                &format!("user_id={uid} chat_id={} url={cand}", message.chat.id),
+                            );
+                            let api2 = api.clone();
+                            let msg2 = message.clone();
+                            let fm2 = flow_manager.clone();
+                            let db2 = database.clone();
+                            crate::app::spawn_user_task(async move {
+                                handle_surge_text(&api2, &msg2, uid, &fm2, &db2).await;
+                            });
+                            return Ok(());
+                        }
                     }
                 }
             }

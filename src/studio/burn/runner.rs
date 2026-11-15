@@ -13,31 +13,7 @@ use crate::studio::compress::format_eta_hms;
 /// Minimum gap between burn ticker edits (Telegram rejects faster edit rates).
 pub const TICKER_MIN_INTERVAL: Duration = Duration::from_secs(3);
 
-/// Video encoder args matched to the source codec. Hardsub always re-encodes, and re-encoding an
-/// AV1/HEVC source with libx264 inflates the file 2-3x at the same visual quality — a 900 MB AV1
-/// input came back over the 2000 MB upload cap. CRF values are per-encoder scales, each roughly
-/// equivalent to x264 CRF 22. Unknown/absent codec falls back to x264 (widest Telegram support).
-/// ponytail: no 10-bit handling — pix_fmt is only forced on the x264 path, elsewhere ffmpeg keeps
-/// the source format.
-pub fn video_encoder_args(source_codec: &str) -> Vec<&'static str> {
-    match source_codec.trim().to_ascii_lowercase().as_str() {
-        "av1" => vec!["-c:v", "libsvtav1", "-preset", "9", "-crf", "32"],
-        "hevc" | "h265" => vec!["-c:v", "libx265", "-preset", "medium", "-crf", "26"],
-        "vp9" => vec![
-            "-c:v",
-            "libvpx-vp9",
-            "-crf",
-            "32",
-            "-b:v",
-            "0",
-            "-row-mt",
-            "1",
-        ],
-        _ => vec![
-            "-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p",
-        ],
-    }
-}
+pub use crate::common::ffmpeg::video_encoder_args;
 
 /// How many pieces an oversized output must be cut into to fit under the upload cap. Always ≥2 —
 /// this is only called once the output is known to be over the cap.

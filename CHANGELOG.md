@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.8] - 2026-11-15
+
+### Fixed
+- **Video codec preservation across engines**: Centralize CRF encoding arguments in `common::ffmpeg::video_encoder_args`, ensuring requested AV1 (`libsvtav1 -preset 9 -crf 32`) and VP9 codecs are preserved across YouTube hardsub, Studio burn, and Studio trim fallback re-encodes instead of silently converting to H.264.
+- **Strict sandboxing in package conversion**: Remove unconfined host execution fallback in `pkgconvert/engine.rs`, returning a structured spawn error when bubblewrap (`bwrap`) is unavailable or fails.
+- **Deterministic audio duration fallback in STT**: Calculate exact duration from raw 16kHz 16-bit mono PCM byte size when ffprobe fails, preventing zero-duration quota bypass.
+- **Subtitle stream extraction crash in MP4**: Route `mov_text` subtitle extraction to `-c:s srt` in `studio/extract.rs` instead of unsupported stream copy, preventing extraction failures on MP4 containers.
+- **Single-pass audio compression in vocal separation**: Replace 20-attempt iterative FFmpeg re-encode loop in `separation/media.rs` with direct formula-based target bitrate calculation, cutting job time from ~2 minutes to ~4 seconds.
+- **CPU Broker core affinity**: Enforce thread core pinning via `moebius::cpu::pin_current_thread` across Spotify and SoundCloud download workers.
+
+### Added
+- Streamable video support for AV1, HEVC, and VP9 in MP4 containers under `surge_dl/engine.rs`, delivering modern web videos with Telegram inline player streaming.
+
+### Removed
+- Delete 309 lines of orphaned legacy runner in `gemini_watermark/remove.rs`.
+
 ## [2.7.7] - 2026-11-12
 
 ### Fixed

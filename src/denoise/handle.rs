@@ -731,14 +731,24 @@ pub async fn handle_denoise_audio(
     clean_up(&work_dir);
 }
 
+fn extract_ext(name: &str) -> Option<String> {
+    let dot = name.rfind('.')?;
+    let ext = &name[dot + 1..];
+    if ext.is_empty() {
+        None
+    } else {
+        Some(ext.to_lowercase())
+    }
+}
+
 fn detect_format(message: &Message) -> String {
     if message.voice.is_some() {
         return "ogg".to_string();
     }
     if let Some(video) = &message.video {
         if let Some(name) = &video.file_name {
-            if let Some(ext) = name.rsplit('.').next() {
-                return ext.to_lowercase();
+            if let Some(ext) = extract_ext(name) {
+                return ext;
             }
         }
         if let Some(mime) = &video.mime_type {
@@ -747,19 +757,19 @@ fn detect_format(message: &Message) -> String {
         return "mp4".to_string();
     }
     if let Some(audio) = &message.audio {
+        if let Some(name) = &audio.file_name {
+            if let Some(ext) = extract_ext(name) {
+                return ext;
+            }
+        }
         if let Some(mime) = &audio.mime_type {
             return mime_to_ext(mime);
-        }
-        if let Some(name) = &audio.file_name {
-            if let Some(ext) = name.rsplit('.').next() {
-                return ext.to_lowercase();
-            }
         }
     }
     if let Some(doc) = &message.document {
         if let Some(name) = &doc.file_name {
-            if let Some(ext) = name.rsplit('.').next() {
-                return ext.to_lowercase();
+            if let Some(ext) = extract_ext(name) {
+                return ext;
             }
         }
         if let Some(mime) = &doc.mime_type {
@@ -770,18 +780,26 @@ fn detect_format(message: &Message) -> String {
 }
 
 fn mime_to_ext(mime: &str) -> String {
-    match mime {
+    let clean = mime
+        .split(';')
+        .next()
+        .unwrap_or(mime)
+        .trim()
+        .to_ascii_lowercase();
+    match clean.as_str() {
         "audio/mpeg" | "audio/mp3" => "mp3",
-        "audio/mp4" | "audio/aac" | "video/mp4" => "mp4",
+        "audio/x-m4a" | "audio/m4a" | "audio/mp4" | "audio/aac" => "m4a",
+        "video/mp4" => "mp4",
         "audio/ogg" | "audio/opus" => "ogg",
-        "audio/wav" | "audio/wave" => "wav",
-        "audio/flac" => "flac",
+        "audio/wav" | "audio/wave" | "audio/x-wav" => "wav",
+        "audio/flac" | "audio/x-flac" => "flac",
         "audio/webm" | "video/webm" => "webm",
         "video/x-matroska" => "mkv",
         _ => "wav",
     }
     .to_string()
 }
+
 async fn convert_from_wav(input: &str, output: &str, ext: &str) -> crate::error::Result<()> {
     let status = match ext {
         "ogg" => tokio::process::Command::new("ffmpeg")
@@ -803,11 +821,30 @@ async fn convert_from_wav(input: &str, output: &str, ext: &str) -> crate::error:
             .status()
             .await
             .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?,
-        "m4a" => tokio::process::Command::new("ffmpeg")
-            .args(["-y", "-i", input, "-c:a", "aac", "-b:a", "128k", output])
-            .status()
-            .await
-            .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?,
+        "m4a" | "mp4" => {
+            let mut cmd = tokio::process::Command::new("ffmpeg");
+            cmd.args(["-y", "-i", input, "-c:a", "aac", "-b:a", "128k"]);
+            if ext == "m4a" && !output.ends_with(".m4a") {
+                cmd.args(["-f", "ipod"]);
+            } else if ext == "mp4" && !output.ends_with(".mp4") {
+                cmd.args(["-f", "mp4"]);
+            }
+            cmd.arg(output)
+                .status()
+                .await
+                .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?
+        }
+        "aac" => {
+            let mut cmd = tokio::process::Command::new("ffmpeg");
+            cmd.args(["-y", "-i", input, "-c:a", "aac", "-b:a", "128k"]);
+            if !output.ends_with(".aac") {
+                cmd.args(["-f", "adts"]);
+            }
+            cmd.arg(output)
+                .status()
+                .await
+                .map_err(|e| anyhow::anyhow!("ffmpeg failed: {e}"))?
+        }
         "flac" => tokio::process::Command::new("ffmpeg")
             .args(["-y", "-i", input, "-c:a", "flac", output])
             .status()
@@ -947,5 +984,279 @@ mod tests {
         }
         // Guard drop unregisters it
         assert!(!cancel_denoise_job(user_id));
+    }
+
+    #[test]
+    fn test_mime_to_ext_m4a_variants() {
+        assert_eq!(mime_to_ext("audio/x-m4a"), "m4a");
+        assert_eq!(mime_to_ext("audio/m4a"), "m4a");
+        assert_eq!(mime_to_ext("audio/mp4"), "m4a");
+        assert_eq!(mime_to_ext("audio/aac"), "m4a");
+        assert_eq!(mime_to_ext("audio/x-m4a; codecs=\"mp4a.40.2\""), "m4a");
+        assert_eq!(mime_to_ext("AUDIO/MP4"), "m4a");
+    }
+
+    #[test]
+    fn test_mime_to_ext_other_formats() {
+        assert_eq!(mime_to_ext("video/mp4"), "mp4");
+        assert_eq!(mime_to_ext("audio/mpeg"), "mp3");
+        assert_eq!(mime_to_ext("audio/mp3"), "mp3");
+        assert_eq!(mime_to_ext("audio/ogg"), "ogg");
+        assert_eq!(mime_to_ext("audio/opus"), "ogg");
+        assert_eq!(mime_to_ext("audio/wav"), "wav");
+        assert_eq!(mime_to_ext("audio/flac"), "flac");
+        assert_eq!(mime_to_ext("audio/webm"), "webm");
+        assert_eq!(mime_to_ext("video/webm"), "webm");
+        assert_eq!(mime_to_ext("video/x-matroska"), "mkv");
+        assert_eq!(mime_to_ext("unknown/mime"), "wav");
+    }
+
+    #[test]
+    fn test_detect_format_audio_filename_precedence() {
+        // Filename has .m4a -> recognized as m4a even if mime_type is missing
+        let msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 1,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "audio": {
+                    "file_id": "a1",
+                    "file_unique_id": "u1",
+                    "duration": 10,
+                    "file_name": "track.m4a"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_format(&msg), "m4a");
+
+        // Filename has .m4a -> takes precedence over unexpected or different mime_type
+        let msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 1,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "audio": {
+                    "file_id": "a1",
+                    "file_unique_id": "u1",
+                    "duration": 10,
+                    "file_name": "track.m4a",
+                    "mime_type": "audio/mpeg"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_format(&msg), "m4a");
+
+        // Filename has .m4a -> takes precedence over audio/mp4 mime_type
+        let msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 1,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "audio": {
+                    "file_id": "a1",
+                    "file_unique_id": "u1",
+                    "duration": 10,
+                    "file_name": "track.m4a",
+                    "mime_type": "audio/mp4"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_format(&msg), "m4a");
+    }
+
+    #[test]
+    fn test_detect_format_audio_mime_fallback() {
+        // Missing filename, audio/x-m4a mime
+        let msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 1,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "audio": {
+                    "file_id": "a1",
+                    "file_unique_id": "u1",
+                    "duration": 10,
+                    "mime_type": "audio/x-m4a"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_format(&msg), "m4a");
+
+        // Missing filename, audio/mp4 mime
+        let msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 1,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "audio": {
+                    "file_id": "a1",
+                    "file_unique_id": "u1",
+                    "duration": 10,
+                    "mime_type": "audio/mp4"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_format(&msg), "m4a");
+
+        // Filename without extension, audio/x-m4a mime
+        let msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 1,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "audio": {
+                    "file_id": "a1",
+                    "file_unique_id": "u1",
+                    "duration": 10,
+                    "file_name": "audio_track",
+                    "mime_type": "audio/x-m4a"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_format(&msg), "m4a");
+    }
+
+    #[test]
+    fn test_detect_format_document_m4a() {
+        // Document with .m4a file_name
+        let msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 1,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d1",
+                    "file_unique_id": "u1",
+                    "file_name": "voice_recording.m4a",
+                    "mime_type": "application/octet-stream"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_format(&msg), "m4a");
+
+        // Document without file_name, audio/x-m4a mime
+        let msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 1,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d1",
+                    "file_unique_id": "u1",
+                    "mime_type": "audio/x-m4a"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_format(&msg), "m4a");
+
+        // Document without file_name, audio/mp4 mime
+        let msg: Message = serde_json::from_str(
+            r#"{
+                "message_id": 1,
+                "date": 1000,
+                "chat": {"id": 123, "type": "private"},
+                "document": {
+                    "file_id": "d1",
+                    "file_unique_id": "u1",
+                    "mime_type": "audio/mp4"
+                }
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(detect_format(&msg), "m4a");
+    }
+
+    #[tokio::test]
+    async fn test_convert_from_wav_produces_valid_aac_container() {
+        let temp_dir = std::env::temp_dir().join(format!("denoise_test_{}", std::process::id()));
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let input_wav = temp_dir.join("test_input.wav");
+        let output_m4a = temp_dir.join("test_output.m4a");
+        let output_mp4 = temp_dir.join("test_output.mp4");
+
+        // Generate 1-second sine wave WAV
+        let gen_status = tokio::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=1000:duration=1",
+                "-ar",
+                "48000",
+                "-ac",
+                "1",
+                input_wav.to_str().unwrap(),
+            ])
+            .status()
+            .await
+            .unwrap();
+        assert!(gen_status.success());
+
+        // Test conversion to m4a
+        convert_from_wav(
+            input_wav.to_str().unwrap(),
+            output_m4a.to_str().unwrap(),
+            "m4a",
+        )
+        .await
+        .unwrap();
+
+        // Verify output file exists and is NOT a WAV file (first 4 bytes not RIFF)
+        let m4a_bytes = std::fs::read(&output_m4a).unwrap();
+        assert!(m4a_bytes.len() > 100);
+        assert_ne!(&m4a_bytes[0..4], b"RIFF");
+        // An MP4/M4A box starts with length followed by ftyp at bytes 4..8
+        assert_eq!(&m4a_bytes[4..8], b"ftyp");
+
+        // Probe container and codec using ffprobe
+        let probe_output = tokio::process::Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_name:format=format_name",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                output_m4a.to_str().unwrap(),
+            ])
+            .output()
+            .await
+            .unwrap();
+        let probe_str = String::from_utf8_lossy(&probe_output.stdout);
+        assert!(
+            probe_str.contains("aac"),
+            "Expected AAC codec in output: {probe_str}"
+        );
+        assert!(
+            probe_str.contains("mov,mp4,m4a,3gp,3g2,mj2")
+                || probe_str.contains("m4a")
+                || probe_str.contains("mp4"),
+            "Expected MP4/M4A container in output: {probe_str}"
+        );
+
+        // Test conversion to mp4
+        convert_from_wav(
+            input_wav.to_str().unwrap(),
+            output_mp4.to_str().unwrap(),
+            "mp4",
+        )
+        .await
+        .unwrap();
+
+        let mp4_bytes = std::fs::read(&output_mp4).unwrap();
+        assert_ne!(&mp4_bytes[0..4], b"RIFF");
+        assert_eq!(&mp4_bytes[4..8], b"ftyp");
+
+        // Cleanup
+        std::fs::remove_dir_all(&temp_dir).ok();
     }
 }

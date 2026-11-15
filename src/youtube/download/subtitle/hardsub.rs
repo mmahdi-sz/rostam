@@ -35,6 +35,7 @@ pub async fn hardsub_subtitles(
     dir: &std::path::Path,
     video_path: &str,
     target_langs: &[String],
+    codec: &str,
     duration_secs: Option<u64>,
     trace_id: u64,
     user_id: i64,
@@ -119,17 +120,15 @@ pub async fn hardsub_subtitles(
     }
     let num_threads = broker.cores().len().max(1);
 
+    let enc_args = crate::common::ffmpeg::video_encoder_args(codec);
     let out_path = format!("{}_hardsub.mp4", video_path.trim_end_matches(".mp4"));
     let mut cmd = tokio::process::Command::new("ffmpeg");
     cmd.kill_on_drop(true).current_dir(dir)
        .arg("-y")
        .arg("-i").arg(video_path)
        .arg("-vf").arg("subtitles=hardsub_input.srt:force_style='FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1'")
-       .arg("-c:v").arg("libx264")
-       .arg("-preset").arg("fast")
-       .arg("-crf").arg("23")
+       .args(&enc_args)
        .arg("-threads").arg(num_threads.to_string())
-       .arg("-pix_fmt").arg("yuv420p")
        .arg("-c:a").arg("aac")
        .arg("-movflags").arg("+faststart")
        .arg("-progress").arg("pipe:1")
@@ -141,7 +140,7 @@ pub async fn hardsub_subtitles(
     log_trace(
         trace_id,
         "hardsub_exec_start",
-        &format!("srt={} threads={num_threads}", primary_srt.display()),
+        &format!("srt={} threads={num_threads} codec={codec}", primary_srt.display()),
     );
 
     let mut child = match cmd.spawn() {

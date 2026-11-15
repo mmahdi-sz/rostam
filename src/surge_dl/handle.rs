@@ -84,9 +84,10 @@ pub async fn handle_surge_text(
     let chat_id = message.chat.id;
     log_actor_id!("surge_dl", trace_id, user_id, "clicked" => "send_surge_url");
 
-    let Some(url) = message.text.as_deref().map(str::trim) else {
+    let Some(url) = crate::common::link::extract_surge_url(message) else {
         return;
     };
+    let url = url.trim();
 
     if let Some(platform) = detect_social_platform(url) {
         if platform != "youtube" {

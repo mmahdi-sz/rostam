@@ -331,8 +331,7 @@ async fn download_single_playlist_item_with_retry(
                         }
                         return Err(raw_err);
                     }
-                    crate::youtube::YtdlpErrorClassification::BadCookie(_)
-                    | crate::youtube::YtdlpErrorClassification::AgeRestricted(_) => {
+                    crate::youtube::YtdlpErrorClassification::BadCookie(_) => {
                         let mut pool = cookie_pool.lock().await;
                         let cookie_id_opt = pool.mark_bad_cookie(current_cookie_spec);
                         if let Some(ref cid) = cookie_id_opt {
@@ -353,6 +352,18 @@ async fn download_single_playlist_item_with_retry(
                                 }
                             }
                         }
+                        if tried.len() < 3 {
+                            if let Some(next) = pool.next_cookie_excluding(&tried) {
+                                tried.insert(next.id.clone());
+                                *current_cookie_spec = next.yt_dlp_browser_spec;
+                                continue;
+                            }
+                        }
+                        return Err(raw_err);
+                    }
+                    crate::youtube::YtdlpErrorClassification::AgeRestricted(_) => {
+                        // Do not mark cookie bad for age-restricted videos; retry next cookie without poisoning pool
+                        let mut pool = cookie_pool.lock().await;
                         if tried.len() < 3 {
                             if let Some(next) = pool.next_cookie_excluding(&tried) {
                                 tried.insert(next.id.clone());

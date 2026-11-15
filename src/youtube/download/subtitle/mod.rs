@@ -98,6 +98,7 @@ pub async fn process_subtitle_pipeline(
                 dir,
                 video_path,
                 &selection.subtitle_langs,
+                selection.codec.key(),
                 duration_secs,
                 trace_id,
                 user_id,

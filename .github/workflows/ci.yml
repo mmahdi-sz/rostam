@@ -143,3 +143,24 @@ jobs:
             done
             exit 1
           }
+
+  offline-python:
+    name: Offline Python Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'scripts/telegram_account/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scripts/telegram_account/requirements.txt
+
+      - name: Run offline Python test suite
+        run: python3 -m unittest discover -s scripts/telegram_account -p "test_*.py"

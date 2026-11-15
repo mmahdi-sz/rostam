@@ -6,7 +6,10 @@ use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     input_file::{FileUpload, InputFile},
-    methods::{DeleteMessageParams, EditMessageTextParams, SendVideoParams},
+    methods::{
+        DeleteMessageParams, EditMessageTextParams, SendAudioParams, SendDocumentParams,
+        SendVideoParams,
+    },
 };
 
 use crate::bot::{
@@ -14,6 +17,7 @@ use crate::bot::{
     messaging::{send_text_md, send_text_md_with_keyboard},
 };
 use crate::common::cpu_broker::CpuBrokerGuard;
+use crate::common::format::fmt_secs;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{apply_premium_to_md, md_escape, t, tf};
@@ -23,9 +27,11 @@ use crate::stats::record_event_user;
 use crate::studio::pipeline::{
     TempDirGuard, job_guard, register_active_job, spawn_download_ticker,
 };
+use crate::studio::{is_audio_filename, is_telegram_audio_guaranteed};
 
+use super::engine::trim_audio_clip;
 use super::handle::{cancel_keyboard, job_cancel_keyboard};
-use super::probe::run_ffprobe;
+use super::probe::{extract_cover_art, probe_audio_metadata, run_ffprobe};
 use super::range::{CutRange, format_timestamp};
 
 /// Executes brokered ffmpeg multi-cut job with ticker, cancel flag, and re-arm.
@@ -142,8 +148,53 @@ pub async fn execute_trim_job(
         return;
     }
 
-    // Probe input media metadata for thumbnail dimensioning
-    let _meta = run_ffprobe(&source_video).await;
+    let is_audio = is_audio_filename(filename) || {
+        let ext = source_video
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        matches!(
+            ext.as_str(),
+            "mp3" | "m4a" | "flac" | "wav" | "ogg" | "opus" | "aac" | "wma" | "alac" | "aiff"
+        )
+    };
+
+    let (audio_meta, has_cover, cover_thumb_path, source_codec) = if is_audio {
+        let meta = probe_audio_metadata(&source_video).await.ok();
+        let thumb_p = work_dir.join(format!("cover_thumb_{trace_id}.jpg"));
+        let cov = extract_cover_art(&source_video, &thumb_p)
+            .await
+            .unwrap_or(false);
+        (meta, cov, thumb_p, "h264".to_string())
+    } else {
+        let video_meta = run_ffprobe(&source_video).await.ok();
+        let codec = video_meta.map(|m| m.codec).unwrap_or_else(|| "h264".to_string());
+        (
+            None,
+            false,
+            work_dir.join(format!("cover_thumb_{trace_id}.jpg")),
+            codec,
+        )
+    };
+
+    let original_title = audio_meta.as_ref().and_then(|m| m.title.clone());
+    let original_artist = audio_meta.as_ref().and_then(|m| m.artist.clone());
+    let base_stem = source_video
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("audio")
+        .to_string();
+    let audio_ext = audio_meta
+        .as_ref()
+        .map(|m| m.ext.clone())
+        .unwrap_or_else(|| {
+            source_video
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("mp3")
+                .to_string()
+        });
 
     // Acquire CPU broker cores
     let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "studio_trim").await;
@@ -245,81 +296,201 @@ pub async fn execute_trim_job(
         }
         current_cut.store(idx + 1, Ordering::Relaxed);
 
-        let output_name = format!("cut_{}_{}.mp4", idx + 1, trace_id);
-        let output_path = work_dir.join(&output_name);
+        if is_audio {
+            let cut_idx = idx + 1;
+            let output_name = format!("{base_stem} - Part {cut_idx}.{audio_ext}");
+            let output_path = work_dir.join(&output_name);
 
-        let source_path = source_video.clone();
-        let start_ss = format_timestamp(range.start_secs);
-        let end_to = format_timestamp(range.end_secs);
+            let trim_res = trim_audio_clip(
+                &source_video,
+                &output_path,
+                range.start_secs,
+                range.end_secs,
+                Some(cancel_flag.clone()),
+                Some(&threads_arg),
+                trace_id,
+            )
+            .await;
 
-        let raw_line = range.raw_line.clone();
-        let cancel_flag_inner = cancel_flag.clone();
-        let cores_inner = cpu_guard.cores().to_vec();
-        let threads_arg_inner = threads_arg.clone();
-        let out_path_inner = output_path.clone();
-        let work_dir_inner = work_dir.clone();
-        let current_idx = idx + 1;
-
-        let run_res = tokio::task::spawn_blocking(move || {
-            if !cores_inner.is_empty() {
-                crate::moebius::cpu::pin_current_thread(&cores_inner, trace_id);
+            if cancel_flag.load(Ordering::Relaxed) {
+                break;
             }
 
-            // Fast copy attempt
-            let mut child = match std::process::Command::new(crate::config::ffmpeg_path())
-                .args([
-                    "-y",
-                    "-ss",
-                    &start_ss,
-                    "-to",
-                    &end_to,
-                    "-i",
-                    source_path.to_str().unwrap_or_default(),
-                    "-c",
-                    "copy",
-                    "-avoid_negative_ts",
-                    "make_zero",
-                    "-movflags",
-                    "+faststart",
-                    "-threads",
-                    &threads_arg_inner,
-                    out_path_inner.to_str().unwrap_or_default(),
-                ])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-            {
-                Ok(c) => c,
-                Err(e) => return Err(anyhow::anyhow!("ffmpeg copy spawn error: {e}")),
+            let actual_duration = match trim_res {
+                Ok(res) => res.duration_secs,
+                Err(e) => {
+                    log_ev!(
+                        "studio_trim",
+                        trace_id,
+                        "audio_trim_range_failed",
+                        "range" => &range.raw_line,
+                        "err" => format!("{e}")
+                    );
+                    let err_text = apply_premium_to_md(&tf(
+                        "studio.trim.error.trim_failed",
+                        &[("range", &md_escape(&range.raw_line))],
+                    ));
+                    let _ = send_text_md(api, chat_id, &err_text).await;
+                    continue;
+                }
             };
 
-            let mut success = false;
-            while !cancel_flag_inner.load(Ordering::Relaxed) {
-                match child.try_wait() {
-                    Ok(Some(status)) => {
-                        success = status.success()
-                            && out_path_inner.exists()
-                            && std::fs::metadata(&out_path_inner).map(|m| m.len() > 0).unwrap_or(false);
-                        break;
+            let file_size = std::fs::metadata(&output_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
+            if file_size > 2000 * 1024 * 1024 {
+                log_ev!("studio_trim", trace_id, "audio_oversized", "size" => file_size);
+                let over_text = apply_premium_to_md(&tf(
+                    "studio.trim.error.oversized",
+                    &[("range", &md_escape(&range.raw_line))],
+                ));
+                let _ = send_text_md(api, chat_id, &over_text).await;
+                continue;
+            }
+
+            let caption_range = format!(
+                "{} - {}",
+                format_timestamp(range.start_secs),
+                format_timestamp(range.end_secs)
+            );
+            let caption = apply_premium_to_md(&format!(
+                "{}\n@{}",
+                md_escape(&caption_range),
+                md_escape(&bot_username)
+            ));
+
+            let is_audio_guaranteed = is_telegram_audio_guaranteed(&audio_ext);
+
+            let upload_start = Instant::now();
+            use crate::bot::send_file_with_upload_ticker;
+
+            let send_res = if is_audio_guaranteed {
+                let track_title = original_title.clone().unwrap_or_else(|| base_stem.clone());
+                let mut send_audio_params = SendAudioParams::builder()
+                    .chat_id(chat_id)
+                    .audio(FileUpload::InputFile(InputFile {
+                        path: output_path.clone(),
+                    }))
+                    .caption(&caption)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .title(track_title)
+                    .duration(actual_duration as u32)
+                    .build();
+
+                if let Some(ref perf) = original_artist {
+                    send_audio_params.performer = Some(perf.clone());
+                }
+                if has_cover && cover_thumb_path.exists() {
+                    send_audio_params.thumbnail = Some(FileUpload::InputFile(InputFile {
+                        path: cover_thumb_path.clone(),
+                    }));
+                }
+
+                send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                    api,
+                    "sendAudio",
+                    &send_audio_params,
+                    &output_path,
+                    chat_id,
+                    status_msg_id,
+                    "transfer.stage.sending_audio",
+                    None,
+                )
+                .await
+            } else {
+                // Non-guaranteed audio formats (e.g. FLAC, WAV, OGG, OPUS, AIFF) are delivered
+                // via sendDocument to guarantee lossless delivery without client playback failure or API rejection.
+                let mut send_doc_params = SendDocumentParams::builder()
+                    .chat_id(chat_id)
+                    .document(FileUpload::InputFile(InputFile {
+                        path: output_path.clone(),
+                    }))
+                    .caption(&caption)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .build();
+
+                if has_cover && cover_thumb_path.exists() {
+                    send_doc_params.thumbnail = Some(FileUpload::InputFile(InputFile {
+                        path: cover_thumb_path.clone(),
+                    }));
+                }
+
+                send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                    api,
+                    "sendDocument",
+                    &send_doc_params,
+                    &output_path,
+                    chat_id,
+                    status_msg_id,
+                    "transfer.stage.sending_document",
+                    None,
+                )
+                .await
+            };
+
+            match send_res {
+                Ok(_) => {
+                    let up_secs = upload_start.elapsed().as_secs();
+                    let up_elapsed = upload_start.elapsed();
+                    let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+                        file_size as f64 / up_elapsed.as_secs_f64()
+                    } else {
+                        0.0
+                    };
+                    if let Some(jid) = stats_job_id {
+                        crate::stats::record_upload_done(
+                            jid,
+                            user_id,
+                            file_size as i64,
+                            Some(up_speed as i64),
+                            Some((idx + 1) as i32),
+                        )
+                        .await;
                     }
-                    Ok(None) => {
-                        std::thread::sleep(Duration::from_millis(200));
+                    total_upload_secs += up_secs;
+                    log_ev!(
+                        "studio_trim",
+                        trace_id,
+                        "audio_trim_delivered",
+                        "range" => &range.raw_line,
+                        "upload_secs" => up_secs
+                    );
+                    if let Some(ref db) = database {
+                        let first_up = now_epoch();
+                        if let Ok(client) = db.get().await {
+                            let _ = add_traffic(&client, user_id, file_size as i64, first_up).await;
+                        }
+                        record_event_user(user_id, "studio_trim", "trim", "ok", 1).await;
                     }
-                    Err(e) => return Err(anyhow::anyhow!("ffmpeg try_wait error: {e}")),
+                }
+                Err(e) => {
+                    log_ev!("studio_trim", trace_id, "send_audio_failed", "=>" => format!("fail err={e}"));
                 }
             }
+        } else {
+            let output_name = format!("cut_{}_{}.mp4", idx + 1, trace_id);
+            let output_path = work_dir.join(&output_name);
 
-            if cancel_flag_inner.load(Ordering::Relaxed) {
-                let _ = child.kill();
-                return Ok(false);
-            }
+            let source_path = source_video.clone();
+            let start_ss = format_timestamp(range.start_secs);
+            let end_to = format_timestamp(range.end_secs);
 
-            if success {
-                log_ev!("studio_trim", trace_id, "copy_success", "range" => &raw_line);
-            } else {
-                // Fallback to re-encode if copy failed
-                log_ev!("studio_trim", trace_id, "copy_failed_fallback_encode", "range" => &raw_line);
-                let mut encode_child = match std::process::Command::new(crate::config::ffmpeg_path())
+            let raw_line = range.raw_line.clone();
+            let cancel_flag_inner = cancel_flag.clone();
+            let cores_inner = cpu_guard.cores().to_vec();
+            let threads_arg_inner = threads_arg.clone();
+            let out_path_inner = output_path.clone();
+            let work_dir_inner = work_dir.clone();
+            let source_codec_inner = source_codec.clone();
+            let current_idx = idx + 1;
+
+            let run_res = tokio::task::spawn_blocking(move || {
+                if !cores_inner.is_empty() {
+                    crate::moebius::cpu::pin_current_thread(&cores_inner, trace_id);
+                }
+
+                // Fast copy attempt
+                let mut child = match std::process::Command::new(crate::config::ffmpeg_path())
                     .args([
                         "-y",
                         "-ss",
@@ -328,12 +499,8 @@ pub async fn execute_trim_job(
                         &end_to,
                         "-i",
                         source_path.to_str().unwrap_or_default(),
-                        "-c:v",
-                        "libx264",
-                        "-c:a",
-                        "aac",
-                        "-preset",
-                        "fast",
+                        "-c",
+                        "copy",
                         "-avoid_negative_ts",
                         "make_zero",
                         "-movflags",
@@ -347,11 +514,12 @@ pub async fn execute_trim_job(
                     .spawn()
                 {
                     Ok(c) => c,
-                    Err(e) => return Err(anyhow::anyhow!("ffmpeg encode spawn error: {e}")),
+                    Err(e) => return Err(anyhow::anyhow!("ffmpeg copy spawn error: {e}")),
                 };
 
+                let mut success = false;
                 while !cancel_flag_inner.load(Ordering::Relaxed) {
-                    match encode_child.try_wait() {
+                    match child.try_wait() {
                         Ok(Some(status)) => {
                             success = status.success()
                                 && out_path_inner.exists()
@@ -366,155 +534,213 @@ pub async fn execute_trim_job(
                 }
 
                 if cancel_flag_inner.load(Ordering::Relaxed) {
-                    let _ = encode_child.kill();
+                    let _ = child.kill();
                     return Ok(false);
                 }
-            }
 
-            if success {
-                let thumb_name = format!("thumb_{current_idx}_{trace_id}.jpg");
-                let thumb_path = work_dir_inner.join(&thumb_name);
-                let _ = std::process::Command::new(crate::config::ffmpeg_path())
-                    .args([
+                if success {
+                    log_ev!("studio_trim", trace_id, "copy_success", "range" => &raw_line);
+                } else {
+                    // Fallback to re-encode if copy failed
+                    log_ev!("studio_trim", trace_id, "copy_failed_fallback_encode", "range" => &raw_line);
+                    let v_args = crate::common::ffmpeg::video_encoder_args(&source_codec_inner);
+                    let mut cmd = std::process::Command::new(crate::config::ffmpeg_path());
+                    cmd.args([
                         "-y",
                         "-ss",
-                        "00:00:00.500",
+                        &start_ss,
+                        "-to",
+                        &end_to,
                         "-i",
+                        source_path.to_str().unwrap_or_default(),
+                    ]);
+                    cmd.args(&v_args);
+                    cmd.args([
+                        "-c:a",
+                        "aac",
+                        "-avoid_negative_ts",
+                        "make_zero",
+                        "-movflags",
+                        "+faststart",
+                        "-threads",
+                        &threads_arg_inner,
                         out_path_inner.to_str().unwrap_or_default(),
-                        "-vframes",
-                        "1",
-                        "-q:v",
-                        "3",
-                        thumb_path.to_str().unwrap_or_default(),
-                    ])
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status();
-            }
+                    ]);
+                    let mut encode_child = match cmd
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                    {
+                        Ok(c) => c,
+                        Err(e) => return Err(anyhow::anyhow!("ffmpeg encode spawn error: {e}")),
+                    };
 
-            Ok(success)
-        })
-        .await;
-
-        let trim_ok = matches!(run_res, Ok(Ok(true)));
-
-        if cancel_flag.load(Ordering::Relaxed) {
-            break;
-        }
-
-        if !trim_ok {
-            log_ev!("studio_trim", trace_id, "trim_range_failed", "range" => &range.raw_line);
-            let err_text = apply_premium_to_md(&tf(
-                "studio.trim.error.trim_failed",
-                &[("range", &md_escape(&range.raw_line))],
-            ));
-            let _ = send_text_md(api, chat_id, &err_text).await;
-            continue;
-        }
-
-        // Check file size limit (2GB Bot API ceiling)
-        let file_size = std::fs::metadata(&output_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
-        if file_size > 2000 * 1024 * 1024 {
-            log_ev!("studio_trim", trace_id, "file_oversized", "size" => file_size);
-            let over_text = apply_premium_to_md(&tf(
-                "studio.trim.error.oversized",
-                &[("range", &md_escape(&range.raw_line))],
-            ));
-            let _ = send_text_md(api, chat_id, &over_text).await;
-            continue;
-        }
-
-        // Caption uses actual clamped timestamps (not raw_line which may have user's unclamped end)
-        let caption_range = format!(
-            "{} - {}",
-            format_timestamp(range.start_secs),
-            format_timestamp(range.end_secs)
-        );
-        let caption = apply_premium_to_md(&format!(
-            "{}\n@{}",
-            md_escape(&caption_range),
-            md_escape(&bot_username)
-        ));
-
-        let clip_duration = range.end_secs.saturating_sub(range.start_secs);
-        let thumb_path = work_dir.join(format!("thumb_{}_{}.jpg", idx + 1, trace_id));
-
-        let upload_start = Instant::now();
-        let mut send_video_params = SendVideoParams::builder()
-            .chat_id(chat_id)
-            .video(FileUpload::InputFile(InputFile {
-                path: output_path.clone(),
-            }))
-            .caption(&caption)
-            .parse_mode(ParseMode::MarkdownV2)
-            .supports_streaming(true)
-            .build();
-
-        if let Ok(out_meta) = run_ffprobe(&output_path).await {
-            if out_meta.width > 0 {
-                send_video_params.width = Some(out_meta.width as u32);
-            }
-            if out_meta.height > 0 {
-                send_video_params.height = Some(out_meta.height as u32);
-            }
-        }
-        if clip_duration > 0 {
-            send_video_params.duration = Some(clip_duration as u32);
-        }
-        if thumb_path.exists()
-            && std::fs::metadata(&thumb_path)
-                .map(|m| m.len() > 0)
-                .unwrap_or(false)
-        {
-            send_video_params.thumbnail =
-                Some(FileUpload::InputFile(InputFile { path: thumb_path }));
-        }
-
-        use crate::bot::send_file_with_upload_ticker;
-        match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-            api,
-            "sendVideo",
-            &send_video_params,
-            &output_path,
-            chat_id,
-            status_msg_id,
-            "transfer.stage.sending_video",
-            None,
-        )
-        .await
-        {
-            Ok(_) => {
-                let up_secs = upload_start.elapsed().as_secs();
-                let up_elapsed = upload_start.elapsed();
-                let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
-                    file_size as f64 / up_elapsed.as_secs_f64()
-                } else {
-                    0.0
-                };
-                if let Some(jid) = stats_job_id {
-                    crate::stats::record_upload_done(
-                        jid,
-                        user_id,
-                        file_size as i64,
-                        Some(up_speed as i64),
-                        Some((idx + 1) as i32),
-                    )
-                    .await;
-                }
-                total_upload_secs += up_secs;
-                log_ev!("studio_trim", trace_id, "trim_delivered", "range" => &range.raw_line, "upload_secs" => up_secs);
-                if let Some(ref db) = database {
-                    let first_up = now_epoch();
-                    if let Ok(client) = db.get().await {
-                        let _ = add_traffic(&client, user_id, file_size as i64, first_up).await;
+                    while !cancel_flag_inner.load(Ordering::Relaxed) {
+                        match encode_child.try_wait() {
+                            Ok(Some(status)) => {
+                                success = status.success()
+                                    && out_path_inner.exists()
+                                    && std::fs::metadata(&out_path_inner).map(|m| m.len() > 0).unwrap_or(false);
+                                break;
+                            }
+                            Ok(None) => {
+                                std::thread::sleep(Duration::from_millis(200));
+                            }
+                            Err(e) => return Err(anyhow::anyhow!("ffmpeg try_wait error: {e}")),
+                        }
                     }
-                    record_event_user(user_id, "studio_trim", "trim", "ok", 1).await;
+
+                    if cancel_flag_inner.load(Ordering::Relaxed) {
+                        let _ = encode_child.kill();
+                        return Ok(false);
+                    }
+                }
+
+                if success {
+                    let thumb_name = format!("thumb_{current_idx}_{trace_id}.jpg");
+                    let thumb_path = work_dir_inner.join(&thumb_name);
+                    let _ = std::process::Command::new(crate::config::ffmpeg_path())
+                        .args([
+                            "-y",
+                            "-ss",
+                            "00:00:00.500",
+                            "-i",
+                            out_path_inner.to_str().unwrap_or_default(),
+                            "-vframes",
+                            "1",
+                            "-q:v",
+                            "3",
+                            thumb_path.to_str().unwrap_or_default(),
+                        ])
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status();
+                }
+
+                Ok(success)
+            })
+            .await;
+
+            let trim_ok = matches!(run_res, Ok(Ok(true)));
+
+            if cancel_flag.load(Ordering::Relaxed) {
+                break;
+            }
+
+            if !trim_ok {
+                log_ev!("studio_trim", trace_id, "trim_range_failed", "range" => &range.raw_line);
+                let err_text = apply_premium_to_md(&tf(
+                    "studio.trim.error.trim_failed",
+                    &[("range", &md_escape(&range.raw_line))],
+                ));
+                let _ = send_text_md(api, chat_id, &err_text).await;
+                continue;
+            }
+
+            // Check file size limit (2GB Bot API ceiling)
+            let file_size = std::fs::metadata(&output_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
+            if file_size > 2000 * 1024 * 1024 {
+                log_ev!("studio_trim", trace_id, "file_oversized", "size" => file_size);
+                let over_text = apply_premium_to_md(&tf(
+                    "studio.trim.error.oversized",
+                    &[("range", &md_escape(&range.raw_line))],
+                ));
+                let _ = send_text_md(api, chat_id, &over_text).await;
+                continue;
+            }
+
+            // Caption uses actual clamped timestamps (not raw_line which may have user's unclamped end)
+            let caption_range = format!(
+                "{} - {}",
+                format_timestamp(range.start_secs),
+                format_timestamp(range.end_secs)
+            );
+            let caption = apply_premium_to_md(&format!(
+                "{}\n@{}",
+                md_escape(&caption_range),
+                md_escape(&bot_username)
+            ));
+
+            let clip_duration = range.end_secs.saturating_sub(range.start_secs);
+            let thumb_path = work_dir.join(format!("thumb_{}_{}.jpg", idx + 1, trace_id));
+
+            let upload_start = Instant::now();
+            let mut send_video_params = SendVideoParams::builder()
+                .chat_id(chat_id)
+                .video(FileUpload::InputFile(InputFile {
+                    path: output_path.clone(),
+                }))
+                .caption(&caption)
+                .parse_mode(ParseMode::MarkdownV2)
+                .supports_streaming(true)
+                .build();
+
+            if let Ok(out_meta) = run_ffprobe(&output_path).await {
+                if out_meta.width > 0 {
+                    send_video_params.width = Some(out_meta.width as u32);
+                }
+                if out_meta.height > 0 {
+                    send_video_params.height = Some(out_meta.height as u32);
                 }
             }
-            Err(e) => {
-                log_ev!("studio_trim", trace_id, "send_video_failed", "=>" => format!("fail err={e}"));
+            if clip_duration > 0 {
+                send_video_params.duration = Some(clip_duration as u32);
+            }
+            if thumb_path.exists()
+                && std::fs::metadata(&thumb_path)
+                    .map(|m| m.len() > 0)
+                    .unwrap_or(false)
+            {
+                send_video_params.thumbnail =
+                    Some(FileUpload::InputFile(InputFile { path: thumb_path }));
+            }
+
+            use crate::bot::send_file_with_upload_ticker;
+            match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                api,
+                "sendVideo",
+                &send_video_params,
+                &output_path,
+                chat_id,
+                status_msg_id,
+                "transfer.stage.sending_video",
+                None,
+            )
+            .await
+            {
+                Ok(_) => {
+                    let up_secs = upload_start.elapsed().as_secs();
+                    let up_elapsed = upload_start.elapsed();
+                    let up_speed = if up_elapsed.as_secs_f64() > 0.0 {
+                        file_size as f64 / up_elapsed.as_secs_f64()
+                    } else {
+                        0.0
+                    };
+                    if let Some(jid) = stats_job_id {
+                        crate::stats::record_upload_done(
+                            jid,
+                            user_id,
+                            file_size as i64,
+                            Some(up_speed as i64),
+                            Some((idx + 1) as i32),
+                        )
+                        .await;
+                    }
+                    total_upload_secs += up_secs;
+                    log_ev!("studio_trim", trace_id, "trim_delivered", "range" => &range.raw_line, "upload_secs" => up_secs);
+                    if let Some(ref db) = database {
+                        let first_up = now_epoch();
+                        if let Ok(client) = db.get().await {
+                            let _ = add_traffic(&client, user_id, file_size as i64, first_up).await;
+                        }
+                        record_event_user(user_id, "studio_trim", "trim", "ok", 1).await;
+                    }
+                }
+                Err(e) => {
+                    log_ev!("studio_trim", trace_id, "send_video_failed", "=>" => format!("fail err={e}"));
+                }
             }
         }
 
@@ -545,21 +771,12 @@ pub async fn execute_trim_job(
         // Summary message (0.5s after last video)
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        let fmt_dur = |s: u64| -> String {
-            let m = s / 60;
-            let sec = s % 60;
-            if m > 0 {
-                format!("{m} دقیقه و {sec} ثانیه")
-            } else {
-                format!("{sec} ثانیه")
-            }
-        };
         let raw_summary = tf(
             "studio.trim.job_done",
             &[
-                ("trim_time", &md_escape(&fmt_dur(trim_secs))),
-                ("download_time", &md_escape(&fmt_dur(download_secs))),
-                ("upload_time", &md_escape(&fmt_dur(upload_secs))),
+                ("trim_time", &md_escape(&fmt_secs(trim_secs as i64))),
+                ("download_time", &md_escape(&fmt_secs(download_secs as i64))),
+                ("upload_time", &md_escape(&fmt_secs(upload_secs as i64))),
             ],
         );
         let summary_text = apply_premium_to_md(&raw_summary);
@@ -587,4 +804,267 @@ pub fn now_epoch() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    struct TestCleanupGuard(PathBuf);
+    impl Drop for TestCleanupGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn create_test_dir(prefix: &str) -> (PathBuf, TestCleanupGuard) {
+        let dir = std::env::temp_dir().join(format!(
+            "{prefix}_{}_{}",
+            std::process::id(),
+            rand::random::<u32>()
+        ));
+        std::fs::create_dir_all(&dir).expect("failed to create test dir");
+        let guard = TestCleanupGuard(dir.clone());
+        (dir, guard)
+    }
+
+    #[tokio::test]
+    async fn test_audio_trim_delivery_params() {
+        let (dir, _guard) = create_test_dir("runner_audio_test");
+        let src_mp3 = dir.join("Queen - Bohemian Rhapsody.mp3");
+        let cover_jpg = dir.join("cover.jpg");
+        let raw_wav = dir.join("raw.wav");
+
+        // 1. Generate cover image (400x400)
+        let s1 = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=purple:s=400x400:d=1",
+                "-vframes",
+                "1",
+                cover_jpg.to_str().unwrap(),
+            ])
+            .status()
+            .expect("create cover image");
+        assert!(s1.success());
+
+        // 2. Generate raw audio wav (6 seconds)
+        let s2 = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=6",
+                raw_wav.to_str().unwrap(),
+            ])
+            .status()
+            .expect("create raw wav");
+        assert!(s2.success());
+
+        // 3. Assemble MP3 with cover and tags
+        let s3 = std::process::Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-i",
+                raw_wav.to_str().unwrap(),
+                "-i",
+                cover_jpg.to_str().unwrap(),
+                "-map",
+                "0:a",
+                "-map",
+                "1:v",
+                "-c:a",
+                "libmp3lame",
+                "-c:v",
+                "copy",
+                "-id3v2_version",
+                "3",
+                "-metadata",
+                "title=Bohemian Rhapsody",
+                "-metadata",
+                "artist=Queen",
+                "-metadata",
+                "album=A Night at the Opera",
+                src_mp3.to_str().unwrap(),
+            ])
+            .status()
+            .expect("assemble mp3");
+        assert!(s3.success());
+
+        // 4. Test probing and extracting metadata as in execute_trim_job
+        let meta = probe_audio_metadata(&src_mp3).await.expect("probe audio");
+        assert_eq!(meta.title.as_deref(), Some("Bohemian Rhapsody"));
+        assert_eq!(meta.artist.as_deref(), Some("Queen"));
+
+        let thumb_p = dir.join("cover_thumb.jpg");
+        let has_cover = extract_cover_art(&src_mp3, &thumb_p).await.unwrap_or(false);
+        assert!(has_cover);
+        assert!(thumb_p.exists());
+
+        // 5. Trim cut using trim_audio_clip
+        let out_cut = dir.join("Queen - Bohemian Rhapsody - Part 1.mp3");
+        let res = trim_audio_clip(&src_mp3, &out_cut, 1, 4, None, None, 12345)
+            .await
+            .expect("trim audio clip");
+        assert!((res.duration_secs as i64 - 3).abs() <= 1);
+        assert!(out_cut.exists());
+
+        // 6. Build SendAudioParams and verify all required properties
+        let caption_range = format!("{} - {}", format_timestamp(1), format_timestamp(4));
+        let bot_username = "test_bot";
+        let caption = apply_premium_to_md(&format!(
+            "{}\n@{}",
+            md_escape(&caption_range),
+            md_escape(bot_username)
+        ));
+
+        let track_title = meta.title.clone().unwrap_or_else(|| "audio".to_string());
+        let mut send_audio_params = SendAudioParams::builder()
+            .chat_id(123456)
+            .audio(FileUpload::InputFile(InputFile {
+                path: out_cut.clone(),
+            }))
+            .caption(&caption)
+            .parse_mode(ParseMode::MarkdownV2)
+            .title(track_title)
+            .duration(res.duration_secs as u32)
+            .build();
+
+        if let Some(ref perf) = meta.artist {
+            send_audio_params.performer = Some(perf.clone());
+        }
+        if has_cover && thumb_p.exists() {
+            send_audio_params.thumbnail = Some(FileUpload::InputFile(InputFile {
+                path: thumb_p.clone(),
+            }));
+        }
+
+        // 7. Verify fields:
+        assert_eq!(
+            send_audio_params.title.as_deref(),
+            Some("Bohemian Rhapsody")
+        );
+        assert_eq!(send_audio_params.performer.as_deref(), Some("Queen"));
+        assert_eq!(send_audio_params.duration, Some(res.duration_secs as u32));
+        assert!(send_audio_params.thumbnail.is_some());
+        assert_eq!(send_audio_params.parse_mode, Some(ParseMode::MarkdownV2));
+        assert!(
+            send_audio_params
+                .caption
+                .as_ref()
+                .unwrap()
+                .contains("00:01")
+        );
+        assert!(
+            send_audio_params
+                .caption
+                .as_ref()
+                .unwrap()
+                .contains("00:04")
+        );
+        assert!(
+            send_audio_params
+                .caption
+                .as_ref()
+                .unwrap()
+                .contains("@test\\_bot")
+        );
+
+        // 8. Test delivery policy helper is_telegram_audio_guaranteed
+        assert!(is_telegram_audio_guaranteed("mp3"));
+        assert!(is_telegram_audio_guaranteed("m4a"));
+        assert!(is_telegram_audio_guaranteed("MP3"));
+        assert!(is_telegram_audio_guaranteed("M4A"));
+        assert!(!is_telegram_audio_guaranteed("flac"));
+        assert!(!is_telegram_audio_guaranteed("wav"));
+        assert!(!is_telegram_audio_guaranteed("ogg"));
+        assert!(!is_telegram_audio_guaranteed("opus"));
+        assert!(!is_telegram_audio_guaranteed("aiff"));
+
+        // 9. Test WAV non-guaranteed lossless delivery branch (SendDocument)
+        let out_wav = dir.join("Queen - Bohemian Rhapsody - Part 1.wav");
+        let wav_res = trim_audio_clip(&raw_wav, &out_wav, 0, 3, None, None, 12345)
+            .await
+            .expect("trim wav audio clip");
+        assert_eq!(wav_res.duration_secs, 3);
+        assert!(out_wav.exists());
+
+        let wav_guaranteed = is_telegram_audio_guaranteed("wav");
+        assert!(!wav_guaranteed, "WAV must not be guaranteed for sendAudio");
+
+        let mut send_doc_params = SendDocumentParams::builder()
+            .chat_id(123456)
+            .document(FileUpload::InputFile(InputFile {
+                path: out_wav.clone(),
+            }))
+            .caption(&caption)
+            .parse_mode(ParseMode::MarkdownV2)
+            .build();
+        if has_cover && thumb_p.exists() {
+            send_doc_params.thumbnail = Some(FileUpload::InputFile(InputFile {
+                path: thumb_p.clone(),
+            }));
+        }
+
+        assert_eq!(
+            send_doc_params.chat_id,
+            frankenstein::types::ChatId::Integer(123456)
+        );
+        assert!(send_doc_params.thumbnail.is_some());
+        assert!(
+            send_doc_params
+                .caption
+                .as_ref()
+                .unwrap()
+                .contains("@test\\_bot")
+        );
+        assert_eq!(send_doc_params.parse_mode, Some(ParseMode::MarkdownV2));
+
+        // 10. Test FLAC non-guaranteed lossless delivery branch (SendDocument)
+        let out_flac = dir.join("Queen - Bohemian Rhapsody - Part 1.flac");
+        let flac_res = trim_audio_clip(&raw_wav, &out_flac, 0, 3, None, None, 12346)
+            .await
+            .expect("trim flac audio clip");
+        assert_eq!(flac_res.duration_secs, 3);
+        assert!(out_flac.exists());
+
+        let flac_guaranteed = is_telegram_audio_guaranteed("flac");
+        assert!(
+            !flac_guaranteed,
+            "FLAC must route to sendDocument for lossless delivery"
+        );
+
+        let mut flac_doc_params = SendDocumentParams::builder()
+            .chat_id(123456)
+            .document(FileUpload::InputFile(InputFile {
+                path: out_flac.clone(),
+            }))
+            .caption(&caption)
+            .parse_mode(ParseMode::MarkdownV2)
+            .build();
+        if has_cover && thumb_p.exists() {
+            flac_doc_params.thumbnail = Some(FileUpload::InputFile(InputFile {
+                path: thumb_p.clone(),
+            }));
+        }
+
+        assert_eq!(
+            flac_doc_params.chat_id,
+            frankenstein::types::ChatId::Integer(123456)
+        );
+        assert!(flac_doc_params.thumbnail.is_some());
+        assert!(
+            flac_doc_params
+                .caption
+                .as_ref()
+                .unwrap()
+                .contains("@test\\_bot")
+        );
+        assert_eq!(flac_doc_params.parse_mode, Some(ParseMode::MarkdownV2));
+    }
 }

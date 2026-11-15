@@ -424,7 +424,10 @@ pub(super) async fn handle_flow_message(
     }
 
     if matches!(flow_manager.get(uid), FlowState::AwaitingSurgeUrlInput) {
-        if let Some(txt) = message.text.as_deref() {
+        let raw_opt = message.text.as_deref().or(message.caption.as_deref());
+        let candidate_links = crate::common::link::extract_message_links(message);
+
+        if raw_opt.is_some() || !candidate_links.is_empty() {
             let trace_id = next_trace_id();
             log_trace(
                 trace_id,
@@ -432,105 +435,133 @@ pub(super) async fn handle_flow_message(
                 &format!("user_id={uid} chat_id={}", message.chat.id),
             );
             flow_manager.clear(uid);
-            if crate::musicset::try_route_set(api, message.chat.id, uid, database, txt) {
-                return Ok(true);
-            }
-            if let Some(track_id) = crate::spotify::extract_spotify_track_id(txt) {
-                let api2 = api.clone();
-                let chat_id2 = message.chat.id;
-                let msg_id2 = message.message_id;
-                let db2 = database.clone();
-                crate::app::spawn_user_task(async move {
-                    if let Err(e) = crate::spotify::handle_spotify_url(
-                        &api2, chat_id2, msg_id2, uid, trace_id, &track_id, &db2,
-                    )
-                    .await
-                    {
-                        crate::stats::record_error_global("spotify", e).await;
-                    }
-                });
-                return Ok(true);
+
+            let mut candidates = candidate_links;
+            if let Some(raw) = raw_opt {
+                let trimmed = raw.trim();
+                if !trimmed.is_empty() && !candidates.iter().any(|c| c == trimmed) {
+                    candidates.push(trimmed.to_string());
+                }
             }
 
-            if let Some(sc_url) = crate::soundcloud::extract_soundcloud_url(txt) {
-                let api2 = api.clone();
-                let chat_id2 = message.chat.id;
-                let msg_id2 = message.message_id;
-                let db2 = database.clone();
-                crate::app::spawn_user_task(async move {
-                    if let Err(e) = crate::soundcloud::handle_soundcloud_url(
-                        &api2, chat_id2, msg_id2, uid, trace_id, &sc_url, &db2,
-                    )
-                    .await
-                    {
-                        crate::stats::record_error_global("soundcloud", e).await;
-                    }
-                });
-                return Ok(true);
-            }
+            for candidate in &candidates {
+                if crate::musicset::try_route_set(api, message.chat.id, uid, database, candidate) {
+                    return Ok(true);
+                }
+                if let Some(track_id) = crate::spotify::extract_spotify_track_id(candidate) {
+                    let api2 = api.clone();
+                    let chat_id2 = message.chat.id;
+                    let msg_id2 = message.message_id;
+                    let db2 = database.clone();
+                    crate::app::spawn_user_task(async move {
+                        if let Err(e) = crate::spotify::handle_spotify_url(
+                            &api2, chat_id2, msg_id2, uid, trace_id, &track_id, &db2,
+                        )
+                        .await
+                        {
+                            crate::stats::record_error_global("spotify", e).await;
+                        }
+                    });
+                    return Ok(true);
+                }
 
-            let yt_urls = extract_youtube_urls(txt);
-            if let Some(target_url) = yt_urls.into_iter().next() {
-                let api2 = api.clone();
-                let chat_id2 = message.chat.id;
-                let msg_id2 = message.message_id;
-                let pool2 = cookie_pool.clone();
-                let db2 = database.clone();
-                let rl_tx2 = rate_limit_tx.clone();
-                crate::app::spawn_user_task(async move {
-                    if let Err(e) = handle_youtube_url(
-                        &api2,
-                        chat_id2,
-                        msg_id2,
-                        Some(uid),
-                        trace_id,
-                        &target_url,
-                        pool2,
-                        &db2,
-                        &rl_tx2,
-                    )
-                    .await
-                    {
-                        log_ev!("yt", trace_id, "handle_url_failed", "err" => format!("{e}"));
-                    }
-                });
-                return Ok(true);
-            }
+                if let Some(sc_url) = crate::soundcloud::extract_soundcloud_url(candidate) {
+                    let api2 = api.clone();
+                    let chat_id2 = message.chat.id;
+                    let msg_id2 = message.message_id;
+                    let db2 = database.clone();
+                    crate::app::spawn_user_task(async move {
+                        if let Err(e) = crate::soundcloud::handle_soundcloud_url(
+                            &api2, chat_id2, msg_id2, uid, trace_id, &sc_url, &db2,
+                        )
+                        .await
+                        {
+                            crate::stats::record_error_global("soundcloud", e).await;
+                        }
+                    });
+                    return Ok(true);
+                }
 
-            let platform = crate::surge_dl::detect_social_platform(txt);
-            if platform == Some("youtube") {
-                // Handled above
-            } else if platform == Some("spotify") {
-                let api2 = api.clone();
-                let chat_id2 = message.chat.id;
-                crate::app::spawn_user_task(async move {
-                    let _ =
-                        crate::bot::send_text(&api2, chat_id2, &t("spotify.only_single_tracks"))
-                            .await;
-                });
-                return Ok(true);
-            } else if platform == Some("soundcloud") {
-                let api2 = api.clone();
-                let chat_id2 = message.chat.id;
-                crate::app::spawn_user_task(async move {
-                    let _ =
-                        crate::bot::send_text(&api2, chat_id2, &t("soundcloud.only_single_tracks"))
-                            .await;
-                });
-                return Ok(true);
-            } else if let Some(p) = platform {
-                let platform_name = t(&format!("platforms.{p}"));
-                let text = tf(
-                    "surge.unsupported_platform",
-                    &[("platform", &platform_name)],
-                );
-                let api2 = api.clone();
-                let chat_id2 = message.chat.id;
-                crate::app::spawn_user_task(async move {
-                    let _ = crate::bot::send_text(&api2, chat_id2, &text).await;
-                    let _ = crate::bot::send_tools_menu(&api2, chat_id2).await;
-                });
-                return Ok(true);
+                let yt_urls = extract_youtube_urls(candidate);
+                if let Some(target_url) = yt_urls.into_iter().next() {
+                    let api2 = api.clone();
+                    let chat_id2 = message.chat.id;
+                    let msg_id2 = message.message_id;
+                    let pool2 = cookie_pool.clone();
+                    let db2 = database.clone();
+                    let rl_tx2 = rate_limit_tx.clone();
+                    crate::app::spawn_user_task(async move {
+                        if let Err(e) = handle_youtube_url(
+                            &api2,
+                            chat_id2,
+                            msg_id2,
+                            Some(uid),
+                            trace_id,
+                            &target_url,
+                            pool2,
+                            &db2,
+                            &rl_tx2,
+                        )
+                        .await
+                        {
+                            log_ev!("yt", trace_id, "handle_url_failed", "err" => format!("{e}"));
+                        }
+                    });
+                    return Ok(true);
+                }
+
+                let platform = crate::surge_dl::detect_social_platform(candidate);
+                if platform == Some("youtube") {
+                    // Handled above
+                } else if platform == Some("spotify") {
+                    let api2 = api.clone();
+                    let chat_id2 = message.chat.id;
+                    crate::app::spawn_user_task(async move {
+                        let _ = crate::bot::send_text(
+                            &api2,
+                            chat_id2,
+                            &t("spotify.only_single_tracks"),
+                        )
+                        .await;
+                    });
+                    return Ok(true);
+                } else if platform == Some("soundcloud") {
+                    let api2 = api.clone();
+                    let chat_id2 = message.chat.id;
+                    crate::app::spawn_user_task(async move {
+                        let _ = crate::bot::send_text(
+                            &api2,
+                            chat_id2,
+                            &t("soundcloud.only_single_tracks"),
+                        )
+                        .await;
+                    });
+                    return Ok(true);
+                } else if let Some(p) = platform {
+                    let platform_name = t(&format!("platforms.{p}"));
+                    let text = tf(
+                        "surge.unsupported_platform",
+                        &[("platform", &platform_name)],
+                    );
+                    let api2 = api.clone();
+                    let chat_id2 = message.chat.id;
+                    crate::app::spawn_user_task(async move {
+                        let _ = crate::bot::send_text(&api2, chat_id2, &text).await;
+                        let _ = crate::bot::send_tools_menu(&api2, chat_id2).await;
+                    });
+                    return Ok(true);
+                }
+
+                if crate::surge_dl::is_direct_link(candidate) {
+                    let api2 = api.clone();
+                    let msg2 = message.clone();
+                    let fm2 = flow_manager.clone();
+                    let db2 = database.clone();
+                    crate::app::spawn_user_task(async move {
+                        handle_surge_text(&api2, &msg2, uid, &fm2, &db2).await;
+                    });
+                    return Ok(true);
+                }
             }
 
             let api2 = api.clone();
@@ -670,9 +701,15 @@ pub(super) async fn handle_flow_message(
     }
 
     if matches!(flow_manager.get(uid), FlowState::AwaitingStudioTrimVideo) {
-        if message.video.is_some() || message.document.is_some() {
+        if message.video.is_some()
+            || message.document.is_some()
+            || message.audio.is_some()
+            || message.voice.is_some()
+            || message.animation.is_some()
+            || message.video_note.is_some()
+        {
             let trace_id = next_trace_id();
-            log_ev!("studio_trim", trace_id, "video_dispatched", "user_id" => uid);
+            log_ev!("studio_trim", trace_id, "media_dispatched", "user_id" => uid);
             let api2 = api.clone();
             let msg2 = message.clone();
             let mut fm = flow_manager.clone();

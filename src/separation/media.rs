@@ -84,93 +84,95 @@ pub async fn extract_and_prepare_audio(
         return Ok(std::fs::read(&audio_path)?);
     }
 
-    // Iteratively compress: reduce bitrate by 10% each attempt until < 50MB.
-    // Probe current bitrate then step down.
-    let probe = tokio::process::Command::new("ffprobe")
+    // Direct single-pass target bitrate calculation to fit within MAX_AUDIO_BYTES.
+    let duration_secs = crate::common::ffmpeg::probe_duration(&audio_path)
+        .await
+        .unwrap_or(0);
+    let target_kbps = calculate_target_bitrate_kbps(duration_secs, MAX_AUDIO_BYTES);
+    log_trace(
+        trace_id,
+        "compress_target",
+        &format!("duration={duration_secs}s target_bitrate={target_kbps}k"),
+    );
+
+    let edit_text = tf(
+        "separation.compressing_audio",
+        &[("attempt", "1"), ("max", "1")],
+    );
+    let _ = api
+        .edit_message_text(
+            &EditMessageTextParams::builder()
+                .chat_id(chat_id)
+                .message_id(message_id)
+                .text(edit_text)
+                .build(),
+        )
+        .await;
+
+    let out_path = tmp_dir.join("compressed.mp3");
+    let out_path_str = out_path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("invalid UTF-8 path"))?;
+    let status = tokio::process::Command::new("ffmpeg")
         .args([
-            "-v",
-            "error",
-            "-select_streams",
-            "a:0",
-            "-show_entries",
-            "stream=bit_rate",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
+            "-y",
+            "-i",
             audio_path_str,
+            "-acodec",
+            "libmp3lame",
+            "-b:a",
+            &format!("{target_kbps}k"),
+            out_path_str,
         ])
         .output()
         .await?;
-    let initial_bitrate: u32 = String::from_utf8_lossy(&probe.stdout)
-        .trim()
-        .parse()
-        .unwrap_or(320_000);
+    if !status.status.success() {
+        let stderr = String::from_utf8_lossy(&status.stderr);
+        anyhow::bail!("ffmpeg compress failed: {stderr}");
+    }
 
-    let mut bitrate_bps = initial_bitrate;
-    let mut attempt = 0u32;
-    const MAX_ATTEMPTS: u32 = 20;
+    let size = std::fs::metadata(&out_path)?.len();
+    log_trace(trace_id, "compressed", &format!("size={size}"));
 
-    loop {
-        attempt += 1;
-        bitrate_bps = (bitrate_bps as f64 * 0.9) as u32;
-        let bitrate_kbps = (bitrate_bps / 1000).max(32);
-        log_trace(
-            trace_id,
-            "compress_attempt",
-            &format!("attempt={attempt} bitrate={bitrate_kbps}k"),
-        );
+    if size <= MAX_AUDIO_BYTES {
+        return Ok(std::fs::read(&out_path)?);
+    }
 
-        let edit_text = tf(
-            "separation.compressing_audio",
-            &[
-                ("attempt", &attempt.to_string()),
-                ("max", &MAX_ATTEMPTS.to_string()),
-            ],
-        );
-        let _ = api
-            .edit_message_text(
-                &EditMessageTextParams::builder()
-                    .chat_id(chat_id)
-                    .message_id(message_id)
-                    .text(edit_text)
-                    .build(),
-            )
-            .await;
+    anyhow::bail!("audio still too large after compression (size={size})");
+}
 
-        let out_path = tmp_dir.join(format!("compressed_{attempt}.mp3"));
-        let out_path_str = out_path
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("invalid UTF-8 path"))?;
-        let status = tokio::process::Command::new("ffmpeg")
-            .args([
-                "-y",
-                "-i",
-                audio_path_str,
-                "-acodec",
-                "libmp3lame",
-                "-b:a",
-                &format!("{bitrate_kbps}k"),
-                out_path_str,
-            ])
-            .output()
-            .await?;
-        if !status.status.success() {
-            let stderr = String::from_utf8_lossy(&status.stderr);
-            anyhow::bail!("ffmpeg compress failed: {stderr}");
-        }
+/// Calculates the single-pass target MP3 bitrate in kbps needed to fit an audio file
+/// within `max_bytes` based on its duration.
+pub fn calculate_target_bitrate_kbps(duration_secs: u64, max_bytes: u64) -> u32 {
+    let max_kbps = 320u32;
+    let min_kbps = 64u32;
+    if duration_secs > 0 {
+        let cap_kbps =
+            ((max_bytes as f64 * 8.0) / (duration_secs as f64 * 1000.0) * 0.95) as u32;
+        cap_kbps.clamp(min_kbps, max_kbps)
+    } else {
+        192
+    }
+}
 
-        let size = std::fs::metadata(&out_path)?.len();
-        log_trace(
-            trace_id,
-            "compressed",
-            &format!("attempt={attempt} size={size}"),
-        );
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        if size <= MAX_AUDIO_BYTES {
-            return Ok(std::fs::read(&out_path)?);
-        }
+    #[test]
+    fn test_calculate_target_bitrate_kbps() {
+        const MAX_BYTES: u64 = 50 * 1024 * 1024;
+        // Zero duration defaults to 192 kbps
+        assert_eq!(calculate_target_bitrate_kbps(0, MAX_BYTES), 192);
 
-        if attempt >= MAX_ATTEMPTS || bitrate_kbps <= 32 {
-            anyhow::bail!("audio still too large after max compression attempts");
-        }
+        // Short duration clamped to max 320 kbps
+        assert_eq!(calculate_target_bitrate_kbps(60, MAX_BYTES), 320);
+
+        // 1 hour audio (~3600s) -> ~110 kbps
+        let one_hour = calculate_target_bitrate_kbps(3600, MAX_BYTES);
+        assert!((100..=120).contains(&one_hour));
+
+        // Very long audio (10 hours) clamped to min 64 kbps
+        assert_eq!(calculate_target_bitrate_kbps(36000, MAX_BYTES), 64);
     }
 }

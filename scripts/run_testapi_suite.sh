@@ -11,7 +11,7 @@ BASE_URL="http://127.0.0.1:$PORT"
 redis-cli del "cpu:reserved" "cpu:queue" >/dev/null 2>&1 || true
 
 echo "Building dev mode..."
-cargo build --features testapi -j 8
+cargo build --features testapi -j 3
 
 echo "Starting test API server..."
 TESTAPI_ENABLED=1 BOT_API_BASE_URL="http://127.0.0.1:$PORT/bot" ./target/debug/rostam-dev > testapi.log 2>&1 &
@@ -600,6 +600,96 @@ if [ "$(echo "$RES_ST3" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_ST3" | jq
     echo "Fail: Studio trim autoclamp test failed. Got: $RES_ST3"
     exit 1
 fi
+
+# Test 4: Audio Trimming - Valid MP3 input & Audio Info Card
+echo "Testing /test/studio/trim (Audio trimming success path)"
+RES_STA1=$(curl -s -X POST "$BASE_URL/test/studio/trim" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "media_kind": "audio",
+        "filename": "podcast_episode.mp3",
+        "mime_type": "audio/mpeg",
+        "audio_codec": "mp3",
+        "audio_bitrate": 320000,
+        "duration_secs": 1800,
+        "input_ranges": "00:00 - 05:00\n10:00 - 15:00"
+    }')
+if [ "$(echo "$RES_STA1" | jq -r '.ok')" != "true" ] || \
+   [ "$(echo "$RES_STA1" | jq -r '.detected_media_kind')" != "audio" ] || \
+   [ "$(echo "$RES_STA1" | jq -r '.delivery_method')" != "sendAudio" ] || \
+   [ "$(echo "$RES_STA1" | jq -r '.ranges_count')" != "2" ]; then
+    echo "Fail: Studio audio trim test failed. Got: $RES_STA1"
+    exit 1
+fi
+
+# Test 5: Audio Trimming - Auto-clamping to audio track duration
+echo "Testing /test/studio/trim (Audio auto-clamping)"
+RES_STA2=$(curl -s -X POST "$BASE_URL/test/studio/trim" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "media_kind": "audio",
+        "filename": "track.flac",
+        "duration_secs": 210,
+        "input_ranges": "01:00 - 05:00"
+    }')
+if [ "$(echo "$RES_STA2" | jq -r '.ok')" != "true" ] || \
+   [ "$(echo "$RES_STA2" | jq -r '.parsed_ranges[0].end_secs')" != "210" ]; then
+    echo "Fail: Studio audio trim auto-clamp failed. Got: $RES_STA2"
+    exit 1
+fi
+
+# Test 6: Audio Trimming - Invalid range failure (start >= end)
+echo "Testing /test/studio/trim (Audio invalid range failure path)"
+RES_STA_INV=$(curl -s -X POST "$BASE_URL/test/studio/trim" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "media_kind": "audio",
+        "filename": "track.mp3",
+        "duration_secs": 300,
+        "input_ranges": "05:00 - 02:00"
+    }')
+if [ "$(echo "$RES_STA_INV" | jq -r '.ok')" != "true" ] || \
+   [ "$(echo "$RES_STA_INV" | jq -r '.is_valid')" != "false" ] || \
+   [ "$(echo "$RES_STA_INV" | jq -r '.detected_media_kind')" != "audio" ]; then
+    echo "Fail: Studio audio trim invalid range failure test failed. Got: $RES_STA_INV"
+    exit 1
+fi
+
+# Test 7: Non-Media Rejection Failure Path
+echo "Testing /test/studio/trim (Unsupported document rejection)"
+RES_STA3=$(curl -s -X POST "$BASE_URL/test/studio/trim" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "media_kind": "unsupported",
+        "filename": "document.pdf",
+        "mime_type": "application/pdf"
+    }')
+if [ "$(echo "$RES_STA3" | jq -r '.detected_media_kind')" != "unsupported" ] || \
+   [ "$(echo "$RES_STA3" | jq -r '.is_valid')" != "false" ]; then
+    echo "Fail: Studio unsupported media rejection test failed. Got: $RES_STA3"
+    exit 1
+fi
+
+# Test 8: Concurrency Guard (Active Job Running)
+echo "Testing /test/studio/trim (User busy concurrency guard)"
+RES_STA4=$(curl -s -X POST "$BASE_URL/test/studio/trim" \
+    -H "Content-Type: application/json" \
+    -d '{"simulate_busy": true}')
+if [ "$(echo "$RES_STA4" | jq -r '.busy_blocked')" != "true" ]; then
+    echo "Fail: Studio trim busy concurrency guard test failed. Got: $RES_STA4"
+    exit 1
+fi
+
+# Test 9: Paywall & Quota Simulation
+echo "Testing /test/studio/trim (Paywall & Quota simulation)"
+RES_STA5=$(curl -s -X POST "$BASE_URL/test/studio/trim" \
+    -H "Content-Type: application/json" \
+    -d '{"simulate_paywall": true, "simulate_quota_exhausted": true}')
+if [ "$(echo "$RES_STA5" | jq -r '.paywall_blocked')" != "true" ] || \
+   [ "$(echo "$RES_STA5" | jq -r '.quota_blocked')" != "true" ]; then
+    echo "Fail: Studio trim paywall and quota test failed. Got: $RES_STA5"
+    exit 1
+fi
 echo "✅ Studio Trim tests passed!"
 
 echo "Testing /test/studio/compress (Filtering & Container)"
@@ -995,6 +1085,7 @@ echo "✅ Force Join tests passed!"
 echo "✅ Extended TestAPI Endpoint Suite passed!"
 
 echo ""
+
 for YT_SCENARIO in missing hardsub remux codec rolling; do
     echo "Testing /test/youtube/subtitle ($YT_SCENARIO)"
     YT_SUB=$(curl --fail --max-time 180 -s -X POST "$BASE_URL/test/youtube/subtitle" -H 'Content-Type: application/json' -d "{\"scenario\":\"$YT_SCENARIO\"}")

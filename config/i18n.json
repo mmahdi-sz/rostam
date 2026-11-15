@@ -2,7 +2,7 @@
   "fa": {
     "active_job_running": "⚠️ شما در حال حاضر یک پردازش فعال دارید\\. لطفاً تا اتمام آن صبور باشید\\.",
     "start": {
-      "welcome": "👋 *به ربات رستم خوش آمدید\\!*\nمرجع جامع ابزارهای هوشمند رسانه و پردازش هوش مصنوعی\\.\n\n✨ *امکانات و ابزارهای ربات:*\n\n🌐 *دانلودر شبکه‌های اجتماعی*\n**>🎬 یوتیوب\n>╣ 🎞️ ویدیو تا 4K، صدای با کیفیت بالا، کدک AV1 / VP9 / H264\n>╝ 📜 زیرنویس با ترجمه هوشمند و پشتیبانی کامل از پلی‌لیست\n>\n>🟢 اسپاتیفای\n>╣ 🎧 آهنگ با کیفیت بالا همراه کاور و مشخصات کامل\n>╝ 📚 آلبوم و پلی‌لیست، تکی یا داخل فایل زیپ\n>\n>🟠 ساندکلاود\n>╣ 🎧 آهنگ و ریمیکس با بهترین کیفیت موجود\n>╝ 📚 پشتیبانی از ست و پلی‌لیست همراه کاور||\n\n🧪 *آزمایشگاه هوش مصنوعی \\(AI Lab\\)*\n**>╣ 🎙️ تبدیل گفتار به متن \\(فارسی و انگلیسی\\)\n>╣ 🔇 حذف نویز صدا با شبکه عصبی\n>╣ 🎵 تفکیک صدای هنرمند و موزیک\n>╣ 🖼️ ارتقا کیفیت تصویر \\(تا ۴ برابر\\)\n>╣ ✨ حذف واترمارک هوش مصنوعی\n>╣ 🎤 تبدیل متن به صدا\n>╣ 🎨 رنگ‌آمیزی عکس‌های سیاه و سفید\n>╝ ✂️ حذف خودکار پس‌زمینه عکس||\n\n🧰 *جعبه‌ابزار کاربردی*\n**>╣ 📂 فشرده‌سازی فایل در قالب ZIP، 7Z و RAR\n>╣ 📄 فشرده‌سازی حرفه‌ای PDF\n>╣ ⚡ دانلود مستقیم لینک‌های حجیم\n>╝ 🌐 استعلام و تحلیل آدرس IP||\n\n💻 *کافه برنامه‌نویسی و فناوری*\n**>╝ 📦 تبدیل فرمت بسته‌های نرم‌افزاری \\(DEB ↔ RPM ↔ Pacman\\)||\n\n🎬 *استودیو جادویی عکس و ویدئو*\n**>╣ ✂️ برش دقیق و ادیت چندبخشی ویدیو\n>╣ 🎥 فشرده‌سازی پیشرفته با تنظیم کدک و کیفیت\n>╣ 🎵 استخراج ترک صوتی و زیرنویس از ویدیو\n>╝ 🔥 حک و چسباندن دائمی هاردساب روی ویدیو||\n\n👤 *پنل کاربری و اشتراک*\n╝ مدیریت رتبه، بررسی سهمیه ترافیک و ثبت کدهای هدیه\n\n👇 *برای شروع، یکی از گزینه‌های منوی زیر را انتخاب کنید:*",
+      "welcome": "👋 *به ربات رستم خوش آمدید\\!*\nمرجع جامع ابزارهای هوشمند رسانه و پردازش هوش مصنوعی\\.\n\n✨ *امکانات و ابزارهای ربات:*\n\n🌐 *دانلودر شبکه‌های اجتماعی*\n**>🎬 یوتیوب\n>╣ 🎞️ ویدیو تا 4K، صدای با کیفیت بالا، کدک AV1 / VP9 / H264\n>╝ 📜 زیرنویس با ترجمه هوشمند و پشتیبانی کامل از پلی‌لیست\n>\n>🟢 اسپاتیفای\n>╣ 🎧 آهنگ با کیفیت بالا همراه کاور و مشخصات کامل\n>╝ 📚 آلبوم و پلی‌لیست، تکی یا داخل فایل زیپ\n>\n>🟠 ساندکلاود\n>╣ 🎧 آهنگ و ریمیکس با بهترین کیفیت موجود\n>╝ 📚 پشتیبانی از ست و پلی‌لیست همراه کاور||\n\n🧪 *آزمایشگاه هوش مصنوعی \\(AI Lab\\)*\n**>╣ 🎙️ تبدیل گفتار به متن \\(فارسی و انگلیسی\\)\n>╣ 🔇 حذف نویز صدا با شبکه عصبی\n>╣ 🎵 تفکیک صدای هنرمند و موزیک\n>╣ 🖼️ ارتقا کیفیت تصویر \\(تا ۴ برابر\\)\n>╣ ✨ حذف واترمارک هوش مصنوعی\n>╣ 🎤 تبدیل متن به صدا\n>╣ 🎨 رنگ‌آمیزی عکس‌های سیاه و سفید\n>╝ ✂️ حذف خودکار پس‌زمینه عکس||\n\n🧰 *جعبه‌ابزار کاربردی*\n**>╣ 📂 فشرده‌سازی فایل در قالب ZIP، 7Z و RAR\n>╣ 📄 فشرده‌سازی حرفه‌ای PDF\n>╣ ⚡ دانلود مستقیم لینک‌های حجیم\n>╝ 🌐 استعلام و تحلیل آدرس IP||\n\n💻 *کافه برنامه‌نویسی و فناوری*\n**>╝ 📦 تبدیل فرمت بسته‌های نرم‌افزاری \\(DEB ↔ RPM ↔ Pacman\\)||\n\n🎬 *استودیو جادویی عکس و ویدئو*\n**>╣ ✂️ برش دقیق و ادیت چندبخشی صوت و ویدیو\n>╣ 🎥 فشرده‌سازی پیشرفته با تنظیم کدک و کیفیت\n>╣ 🎵 استخراج ترک صوتی و زیرنویس از ویدیو\n>╝ 🔥 حک و چسباندن دائمی هاردساب روی ویدیو||\n\n👤 *پنل کاربری و اشتراک*\n╝ مدیریت رتبه، بررسی سهمیه ترافیک و ثبت کدهای هدیه\n\n👇 *برای شروع، یکی از گزینه‌های منوی زیر را انتخاب کنید:*",
       "emoji_button": "پنل ایموجی",
       "youtube_button": "دانلود یوتیوب",
       "back": "منوی اصلی",
@@ -792,7 +792,7 @@
           "surge_dl": "دانلود لینک مستقیم",
           "emoji": "ایموجی پنل",
           "ip_lookup": "استعلام IP",
-          "studio_trim": "✂️ برش ویدئو",
+          "studio_trim": "✂️ برش صوت و ویدئو",
           "studio_compress": "🎥 فشرده‌سازی ویدئو",
           "studio_extract": "🎵 استخراج صدا و زیرنویس",
           "studio_burn": "🎬 حک زیرنویس روی ویدیو",
@@ -930,7 +930,7 @@
     },
     "referral": {
       "button": "دعوت دوستان و کسب امتیاز",
-      "banner": "🤖 <b>بات رستم</b> | هوشمندترین دستیار یوتیوب و هوش مصنوعی ⚡\n\n🌐 <b>دانلودر شبکه اجتماعی</b>\n<blockquote expandable>🎬 یوتیوب\n╣ 🎞️ ویدیو تا 4K، صدای با کیفیت بالا، کدک AV1 · VP9 · H264\n╣ 📜 زیرنویس، فایل جدا یا داخل ویدیو\n╝ 📋 پشتیبانی کامل از پلی‌لیست\n\n🟢 اسپاتیفای\n╣ 🎧 آهنگ با کیفیت بالا همراه کاور و مشخصات کامل\n╝ 📚 آلبوم و پلی‌لیست، تکی یا داخل فایل زیپ\n\n🟠 ساندکلاود\n╣ 🎧 آهنگ و ریمیکس با بهترین کیفیت موجود\n╝ 📚 پشتیبانی از ست و پلی‌لیست همراه کاور</blockquote>\n\n🧪 <b>آزمایشگاه هوش مصنوعی</b>\n<blockquote expandable>╣ 🎙️ تبدیل گفتار به متن\n╣ 🔇 حذف نویز صدا با شبکه عصبی\n╣ 🎵 تفکیک صدای هنرمند و موزیک\n╣ 🖼️ ارتقا کیفیت تصویر\n╣ ✨ حذف واترمارک هوش مصنوعی\n╣ 🎤 تبدیل متن به صدا\n╣ 🎨 رنگ‌آمیزی عکس‌های سیاه و سفید\n╝ ✂️ حذف خودکار پس‌زمینه عکس</blockquote>\n\n🧰 <b>جعبه‌ابزار کاربردی</b>\n<blockquote expandable>╣ 📂 فشرده‌سازی فایل در قالب ZIP، 7Z و RAR\n╣ 📄 فشرده‌سازی حرفه‌ای PDF\n╣ ⚡ دانلود مستقیم لینک‌های حجیم\n╝ 🌐 استعلام و تحلیل آدرس IP</blockquote>\n\n💻 <b>کافه برنامه‌نویسی و فناوری</b>\n<blockquote expandable>╝ 📦 تبدیل فرمت بسته‌های لینوکس (DEB، RPM، Pacman)</blockquote>\n\n🎬 <b>استودیو جادویی عکس و ویدئو</b>\n<blockquote expandable>╣ ✂️ برش و ادیت ویدئو\n╣ 🎥 فشرده‌سازی پیشرفته ویدیو\n╣ 🎵 جداسازی زیرنویس و صدا از ویدیو\n╝ 🔥 حک و چسباندن هاردساب روی ویدیو</blockquote>\n\n🔗 همین الان رایگان امتحان کن 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
+      "banner": "🤖 <b>بات رستم</b> | هوشمندترین دستیار یوتیوب و هوش مصنوعی ⚡\n\n🌐 <b>دانلودر شبکه اجتماعی</b>\n<blockquote expandable>🎬 یوتیوب\n╣ 🎞️ ویدیو تا 4K، صدای با کیفیت بالا، کدک AV1 · VP9 · H264\n╣ 📜 زیرنویس، فایل جدا یا داخل ویدیو\n╝ 📋 پشتیبانی کامل از پلی‌لیست\n\n🟢 اسپاتیفای\n╣ 🎧 آهنگ با کیفیت بالا همراه کاور و مشخصات کامل\n╝ 📚 آلبوم و پلی‌لیست، تکی یا داخل فایل زیپ\n\n🟠 ساندکلاود\n╣ 🎧 آهنگ و ریمیکس با بهترین کیفیت موجود\n╝ 📚 پشتیبانی از ست و پلی‌لیست همراه کاور</blockquote>\n\n🧪 <b>آزمایشگاه هوش مصنوعی</b>\n<blockquote expandable>╣ 🎙️ تبدیل گفتار به متن\n╣ 🔇 حذف نویز صدا با شبکه عصبی\n╣ 🎵 تفکیک صدای هنرمند و موزیک\n╣ 🖼️ ارتقا کیفیت تصویر\n╣ ✨ حذف واترمارک هوش مصنوعی\n╣ 🎤 تبدیل متن به صدا\n╣ 🎨 رنگ‌آمیزی عکس‌های سیاه و سفید\n╝ ✂️ حذف خودکار پس‌زمینه عکس</blockquote>\n\n🧰 <b>جعبه‌ابزار کاربردی</b>\n<blockquote expandable>╣ 📂 فشرده‌سازی فایل در قالب ZIP، 7Z و RAR\n╣ 📄 فشرده‌سازی حرفه‌ای PDF\n╣ ⚡ دانلود مستقیم لینک‌های حجیم\n╝ 🌐 استعلام و تحلیل آدرس IP</blockquote>\n\n💻 <b>کافه برنامه‌نویسی و فناوری</b>\n<blockquote expandable>╝ 📦 تبدیل فرمت بسته‌های لینوکس (DEB، RPM، Pacman)</blockquote>\n\n🎬 <b>استودیو جادویی عکس و ویدئو</b>\n<blockquote expandable>╣ ✂️ برش و ادیت صوت و ویدئو\n╣ 🎥 فشرده‌سازی پیشرفته ویدیو\n╣ 🎵 جداسازی زیرنویس و صدا از ویدیو\n╝ 🔥 حک و چسباندن هاردساب روی ویدیو</blockquote>\n\n🔗 همین الان رایگان امتحان کن 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
       "status": "🔗 <b>لینک اختصاصی شما آماده است!</b>\n\nاین بنر را برای دوستان یا در گروه‌ها بفرستید.\nبه ازای هر نفری که با لینک شما وارد بات شود و حداقل ۲ روز عضو کانال بماند، یک دعوت برای شما ثبت می‌شود. 💰\n\n📈 <b>وضعیت فعلی</b>\n👤 تعداد دعوت‌ها: {count} نفر\n⏳ در انتظار تأیید: {pending} نفر\n💎 امتیاز قابل‌استفاده: {available} امتیاز\n\n🎯 برای فعال‌سازی و دریافت رتبه، روی دکمه‌ی زیر بزنید:\n(اشتراک‌ها ۱ ماهه هستند)",
       "tier_button": "{rank} ({count} امتیاز)",
       "activate_success": "🎉 رتبه {rank} تا تاریخ {date} برایتان فعال شد!",
@@ -1238,8 +1238,8 @@
       "expired": "⚠️ *این درخواست منقضی شده\\. لینک را دوباره بفرست\\.*"
     },
     "studio": {
-      "title": "🎥 *استودیو جادویی عکس و ویدئو*\n\nابزارهای حرفه‌ای ویرایش و پردازش رسانه:\n\n• ✂️ *برش و ادیت ویدئو:* برش دقیق چند‌بخش از ویدئو به صورت همزمان\n• 🎥 *فشرده‌سازی پیشرفته ویدیو:* تنظیم کدک، رزولوشن، FPS و بیت‌ریت\n• 🎵 *جداسازی زیرنویس و صدا:* استخراج تمامی ترک‌های صوتی و زیرنویس ویدیو به صورت مستقیم\n\n*ابزار مورد نظر را انتخاب کنید👇:*",
-      "trim_button": "برش و ادیت ویدئو",
+      "title": "🎥 *استودیو جادویی عکس و ویدئو*\n\nابزارهای حرفه‌ای ویرایش و پردازش رسانه:\n\n• ✂️ *برش و ادیت صوت و ویدئو:* برش دقیق چند‌بخش از صوت و ویدئو به صورت همزمان\n• 🎥 *فشرده‌سازی پیشرفته ویدیو:* تنظیم کدک، رزولوشن، FPS و بیت‌ریت\n• 🎵 *جداسازی زیرنویس و صدا:* استخراج تمامی ترک‌های صوتی و زیرنویس ویدیو به صورت مستقیم\n\n*ابزار مورد نظر را انتخاب کنید👇:*",
+      "trim_button": "برش و ادیت صوت و ویدئو",
       "compress_button": "فشرده‌سازی پیشرفته ویدیو",
       "extract_button": "جداسازی زیرنویس و صدا",
       "burn_button": "حک زیرنویس روی ویدیو",
@@ -1324,31 +1324,33 @@
         }
       },
       "trim": {
-        "send_video_prompt": "🎥 *برش و ادیت ویدئو*\n\nلطفاً ویدئویی که می‌خواهید ویرایش کنید را ارسال کنید\\.",
+        "send_video_prompt": "*برش و ادیت صوت و ویدئو*\n\nلطفاً فایل صوتی یا ویدئویی که میخواهید ویرایش کنید را ارسال کنید\\.",
         "cancel_btn": "لغو و بازگشت به استودیو",
-        "cancelled": "❌ عملیات ادیت ویدئو لغو شد\\.",
-        "status_downloading": "📥 *در حال دانلود ویدئو\\.\\.\\.*\n⏱️ *زمان سپری‌شده:* {elapsed}{detail}",
+        "cancelled": "❌ عملیات ادیت لغو شد\\.",
+        "status_downloading": "📥 *در حال دانلود فایل\\.\\.\\.*\n⏱️ *زمان سپری‌شده:* {elapsed}{detail}",
         "status_downloading_detail": "\n📥 *دانلودشده:* `{dl_mb} مگابایت` از `{total_mb} مگابایت` \\({pct}%\\)\n🚀 *سرعت:* `{speed}`   ⌛ *زمان باقی‌مانده:* {eta}",
         "status_processing": "⚙️ در حال پردازش\\.\\.\\.",
         "info_template": "📊 *اطلاعات ویدئو:*\nنام فایل: {filename}\nرزولوشن: {width}x{height}\nبیتریت ویدئو: {bitrate}\nفریمریت \\(fps\\) ویدئو: {fps}\nکدک ویدئو: {codec}\nزمان ویدئو: {duration}",
-        "start_trim_btn": "برش ویدئو (کات کردن)",
-        "ranges_prompt": "شروع زمان برش و پایان زمان برش را در یک خط به فرمت زیر بنویسید:\n`00:00:00 - 00:00:00`\nهر خط \\= یک برش\nنکته: اگر ویدئوی شما زیر ۲ ساعت است می‌توانید از فرمت زیر استفاده کنید:\n`00:00 - 00:00`\nنکته ۲: می‌توانید چندین خط وارد کنید تا چندین برش انجام شود\\.",
+        "start_trim_btn": "برش مدیا (کات کردن)",
+        "ranges_prompt": "شروع زمان برش و پایان زمان برش را در یک خط به فرمت زیر بنویسید:\n`00:00:00 - 00:00:00`\nهر خط \\= یک برش\nنکته: اگر فایل شما زیر ۲ ساعت است می‌توانید از فرمت زیر استفاده کنید:\n`00:00 - 00:00`\nنکته ۲: می‌توانید چندین خط وارد کنید تا چندین برش انجام شود\\.",
         "error": {
-          "not_a_video": "⚠️ فایل فرستاده‌شده یک ویدئوی معتبر نیست\\. لطفاً فایل ویدئویی ارسال کنید\\.",
+          "unsupported_media": "⚠️ فایل ارسال‌شده ویدئو یا صوت معتبر نیست\\. لطفاً یک فایل صوتی یا ویدئویی معتبر ارسال کنید\\.",
+          "not_a_video": "⚠️ فایل ارسال‌شده ویدئو یا صوت معتبر نیست\\. لطفاً یک فایل صوتی یا ویدئویی معتبر ارسال کنید\\.",
           "invalid_format": "⚠️ فرمت خط {line} نامعتبر است: `{text}`\\.\nلطفاً از فرمت `HH:MM:SS - HH:MM:SS` یا `MM:SS - MM:SS` استفاده کنید\\.",
           "start_gte_end": "⚠️ در خط {line} زمان شروع باید کمتر از زمان پایان باشد\\.",
-          "end_exceeds_duration": "⚠️ در خط {line} زمان پایان \\({end}\\) از کل زمان ویدئو \\({duration}\\) بیشتر است\\.",
+          "end_exceeds_duration": "⚠️ در خط {line} زمان پایان \\({end}\\) از کل زمان فایل \\({duration}\\) بیشتر است\\.",
           "max_ranges": "⚠️ حداکثر ۱۰ برش در هر درخواستی مجاز است\\.",
           "no_valid_ranges": "⚠️ هیچ محدوده برش معتبری وارد نشد\\.",
-          "download_failed": "⚠️ دریافت فایل ویدئو با خطا مواجه شد\\. دوباره تلاش کنید\\.",
-          "ffprobe_failed": "⚠️ استخراج اطلاعات ویدئو با خطا مواجه شد\\. ویدئو معتبر نیست\\.",
+          "download_failed": "⚠️ دریافت فایل با خطا مواجه شد\\. دوباره تلاش کنید\\.",
+          "ffprobe_failed": "⚠️ استخراج اطلاعات مدیا با خطا مواجه شد\\. فایل معتبر نیست\\.",
           "trim_failed": "⚠️ انجام برش {range} با خطا مواجه شد\\.",
           "oversized": "⚠️ حجم خروجی بخش {range} از سقف ۲ گیگابایت بیشتر است و ارسال نشد\\."
         },
-        "status_job_ticker": "✂️ *در حال برش ویدئو\\.\\.\\.*\nبخش {current} از {total}\n⏱️ *زمان سپری‌شده:* {elapsed}{eta}",
-        "job_cancelled": "🚫 عملیات برش ویدئو توسط شما لغو شد\\.",
-        "job_done": "🎉 *برش ویدئو با موفقیت انجام شد\\!*\n\n⏱️ *زمان صرف شده:*\n• ✂️ برش ویدئو: {trim_time}\n• 📥 دانلود ویدئو: {download_time}\n• 📤 آپلود ویدئو: {upload_time}",
-        "status_job_ticker_eta": "\n⏳ *زمان تخمینی باقی‌مانده:* {eta}"
+        "status_job_ticker": "✂️ *در حال برش مدیا\\.\\.\\.*\nبخش {current} از {total}\n⏱️ *زمان سپری‌شده:* {elapsed}{eta}",
+        "job_cancelled": "🚫 عملیات برش توسط شما لغو شد\\.",
+        "job_done": "🎉 *برش مدیا با موفقیت انجام شد\\!*\n\n⏱️ *زمان صرف شده:*\n• ✂️ برش: {trim_time}\n• 📥 دانلود: {download_time}\n• 📤 آپلود: {upload_time}",
+        "status_job_ticker_eta": "\n⏳ *زمان تخمینی باقی‌مانده:* {eta}",
+        "info_audio_template": "📊 *اطلاعات فایل صوتی:*\nنام فایل: {filename}\nمدت زمان: {duration}\nبیت‌ریت صدا: {bitrate}\nکدک صدا: {codec}"
       }
     },
     "youtube.download.progress.upload_body": "📤 {stage}\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
@@ -1407,7 +1409,7 @@
   "en": {
     "active_job_running": "⚠️ You currently have an active job\\. Please wait for it to finish\\.",
     "start": {
-      "welcome": "👋 *Welcome to Rostam Bot\\!*\nComprehensive center for smart media tools and AI processing\\.\n\n✨ *Bot Features and Tools:*\n\n🌐 *Social Media Downloader*\n**>🎬 YouTube\n>╠ 🎞️ Download videos in all qualities \\(up to 4K\\)\n>╠ 🎧 Extract and download high\\-quality audio\n>╠ ⚙️ Advanced codec selection \\(AV1 / VP9 / H264\\)\n>╠ 📜 Smart subtitle download and translation\n>╚ 📋 Full support for playlist downloading\n>\n>🟢 Spotify\n>╠ 🎧 High\\-quality songs with cover and full metadata\n>╚ 📚 Albums and playlists, single or zip archive\n>\n>🟠 SoundCloud\n>╠ 🎧 High\\-quality tracks and remixes\n>╚ 📚 Support for sets and playlists with cover||\n\n🧪 *AI Laboratory \\(AI Lab\\)*\n**>╠ 🎙️ Speech to Text \\(Persian and English\\)\n>╠ 🔇 Neural Noise Removal\n>╠ 🎵 Vocal and Music Separation\n>╠ 🖼️ Image Upscaling \\(up to 4x\\)\n>╠ ✨ Gemini Watermark Removal\n>╠ 🎤 Text to Speech\n>╠ 🎨 B/W Photo Colorization\n>╚ ✂️ Automatic Background Removal||\n\n🧰 *Useful Tools*\n**>╠ 📂 File compression into ZIP, 7Z and RAR archives\n>╠ 📄 Professional PDF Compression\n>╠ ⚡ Direct High\\-Volume Link Downloader\n>╚ 🌐 IP Address Lookup and Analysis||\n\n💻 *Programming & Tech Cafe*\n**>╚ 📦 Linux package converter \\(DEB ↔ RPM ↔ Pacman\\)||\n\n🎬 *Photo & Video Magic Studio*\n**>╠ ✂️ Multi\\-part precise video trimming and editing\n>╠ 🎥 Advanced video compression with custom codecs\n>╠ 🎵 Extract audio and subtitle tracks from video\n>╚ 🔥 Hardsub subtitle burning onto video||\n\n👤 *User Panel and Subscription*\n╚ Rank management, traffic quota check and promo codes\n\n👇 *To get started, choose an option from the menu below:*",
+      "welcome": "👋 *Welcome to Rostam Bot\\!*\nComprehensive center for smart media tools and AI processing\\.\n\n✨ *Bot Features and Tools:*\n\n🌐 *Social Media Downloader*\n**>🎬 YouTube\n>╠ 🎞️ Download videos in all qualities \\(up to 4K\\)\n>╠ 🎧 Extract and download high\\-quality audio\n>╠ ⚙️ Advanced codec selection \\(AV1 / VP9 / H264\\)\n>╠ 📜 Smart subtitle download and translation\n>╚ 📋 Full support for playlist downloading\n>\n>🟢 Spotify\n>╠ 🎧 High\\-quality songs with cover and full metadata\n>╚ 📚 Albums and playlists, single or zip archive\n>\n>🟠 SoundCloud\n>╠ 🎧 High\\-quality tracks and remixes\n>╚ 📚 Support for sets and playlists with cover||\n\n🧪 *AI Laboratory \\(AI Lab\\)*\n**>╠ 🎙️ Speech to Text \\(Persian and English\\)\n>╠ 🔇 Neural Noise Removal\n>╠ 🎵 Vocal and Music Separation\n>╠ 🖼️ Image Upscaling \\(up to 4x\\)\n>╠ ✨ Gemini Watermark Removal\n>╠ 🎤 Text to Speech\n>╠ 🎨 B/W Photo Colorization\n>╚ ✂️ Automatic Background Removal||\n\n🧰 *Useful Tools*\n**>╠ 📂 File compression into ZIP, 7Z and RAR archives\n>╠ 📄 Professional PDF Compression\n>╠ ⚡ Direct High\\-Volume Link Downloader\n>╚ 🌐 IP Address Lookup and Analysis||\n\n💻 *Programming & Tech Cafe*\n**>╚ 📦 Linux package converter \\(DEB ↔ RPM ↔ Pacman\\)||\n\n🎬 *Photo & Video Magic Studio*\n**>╠ ✂️ Multi\\-part precise audio and video trimming and editing\n>╠ 🎥 Advanced video compression with custom codecs\n>╠ 🎵 Extract audio and subtitle tracks from video\n>╚ 🔥 Hardsub subtitle burning onto video||\n\n👤 *User Panel and Subscription*\n╚ Rank management, traffic quota check and promo codes\n\n👇 *To get started, choose an option from the menu below:*",
       "emoji_button": "Emoji Panel",
       "youtube_button": "YouTube Download",
       "back": "Main Menu",
@@ -2196,7 +2198,7 @@
           "surge_dl": "Direct Link Download",
           "emoji": "Emoji Panel",
           "ip_lookup": "IP Lookup",
-          "studio_trim": "✂️ Video Trim",
+          "studio_trim": "✂️ Audio & Video Trim",
           "studio_compress": "🎥 Video Compression",
           "studio_extract": "🎵 Extract Audio & Subtitles",
           "studio_burn": "🎬 Subtitle Burn",
@@ -2335,7 +2337,7 @@
     },
     "referral": {
       "button": "Invite friends and earn points",
-      "banner": "🤖 <b>Rostam Bot</b> | The smartest free YouTube and AI assistant ⚡\n\n🌐 <b>Social Media Downloader</b>\n<blockquote expandable>🎬 YouTube\n╠ 🎞️ Video up to 4K, high-quality audio, AV1 · VP9 · H264 codecs\n╠ 📜 Subtitles, separate file or embedded\n╚ 📋 Full playlist support\n\n🟢 Spotify\n╠ 🎧 High-quality songs with cover and full metadata\n╚ 📚 Albums and playlists, single files or one zip archive\n\n🟠 SoundCloud\n╠ 🎧 Tracks and remixes in the best quality available\n╚ 📚 Sets and playlists supported, cover included</blockquote>\n\n🧪 <b>AI Laboratory</b>\n<blockquote expandable>╠ 🎙️ Speech to text\n╠ 🔇 Neural noise removal\n╠ 🎵 Vocal and music separation\n╠ 🖼️ Image upscaling\n╠ ✨ AI watermark removal\n╠ 🎤 Text to speech\n╠ 🎨 B/W photo colorization\n╚ ✂️ Automatic background removal</blockquote>\n\n🧰 <b>Useful Toolbox</b>\n<blockquote expandable>╠ 📂 File compression into ZIP, 7Z and RAR archives\n╠ 📄 Professional PDF compression\n╠ ⚡ Direct high-volume link downloader\n╚ 🌐 IP address lookup and analysis</blockquote>\n\n💻 <b>Programming & Tech Cafe</b>\n<blockquote expandable>╚ 📦 Linux package converter (DEB, RPM, Pacman)</blockquote>\n\n🎬 <b>Photo & Video Magic Studio</b>\n<blockquote expandable>╠ ✂️ Precise video trimming and editing\n╠ 🎥 Advanced video compression with custom codecs\n╠ 🎵 Extract audio and subtitle tracks from video\n╚ 🔥 Hardsub subtitle burning onto video</blockquote>\n\n🔗 Try it now for free 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
+      "banner": "🤖 <b>Rostam Bot</b> | The smartest free YouTube and AI assistant ⚡\n\n🌐 <b>Social Media Downloader</b>\n<blockquote expandable>🎬 YouTube\n╠ 🎞️ Video up to 4K, high-quality audio, AV1 · VP9 · H264 codecs\n╠ 📜 Subtitles, separate file or embedded\n╚ 📋 Full playlist support\n\n🟢 Spotify\n╠ 🎧 High-quality songs with cover and full metadata\n╚ 📚 Albums and playlists, single files or one zip archive\n\n🟠 SoundCloud\n╠ 🎧 Tracks and remixes in the best quality available\n╚ 📚 Sets and playlists supported, cover included</blockquote>\n\n🧪 <b>AI Laboratory</b>\n<blockquote expandable>╠ 🎙️ Speech to text\n╠ 🔇 Neural noise removal\n╠ 🎵 Vocal and music separation\n╠ 🖼️ Image upscaling\n╠ ✨ AI watermark removal\n╠ 🎤 Text to speech\n╠ 🎨 B/W photo colorization\n╚ ✂️ Automatic background removal</blockquote>\n\n🧰 <b>Useful Toolbox</b>\n<blockquote expandable>╠ 📂 File compression into ZIP, 7Z and RAR archives\n╠ 📄 Professional PDF compression\n╠ ⚡ Direct high-volume link downloader\n╚ 🌐 IP address lookup and analysis</blockquote>\n\n💻 <b>Programming & Tech Cafe</b>\n<blockquote expandable>╚ 📦 Linux package converter (DEB, RPM, Pacman)</blockquote>\n\n🎬 <b>Photo & Video Magic Studio</b>\n<blockquote expandable>╠ ✂️ Precise audio and video trimming and editing\n╠ 🎥 Advanced video compression with custom codecs\n╠ 🎵 Extract audio and subtitle tracks from video\n╚ 🔥 Hardsub subtitle burning onto video</blockquote>\n\n🔗 Try it now for free 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
       "status": "🔗 <b>Your personal link is ready!</b>\n\nShare this banner with friends or in groups.\nFor every person who joins via your link and stays a channel member for at least 2 days, you get 1 referral. 💰\n\n📈 <b>Current status</b>\n👤 Referrals: {count}\n⏳ Pending confirmation: {pending}\n💎 Usable points: {available}\n\n🎯 Tap a button below to activate a rank:\n(subscriptions last 1 month)",
       "tier_button": "{rank} ({count} points)",
       "activate_success": "🎉 {rank} rank has been activated until {date}!",
@@ -2643,8 +2645,8 @@
       "expired": "⚠️ *This request expired\\. Send the link again\\.*"
     },
     "studio": {
-      "title": "🎥 *Photo & Video Magic Studio*\n\nProfessional media editing tools:\n\n• ✂️ *Video Trim & Edit:* Multi\\-range video trimming\n• 🎥 *Advanced Video Compression:* Tune codec, resolution, FPS and bitrate\n• 🎵 *Extract Audio & Subtitles:* Directly extract all audio and subtitle streams\n\n*Select a tool below👇:*",
-      "trim_button": "Video Trim & Edit",
+      "title": "🎥 *Photo & Video Magic Studio*\n\nProfessional media editing tools:\n\n• ✂️ *Audio & Video Trim:* Multi\\-range audio and video trimming\n• 🎥 *Advanced Video Compression:* Tune codec, resolution, FPS and bitrate\n• 🎵 *Extract Audio & Subtitles:* Directly extract all audio and subtitle streams\n\n*Select a tool below👇:*",
+      "trim_button": "Audio & Video Trim",
       "compress_button": "Advanced Video Compression",
       "extract_button": "Extract Audio & Subtitles",
       "burn_button": "Burn Subtitle onto Video",
@@ -2729,31 +2731,33 @@
         }
       },
       "trim": {
-        "send_video_prompt": "🎥 *Video Trim & Edit*\n\nPlease send the video you want to trim and edit\\.",
+        "send_video_prompt": "*Audio & Video Trim*\n\nPlease send the audio or video file you want to edit\\.",
         "cancel_btn": "Cancel & Return to Studio",
-        "cancelled": "❌ Video edit operation cancelled\\.",
-        "status_downloading": "📥 *Downloading video\\.\\.\\.*\n⏱️ *Elapsed time:* {elapsed}{detail}",
+        "cancelled": "❌ Edit operation cancelled\\.",
+        "status_downloading": "📥 *Downloading file\\.\\.\\.*\n⏱️ *Elapsed time:* {elapsed}{detail}",
         "status_downloading_detail": "\n📥 *Downloaded:* `{dl_mb} MB` of `{total_mb} MB` \\({pct}%\\)\n🚀 *Speed:* `{speed}`   ⌛ *Remaining:* {eta}",
         "status_processing": "⚙️ Processing\\.\\.\\.",
         "info_template": "📊 *Video Information:*\nFile name: {filename}\nResolution: {width}x{height}\nBitrate: {bitrate}\nFps: {fps}\nCodec: {codec}\nDuration: {duration}",
-        "start_trim_btn": "Trim Video (Cut)",
-        "ranges_prompt": "Enter start and end trim timestamps on a single line in the following format:\n`00:00:00 - 00:00:00`\nEach line \\= one cut range\nNote: If your video is under 2 hours, you can use:\n`00:00 - 00:00`\nNote 2: You can enter multiple lines to perform multiple cuts\\.",
+        "start_trim_btn": "Trim Media (Cut)",
+        "ranges_prompt": "Enter start and end trim timestamps on a single line in the following format:\n`00:00:00 - 00:00:00`\nEach line \\= one cut range\nNote: If your file is under 2 hours, you can use:\n`00:00 - 00:00`\nNote 2: You can enter multiple lines to perform multiple cuts\\.",
         "error": {
-          "not_a_video": "⚠️ The uploaded file is not a valid video\\. Please send a video file\\.",
+          "unsupported_media": "⚠️ The sent file is not a valid audio or video\\. Please send a valid audio or video file\\.",
+          "not_a_video": "⚠️ The sent file is not a valid audio or video\\. Please send a valid audio or video file\\.",
           "invalid_format": "⚠️ Invalid format on line {line}: `{text}`\\.\nPlease use `HH:MM:SS - HH:MM:SS` or `MM:SS - MM:SS` format\\.",
           "start_gte_end": "⚠️ Line {line}: start time must be less than end time\\.",
-          "end_exceeds_duration": "⚠️ Line {line}: end time \\({end}\\) exceeds video duration \\({duration}\\)\\.",
+          "end_exceeds_duration": "⚠️ Line {line}: end time \\({end}\\) exceeds file duration \\({duration}\\)\\.",
           "max_ranges": "⚠️ Maximum of 10 trim ranges per request allowed\\.",
           "no_valid_ranges": "⚠️ No valid trim ranges entered\\.",
-          "download_failed": "⚠️ Video download failed\\. Please try again\\.",
-          "ffprobe_failed": "⚠️ Extracting video metadata failed\\. Video file is invalid\\.",
+          "download_failed": "⚠️ File download failed\\. Please try again\\.",
+          "ffprobe_failed": "⚠️ Extracting media metadata failed\\. File is invalid\\.",
           "trim_failed": "⚠️ Failed to trim range {range}\\.",
           "oversized": "⚠️ Output clip for range {range} exceeds 2GB ceiling and was skipped\\."
         },
-        "status_job_ticker": "✂️ *Trimming video\\.\\.\\.*\nPart {current} of {total}\n⏱️ *Elapsed:* {elapsed}{eta}",
-        "job_cancelled": "🚫 Video trim operation was cancelled by you\\.",
-        "job_done": "🎉 *Video trimming completed successfully\\!*\n\n⏱️ *Time taken:*\n• ✂️ Trimming: {trim_time}\n• 📥 Download: {download_time}\n• 📤 Upload: {upload_time}",
-        "status_job_ticker_eta": "\n⏳ *Estimated remaining:* {eta}"
+        "status_job_ticker": "✂️ *Trimming media\\.\\.\\.*\nPart {current} of {total}\n⏱️ *Elapsed:* {elapsed}{eta}",
+        "job_cancelled": "🚫 Trim operation was cancelled by you\\.",
+        "job_done": "🎉 *Media trimming completed successfully\\!*\n\n⏱️ *Time taken:*\n• ✂️ Trimming: {trim_time}\n• 📥 Download: {download_time}\n• 📤 Upload: {upload_time}",
+        "status_job_ticker_eta": "\n⏳ *Estimated remaining:* {eta}",
+        "info_audio_template": "📊 *Audio Information:*\nFile name: {filename}\nDuration: {duration}\nAudio bitrate: {bitrate}\nAudio codec: {codec}"
       }
     },
     "youtube.download.progress.upload_body": "📤 {stage}\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
@@ -2812,7 +2816,7 @@
   "it": {
     "active_job_running": "⚠️ Hai attualmente un processo attivo\\. Per favore attendi che finisca\\.",
     "start": {
-      "welcome": "👋 *Benvenuto su Rostam Bot\\!*\nCentro completo per strumenti multimediali e elaborazione AI\\.\n\n✨ *Funzionalità e Strumenti del Bot:*\n\n🌐 *Downloader Social Media*\n**>🎬 YouTube\n>╠ 🎞️ Download video in tutte le qualità \\(fino a 4K\\)\n>╠ 🎧 Estrazione e download audio ad alta qualità\n>╠ ⚙️ Selezione avanzata dei codec \\(AV1 / VP9 / H264\\)\n>╠ 📜 Download e traduzione intelligente dei sottotitoli\n>╚ 📋 Supporto completo per il download di playlist\n>\n>🟢 Spotify\n>╠ 🎧 Brani ad alta qualità con copertina e meta\\-dati completi\n>╚ 📚 Album e playlist, singoli o in archivio zip\n>\n>🟠 SoundCloud\n>╠ 🎧 Tracce e remix con la migliore qualità disponibile\n>╚ 📚 Supporto per set e playlist con copertina||\n\n🧪 *Laboratorio AI \\(AI Lab\\)*\n**>╠ 🎙️ Riconoscimento Vocale \\(Persiano e Inglese\\)\n>╠ 🔇 Riduzione del Rumore Neurale\n>╠ 🎵 Separazione Vocale e Musica\n>╠ 🖼️ Miglioramento Immagini \\(fino a 4x\\)\n>╠ ✨ Rimozione Filigrana Gemini\n>╠ 🎤 Sintesi Vocale\n>╠ 🎨 Colorazione Foto in B/N\n>╚ ✂️ Rimozione Automatica Sfondo||\n\n🧰 *Strumenti Utili*\n**>╠ 📂 Compressione file in archivi ZIP, 7Z e RAR\n>╠ 📄 Compressione PDF Professionale\n>╠ ⚡ Downloader Diretto di Link di Grandi Dimensioni\n>╚ 🌐 Analisi e Verifica Indirizzo IP||\n\n💻 *Caffè Programmazione e Tecnologia*\n**>╚ 📦 Convertitore di pacchetti Linux \\(DEB ↔ RPM ↔ Pacman\\)||\n\n🎬 *Studio Magico Foto e Video*\n**>╠ ✂️ Taglio e modifica video multi\\-sezione\n>╠ 🎥 Compressione video avanzata con codec personalizzati\n>╠ 🎵 Estrazione tracce audio e sottotitoli da video\n>╚ 🔥 Applicazione e incorporamento sottotitoli \\(hardsub\\)||\n\n👤 *Pannello Utente e Abbonamento*\n╚ Gestione del grado, controllo quota traffico e codici promozionali\n\n👇 *Per iniziare, scegli un'opzione dal menu sottostante:*",
+      "welcome": "👋 *Benvenuto su Rostam Bot\\!*\nCentro completo per strumenti multimediali e elaborazione AI\\.\n\n✨ *Funzionalità e Strumenti del Bot:*\n\n🌐 *Downloader Social Media*\n**>🎬 YouTube\n>╠ 🎞️ Download video in tutte le qualità \\(fino a 4K\\)\n>╠ 🎧 Estrazione e download audio ad alta qualità\n>╠ ⚙️ Selezione avanzata dei codec \\(AV1 / VP9 / H264\\)\n>╠ 📜 Download e traduzione intelligente dei sottotitoli\n>╚ 📋 Supporto completo per il download di playlist\n>\n>🟢 Spotify\n>╠ 🎧 Brani ad alta qualità con copertina e meta\\-dati completi\n>╚ 📚 Album e playlist, singoli o in archivio zip\n>\n>🟠 SoundCloud\n>╠ 🎧 Tracce e remix con la migliore qualità disponibile\n>╚ 📚 Supporto per set e playlist con copertina||\n\n🧪 *Laboratorio AI \\(AI Lab\\)*\n**>╠ 🎙️ Riconoscimento Vocale \\(Persiano e Inglese\\)\n>╠ 🔇 Riduzione del Rumore Neurale\n>╠ 🎵 Separazione Vocale e Musica\n>╠ 🖼️ Miglioramento Immagini \\(fino a 4x\\)\n>╠ ✨ Rimozione Filigrana Gemini\n>╠ 🎤 Sintesi Vocale\n>╠ 🎨 Colorazione Foto in B/N\n>╚ ✂️ Rimozione Automatica Sfondo||\n\n🧰 *Strumenti Utili*\n**>╠ 📂 Compressione file in archivi ZIP, 7Z e RAR\n>╠ 📄 Compressione PDF Professionale\n>╠ ⚡ Downloader Diretto di Link di Grandi Dimensioni\n>╚ 🌐 Analisi e Verifica Indirizzo IP||\n\n💻 *Caffè Programmazione e Tecnologia*\n**>╚ 📦 Convertitore di pacchetti Linux \\(DEB ↔ RPM ↔ Pacman\\)||\n\n🎬 *Studio Magico Foto e Video*\n**>╠ ✂️ Taglio e modifica multi\\-sezione di audio e video\n>╠ 🎥 Compressione video avanzata con codec personalizzati\n>╠ 🎵 Estrazione tracce audio e sottotitoli da video\n>╚ 🔥 Applicazione e incorporamento sottotitoli \\(hardsub\\)||\n\n👤 *Pannello Utente e Abbonamento*\n╚ Gestione del grado, controllo quota traffico e codici promozionali\n\n👇 *Per iniziare, scegli un'opzione dal menu sottostante:*",
       "emoji_button": "Pannello Emoji",
       "youtube_button": "Download YouTube",
       "back": "Menu principale",
@@ -3601,7 +3605,7 @@
           "surge_dl": "Download Link Diretto",
           "emoji": "Pannello Emoji",
           "ip_lookup": "Ricerca IP",
-          "studio_trim": "✂️ Taglio Video",
+          "studio_trim": "✂️ Taglio Audio e Video",
           "studio_compress": "🎥 Compressione Video",
           "studio_extract": "🎵 Estrai Audio e Sottotitoli",
           "studio_burn": "🎬 Masterizza Sottotitoli",
@@ -3740,7 +3744,7 @@
     },
     "referral": {
       "button": "Invita amici e guadagna punti",
-      "banner": "🤖 <b>Bot Rostam</b> | Il più intelligente assistente gratuito per YouTube e AI ⚡\n\n🌐 <b>Downloader Social Media</b>\n<blockquote expandable>🎬 YouTube\n╠ 🎞️ Video fino a 4K, audio ad alta qualità, codec AV1 · VP9 · H264\n╠ 📜 Sottotitoli, file separato o incorporato\n╚ 📋 Supporto completo per le playlist\n\n🟢 Spotify\n╠ 🎧 Brani ad alta qualità con copertina e meta-dati completi\n╚ 📚 Album e playlist, singoli o in un archivio zip\n\n🟠 SoundCloud\n╠ 🎧 Tracce e remix con la migliore qualità disponibile\n╚ 📚 Set e playlist supportati, copertina inclusa</blockquote>\n\n🧪 <b>Laboratorio AI</b>\n<blockquote expandable>╠ 🎙️ Riconoscimento vocale\n╠ 🔇 Riduzione del rumore neurale\n╠ 🎵 Separazione vocale e musica\n╠ 🖼️ Miglioramento immagini\n╠ ✨ Rimozione filigrana AI\n╠ 🎤 Sintesi vocale\n╠ 🎨 Colorazione foto in B/N\n╚ ✂️ Rimozione automatica sfondo</blockquote>\n\n🧰 <b>Strumenti Utili</b>\n<blockquote expandable>╠ 📂 Compressione file in archivi ZIP, 7Z e RAR\n╠ 📄 Compressione PDF professionale\n╠ ⚡ Downloader diretto di link di grandi dimensioni\n╚ 🌐 Analisi e verifica indirizzo IP</blockquote>\n\n💻 <b>Caffè Programmazione e Tecnologia</b>\n<blockquote expandable>╚ 📦 Convertitore di pacchetti Linux (DEB, RPM, Pacman)</blockquote>\n\n🎬 <b>Studio Magico Foto e Video</b>\n<blockquote expandable>╠ ✂️ Taglio e modifica video\n╠ 🎥 Compressione video avanzata\n╠ 🎵 Estrazione audio e sottotitoli da video\n╚ 🔥 Incorporamento sottotitoli (hardsub)</blockquote>\n\n🔗 Provalo ora gratis 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
+      "banner": "🤖 <b>Bot Rostam</b> | Il più intelligente assistente gratuito per YouTube e AI ⚡\n\n🌐 <b>Downloader Social Media</b>\n<blockquote expandable>🎬 YouTube\n╠ 🎞️ Video fino a 4K, audio ad alta qualità, codec AV1 · VP9 · H264\n╠ 📜 Sottotitoli, file separato o incorporato\n╚ 📋 Supporto completo per le playlist\n\n🟢 Spotify\n╠ 🎧 Brani ad alta qualità con copertina e meta-dati completi\n╚ 📚 Album e playlist, singoli o in un archivio zip\n\n🟠 SoundCloud\n╠ 🎧 Tracce e remix con la migliore qualità disponibile\n╚ 📚 Set e playlist supportati, copertina inclusa</blockquote>\n\n🧪 <b>Laboratorio AI</b>\n<blockquote expandable>╠ 🎙️ Riconoscimento vocale\n╠ 🔇 Riduzione del rumore neurale\n╠ 🎵 Separazione vocale e musica\n╠ 🖼️ Miglioramento immagini\n╠ ✨ Rimozione filigrana AI\n╠ 🎤 Sintesi vocale\n╠ 🎨 Colorazione foto in B/N\n╚ ✂️ Rimozione automatica sfondo</blockquote>\n\n🧰 <b>Strumenti Utili</b>\n<blockquote expandable>╠ 📂 Compressione file in archivi ZIP, 7Z e RAR\n╠ 📄 Compressione PDF professionale\n╠ ⚡ Downloader diretto di link di grandi dimensioni\n╚ 🌐 Analisi e verifica indirizzo IP</blockquote>\n\n💻 <b>Caffè Programmazione e Tecnologia</b>\n<blockquote expandable>╚ 📦 Convertitore di pacchetti Linux (DEB, RPM, Pacman)</blockquote>\n\n🎬 <b>Studio Magico Foto e Video</b>\n<blockquote expandable>╠ ✂️ Taglio e modifica audio e video\n╠ 🎥 Compressione video avanzata\n╠ 🎵 Estrazione audio e sottotitoli da video\n╚ 🔥 Incorporamento sottotitoli (hardsub)</blockquote>\n\n🔗 Provalo ora gratis 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
       "status": "🔗 <b>Il tuo link personale è pronto!</b>\n\nCondividi questo banner con amici o nei gruppi.\nPer ogni persona che si unisce tramite il tuo link e resta membro del canale per almeno 2 giorni, ricevi 1 invito. 💰\n\n📈 <b>Stato attuale</b>\n👤 Inviti: {count}\n⏳ In attesa di conferma: {pending}\n💎 Punti utilizzabili: {available}\n\n🎯 Tocca un pulsante per attivare un rango:\n(gli abbonamenti durano 1 mese)",
       "tier_button": "{rank} ({count} punti)",
       "activate_success": "🎉 Il rango {rank} è stato attivato fino al {date}!",
@@ -4048,8 +4052,8 @@
       "expired": "⚠️ *Richiesta scaduta\\. Invia di nuovo il link\\.*"
     },
     "studio": {
-      "title": "🎥 *Studio Magico Foto e Video*\n\nStrumenti di montaggio e modifica media:\n\n• ✂️ *Taglio e Modifica Video:* Taglio video multi\\-intervallo\n• 🎥 *Compressione Video Avanzata:* Regola codec, risoluzione, FPS e bitrate\n• 🎵 *Estrai Audio e Sottotitoli:* Estrai direttamente tutte le tracce audio e sottotitoli\n\n*Seleziona uno strumento qui sotto👇:*",
-      "trim_button": "Taglio e Modifica Video",
+      "title": "🎥 *Studio Magico Foto e Video*\n\nStrumenti di montaggio e modifica media:\n\n• ✂️ *Taglio e Modifica Audio e Video:* Taglio audio e video multi\\-intervallo\n• 🎥 *Compressione Video Avanzata:* Regola codec, risoluzione, FPS e bitrate\n• 🎵 *Estrai Audio e Sottotitoli:* Estrai direttamente tutte le tracce audio e sottotitoli\n\n*Seleziona uno strumento qui sotto👇:*",
+      "trim_button": "Taglio e Modifica Audio e Video",
       "compress_button": "Compressione Video Avanzata",
       "extract_button": "Estrai Audio e Sottotitoli",
       "burn_button": "Masterizza Sottotitoli su Video",
@@ -4134,31 +4138,33 @@
         }
       },
       "trim": {
-        "send_video_prompt": "🎥 *Taglio e Modifica Video*\n\nInvia il video che desideri tagliare e modificare\\.",
+        "send_video_prompt": "*Taglio e Modifica Audio e Video*\n\nInvia il file audio o video che desideri modificare\\.",
         "cancel_btn": "Annulla e Torna allo Studio",
-        "cancelled": "❌ Operazione di modifica video annullata\\.",
-        "status_downloading": "📥 *Scaricamento del video in corso\\.\\.\\.*\n⏱️ *Tempo trascorso:* {elapsed}{detail}",
+        "cancelled": "❌ Operazione di modifica annullata\\.",
+        "status_downloading": "📥 *Scaricamento del file in corso\\.\\.\\.*\n⏱️ *Tempo trascorso:* {elapsed}{detail}",
         "status_downloading_detail": "\n📥 *Scaricato:* `{dl_mb} MB` di `{total_mb} MB` \\({pct}%\\)\n🚀 *Velocità:* `{speed}`   ⌛ *Rimanente:* {eta}",
         "status_processing": "⚙️ Elaborazione in corso\\.\\.\\.",
         "info_template": "📊 *Informazioni Video:*\nNome file: {filename}\nRisoluzione: {width}x{height}\nBitrate: {bitrate}\nFps: {fps}\nCodec: {codec}\nDurata: {duration}",
-        "start_trim_btn": "Taglia Video (Cut)",
-        "ranges_prompt": "Inserisci l'ora di inizio e fine del taglio su una singola riga nel seguente formato:\n`00:00:00 - 00:00:00`\nOgni riga \\= un taglio\nNota: Se il video dura meno di 2 ore puoi usare:\n`00:00 - 00:00`\nNota 2: Puoi inserire più righe per effettuare più tagli\\.",
+        "start_trim_btn": "Taglia Media (Cut)",
+        "ranges_prompt": "Inserisci l'ora di inizio e fine del taglio su una singola riga nel seguente formato:\n`00:00:00 - 00:00:00`\nOgni riga \\= un taglio\nNota: Se il file dura meno di 2 ore puoi usare:\n`00:00 - 00:00`\nNota 2: Puoi inserire più righe per effettuare più tagli\\.",
         "error": {
-          "not_a_video": "⚠️ Il file inviato non è un video valido\\. Per favore invia un file video\\.",
+          "unsupported_media": "⚠️ Il file inviato non è un audio o video valido\\. Invia un file audio o video valido\\.",
+          "not_a_video": "⚠️ Il file inviato non è un audio o video valido\\. Invia un file audio o video valido\\.",
           "invalid_format": "⚠️ Formato non valido alla riga {line}: `{text}`\\.\nUsa il formato `HH:MM:SS - HH:MM:SS` o `MM:SS - MM:SS`\\.",
           "start_gte_end": "⚠️ Riga {line}: l'ora di inizio deve essere inferiore all'ora di fine\\.",
-          "end_exceeds_duration": "⚠️ Riga {line}: l'ora di fine \\({end}\\) supera la durata del video \\({duration}\\)\\.",
+          "end_exceeds_duration": "⚠️ Riga {line}: l'ora di fine \\({end}\\) supera la durata del file \\({duration}\\)\\.",
           "max_ranges": "⚠️ È consentito un massimo di 10 tagli per richiesta\\.",
           "no_valid_ranges": "⚠️ Nessun intervallo di taglio valido inserito\\.",
-          "download_failed": "⚠️ Download del video non riuscito\\. Riprova\\.",
-          "ffprobe_failed": "⚠️ Estrazione dei metadati del video non riuscita\\. Il file video non è valido\\.",
+          "download_failed": "⚠️ Download del file non riuscito\\. Riprova\\.",
+          "ffprobe_failed": "⚠️ Estrazione dei metadati fallita\\. Il file non è valido\\.",
           "trim_failed": "⚠️ Impossibile tagliare l'intervallo {range}\\.",
           "oversized": "⚠️ La clip per l'intervallo {range} supera i 2 GB ed è stata saltata\\."
         },
-        "status_job_ticker": "✂️ *Taglio video in corso\\.\\.\\.*\nParte {current} di {total}\n⏱️ *Tempo trascorso:* {elapsed}{eta}",
-        "job_cancelled": "🚫 L'operazione di taglio video è stata annullata\\.",
-        "job_done": "🎉 *Taglio video completato con successo\\!*\n\n⏱️ *Tempo impiegato:*\n• ✂️ Taglio: {trim_time}\n• 📥 Download: {download_time}\n• 📤 Upload: {upload_time}",
-        "status_job_ticker_eta": "\n⏳ *Tempo stimato rimanente:* {eta}"
+        "status_job_ticker": "✂️ *Taglio media in corso\\.\\.\\.*\nParte {current} di {total}\n⏱️ *Tempo trascorso:* {elapsed}{eta}",
+        "job_cancelled": "🚫 L'operazione di taglio è stata annullata\\.",
+        "job_done": "🎉 *Taglio completato con successo\\!*\n\n⏱️ *Tempo impiegato:*\n• ✂️ Taglio: {trim_time}\n• 📥 Download: {download_time}\n• 📤 Upload: {upload_time}",
+        "status_job_ticker_eta": "\n⏳ *Tempo stimato rimanente:* {eta}",
+        "info_audio_template": "📊 *Informazioni File Audio:*\nNome file: {filename}\nDurata: {duration}\nBitrate audio: {bitrate}\nCodec audio: {codec}"
       }
     },
     "youtube.download.progress.upload_body": "📤 {stage}\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
@@ -4217,7 +4223,7 @@
   "ru": {
     "active_job_running": "⚠️ У вас уже есть активная задача\\. Пожалуйста, дождитесь ее завершения\\.",
     "start": {
-      "welcome": "👋 *Добро пожаловать в бота Рустам\\!*\nКомплексный центр интеллектуальных медиа\\-инструментов и ИИ\\.\n\n✨ *Возможности и инструменты бота:*\n\n🌐 *Загрузчик из социальных сетей*\n**>🎬 YouTube\n>╠ 🎞️ Скачивание видео во всех качествах \\(до 4K\\)\n>╠ 🎧 Извлечение и загрузка высококачественного аудио\n>╠ ⚙️ Продвинутый выбор кодека \\(AV1 / VP9 / H264\\)\n>╠ 📜 Загрузка и умный перевод субтитров\n>╚ 📋 Полная поддержка скачивания плейлистов\n>\n>🟢 Spotify\n>╠ 🎧 Треки в высоком качестве с обложкой и полными метаданными\n>╚ 📚 Альбомы и плейлисты, поштучно или в ZIP\\-архиве\n>\n>🟠 SoundCloud\n>╠ 🎧 Треки и ремиксы в лучшем доступном качестве\n>╚ 📚 Поддержка сетов и плейлистов с обложкой||\n\n🧪 *Лаборатория ИИ \\(AI Lab\\)*\n**>╠ 🎙️ Распознавание речи в текст \\(персидский и английский\\)\n>╠ 🔇 Подавление шума с нейросетью\n>╠ 🎵 Разделение вокала и музыки\n>╠ 🖼️ Улучшение качества изображений \\(до 4x\\)\n>╠ ✨ Удаление водяных знаков ИИ\n>╠ 🎤 Преобразование текста в речь\n>╠ 🎨 Раскрашивание черно\\-белых фото\n>╚ ✂️ Автоматическое удаление фона||\n\n🧰 *Полезные инструменты*\n**>╠ 📂 Сжатие файлов в архивы ZIP, 7Z и RAR\n>╠ 📄 Профессиональное сжатие PDF\n>╠ ⚡ Прямая загрузка больших файлов\n>╚ 🌐 Проверка и анализ IP\\-адресов||\n\n💻 *Кафе программирования и технологий*\n**>╚ 📦 Конвертер пакетов Linux \\(DEB ↔ RPM ↔ Pacman\\)||\n\n🎬 *Магическая фото\\- и видеостудия*\n**>╠ ✂️ Точная нарезка и редактирование видео\n>╠ 🎥 Продвинутое сжатие видео с настройкой кодеков\n>╠ 🎵 Извлечение аудиодорожек и субтитров из видео\n>╚ 🔥 Вшивание субтитров \\(хардсаб\\) в видео||\n\n👤 *Панель пользователя и подписка*\n╚ Управление рангом, проверка лимитов трафика и активация промокодов\n\n👇 *Для начала выберите пункт из меню ниже:*",
+      "welcome": "👋 *Добро пожаловать в бота Рустам\\!*\nКомплексный центр интеллектуальных медиа\\-инструментов и ИИ\\.\n\n✨ *Возможности и инструменты бота:*\n\n🌐 *Загрузчик из социальных сетей*\n**>🎬 YouTube\n>╠ 🎞️ Скачивание видео во всех качествах \\(до 4K\\)\n>╠ 🎧 Извлечение и загрузка высококачественного аудио\n>╠ ⚙️ Продвинутый выбор кодека \\(AV1 / VP9 / H264\\)\n>╠ 📜 Загрузка и умный перевод субтитров\n>╚ 📋 Полная поддержка скачивания плейлистов\n>\n>🟢 Spotify\n>╠ 🎧 Треки в высоком качестве с обложкой и полными метаданными\n>╚ 📚 Альбомы и плейлисты, поштучно или в ZIP\\-архиве\n>\n>🟠 SoundCloud\n>╠ 🎧 Треки и ремиксы в лучшем доступном качестве\n>╚ 📚 Поддержка сетов и плейлистов с обложкой||\n\n🧪 *Лаборатория ИИ \\(AI Lab\\)*\n**>╠ 🎙️ Распознавание речи в текст \\(персидский и английский\\)\n>╠ 🔇 Подавление шума с нейросетью\n>╠ 🎵 Разделение вокала и музыки\n>╠ 🖼️ Улучшение качества изображений \\(до 4x\\)\n>╠ ✨ Удаление водяных знаков ИИ\n>╠ 🎤 Преобразование текста в речь\n>╠ 🎨 Раскрашивание черно\\-белых фото\n>╚ ✂️ Автоматическое удаление фона||\n\n🧰 *Полезные инструменты*\n**>╠ 📂 Сжатие файлов в архивы ZIP, 7Z и RAR\n>╠ 📄 Профессиональное сжатие PDF\n>╠ ⚡ Прямая загрузка больших файлов\n>╚ 🌐 Проверка и анализ IP\\-адресов||\n\n💻 *Кафе программирования и технологий*\n**>╚ 📦 Конвертер пакетов Linux \\(DEB ↔ RPM ↔ Pacman\\)||\n\n🎬 *Магическая фото\\- и видеостудия*\n**>╠ ✂️ Точная нарезка и редактирование аудио и видео\n>╠ 🎥 Продвинутое сжатие видео с настройкой кодеков\n>╠ 🎵 Извлечение аудиодорожек и субтитров из видео\n>╚ 🔥 Вшивание субтитров \\(хардсаб\\) в видео||\n\n👤 *Панель пользователя и подписка*\n╚ Управление рангом, проверка лимитов трафика и активация промокодов\n\n👇 *Для начала выберите пункт из меню ниже:*",
       "emoji_button": "Панель эмодзи",
       "youtube_button": "Загрузка с YouTube",
       "back": "Главное меню",
@@ -5007,7 +5013,7 @@
           "surge_dl": "Скачивание по ссылке",
           "emoji": "Панель эмодзи",
           "ip_lookup": "Поиск IP",
-          "studio_trim": "✂️ Обрезка видео",
+          "studio_trim": "✂️ Обрезка аудио и видео",
           "studio_compress": "🎥 Сжатие видео",
           "studio_extract": "🎵 Извлечение аудио и субтитров",
           "studio_burn": "🎬 Вшивание субтитров",
@@ -5145,7 +5151,7 @@
     },
     "referral": {
       "button": "Приглашай друзей и получай баллы",
-      "banner": "🤖 <b>Бот Рустам</b> | Умнейший бесплатный помощник для YouTube и ИИ ⚡\n\n🌐 <b>Загрузчик из социальных сетей</b>\n<blockquote expandable>🎬 YouTube\n╠ 🎞️ Видео до 4K, высококачественное аудио, кодеки AV1 · VP9 · H264\n╠ 📜 Субтитры, отдельным файлом или в видео\n╚ 📋 Полная поддержка плейлистов\n\n🟢 Spotify\n╠ 🎧 Треки в высоком качестве с обложкой и полными метаданными\n╚ 📚 Альбомы и плейлисты, поштучно или в ZIP-архиве\n\n🟠 SoundCloud\n╠ 🎧 Треки и ремиксы в лучшем доступном качестве\n╚ 📚 Поддержка сетов и плейлистов с обложкой</blockquote>\n\n🧪 <b>Лаборатория ИИ</b>\n<blockquote expandable>╠ 🎙️ Распознавание речи в текст\n╠ 🔇 Подавление шума с нейросетью\n╠ 🎵 Разделение вокала и музыки\n╠ 🖼️ Улучшение качества изображений\n╠ ✨ Удаление водяных знаков ИИ\n╠ 🎤 Преобразование текста в речь\n╠ 🎨 Раскрашивание черно-белых фото\n╚ ✂️ Автоматическое удаление фона</blockquote>\n\n🧰 <b>Полезные инструменты</b>\n<blockquote expandable>╠ 📂 Сжатие файлов в архивы ZIP, 7Z и RAR\n╠ 📄 Профессиональное сжатие PDF\n╠ ⚡ Прямая загрузка больших файлов\n╚ 🌐 Проверка и анализ IP-адресов</blockquote>\n\n💻 <b>Кафе программирования и технологий</b>\n<blockquote expandable>╚ 📦 Конвертер пакетов Linux (DEB, RPM, Pacman)</blockquote>\n\n🎬 <b>Магическая фото- и видеостудия</b>\n<blockquote expandable>╠ ✂️ Нарезка и редактирование видео\n╠ 🎥 Продвинутое сжатие видео\n╠ 🎵 Извлечение аудио и субтитров из видео\n╚ 🔥 Вшивание субтитров (хардсаб) в видео</blockquote>\n\n🔗 Попробуйте прямо сейчас бесплатно 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
+      "banner": "🤖 <b>Бот Рустам</b> | Умнейший бесплатный помощник для YouTube и ИИ ⚡\n\n🌐 <b>Загрузчик из социальных сетей</b>\n<blockquote expandable>🎬 YouTube\n╠ 🎞️ Видео до 4K, высококачественное аудио, кодеки AV1 · VP9 · H264\n╠ 📜 Субтитры, отдельным файлом или в видео\n╚ 📋 Полная поддержка плейлистов\n\n🟢 Spotify\n╠ 🎧 Треки в высоком качестве с обложкой и полными метаданными\n╚ 📚 Альбомы и плейлисты, поштучно или в ZIP-архиве\n\n🟠 SoundCloud\n╠ 🎧 Треки и ремиксы в лучшем доступном качестве\n╚ 📚 Поддержка сетов и плейлистов с обложкой</blockquote>\n\n🧪 <b>Лаборатория ИИ</b>\n<blockquote expandable>╠ 🎙️ Распознавание речи в текст\n╠ 🔇 Подавление шума с нейросетью\n╠ 🎵 Разделение вокала и музыки\n╠ 🖼️ Улучшение качества изображений\n╠ ✨ Удаление водяных знаков ИИ\n╠ 🎤 Преобразование текста в речь\n╠ 🎨 Раскрашивание черно-белых фото\n╚ ✂️ Автоматическое удаление фона</blockquote>\n\n🧰 <b>Полезные инструменты</b>\n<blockquote expandable>╠ 📂 Сжатие файлов в архивы ZIP, 7Z и RAR\n╠ 📄 Профессиональное сжатие PDF\n╠ ⚡ Прямая загрузка больших файлов\n╚ 🌐 Проверка и анализ IP-адресов</blockquote>\n\n💻 <b>Кафе программирования и технологий</b>\n<blockquote expandable>╚ 📦 Конвертер пакетов Linux (DEB, RPM, Pacman)</blockquote>\n\n🎬 <b>Магическая фото- и видеостудия</b>\n<blockquote expandable>╠ ✂️ Нарезка и редактирование аудио и видео\n╠ 🎥 Продвинутое сжатие видео\n╠ 🎵 Извлечение аудио и субтитров из видео\n╚ 🔥 Вшивание субтитров (хардсаб) в видео</blockquote>\n\n🔗 Попробуйте прямо сейчас бесплатно 👇\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}\nhttps://t.me/{username}?start={user_id}",
       "status": "🔗 <b>Ваша персональная ссылка готова!</b>\n\nОтправьте этот баннер друзьям или в группы.\nЗа каждого человека, перешедшего по вашей ссылке и остающегося участником канала минимум 2 дня, вам начисляется 1 приглашение. 💰\n\n📈 <b>Текущий статус</b>\n👤 Приглашений: {count}\n⏳ В ожидании подтверждения: {pending}\n💎 Доступно баллов: {available}\n\n🎯 Нажмите кнопку ниже для активации ранга:\n(подписки действуют 1 месяц)",
       "tier_button": "{rank} ({count} баллов)",
       "activate_success": "🎉 Ранг {rank} активирован до {date}!",
@@ -5453,8 +5459,8 @@
       "expired": "⚠️ *Запрос устарел\\. Отправьте ссылку снова\\.*"
     },
     "studio": {
-      "title": "🎥 *Студия магии фото и видео*\n\nПрофессиональные инструменты обработки медиа:\n\n• ✂️ *Обрезка и монтаж видео:* Обрезка нескольких интервалов видео\n• 🎥 *Продвинутое сжатие видео:* Настройка кодека, разрешения, FPS и битрейта\n• 🎵 *Извлечение аудио и субтитров:* Извлечение всех аудиодорожек и субтитров\n\n*Выберите инструмент ниже👇:*",
-      "trim_button": "Обрезка и монтаж видео",
+      "title": "🎥 *Студия магии фото и видео*\n\nПрофессиональные инструменты обработки медиа:\n\n• ✂️ *Обрезка и монтаж аудио и видео:* Обрезка нескольких интервалов аудио и видео\n• 🎥 *Продвинутое сжатие видео:* Настройка кодека, разрешения, FPS и битрейта\n• 🎵 *Извлечение аудио и субтитров:* Извлечение всех аудиодорожек и субтитров\n\n*Выберите инструмент ниже👇:*",
+      "trim_button": "Обрезка и монтаж аудио и видео",
       "compress_button": "Продвинутое сжатие видео",
       "extract_button": "Извлечение аудио и субтитров",
       "burn_button": "Вшить субтитры в видео",
@@ -5539,31 +5545,33 @@
         }
       },
       "trim": {
-        "send_video_prompt": "🎬 *Обрезка и монтаж видео*\n\nПожалуйста, отправьте видео, которое хотите обрезать\\.",
+        "send_video_prompt": "*Обрезка и монтаж аудио и видео*\n\nПожалуйста, отправьте аудио\\- или видеофайл, который хотите отредактировать\\.",
         "cancel_btn": "Отмена и возврат в студию",
-        "cancelled": "❌ Операция редактирования видео отменена\\.",
-        "status_downloading": "📥 *Скачивание видео\\.\\.\\.*\n⏱️ *Прошло времени:* {elapsed}{detail}",
+        "cancelled": "❌ Операция редактирования отменена\\.",
+        "status_downloading": "📥 *Скачивание файла\\.\\.\\.*\n⏱️ *Прошло времени:* {elapsed}{detail}",
         "status_downloading_detail": "\n📥 *Скачано:* `{dl_mb} МБ` из `{total_mb} МБ` \\({pct}%\\)\n🚀 *Скорость:* `{speed}`   ⌛ *Осталось:* {eta}",
         "status_processing": "⚙️ Обработка\\.\\.\\.",
         "info_template": "📊 *Информация о видео:*\nИмя файла: {filename}\nРазрешение: {width}x{height}\nБитрейт: {bitrate}\nКадров/с: {fps}\nКодек: {codec}\nДлительность: {duration}",
-        "start_trim_btn": "Обрезать видео (Кат)",
-        "ranges_prompt": "Введите время начала и окончания обрезки в одной строке в следующем формате:\n`00:00:00 - 00:00:00`\nКаждая строка \\= один разрез\nПримечание: Если ваше видео короче 2 часов, вы можете использовать:\n`00:00 - 00:00`\nПримечание 2: Вы можете ввести несколько строк для нескольких разрезов\\.",
+        "start_trim_btn": "Обрезать медиа (Кат)",
+        "ranges_prompt": "Введите время начала и окончания обрезки в одной строке в следующем формате:\n`00:00:00 - 00:00:00`\nКаждая строка \\= один разрез\nПримечание: Если ваш файл короче 2 часов, вы можете использовать:\n`00:00 - 00:00`\nПримечание 2: Вы можете ввести несколько строк для нескольких разрезов\\.",
         "error": {
-          "not_a_video": "⚠️ Отправленный файл не является видео\\. Пожалуйста, отправьте видеофайл\\.",
+          "unsupported_media": "⚠️ Отправленный файл не является корректным аудио или видео\\. Пожалуйста, отправьте корректный аудио\\- или видеофайл\\.",
+          "not_a_video": "⚠️ Отправленный файл не является корректным аудио или видео\\. Пожалуйста, отправьте корректный аудио\\- или видеофайл\\.",
           "invalid_format": "⚠️ Неверный формат в строке {line}: `{text}`\\.\nИспользуйте формат `ЧЧ:ММ:СС - ЧЧ:ММ:СС` или `ММ:СС - ММ:СС`\\.",
           "start_gte_end": "⚠️ Строка {line}: время начала должно быть меньше времени окончания\\.",
-          "end_exceeds_duration": "⚠️ Строка {line}: время окончания \\({end}\\) превышает длительность видео \\({duration}\\)\\.",
+          "end_exceeds_duration": "⚠️ Строка {line}: время окончания \\({end}\\) превышает длительность файла \\({duration}\\)\\.",
           "max_ranges": "⚠️ Допускается максимум 10 разрезов за один запрос\\.",
           "no_valid_ranges": "⚠️ Неведено ни одного правильного интервала обрезки\\.",
-          "download_failed": "⚠️ Ошибка скачивания видео\\. Попробуйте еще раз\\.",
-          "ffprobe_failed": "⚠️ Ошибка извлечения метаданных видео\\. Видео файл недействителен\\.",
+          "download_failed": "⚠️ Ошибка скачивания файла\\. Попробуйте еще раз\\.",
+          "ffprobe_failed": "⚠️ Ошибка извлечения метаданных медиа\\. Файл недействителен\\.",
           "trim_failed": "⚠️ Не удалось обрезать интервал {range}\\.",
           "oversized": "⚠️ Файл интервала {range} превышает 2 ГБ и был пропущен\\."
         },
-        "status_job_ticker": "✂️ *Обрезка видео\\.\\.\\.*\nЧасть {current} из {total}\n⏱️ *Прошло:* {elapsed}{eta}",
-        "job_cancelled": "🚫 Операция обрезки видео отменена вами\\.",
-        "job_done": "🎉 *Обрезка видео успешно завершена\\!*\n\n⏱️ *Затраченное время:*\n• ✂️ Обрезка: {trim_time}\n• 📥 Загрузка: {download_time}\n• 📤 Выгрузка: {upload_time}",
-        "status_job_ticker_eta": "\n⏳ *Примерно осталось:* {eta}"
+        "status_job_ticker": "✂️ *Обрезка медиа\\.\\.\\.*\nЧасть {current} из {total}\n⏱️ *Прошло:* {elapsed}{eta}",
+        "job_cancelled": "🚫 Операция обрезки отменена вами\\.",
+        "job_done": "🎉 *Обрезка успешно завершена\\!*\n\n⏱️ *Затраченное время:*\n• ✂️ Обрезка: {trim_time}\n• 📥 Загрузка: {download_time}\n• 📤 Выгрузка: {upload_time}",
+        "status_job_ticker_eta": "\n⏳ *Примерно осталось:* {eta}",
+        "info_audio_template": "📊 *Информация об аудиофайле:*\nИмя файла: {filename}\nДлительность: {duration}\nБитрейт аудио: {bitrate}\nАудиокодек: {codec}"
       }
     },
     "youtube.download.progress.upload_body": "📤 {stage}\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",

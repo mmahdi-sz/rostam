@@ -331,7 +331,9 @@ pub async fn download_soundcloud_audio(
     cancel_flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> anyhow::Result<PathBuf> {
     let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "sc").await;
-    log_ev!("sc", trace_id, "cpu_acquired", "cores" => format!("{:?}", cpu_guard.cores()));
+    let cores = cpu_guard.cores();
+    crate::moebius::cpu::pin_current_thread(cores, trace_id);
+    log_ev!("sc", trace_id, "cpu_acquired", "cores" => format!("{:?}", cores));
 
     let output_template = job_dir.join(format!("{stem}.%(ext)s"));
     let target_mp3 = job_dir.join(format!("{stem}.mp3"));
