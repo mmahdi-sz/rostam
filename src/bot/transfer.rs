@@ -64,6 +64,9 @@ pub struct TransferSnapshot {
 pub struct TransferProgress {
     total: AtomicU64,
     done: AtomicU64,
+    remote_total: AtomicU64,
+    remote_done: AtomicU64,
+    remote_active: std::sync::atomic::AtomicBool,
     stage: AtomicU8,
     started: Instant,
     leg_started: Mutex<Instant>,
@@ -76,6 +79,9 @@ impl TransferProgress {
         Arc::new(Self {
             total: AtomicU64::new(total),
             done: AtomicU64::new(0),
+            remote_total: AtomicU64::new(0),
+            remote_done: AtomicU64::new(0),
+            remote_active: std::sync::atomic::AtomicBool::new(false),
             stage: AtomicU8::new(Stage::Fetching.as_u8()),
             started: Instant::now(),
             leg_started: Mutex::new(Instant::now()),
@@ -89,14 +95,25 @@ impl TransferProgress {
     }
 
     pub fn total(&self) -> u64 {
-        self.total.load(Ordering::Relaxed)
+        if self.remote_active.load(Ordering::Relaxed) {
+            self.remote_total.load(Ordering::Relaxed)
+        } else {
+            self.total.load(Ordering::Relaxed)
+        }
     }
 
     pub fn done(&self) -> u64 {
-        self.done.load(Ordering::Relaxed)
+        if self.remote_active.load(Ordering::Relaxed) {
+            self.remote_done.load(Ordering::Relaxed)
+        } else {
+            self.done.load(Ordering::Relaxed)
+        }
     }
 
     pub fn bump(&self, n: u64) {
+        if self.remote_active.load(Ordering::Relaxed) {
+            return;
+        }
         let current_done = self.done.fetch_add(n, Ordering::Relaxed) + n;
         let now = Instant::now();
         let mut w = self.window.lock().unwrap();
@@ -104,6 +121,25 @@ impl TransferProgress {
         while let Some(&(t, _)) = w.front() {
             if now.duration_since(t) > WINDOW {
                 w.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn set_remote_progress(&self, done: u64, total: u64) {
+        let previous = self.remote_done.swap(done, Ordering::Relaxed);
+        self.remote_total.store(total, Ordering::Relaxed);
+        let was_remote = self.remote_active.swap(true, Ordering::Relaxed);
+        let now = Instant::now();
+        let mut window = self.window.lock().unwrap();
+        if !was_remote || done < previous {
+            window.clear();
+        }
+        window.push_back((now, done));
+        while let Some(&(time, _)) = window.front() {
+            if now.duration_since(time) > WINDOW {
+                window.pop_front();
             } else {
                 break;
             }
@@ -433,6 +469,23 @@ where
 
     progress.set_total(total_bytes);
 
+    let supports_upload_progress = crate::config::bot_api_upload_progress_enabled()
+        && matches!(
+            method,
+            "sendVideo"
+                | "sendDocument"
+                | "sendAudio"
+                | "sendVoice"
+                | "sendPhoto"
+                | "sendAnimation"
+                | "sendVideoNote"
+        );
+    let upload_id = (supports_upload_progress && !files_to_send.is_empty())
+        .then(|| format!("u{}", rand::random::<u128>()));
+    if let Some(upload_id) = &upload_id {
+        form = form.text("upload_id", upload_id.clone());
+    }
+
     for (param_name, path_str, len) in files_to_send {
         let f = tokio::fs::File::open(&path_str).await?;
         let p = progress.clone();
@@ -466,7 +519,49 @@ where
     let client = crate::http::client();
     let url = format!("{}/{}", api_url.trim_end_matches('/'), method);
 
-    let resp = client.post(&url).multipart(form).send().await?;
+    let send = client.post(&url).multipart(form).send();
+    tokio::pin!(send);
+    let mut poll_interval = tokio::time::interval(Duration::from_secs(2));
+    let resp = loop {
+        tokio::select! {
+            response = &mut send => break response?,
+            _ = poll_interval.tick(), if upload_id.is_some() => {
+                let upload_id = upload_id.as_deref().unwrap_or_default();
+                let poll_url = format!("{}/getUploadProgress", api_url.trim_end_matches('/'));
+                if let Ok(response) = client
+                    .post(poll_url)
+                    .json(&serde_json::json!({ "upload_id": upload_id }))
+                    .send()
+                    .await
+                {
+                    if response.status().is_success() {
+                        if let Ok(json) = response.json::<serde_json::Value>().await {
+                            let result = json.get("result").unwrap_or(&json);
+                            if let Some(done) = result.get("uploaded_bytes").and_then(|v| v.as_u64()) {
+                                let size_known = result.get("size_known").and_then(|v| v.as_bool()).unwrap_or(false);
+                                let total = if size_known {
+                                    result.get("total_bytes").and_then(|v| v.as_u64()).unwrap_or(0)
+                                } else {
+                                    0
+                                };
+                                progress.set_remote_progress(done, total);
+                                let stage = match result.get("stage").and_then(|v| v.as_str()) {
+                                    Some("finalizing" | "cancelling" | "completed") => Some(Stage::Finalizing),
+                                    Some("uploading") => Some(Stage::Streaming),
+                                    _ => None,
+                                };
+                                if let Some(stage) = stage {
+                                    if progress.stage() != stage {
+                                        progress.set_stage(stage);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
 
     let finalize_start = Instant::now();
     progress.set_stage(Stage::Finalizing);
@@ -677,6 +772,20 @@ mod tests {
         let p = TransferProgress::new(0);
         assert_eq!(p.percent(), None);
         assert_eq!(p.eta(), None);
+    }
+
+    #[test]
+    fn remote_progress_replaces_local_metering_and_handles_retries() {
+        let p = TransferProgress::new(100);
+        p.bump(40);
+        p.set_remote_progress(60, 200);
+        assert_eq!((p.done(), p.total()), (60, 200));
+        p.bump(20);
+        assert_eq!(p.done(), 60);
+        p.set_remote_progress(12, 200);
+        assert_eq!(p.done(), 12);
+        p.set_remote_progress(15, 0);
+        assert_eq!(p.percent(), None);
     }
 
     #[test]

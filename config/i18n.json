@@ -628,7 +628,7 @@
         "starting": "⏳ شروع دانلود ویدیو ({quality})...",
         "progress": {
           "body": "⏳ در حال دانلود...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
-          "upload_body": "📤 در حال آپلود به تلگرام...\n🎬 {quality}\n🔘 ●●●●●●●●●●  100%\n⏱️ {elapsed}   🚀 {speed}"
+          "upload_body": "📤 در حال آپلود به تلگرام...\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}"
         },
         "uploading": "✅ دانلود کامل شد. در حال آپلود به تلگرام...",
         "splitting": "✂️ فایل بزرگ‌تر از ۲ گیگابایت است. در حال تقسیم به {parts} قسمت...",
@@ -1353,7 +1353,6 @@
         "info_audio_template": "📊 *اطلاعات فایل صوتی:*\nنام فایل: {filename}\nمدت زمان: {duration}\nبیت‌ریت صدا: {bitrate}\nکدک صدا: {codec}"
       }
     },
-    "youtube.download.progress.upload_body": "📤 {stage}\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
     "transfer": {
       "stage": {
         "fetching": "📥 دریافت فایل از تلگرام...",
@@ -2035,7 +2034,7 @@
         "starting": "⏳ Starting video download ({quality})...",
         "progress": {
           "body": "⏳ Downloading...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} of {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
-          "upload_body": "📤 Uploading to Telegram...\n🎬 {quality}\n🔘 ●●●●●●●●●●  100%\n⏱️ {elapsed}   🚀 {speed}"
+          "upload_body": "📤 Uploading to Telegram...\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}"
         },
         "uploading": "✅ Download complete. Uploading to Telegram...",
         "splitting": "✂️ File is larger than 2 GB. Splitting into {parts} parts...",
@@ -2760,7 +2759,6 @@
         "info_audio_template": "📊 *Audio Information:*\nFile name: {filename}\nDuration: {duration}\nAudio bitrate: {bitrate}\nAudio codec: {codec}"
       }
     },
-    "youtube.download.progress.upload_body": "📤 {stage}\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
     "transfer": {
       "stage": {
         "fetching": "📥 Fetching from Telegram...",
@@ -3442,7 +3440,7 @@
         "starting": "⏳ Avvio download video ({quality})...",
         "progress": {
           "body": "⏳ Download in corso...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} di {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
-          "upload_body": "📤 Caricamento su Telegram...\n🎬 {quality}\n🔘 ●●●●●●●●●●  100%\n⏱️ {elapsed}   🚀 {speed}"
+          "upload_body": "📤 Caricamento su Telegram...\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}"
         },
         "uploading": "✅ Download completato. Caricamento su Telegram...",
         "splitting": "✂️ File superiore a 2 GB. Divisione in {parts} parti...",
@@ -4167,7 +4165,6 @@
         "info_audio_template": "📊 *Informazioni File Audio:*\nNome file: {filename}\nDurata: {duration}\nBitrate audio: {bitrate}\nCodec audio: {codec}"
       }
     },
-    "youtube.download.progress.upload_body": "📤 {stage}\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
     "transfer": {
       "stage": {
         "fetching": "📥 Ricezione da Telegram...",
@@ -4849,7 +4846,7 @@
         "starting": "⏳ Starting video download ({quality})...",
         "progress": {
           "body": "⏳ Downloading...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} of {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
-          "upload_body": "📤 Uploading to Telegram...\n🎬 {quality}\n🔘 ●●●●●●●●●●  100%\n⏱️ {elapsed}   🚀 {speed}"
+          "upload_body": "📤 Загрузка в Telegram...\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}"
         },
         "uploading": "✅ Download complete. Uploading to Telegram...",
         "splitting": "✂️ File is larger than 2 GB. Splitting into {parts} parts...",
@@ -5574,7 +5571,6 @@
         "info_audio_template": "📊 *Информация об аудиофайле:*\nИмя файла: {filename}\nДлительность: {duration}\nБитрейт аудио: {bitrate}\nАудиокодек: {codec}"
       }
     },
-    "youtube.download.progress.upload_body": "📤 {stage}\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
     "transfer": {
       "stage": {
         "fetching": "📥 Получение файла из Telegram...",

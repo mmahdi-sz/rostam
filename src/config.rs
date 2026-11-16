@@ -25,6 +25,12 @@ pub fn bot_api_base_url() -> Option<String> {
     config_value("BOT_API_BASE_URL")
 }
 
+pub fn bot_api_upload_progress_enabled() -> bool {
+    config_value("BOT_API_UPLOAD_PROGRESS")
+        .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+}
+
 #[allow(dead_code)]
 pub fn database_url() -> Option<String> {
     config_value("DATABASE_URL")
