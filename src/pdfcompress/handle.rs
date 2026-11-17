@@ -475,14 +475,18 @@ async fn run_pdf_compress(
         .parse_mode(ParseMode::MarkdownV2)
         .build();
 
-        match crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+    match crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
         &api,
         "sendDocument",
         &doc_params,
         std::path::Path::new(&output_path),
         crate::bot::transfer::UploadStatusContext {
-            chat_id, message_id, file_key: "transfer.stage.sending_document",
-            description: Some(&filename), part: None, keyboard: Some(job_cancel_keyboard()),
+            chat_id,
+            message_id,
+            file_key: "transfer.stage.sending_document",
+            description: Some(&filename),
+            part: None,
+            keyboard: Some(job_cancel_keyboard()),
         },
         Some(cancel_flag.clone()),
     )

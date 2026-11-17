@@ -140,7 +140,10 @@ pub async fn hardsub_subtitles(
     log_trace(
         trace_id,
         "hardsub_exec_start",
-        &format!("srt={} threads={num_threads} codec={codec}", primary_srt.display()),
+        &format!(
+            "srt={} threads={num_threads} codec={codec}",
+            primary_srt.display()
+        ),
     );
 
     let mut child = match cmd.spawn() {

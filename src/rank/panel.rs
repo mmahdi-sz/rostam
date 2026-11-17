@@ -17,16 +17,15 @@ pub const CB_REFERRAL: &str = "user:panel:referral";
 pub const CB_REFERRAL_CLAIM_PREFIX: &str = "user:panel:referral:claim:";
 
 // ── Convert epoch → Jalali, Tehran time ───────────────────────────────────────
-// Uses chrono + gregorian_to_jalali.
 fn fmt_jalali(epoch: i64) -> String {
-    use chrono::Datelike;
-    use chrono_tz::Asia::Tehran;
-    let Some(utc) = chrono::DateTime::from_timestamp(epoch, 0) else {
+    let Ok(dt) = crate::youtube::jalali::tehran_datetime(epoch) else {
         return "—".to_string();
     };
-    let dt = utc.with_timezone(&Tehran);
-    let (y, m, d) =
-        crate::youtube::jalali::gregorian_to_jalali(dt.year(), dt.month() as i32, dt.day() as i32);
+    let (y, m, d) = crate::youtube::jalali::gregorian_to_jalali(
+        dt.year() as i32,
+        dt.month() as i32,
+        dt.day() as i32,
+    );
     format!("{y}/{m:02}/{d:02}")
 }
 

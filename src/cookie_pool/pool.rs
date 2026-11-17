@@ -20,6 +20,17 @@ pub struct CookiePool {
 }
 
 impl CookiePool {
+    #[cfg(any(test, feature = "testapi"))]
+    pub fn empty() -> Self {
+        Self {
+            available_cookies: Vec::new(),
+            last_used_cookie: None,
+            cooldown_list: Vec::new(),
+            cooldown: DEFAULT_COOLDOWN,
+            random_counter: 0,
+        }
+    }
+
     pub fn from_default_firefox() -> Self {
         match crate::config::firefox_profiles_root() {
             Some(root) => Self::from_firefox_root(root),
@@ -329,6 +340,15 @@ mod tests {
         let second = pool.next_cookie();
         assert!(second.is_some());
         assert_eq!(second.unwrap().id, "cookie-1");
+    }
+
+    #[test]
+    fn test_empty_pool_has_no_cookies() {
+        let mut pool = CookiePool::empty();
+        let status = pool.status();
+        assert_eq!(status.available_cookies, 0);
+        assert_eq!(status.selectable_cookies, 0);
+        assert!(pool.next_cookie().is_none());
     }
 
     #[test]

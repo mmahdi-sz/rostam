@@ -244,18 +244,23 @@ pub async fn handle_soundcloud_url(
     let up_start = std::time::Instant::now();
     let stats_job_id = crate::stats::record_download_start(user_id, "soundcloud").await;
 
-        let upload_res = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
-        api,
-        "sendAudio",
-        &send_audio_params,
-        &target_mp3,
-        crate::bot::transfer::UploadStatusContext {
-            chat_id, message_id: status_msg_id, file_key: "transfer.stage.sending_audio",
-            description: Some(&meta.title), part: None, keyboard: Some(sc_cancel_keyboard()),
-        },
-        Some(cancel_flag.clone()),
-    )
-    .await;
+    let upload_res =
+        crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+            api,
+            "sendAudio",
+            &send_audio_params,
+            &target_mp3,
+            crate::bot::transfer::UploadStatusContext {
+                chat_id,
+                message_id: status_msg_id,
+                file_key: "transfer.stage.sending_audio",
+                description: Some(&meta.title),
+                part: None,
+                keyboard: Some(sc_cancel_keyboard()),
+            },
+            Some(cancel_flag.clone()),
+        )
+        .await;
 
     match upload_res {
         Ok(_) => {

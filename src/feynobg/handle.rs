@@ -366,16 +366,24 @@ pub async fn handle_nobg_image(
                 .caption(&caption)
                 .parse_mode(ParseMode::MarkdownV2)
                 .build();
-                        let status_mid = status_msg.as_ref().map(|m| m.message_id).unwrap_or(0);
-            let send_res = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+            let status_mid = status_msg.as_ref().map(|m| m.message_id).unwrap_or(0);
+            let send_res = crate::bot::transfer::send_file_with_upload_context::<
+                _,
+                frankenstein::types::Message,
+            >(
                 api,
                 "sendDocument",
                 &doc_params,
                 std::path::Path::new(&output_path),
                 crate::bot::transfer::UploadStatusContext {
-                    chat_id, message_id: status_mid, file_key: "transfer.stage.sending_document",
-                    description: None, part: None, keyboard: Some(nobg_cancel_keyboard()),
-                }, Some(cancel_flag.clone()),
+                    chat_id,
+                    message_id: status_mid,
+                    file_key: "transfer.stage.sending_document",
+                    description: None,
+                    part: None,
+                    keyboard: Some(nobg_cancel_keyboard()),
+                },
+                Some(cancel_flag.clone()),
             )
             .await;
 

@@ -627,7 +627,8 @@
       "download": {
         "starting": "⏳ شروع دانلود ویدیو ({quality})...",
         "progress": {
-          "body": "⏳ در حال دانلود...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}"
+          "body": "⏳ در حال دانلود...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} / {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
+          "upload_body": "📤 {stage}\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} / {total}\n🚀 سرعت: {speed}\n⌛ {eta}   ⏱️ {elapsed}"
         },
         "uploading": "✅ دانلود کامل شد. در حال آپلود به تلگرام...",
         "splitting": "✂️ فایل بزرگ‌تر از ۲ گیگابایت است. در حال تقسیم به {parts} قسمت...",
@@ -1366,8 +1367,8 @@
       "speed_unknown": "—",
       "eta_unknown": "—",
       "eta_label": "زمان باقی‌مانده",
-      "upload_body": "📤 {stage}\n{part}{detail}\n\n🔘 {bar} {percent}\n📦 {done} / {total}\n🚀 سرعت: {speed}\n⌛ زمان باقی‌مانده: {eta}\n⏱ زمان سپری‌شده: {elapsed}",
-      "upload_part": "ارسال بخش {index} از {total}\n",
+      "upload_body": "{stage}\n{part}{detail}\n\n🔘 {bar} {percent}\n📦 {done} / {total}\n🚀 سرعت: {speed}\n⌛ {eta}   ⏱️ {elapsed}",
+      "upload_part": "قسمت {index} از {total}\n",
       "done": "✅ {size} در {elapsed} — میانگین {speed}"
     },
     "pkg": {
@@ -2034,7 +2035,8 @@
       "download": {
         "starting": "⏳ Starting video download ({quality})...",
         "progress": {
-          "body": "⏳ Downloading...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} of {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}"
+          "body": "⏳ Downloading...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} of {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
+          "upload_body": "📤 {stage}\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} of {total}\n🚀 Speed: {speed}\n⌛ {eta}   ⏱️ {elapsed}"
         },
         "uploading": "✅ Download complete. Uploading to Telegram...",
         "splitting": "✂️ File is larger than 2 GB. Splitting into {parts} parts...",
@@ -2773,8 +2775,8 @@
       "speed_unknown": "—",
       "eta_unknown": "—",
       "eta_label": "ETA",
-      "upload_body": "📤 {stage}\n{part}{detail}\n\n🔘 {bar} {percent}\n📦 {done} / {total}\n🚀 Speed: {speed}\n⌛ Remaining: {eta}\n⏱ Elapsed: {elapsed}",
-      "upload_part": "Sending part {index} of {total}\n",
+      "upload_body": "{stage}\n{part}{detail}\n\n🔘 {bar} {percent}\n📦 {done} / {total}\n🚀 Speed: {speed}\n⌛ {eta}   ⏱ {elapsed}",
+      "upload_part": "Part {index} of {total}\n",
       "done": "✅ {size} in {elapsed} — avg {speed}"
     },
     "pkg": {
@@ -3441,7 +3443,8 @@
       "download": {
         "starting": "⏳ Avvio download video ({quality})...",
         "progress": {
-          "body": "⏳ Download in corso...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} di {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}"
+          "body": "⏳ Download in corso...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} di {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
+          "upload_body": "📤 {stage}\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} di {total}\n🚀 Velocità: {speed}\n⌛ {eta}   ⏱️ {elapsed}"
         },
         "uploading": "✅ Download completato. Caricamento su Telegram...",
         "splitting": "✂️ File superiore a 2 GB. Divisione in {parts} parti...",
@@ -4180,8 +4183,8 @@
       "speed_unknown": "—",
       "eta_unknown": "—",
       "eta_label": "ETA",
-      "upload_body": "📤 {stage}\n{part}{detail}\n\n🔘 {bar} {percent}\n📦 {done} / {total}\n🚀 Velocità: {speed}\n⌛ Rimanente: {eta}\n⏱ Trascorso: {elapsed}",
-      "upload_part": "Invio parte {index} di {total}\n",
+      "upload_body": "{stage}\n{part}{detail}\n\n🔘 {bar} {percent}\n📦 {done} / {total}\n🚀 Velocità: {speed}\n⌛ {eta}   ⏱ {elapsed}",
+      "upload_part": "Parte {index} di {total}\n",
       "done": "✅ {size} in {elapsed} — media {speed}"
     },
     "pkg": {
@@ -4848,7 +4851,8 @@
       "download": {
         "starting": "⏳ Starting video download ({quality})...",
         "progress": {
-          "body": "⏳ Downloading...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} of {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}"
+          "body": "⏳ Downloading...\n🎬 {quality}\n🔘 {bar}  {percent}\n📥 {downloaded} of {total}\n🚀 {speed}   ⌛ {eta}\n⏱️ {elapsed}",
+          "upload_body": "📤 {stage}\n🎬 {quality}\n🔘 {bar}  {percent}\n📤 {uploaded} из {total}\n🚀 Скорость: {speed}\n⌛ {eta}   ⏱️ {elapsed}"
         },
         "uploading": "✅ Download complete. Uploading to Telegram...",
         "splitting": "✂️ File is larger than 2 GB. Splitting into {parts} parts...",
@@ -5587,8 +5591,8 @@
       "speed_unknown": "—",
       "eta_unknown": "—",
       "eta_label": "Осталось",
-      "upload_body": "📤 {stage}\n{part}{detail}\n\n🔘 {bar} {percent}\n📦 {done} / {total}\n🚀 Скорость: {speed}\n⌛ Осталось: {eta}\n⏱ Прошло: {elapsed}",
-      "upload_part": "Отправка части {index} из {total}\n",
+      "upload_body": "{stage}\n{part}{detail}\n\n🔘 {bar} {percent}\n📦 {done} / {total}\n🚀 Скорость: {speed}\n⌛ {eta}   ⏱ {elapsed}",
+      "upload_part": "Часть {index} из {total}\n",
       "done": "✅ {size} за {elapsed} — средняя {speed}"
     },
     "pkg": {

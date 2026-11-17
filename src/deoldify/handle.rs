@@ -303,14 +303,21 @@ pub async fn handle_deoldify_image(
                 .unwrap_or(0);
             let up_start = std::time::Instant::now();
 
-                        let send_res = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+            let send_res = crate::bot::transfer::send_file_with_upload_context::<
+                _,
+                frankenstein::types::Message,
+            >(
                 api,
                 "sendPhoto",
                 &photo_params,
                 &output_path,
                 crate::bot::transfer::UploadStatusContext {
-                    chat_id, message_id: status_msg.message_id, file_key: "transfer.stage.sending_photo",
-                    description: None, part: None, keyboard: Some(deoldify_cancel_keyboard()),
+                    chat_id,
+                    message_id: status_msg.message_id,
+                    file_key: "transfer.stage.sending_photo",
+                    description: None,
+                    part: None,
+                    keyboard: Some(deoldify_cancel_keyboard()),
                 },
                 Some(cancel_flag.clone()),
             )

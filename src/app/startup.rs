@@ -336,7 +336,7 @@ async fn cookie_worker_cycle(
 
         match modules::cookie_refresher::run(api, cfg).await {
             Ok(()) => {
-                let ts = chrono::Utc::now().timestamp();
+                let ts = jiff::Timestamp::now().as_second();
                 if let Err(e) = fresh::mark_fresh(&mut conn, profile_name, fresh_ttl, ts).await {
                     eprintln!(
                         "[cookie_worker profile={profile_name} event=mark_fresh_failed] err={e}"

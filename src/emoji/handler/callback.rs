@@ -1,7 +1,5 @@
 use std::fs;
 
-use chrono::{Datelike, Timelike};
-use chrono_tz::Asia::Tehran;
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
@@ -158,9 +156,20 @@ pub async fn handle_emoji_callback(
                     let _ = api.send_message(&params).await;
                 }
                 Ok(Some(sql)) => {
-                    let now = chrono::Utc::now().with_timezone(&Tehran);
-                    let (jy, jm, jd) =
-                        gregorian_to_jalali(now.year(), now.month() as i32, now.day() as i32);
+                    let now = match crate::youtube::jalali::tehran_datetime(
+                        jiff::Timestamp::now().as_second(),
+                    ) {
+                        Ok(now) => now,
+                        Err(err) => {
+                            crate::stats::record_error_global("emoji", &err.to_string()).await;
+                            return;
+                        }
+                    };
+                    let (jy, jm, jd) = gregorian_to_jalali(
+                        now.year() as i32,
+                        now.month() as i32,
+                        now.day() as i32,
+                    );
                     let filename = format!(
                         "emoji_{:04}-{:02}-{:02}_{:02}-{:02}.sql",
                         jy,

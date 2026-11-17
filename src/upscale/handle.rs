@@ -593,7 +593,7 @@ pub async fn handle_upscale_image(
         .unwrap_or(0);
     let up_start = std::time::Instant::now();
 
-        let smid = status_msg_id.unwrap_or(0);
+    let smid = status_msg_id.unwrap_or(0);
 
     let upload_success = if is_doc || orig_ext != "jpg" {
         let params = SendDocumentParams::builder()
@@ -602,17 +602,23 @@ pub async fn handle_upscale_image(
             .caption(&full_caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
-            api,
-            "sendDocument",
-            &params,
-            &output_path,
-            crate::bot::transfer::UploadStatusContext {
-                chat_id, message_id: smid, file_key: "transfer.stage.sending_document", description: None,
-                part: None, keyboard: Some(upscale_status_keyboard()),
-            }, Some(cancel_flag.clone()),
-        )
-        .await;
+        let r =
+            crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+                api,
+                "sendDocument",
+                &params,
+                &output_path,
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id,
+                    message_id: smid,
+                    file_key: "transfer.stage.sending_document",
+                    description: None,
+                    part: None,
+                    keyboard: Some(upscale_status_keyboard()),
+                },
+                Some(cancel_flag.clone()),
+            )
+            .await;
         log_ev!("upscale", trace_id, "send_document", "=>" => if r.is_ok() { "ok" } else { "fail" });
         r.is_ok()
     } else {
@@ -622,17 +628,23 @@ pub async fn handle_upscale_image(
             .caption(&full_caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
-            api,
-            "sendPhoto",
-            &params,
-            &output_path,
-            crate::bot::transfer::UploadStatusContext {
-                chat_id, message_id: smid, file_key: "transfer.stage.sending_photo", description: None,
-                part: None, keyboard: Some(upscale_status_keyboard()),
-            }, Some(cancel_flag.clone()),
-        )
-        .await;
+        let r =
+            crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+                api,
+                "sendPhoto",
+                &params,
+                &output_path,
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id,
+                    message_id: smid,
+                    file_key: "transfer.stage.sending_photo",
+                    description: None,
+                    part: None,
+                    keyboard: Some(upscale_status_keyboard()),
+                },
+                Some(cancel_flag.clone()),
+            )
+            .await;
         log_ev!("upscale", trace_id, "send_photo", "=>" => if r.is_ok() { "ok" } else { "fail" });
         r.is_ok()
     };

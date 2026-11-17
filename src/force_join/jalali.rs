@@ -1,6 +1,3 @@
-use chrono::{Datelike, Timelike};
-use chrono_tz::Asia::Tehran;
-
 use crate::youtube::jalali::gregorian_to_jalali;
 
 pub(crate) fn now_epoch() -> i64 {
@@ -21,13 +18,12 @@ pub(crate) fn to_en_digits(s: &str) -> String {
         .collect()
 }
 
-/// Jalali date/time in Tehran timezone with English digits via chrono + gregorian_to_jalali.
+/// Jalali date/time in Tehran timezone with English digits via the IANA time zone database.
 pub(crate) fn fmt_jalali_dt(epoch: i64) -> String {
-    let Some(utc) = chrono::DateTime::from_timestamp(epoch, 0) else {
+    let Ok(dt) = crate::youtube::jalali::tehran_datetime(epoch) else {
         return "—".to_string();
     };
-    let dt = utc.with_timezone(&Tehran);
-    let (jy, jm, jd) = gregorian_to_jalali(dt.year(), dt.month() as i32, dt.day() as i32);
+    let (jy, jm, jd) = gregorian_to_jalali(dt.year() as i32, dt.month() as i32, dt.day() as i32);
     format!(
         "🗓 {jy}/{jm:02}/{jd:02} ⏰ {:02}:{:02}",
         dt.hour(),

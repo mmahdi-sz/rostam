@@ -912,10 +912,16 @@ if [ "$(echo "$RES_TR_M" | jq -r '.rendered_text | contains("Fetching from Teleg
 
 RES_TR_PART=$(curl -s -X POST "$BASE_URL/test/transfer/meter" -H "Content-Type: application/json" \
     -d '{"total_bytes": 100, "lang": "en", "stage": "finalizing", "file_key": "transfer.stage.sending_document", "description": "archive.7z", "part": [2, 3], "chunks": [{"bytes": 100, "after_ms": 0}]}')
-if [ "$(echo "$RES_TR_PART" | jq -r '.rendered_text | contains("Sending part 2 of 3")')" != "true" ]; then echo "Fail: upload part counter"; exit 1; fi
+if [ "$(echo "$RES_TR_PART" | jq -r '.rendered_text | contains("Part 2 of 3")')" != "true" ]; then echo "Fail: upload part counter"; exit 1; fi
+if [ "$(echo "$RES_TR_PART" | jq -r '.rendered_text | index("Part 2 of 3") < index("archive")')" != "true" ]; then echo "Fail: part counter must precede file details"; exit 1; fi
 if [ "$(echo "$RES_TR_PART" | jq -r '.rendered_text | contains("Delivering to Telegram")')" != "true" ]; then echo "Fail: finalizing stage"; exit 1; fi
 if [ "$(echo "$RES_TR_PART" | jq -r '.is_complete')" != "false" ]; then echo "Fail: bytes sent must not mean Telegram delivery completed"; exit 1; fi
 if [ "$(echo "$RES_TR_PART" | jq -r '.keyboard.inline_keyboard[0][0].callback_data')" != "yt:cancel:123" ]; then echo "Fail: upload cancel keyboard"; exit 1; fi
+
+RES_TR_STAGE=$(curl -s -X POST "$BASE_URL/test/transfer/meter" -H "Content-Type: application/json" \
+    -d '{"total_bytes": 100, "lang": "fa", "stage": "uploading", "file_key": "transfer.stage.sending_video", "chunks": []}')
+UPLOAD_ICON_COUNT=$(echo "$RES_TR_STAGE" | jq -r '.rendered_text | split("\n")[0] | split("![📤]") | length - 1')
+if [ "$UPLOAD_ICON_COUNT" != "1" ]; then echo "Fail: upload stage must render exactly one paper-plane custom emoji"; exit 1; fi
 
 for lang in fa en it ru; do
     RES_TR_LANG=$(curl -s -X POST "$BASE_URL/test/transfer/meter" -H "Content-Type: application/json" \

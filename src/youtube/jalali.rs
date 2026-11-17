@@ -1,3 +1,7 @@
+pub fn tehran_datetime(epoch: i64) -> Result<jiff::Zoned, jiff::Error> {
+    jiff::Timestamp::from_second(epoch)?.in_tz("Asia/Tehran")
+}
+
 pub fn gregorian_to_jalali(gy: i32, gm: i32, gd: i32) -> (i32, i32, i32) {
     let g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
     let gy2 = if gm > 2 { gy + 1 } else { gy };
@@ -19,4 +23,29 @@ pub fn gregorian_to_jalali(gy: i32, gm: i32, gd: i32) -> (i32, i32, i32) {
         (7 + (days - 186) / 30, 1 + (days - 186) % 30)
     };
     (jy, jm, jd)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tehran_midnight_and_historical_dst() {
+        for (utc, expected) in [
+            ("2026-03-20T20:30:00Z", "2026-03-21 00:00 +0330"),
+            ("2021-07-01T00:00:00Z", "2021-07-01 04:30 +0430"),
+            ("2026-07-01T00:00:00Z", "2026-07-01 03:30 +0330"),
+        ] {
+            let ts: jiff::Timestamp = utc.parse().unwrap();
+            let dt = tehran_datetime(ts.as_second()).unwrap();
+            assert_eq!(dt.strftime("%Y-%m-%d %H:%M %z").to_string(), expected);
+        }
+        let dt = tehran_datetime(1774038600).unwrap();
+        assert_eq!(
+            gregorian_to_jalali(dt.year() as i32, dt.month() as i32, dt.day() as i32),
+            (1405, 1, 1)
+        );
+        assert!(tehran_datetime(i64::MAX).is_err());
+        assert!(tehran_datetime(i64::MIN).is_err());
+    }
 }

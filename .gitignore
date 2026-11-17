@@ -9,6 +9,8 @@ cookie_profiles_cache/
 files/bin/
 files/models/
 models/
+!vendor/tokenizers-0.22.2/src/models/
+!vendor/tokenizers-0.22.2/src/models/**
 files/realesrgan/
 files/runtime/
 separation-service/models/

@@ -87,7 +87,7 @@ fn read_config_file() -> RankPricesConfig {
     let paths = ["config.yml", "config/config.yml", "config/rank_prices.yml"];
     for path in &paths {
         if let Ok(content) = std::fs::read_to_string(path) {
-            if let Ok(cfg) = serde_yaml::from_str::<RankPricesConfig>(&content) {
+            if let Ok(cfg) = yaml_serde::from_str::<RankPricesConfig>(&content) {
                 return cfg;
             }
         }
@@ -116,4 +116,25 @@ pub fn get() -> RankPricesConfig {
         .read()
         .map(|guard| guard.clone())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_rank_prices_yaml() {
+        let cfg: RankPricesConfig = yaml_serde::from_str(
+            "admin_username: admin\nranks:\n  sepahbod:\n    original_toman: 180000\n    final_toman: 150000\n    discount_pct: 16\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.admin_username, "admin");
+        let rank = &cfg.ranks["sepahbod"];
+        assert_eq!(rank.original_toman, 180000);
+        assert_eq!(rank.final_toman, 150000);
+        assert_eq!(rank.discount_pct, 16);
+        assert!(!rank.is_free);
+        assert!(rank.buy_url.is_none());
+        assert!(yaml_serde::from_str::<RankPricesConfig>("ranks: [").is_err());
+    }
 }

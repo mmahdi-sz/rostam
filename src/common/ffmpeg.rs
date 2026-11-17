@@ -194,10 +194,21 @@ pub fn video_encoder_args(source_codec: &str) -> Vec<&'static str> {
             vec!["-c:v", "libx265", "-preset", "medium", "-crf", "26"]
         }
         "vp9" | "libvpx-vp9" | "vp09" => {
-            vec!["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-row-mt", "1"]
+            vec![
+                "-c:v",
+                "libvpx-vp9",
+                "-crf",
+                "32",
+                "-b:v",
+                "0",
+                "-row-mt",
+                "1",
+            ]
         }
         _ => {
-            vec!["-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p"]
+            vec![
+                "-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p",
+            ]
         }
     }
 }
@@ -218,14 +229,51 @@ mod tests {
 
     #[test]
     fn test_video_encoder_args_codecs() {
-        assert_eq!(video_encoder_args("av1"), vec!["-c:v", "libsvtav1", "-preset", "9", "-crf", "32"]);
-        assert_eq!(video_encoder_args("AV1"), vec!["-c:v", "libsvtav1", "-preset", "9", "-crf", "32"]);
-        assert_eq!(video_encoder_args("av01"), vec!["-c:v", "libsvtav1", "-preset", "9", "-crf", "32"]);
-        assert_eq!(video_encoder_args("hevc"), vec!["-c:v", "libx265", "-preset", "medium", "-crf", "26"]);
-        assert_eq!(video_encoder_args("h265"), vec!["-c:v", "libx265", "-preset", "medium", "-crf", "26"]);
-        assert_eq!(video_encoder_args("vp9"), vec!["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-row-mt", "1"]);
-        assert_eq!(video_encoder_args("h264"), vec!["-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p"]);
-        assert_eq!(video_encoder_args("unknown_codec"), vec!["-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p"]);
+        assert_eq!(
+            video_encoder_args("av1"),
+            vec!["-c:v", "libsvtav1", "-preset", "9", "-crf", "32"]
+        );
+        assert_eq!(
+            video_encoder_args("AV1"),
+            vec!["-c:v", "libsvtav1", "-preset", "9", "-crf", "32"]
+        );
+        assert_eq!(
+            video_encoder_args("av01"),
+            vec!["-c:v", "libsvtav1", "-preset", "9", "-crf", "32"]
+        );
+        assert_eq!(
+            video_encoder_args("hevc"),
+            vec!["-c:v", "libx265", "-preset", "medium", "-crf", "26"]
+        );
+        assert_eq!(
+            video_encoder_args("h265"),
+            vec!["-c:v", "libx265", "-preset", "medium", "-crf", "26"]
+        );
+        assert_eq!(
+            video_encoder_args("vp9"),
+            vec![
+                "-c:v",
+                "libvpx-vp9",
+                "-crf",
+                "32",
+                "-b:v",
+                "0",
+                "-row-mt",
+                "1"
+            ]
+        );
+        assert_eq!(
+            video_encoder_args("h264"),
+            vec![
+                "-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p"
+            ]
+        );
+        assert_eq!(
+            video_encoder_args("unknown_codec"),
+            vec![
+                "-c:v", "libx264", "-preset", "medium", "-crf", "22", "-pix_fmt", "yuv420p"
+            ]
+        );
     }
 
     #[test]

@@ -641,18 +641,27 @@ pub fn render_upload_status(
         .part
         .filter(|(_, total)| *total > 1)
         .map(|(index, total)| {
+            let (index, total) = if i18n::current_lang() == "fa" {
+                (
+                    i18n::to_fa_digits(&index.to_string()),
+                    i18n::to_fa_digits(&total.to_string()),
+                )
+            } else {
+                (index.to_string(), total.to_string())
+            };
             tf(
                 "transfer.upload_part",
-                &[("index", &index.to_string()), ("total", &total.to_string())],
+                &[("index", &index), ("total", &total)],
             )
         })
         .unwrap_or_default();
     let file = md_escape(&i18n::t(context.file_key));
-    let description = context.description.map(md_escape).unwrap_or_default();
-    let detail = if description.is_empty() {
-        file
-    } else {
-        format!("{file}\n{description}")
+    let detail = match context
+        .description
+        .filter(|description| !description.is_empty())
+    {
+        Some(description) => md_escape(description),
+        None => file,
     };
     let body = tf(
         "transfer.upload_body",

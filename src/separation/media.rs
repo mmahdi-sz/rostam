@@ -147,8 +147,7 @@ pub fn calculate_target_bitrate_kbps(duration_secs: u64, max_bytes: u64) -> u32 
     let max_kbps = 320u32;
     let min_kbps = 64u32;
     if duration_secs > 0 {
-        let cap_kbps =
-            ((max_bytes as f64 * 8.0) / (duration_secs as f64 * 1000.0) * 0.95) as u32;
+        let cap_kbps = ((max_bytes as f64 * 8.0) / (duration_secs as f64 * 1000.0) * 0.95) as u32;
         cap_kbps.clamp(min_kbps, max_kbps)
     } else {
         192

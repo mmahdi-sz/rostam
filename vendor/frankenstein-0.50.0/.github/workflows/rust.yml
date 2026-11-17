@@ -1,0 +1,168 @@
+name: Rust
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  rustfmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - uses: actions/checkout@v4
+      - run: cargo fmt --check --verbose
+
+  clippy:
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ (matrix.toolchain == 'beta') || (matrix.toolchain == 'nightly') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain:
+          - stable
+          - beta
+          - nightly
+    env:
+      RUSTFLAGS: --deny warnings
+    steps:
+      - uses: dtolnay/rust-toolchain@master
+        id: rust
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: clippy
+      - uses: actions/checkout@v4
+      - run: cargo fetch
+      - uses: actions/cache@v4
+        with:
+          key: clippy-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('**/Cargo.*') }}
+          path: target/
+      - run: cargo clippy --offline --all-features --all-targets
+      - run: cargo doc --offline --all-features --no-deps
+
+  features:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain:
+          - stable
+          - "1.75"
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    env:
+      RUSTFLAGS: --allow unknown-lints --deny warnings
+    steps:
+      - uses: dtolnay/rust-toolchain@master
+        id: rust
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - uses: taiki-e/install-action@cargo-hack
+
+      - uses: actions/checkout@v4
+      - run: cargo fetch
+      - uses: actions/cache@v4
+        with:
+          key: features-${{ matrix.os }}-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('**/Cargo.*') }}
+          path: target/
+
+      - name: Check all targets
+        run: cargo hack --keep-going --feature-powerset check --all-targets --offline
+
+      - name: Check without dev dependencies
+        run: cargo hack --keep-going --feature-powerset --no-dev-deps check --offline
+
+  test:
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.toolchain == 'nightly' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain:
+          - stable
+          - beta
+          - nightly
+          - "1.75"
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@master
+        id: rust
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - uses: actions/checkout@v4
+      - run: cargo fetch
+      - uses: actions/cache@v4
+        with:
+          key: test-${{ matrix.os }}-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('**/Cargo.*') }}
+          path: target/
+      - run: cargo build --offline --all-features --all-targets
+      - run: cargo test --offline --all-features --no-fail-fast
+
+  release:
+    name: Release ${{ matrix.triple }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - triple: x86_64-unknown-linux-gnu
+            features: --all-features
+            os: ubuntu-latest
+          - triple: aarch64-unknown-linux-gnu
+            features: --all-features
+            os: ubuntu-latest
+          - triple: armv7-unknown-linux-gnueabihf
+            features: --all-features
+            os: ubuntu-latest
+          - triple: arm-unknown-linux-gnueabihf
+            features: --all-features
+            os: ubuntu-latest
+          - triple: riscv64gc-unknown-linux-gnu
+            features: --all-features
+            os: ubuntu-latest
+          - triple: wasm32-unknown-unknown
+            features: --features=client-reqwest
+            os: ubuntu-latest
+
+          - triple: x86_64-apple-darwin
+            features: --all-features
+            os: macos-latest
+          - triple: aarch64-apple-darwin
+            features: --all-features
+            os: macos-latest
+
+          - triple: x86_64-pc-windows-msvc
+            features: --all-features
+            os: windows-latest
+          - triple: aarch64-pc-windows-msvc
+            features: --all-features
+            os: windows-latest
+    env:
+      RUSTFLAGS: --deny warnings
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+        id: rust
+        with:
+          targets: ${{ matrix.triple }}
+
+      - name: Install cargo tools
+        if: runner.os == 'Linux'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - uses: actions/checkout@v4
+      - run: cargo fetch --locked
+      - uses: actions/cache@v4
+        with:
+          key: release-${{ matrix.triple }}-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('**/Cargo.*') }}
+          path: target/
+
+      - run: ${{ runner.os == 'Linux' && 'cross' || 'cargo' }} build --release --offline ${{ matrix.features }} --target ${{ matrix.triple }}

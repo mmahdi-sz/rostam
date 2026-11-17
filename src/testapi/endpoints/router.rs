@@ -65,7 +65,7 @@ pub async fn test_callback(Json(payload): Json<Value>) -> axum::response::Respon
 
     let mut state = AppState {
         api,
-        cookie_pool: Arc::new(tokio::sync::Mutex::new(CookiePool::from_firefox_root(""))),
+        cookie_pool: Arc::new(tokio::sync::Mutex::new(CookiePool::empty())),
         database: None,
         flow_manager: FlowManager::new(),
         rate_limit_tx,

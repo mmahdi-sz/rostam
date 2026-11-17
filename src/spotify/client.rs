@@ -1,7 +1,7 @@
-//! Spotify Web API client wrapper using `rspotify` with public embed fallback.
+//! Spotify Web API client with public embed fallback.
 
 use anyhow::{Context, anyhow};
-use rspotify::{ClientCredsSpotify, Credentials, model::TrackId, prelude::*};
+use serde::Deserialize;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
@@ -39,57 +39,114 @@ async fn fetch_spotify_track_api(track_id: &str) -> anyhow::Result<SpotifyTrackM
         anyhow!("SPOTIFY_CLIENT_SECRET is not configured in environment or config file")
     })?;
 
-    let creds = Credentials::new(&client_id, &client_secret);
-    let spotify = ClientCredsSpotify::new(creds);
-
-    spotify
-        .request_token()
+    validate_track_id(track_id)?;
+    let client = crate::http::client();
+    #[derive(Deserialize)]
+    struct Token {
+        access_token: String,
+    }
+    let token = client
+        .post("https://accounts.spotify.com/api/token")
+        .basic_auth(&client_id, Some(&client_secret))
+        .form(&[("grant_type", "client_credentials")])
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<Token>()
         .await
         .context("Failed to request Spotify API client credentials token")?;
-
-    let tid = TrackId::from_id(track_id)
-        .map_err(|e| anyhow!("Invalid Spotify track ID format '{track_id}': {e}"))?;
-
-    let track = spotify
-        .track(tid, None)
+    if token.access_token.is_empty() {
+        return Err(anyhow!("Spotify API returned an empty access token"));
+    }
+    let track = client
+        .get(format!("https://api.spotify.com/v1/tracks/{track_id}"))
+        .bearer_auth(&token.access_token)
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<ApiTrack>()
         .await
-        .map_err(|e| anyhow!("Spotify API error for track '{track_id}': {e}"))?;
+        .context("Invalid Spotify track metadata")?;
+    Ok(track.into_metadata(track_id))
+}
 
-    let primary_artist = track
-        .artists
-        .first()
-        .map(|a| a.name.clone())
-        .unwrap_or_else(|| "Unknown Artist".to_string());
+fn validate_track_id(track_id: &str) -> anyhow::Result<()> {
+    if track_id.len() != 22 || !track_id.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return Err(anyhow!("Invalid Spotify track ID format"));
+    }
+    Ok(())
+}
 
-    let artist_names: Vec<String> = track.artists.iter().map(|a| a.name.clone()).collect();
-    let artists_joined = if artist_names.is_empty() {
-        "Unknown Artist".to_string()
-    } else {
-        artist_names.join(", ")
-    };
+#[derive(Deserialize)]
+struct ApiTrack {
+    name: String,
+    artists: Vec<ApiArtist>,
+    album: ApiAlbum,
+    duration_ms: u64,
+}
 
-    let album_name = track.album.name.clone();
-    let release_date = track.album.release_date.clone();
+#[derive(Deserialize)]
+struct ApiArtist {
+    name: String,
+}
 
-    let cover_url = track
-        .album
-        .images
-        .iter()
-        .max_by_key(|img| img.width.unwrap_or(0) * img.height.unwrap_or(0))
-        .map(|img| img.url.clone());
+#[derive(Deserialize)]
+struct ApiAlbum {
+    name: String,
+    release_date: Option<String>,
+    images: Vec<ApiImage>,
+}
 
-    let duration_ms = track.duration.num_milliseconds() as u64;
+#[derive(Deserialize)]
+struct ApiImage {
+    url: String,
+    width: Option<u32>,
+    height: Option<u32>,
+}
 
-    Ok(SpotifyTrackMeta {
-        id: track_id.to_string(),
-        title: track.name,
-        primary_artist,
-        artists_joined,
-        album_name,
-        duration_ms,
-        cover_url,
-        release_date,
-    })
+impl ApiTrack {
+    fn into_metadata(self, track_id: &str) -> SpotifyTrackMeta {
+        let track = self;
+        let primary_artist = track
+            .artists
+            .first()
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| "Unknown Artist".to_string());
+
+        let artist_names: Vec<String> = track.artists.iter().map(|a| a.name.clone()).collect();
+        let artists_joined = if artist_names.is_empty() {
+            "Unknown Artist".to_string()
+        } else {
+            artist_names.join(", ")
+        };
+
+        let album_name = track.album.name.clone();
+        let release_date = track.album.release_date.clone();
+
+        let cover_url = track
+            .album
+            .images
+            .iter()
+            .max_by_key(|img| {
+                u64::from(img.width.unwrap_or(0)) * u64::from(img.height.unwrap_or(0))
+            })
+            .map(|img| img.url.clone());
+
+        let duration_ms = track.duration_ms;
+
+        SpotifyTrackMeta {
+            id: track_id.to_string(),
+            title: track.name,
+            primary_artist,
+            artists_joined,
+            album_name,
+            duration_ms,
+            cover_url,
+            release_date,
+        }
+    }
 }
 
 /// One entry of an album/playlist — enough to feed the single-track pipeline.
@@ -711,6 +768,45 @@ async fn fetch_spotify_track_public(track_id: &str) -> anyhow::Result<SpotifyTra
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn api_metadata_preserves_track_fields() {
+        let track: ApiTrack = serde_json::from_value(serde_json::json!({
+            "name": "Song", "artists": [{"name": "A"}, {"name": "B"}],
+            "duration_ms": 123456,
+            "album": {"name": "Album", "release_date": "2026-11-17", "images": [
+                {"url": "small", "width": 64, "height": 64},
+                {"url": "large", "width": 640, "height": 640}
+            ]}
+        }))
+        .unwrap();
+        let meta = track.into_metadata("4cOdK2wGLETKBW3PvgPWqT");
+        assert_eq!(meta.title, "Song");
+        assert_eq!(meta.primary_artist, "A");
+        assert_eq!(meta.artists_joined, "A, B");
+        assert_eq!(meta.album_name, "Album");
+        assert_eq!(meta.duration_ms, 123456);
+        assert_eq!(meta.cover_url.as_deref(), Some("large"));
+        assert_eq!(meta.release_date.as_deref(), Some("2026-11-17"));
+    }
+
+    #[test]
+    fn api_metadata_rejects_missing_required_fields() {
+        assert!(
+            serde_json::from_value::<ApiTrack>(serde_json::json!({
+                "name": "Song", "artists": [], "album": {"name": "Album", "images": []}
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn api_track_id_validation_rejects_url_injection() {
+        assert!(validate_track_id("4cOdK2wGLETKBW3PvgPWqT").is_ok());
+        for id in ["", "short", "../tracks/anything", "4cOdK2wGLETKBW3PvgPWq/"] {
+            assert!(validate_track_id(id).is_err());
+        }
+    }
 
     #[test]
     fn test_extract_embed_token_primary_path() {

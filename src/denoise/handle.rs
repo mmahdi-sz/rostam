@@ -611,7 +611,7 @@ pub async fn handle_denoise_audio(
     let out_bytes = std::fs::metadata(output_str).map(|m| m.len()).unwrap_or(0);
     let up_start = std::time::Instant::now();
 
-        let smid = status_msg_id.unwrap_or(0);
+    let smid = status_msg_id.unwrap_or(0);
     let upload_success = if is_voice {
         let params = SendVoiceParams::builder()
             .chat_id(chat_id)
@@ -619,17 +619,23 @@ pub async fn handle_denoise_audio(
             .caption(&caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
-            api,
-            "sendVoice",
-            &params,
-            std::path::Path::new(output_str),
-            crate::bot::transfer::UploadStatusContext {
-                chat_id, message_id: smid, file_key: "transfer.stage.sending_audio",
-                description: None, part: None, keyboard: Some(denoise_keyboard()),
-            }, Some(cancel_flag.clone()),
-        )
-        .await;
+        let r =
+            crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+                api,
+                "sendVoice",
+                &params,
+                std::path::Path::new(output_str),
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id,
+                    message_id: smid,
+                    file_key: "transfer.stage.sending_audio",
+                    description: None,
+                    part: None,
+                    keyboard: Some(denoise_keyboard()),
+                },
+                Some(cancel_flag.clone()),
+            )
+            .await;
         log_trace(trace_id, "denoise_voice_sent", &format!("ok={}", r.is_ok()));
         r.is_ok()
     } else if is_video {
@@ -639,17 +645,23 @@ pub async fn handle_denoise_audio(
             .caption(&caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
-            api,
-            "sendVideo",
-            &params,
-            std::path::Path::new(output_str),
-            crate::bot::transfer::UploadStatusContext {
-                chat_id, message_id: smid, file_key: "transfer.stage.sending_video",
-                description: None, part: None, keyboard: Some(denoise_keyboard()),
-            }, Some(cancel_flag.clone()),
-        )
-        .await;
+        let r =
+            crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+                api,
+                "sendVideo",
+                &params,
+                std::path::Path::new(output_str),
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id,
+                    message_id: smid,
+                    file_key: "transfer.stage.sending_video",
+                    description: None,
+                    part: None,
+                    keyboard: Some(denoise_keyboard()),
+                },
+                Some(cancel_flag.clone()),
+            )
+            .await;
         log_trace(trace_id, "denoise_video_sent", &format!("ok={}", r.is_ok()));
         r.is_ok()
     } else {
@@ -659,17 +671,23 @@ pub async fn handle_denoise_audio(
             .caption(&caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
-            api,
-            "sendAudio",
-            &params,
-            std::path::Path::new(output_str),
-            crate::bot::transfer::UploadStatusContext {
-                chat_id, message_id: smid, file_key: "transfer.stage.sending_audio",
-                description: None, part: None, keyboard: Some(denoise_keyboard()),
-            }, Some(cancel_flag.clone()),
-        )
-        .await;
+        let r =
+            crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+                api,
+                "sendAudio",
+                &params,
+                std::path::Path::new(output_str),
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id,
+                    message_id: smid,
+                    file_key: "transfer.stage.sending_audio",
+                    description: None,
+                    part: None,
+                    keyboard: Some(denoise_keyboard()),
+                },
+                Some(cancel_flag.clone()),
+            )
+            .await;
         log_trace(trace_id, "denoise_audio_sent", &format!("ok={}", r.is_ok()));
         r.is_ok()
     };

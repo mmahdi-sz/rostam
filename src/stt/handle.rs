@@ -452,7 +452,10 @@ pub async fn handle_stt_audio(
     let audio_duration = match probe_metadata(std::path::Path::new(wav_str)).await {
         Ok(m) if m.duration_exact > 0.0 => m.duration_exact,
         _ => {
-            let file_size = tokio::fs::metadata(&wav_path).await.map(|m| m.len()).unwrap_or(0);
+            let file_size = tokio::fs::metadata(&wav_path)
+                .await
+                .map(|m| m.len())
+                .unwrap_or(0);
             if file_size > 44 {
                 (file_size - 44) as f64 / (16000.0 * 2.0)
             } else {
@@ -462,9 +465,14 @@ pub async fn handle_stt_audio(
     };
 
     if audio_duration <= 0.0 {
-        log_trace(trace_id, "stt_probe_failed", "invalid audio duration: unable to probe audio");
+        log_trace(
+            trace_id,
+            "stt_probe_failed",
+            "invalid audio duration: unable to probe audio",
+        );
         crate::stats::record_event_user(user_id, "stt", &stt_action(config), "fail", 0).await;
-        crate::stats::record_error_global("stt", "invalid audio duration: unable to probe audio").await;
+        crate::stats::record_error_global("stt", "invalid audio duration: unable to probe audio")
+            .await;
         let _ = send_text_with_back(api, chat_id, &t("stt.convert_failed")).await;
         delete_status(api, chat_id, status_msg_id).await;
         clean_up(&work_dir);

@@ -390,15 +390,7 @@ pub async fn trim_video_clip_timestamps(
             .unwrap_or_else(|_| "h264".to_string());
         let v_args = crate::common::ffmpeg::video_encoder_args(&source_codec);
 
-        let mut enc_args = vec![
-            "-y",
-            "-ss",
-            start_ts,
-            "-to",
-            end_ts,
-            "-i",
-            src_str,
-        ];
+        let mut enc_args = vec!["-y", "-ss", start_ts, "-to", end_ts, "-i", src_str];
         enc_args.extend_from_slice(&v_args);
         enc_args.extend_from_slice(&[
             "-c:a",

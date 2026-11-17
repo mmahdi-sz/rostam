@@ -1,0 +1,127 @@
+[package]
+name = "frankenstein"
+version = "0.50.0"
+authors = [
+    "Ayrat Badykov <ayratin555@gmail.com>",
+    "EdJoPaTo <frankenstein-rust@edjopato.de>",
+    "Pepe Márquez <pepe.marquezromero@gmail.com>"
+]
+description = "Telegram bot API client for Rust"
+edition = "2021"
+rust-version = "1.75.0"
+license = "WTFPL"
+repository = "https://github.com/ayrat555/frankenstein"
+readme = "README.md"
+keywords = ["request", "http", "client", "bot", "telegram"]
+categories = ["web-programming::http-client"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[features]
+client-reqwest = ["trait-async", "dep:reqwest", "dep:tokio", "dep:serde_json"]
+client-ureq = ["trait-sync", "dep:ureq", "dep:multipart", "dep:mime_guess", "dep:serde_json"]
+trait-async = ["dep:async-trait"]
+trait-sync = []
+
+[lints.rust]
+unsafe_code = "forbid"
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+
+# TODO: remove and fix (or allow explicitly on the specific problem)
+missing_errors_doc = "allow"
+unreadable_literal = "allow"
+
+[dependencies]
+async-trait = { version = "0.1", optional = true }
+bon = "3.0.0"
+macro_rules_attribute = "0.2.0"
+mime_guess = { version = "2", optional = true }
+multipart = { version = "0.18", optional = true, default-features = false, features = ["client"] }
+paste = { package = "pastey", version = "0.2.3" }
+serde = { version = "1.0.157", features = ["derive"] }
+serde_json = { version = "1.0.45", optional = true }
+serde_with = { version = "3.0.0", default-features = false, features = ["macros"] }
+thiserror = "2"
+ureq = { version = "3.0.0", optional = true, default-features = false, features = ["rustls"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.reqwest]
+version = "0.13"
+default-features = false
+features = ["multipart", "stream", "rustls"]
+optional = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.reqwest]
+version = "0.13"
+default-features = false
+features = ["multipart", "stream"]
+optional = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.tokio]
+version = "1"
+features = ["fs"]
+optional = true
+
+[dev-dependencies]
+isahc = "1"
+mockito = "1.0"
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+
+[[example]]
+name = "get_me"
+required-features = ["client-ureq"]
+
+[[example]]
+name = "reply_to_message_updates"
+required-features = ["client-ureq"]
+
+[[example]]
+name = "reply_keyboard"
+required-features = ["client-ureq"]
+
+[[example]]
+name = "inline_keyboard"
+required-features = ["client-ureq"]
+
+[[example]]
+name = "custom_client"
+required-features = ["client-ureq"]
+
+[[example]]
+name = "async_get_me"
+required-features = ["client-reqwest"]
+
+[[example]]
+name = "async_reply_to_message_updates"
+required-features = ["client-reqwest"]
+
+[[example]]
+name = "async_file_upload"
+required-features = ["client-reqwest"]
+
+[[example]]
+name = "async_custom_client"
+required-features = ["client-reqwest"]
+
+[[example]]
+name = "api_trait_implementation"
+required-features = ["trait-sync"]
+
+[[example]]
+name = "add_sticker_to_set"
+required-features = ["client-ureq"]
+
+[[example]]
+name = "upload_sticker_file"
+required-features = ["client-ureq"]
+
+[[example]]
+name = "create_new_sticker_set"
+required-features = ["client-ureq"]
+
+[[example]]
+name = "add_stars"
+required-features = ["client-ureq"]

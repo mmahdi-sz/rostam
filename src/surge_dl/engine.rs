@@ -227,7 +227,6 @@ pub(crate) async fn send_single_file(
     message_id: i32,
     path: &Path,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-
     // If file is a streamable video (.mp4 with supported codec), send as video with streaming and thumbnail
     if let Ok(meta) = crate::common::ffmpeg::probe_metadata(path).await {
         let is_streamable = is_streamable_video(&meta.codec, path, meta.width, meta.height);
@@ -267,15 +266,23 @@ pub(crate) async fn send_single_file(
                 }));
             }
 
-            let video_res = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+            let video_res = crate::bot::transfer::send_file_with_upload_context::<
+                _,
+                frankenstein::types::Message,
+            >(
                 api,
                 "sendVideo",
                 &params,
                 path,
                 crate::bot::transfer::UploadStatusContext {
-                    chat_id, message_id, file_key: "transfer.stage.sending_video",
-                    description: None, part: None, keyboard: None,
-                }, None,
+                    chat_id,
+                    message_id,
+                    file_key: "transfer.stage.sending_video",
+                    description: None,
+                    part: None,
+                    keyboard: None,
+                },
+                None,
             )
             .await;
 
@@ -297,9 +304,14 @@ pub(crate) async fn send_single_file(
         &params,
         path,
         crate::bot::transfer::UploadStatusContext {
-            chat_id, message_id, file_key: "transfer.stage.sending_document",
-            description: None, part: None, keyboard: None,
-        }, None,
+            chat_id,
+            message_id,
+            file_key: "transfer.stage.sending_document",
+            description: None,
+            part: None,
+            keyboard: None,
+        },
+        None,
     )
     .await?;
     Ok(())

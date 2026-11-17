@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.10] - 2026-11-17
+
+### Fixed
+- Install FFmpeg explicitly for CI unit tests instead of relying on runner image contents.
+- Set the native CPU baseline explicitly so CTranslate2 builds its generic and AVX kernels on amd64v3 CI runners.
+- Include vendored tokenizer model sources in clean checkouts and propagate failed CI commands through log pipelines.
+- Restore CI formatting and eliminate security audit warnings with maintained dependencies and patched QUIC, Tokio, rustix, and ChaCha20 releases.
+- Preserve Tehran historical time zones and Spotify track metadata while replacing unmaintained date, YAML, and API dependencies.
+- Remove the duplicate upload-stage emoji and keep the stage's own custom emoji.
+- Show the upload part number before file details and use Persian digits in Persian UI.
+- Keep upload speed, ETA, and elapsed time on the requested lines.
+- Prevent TestAPI from clearing the Firefox cookie profile cache.
+
 ## [2.7.9] - 2026-11-17
 
 ### Fixed

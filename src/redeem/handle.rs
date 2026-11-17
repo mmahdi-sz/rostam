@@ -1,5 +1,3 @@
-use chrono::{Datelike, TimeZone, Timelike, Utc};
-use chrono_tz::Asia::Tehran;
 use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
@@ -29,11 +27,10 @@ fn now_epoch() -> i64 {
 
 /// Jalali datetime string (+3:30 Tehran time).
 fn datetime_fa(epoch: i64) -> String {
-    let Some(utc) = Utc.timestamp_opt(epoch, 0).single() else {
+    let Ok(dt) = crate::youtube::jalali::tehran_datetime(epoch) else {
         return String::new();
     };
-    let dt = utc.with_timezone(&Tehran);
-    let (jy, jm, jd) = gregorian_to_jalali(dt.year(), dt.month() as i32, dt.day() as i32);
+    let (jy, jm, jd) = gregorian_to_jalali(dt.year() as i32, dt.month() as i32, dt.day() as i32);
     format!(
         "{jy:04}/{jm:02}/{jd:02} hour {:02}:{:02}",
         dt.hour(),
@@ -43,11 +40,10 @@ fn datetime_fa(epoch: i64) -> String {
 
 /// Jalali date string (+3:30 Tehran time) for expiration display.
 fn date_fa(epoch: i64) -> String {
-    let Some(utc) = Utc.timestamp_opt(epoch, 0).single() else {
+    let Ok(dt) = crate::youtube::jalali::tehran_datetime(epoch) else {
         return String::new();
     };
-    let dt = utc.with_timezone(&Tehran);
-    let (jy, jm, jd) = gregorian_to_jalali(dt.year(), dt.month() as i32, dt.day() as i32);
+    let (jy, jm, jd) = gregorian_to_jalali(dt.year() as i32, dt.month() as i32, dt.day() as i32);
     to_fa_digits(&format!("{jy:04}/{jm:02}/{jd:02}"))
 }
 
