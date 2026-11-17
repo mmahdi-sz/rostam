@@ -908,6 +908,21 @@ RES_TR_M=$(curl -s -X POST "$BASE_URL/test/transfer/meter" -H "Content-Type: app
 if [ "$(echo "$RES_TR_M" | jq -r '.is_complete')" != "false" ]; then echo "Fail: meter is_complete"; exit 1; fi
 if [ "$(echo "$RES_TR_M" | jq -r '.bytes_done')" != "50000000" ]; then echo "Fail: meter bytes_done"; exit 1; fi
 if [ "$(echo "$RES_TR_M" | jq -r '.text_len_utf16 < 4096')" != "true" ]; then echo "Fail: meter text_len"; exit 1; fi
+if [ "$(echo "$RES_TR_M" | jq -r '.rendered_text | contains("Fetching from Telegram")')" != "true" ]; then echo "Fail: shared upload stage missing"; exit 1; fi
+
+RES_TR_PART=$(curl -s -X POST "$BASE_URL/test/transfer/meter" -H "Content-Type: application/json" \
+    -d '{"total_bytes": 100, "lang": "en", "stage": "finalizing", "file_key": "transfer.stage.sending_document", "description": "archive.7z", "part": [2, 3], "chunks": [{"bytes": 100, "after_ms": 0}]}')
+if [ "$(echo "$RES_TR_PART" | jq -r '.rendered_text | contains("Sending part 2 of 3")')" != "true" ]; then echo "Fail: upload part counter"; exit 1; fi
+if [ "$(echo "$RES_TR_PART" | jq -r '.rendered_text | contains("Delivering to Telegram")')" != "true" ]; then echo "Fail: finalizing stage"; exit 1; fi
+if [ "$(echo "$RES_TR_PART" | jq -r '.is_complete')" != "false" ]; then echo "Fail: bytes sent must not mean Telegram delivery completed"; exit 1; fi
+if [ "$(echo "$RES_TR_PART" | jq -r '.keyboard.inline_keyboard[0][0].callback_data')" != "yt:cancel:123" ]; then echo "Fail: upload cancel keyboard"; exit 1; fi
+
+for lang in fa en it ru; do
+    RES_TR_LANG=$(curl -s -X POST "$BASE_URL/test/transfer/meter" -H "Content-Type: application/json" \
+        -d "{\"total_bytes\": 0, \"lang\": \"$lang\", \"stage\": \"finalizing\", \"chunks\": []}")
+    if [ "$(echo "$RES_TR_LANG" | jq -r '.text_len_utf16 < 4096')" != "true" ]; then echo "Fail: transfer message too long ($lang)"; exit 1; fi
+    if [ "$(echo "$RES_TR_LANG" | jq -r '.resolved_i18n_keys | length > 0')" != "true" ]; then echo "Fail: transfer i18n trace ($lang)"; exit 1; fi
+done
 
 RES_TR_M2=$(curl -s -X POST "$BASE_URL/test/transfer/meter" -H "Content-Type: application/json" \
     -d '{"total_bytes": 0, "lang": "fa", "stage": "done", "chunks": [{"bytes": 100000, "after_ms": 100}]}')

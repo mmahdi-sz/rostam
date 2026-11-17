@@ -413,7 +413,7 @@ pub async fn handle_upscale_image(
 
     // ── cancel flag + elapsed timer ───────────────────────────────────────────
     let (cancel_flag, _job_guard) = register_upscale(user_id);
-    let ticker_handle = status_msg_id.map(|smid| {
+    let mut ticker_handle = status_msg_id.map(|smid| {
         ProgressTicker::new(api, chat_id, smid)
             .interval(Duration::from_secs(3))
             .with_cancel_flag(cancel_flag.clone())
@@ -434,8 +434,8 @@ pub async fn handle_upscale_image(
         Ok(g) => g,
         Err(e) => {
             log_ev!("upscale", trace_id, "temp_dir_failed", "err" => format!("{e}"));
-            if let Some(ticker) = ticker_handle {
-                ticker.stop();
+            if let Some(ticker) = ticker_handle.as_mut() {
+                ticker.stop_and_wait().await;
             }
             cpu_guard.release().await;
             refund!("temp_dir_failed");
@@ -450,8 +450,8 @@ pub async fn handle_upscale_image(
         (input_path.to_str(), output_path.to_str())
     else {
         log_ev!("upscale", trace_id, "invalid_path", "=>" => "fail");
-        if let Some(ticker) = ticker_handle {
-            ticker.stop();
+        if let Some(ticker) = ticker_handle.as_mut() {
+            ticker.stop_and_wait().await;
         }
         cpu_guard.release().await;
         clean_up(&work_dir);
@@ -466,8 +466,8 @@ pub async fn handle_upscale_image(
         Err(e) => {
             let e_str = e.to_string();
             log_ev!("upscale", trace_id, "download_failed", "=>" => format!("fail err={e_str}"));
-            if let Some(ticker) = ticker_handle {
-                ticker.stop();
+            if let Some(ticker) = ticker_handle.as_mut() {
+                ticker.stop_and_wait().await;
             }
             cpu_guard.release().await;
             crate::stats::record_event_user(
@@ -518,8 +518,8 @@ pub async fn handle_upscale_image(
     })
     .await;
 
-    if let Some(ticker) = ticker_handle {
-        ticker.stop();
+    if let Some(ticker) = ticker_handle.as_mut() {
+        ticker.stop_and_wait().await;
     }
     cpu_guard.release().await;
 
@@ -593,8 +593,7 @@ pub async fn handle_upscale_image(
         .unwrap_or(0);
     let up_start = std::time::Instant::now();
 
-    use crate::bot::send_file_with_upload_ticker;
-    let smid = status_msg_id.unwrap_or(0);
+        let smid = status_msg_id.unwrap_or(0);
 
     let upload_success = if is_doc || orig_ext != "jpg" {
         let params = SendDocumentParams::builder()
@@ -603,15 +602,15 @@ pub async fn handle_upscale_image(
             .caption(&full_caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        let r = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
             api,
             "sendDocument",
             &params,
             &output_path,
-            chat_id,
-            smid,
-            "transfer.stage.sending_document",
-            None,
+            crate::bot::transfer::UploadStatusContext {
+                chat_id, message_id: smid, file_key: "transfer.stage.sending_document", description: None,
+                part: None, keyboard: Some(upscale_status_keyboard()),
+            }, Some(cancel_flag.clone()),
         )
         .await;
         log_ev!("upscale", trace_id, "send_document", "=>" => if r.is_ok() { "ok" } else { "fail" });
@@ -623,15 +622,15 @@ pub async fn handle_upscale_image(
             .caption(&full_caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        let r = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
             api,
             "sendPhoto",
             &params,
             &output_path,
-            chat_id,
-            smid,
-            "transfer.stage.sending_photo",
-            None,
+            crate::bot::transfer::UploadStatusContext {
+                chat_id, message_id: smid, file_key: "transfer.stage.sending_photo", description: None,
+                part: None, keyboard: Some(upscale_status_keyboard()),
+            }, Some(cancel_flag.clone()),
         )
         .await;
         log_ev!("upscale", trace_id, "send_photo", "=>" => if r.is_ok() { "ok" } else { "fail" });

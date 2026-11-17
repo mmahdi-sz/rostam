@@ -736,7 +736,7 @@ pub async fn handle_stt_audio(
     // ── Stage 4: Transcribe with live timer ──
     let duration_label = format_duration_hms(audio_duration);
     let dur_label = duration_label.clone();
-    let ticker_handle = status_msg_id.map(|msg_id| {
+    let mut ticker_handle = status_msg_id.map(|msg_id| {
         ProgressTicker::new(api, chat_id, msg_id)
             .interval(std::time::Duration::from_secs(2))
             .with_cancel_flag(cancel_flag.clone())
@@ -769,8 +769,8 @@ pub async fn handle_stt_audio(
     // The broker can block up to 120s — the user may have cancelled while queued.
     if cancel_flag.load(Ordering::Relaxed) {
         cpu_guard.release().await;
-        if let Some(ticker) = ticker_handle {
-            ticker.stop();
+        if let Some(ticker) = ticker_handle.as_mut() {
+            ticker.stop_and_wait().await;
         }
         log_trace(trace_id, "stt_cancelled_before_transcribe", "");
 
@@ -797,8 +797,8 @@ pub async fn handle_stt_audio(
         Ok(r) => r,
         Err(e) => {
             // Stop the timer
-            if let Some(ticker) = ticker_handle {
-                ticker.stop();
+            if let Some(ticker) = ticker_handle.as_mut() {
+                ticker.stop_and_wait().await;
             }
 
             log_trace(trace_id, "stt_transcribe_failed", &format!("err={e}"));
@@ -820,8 +820,8 @@ pub async fn handle_stt_audio(
     };
 
     // Stop the timer
-    if let Some(ticker) = ticker_handle {
-        ticker.stop();
+    if let Some(ticker) = ticker_handle.as_mut() {
+        ticker.stop_and_wait().await;
     }
 
     let was_cancelled = cancel_flag.load(Ordering::Relaxed);

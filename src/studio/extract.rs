@@ -720,7 +720,7 @@ pub async fn handle_video_upload(
 
                 let doc_params = SendDocumentParams::builder()
                     .chat_id(chat_id)
-                    .document(InputFile::from(item.out_path))
+                    .document(InputFile::from(item.out_path.clone()))
                     .caption(&cap_text)
                     .parse_mode(ParseMode::MarkdownV2)
                     .build();
@@ -746,21 +746,65 @@ pub async fn handle_video_upload(
                 if is_playable {
                     let audio_params = SendAudioParams::builder()
                         .chat_id(chat_id)
-                        .audio(InputFile::from(item.out_path))
+                        .audio(InputFile::from(item.out_path.clone()))
                         .caption(&cap_text)
                         .parse_mode(ParseMode::MarkdownV2)
                         .build();
 
-                    let _ = api.send_audio_metered(&audio_params).await;
+                    if let Err(e) = crate::bot::transfer::send_file_with_upload_context::<
+                        _,
+                        frankenstein::types::Message,
+                    >(
+                        api,
+                        "sendAudio",
+                        &audio_params,
+                        &item.out_path,
+                        crate::bot::transfer::UploadStatusContext {
+                            chat_id,
+                            message_id: status_msg_id,
+                            file_key: "transfer.stage.sending_audio",
+                            description: Some(&item.out_filename),
+                            part: Some((idx + 1, total_outputs)),
+                            keyboard: Some(job_cancel_keyboard()),
+                        },
+                        Some(cancel_flag.clone()),
+                    )
+                    .await
+                    {
+                        log_ev!("studio_extract", trace_id, "upload_failed", "err" => e.to_string());
+                        continue;
+                    }
                 } else {
                     let doc_params = SendDocumentParams::builder()
                         .chat_id(chat_id)
-                        .document(InputFile::from(item.out_path))
+                        .document(InputFile::from(item.out_path.clone()))
                         .caption(&cap_text)
                         .parse_mode(ParseMode::MarkdownV2)
                         .build();
 
-                    let _ = api.send_document_metered(&doc_params).await;
+                    if let Err(e) = crate::bot::transfer::send_file_with_upload_context::<
+                        _,
+                        frankenstein::types::Message,
+                    >(
+                        api,
+                        "sendDocument",
+                        &doc_params,
+                        &item.out_path,
+                        crate::bot::transfer::UploadStatusContext {
+                            chat_id,
+                            message_id: status_msg_id,
+                            file_key: "transfer.stage.sending_document",
+                            description: Some(&item.out_filename),
+                            part: Some((idx + 1, total_outputs)),
+                            keyboard: Some(job_cancel_keyboard()),
+                        },
+                        Some(cancel_flag.clone()),
+                    )
+                    .await
+                    {
+                        log_ev!("studio_extract", trace_id, "upload_failed", "err" => e.to_string());
+                        continue;
+                    }
                 }
             }
         }

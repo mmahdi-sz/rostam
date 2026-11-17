@@ -208,7 +208,7 @@ pub async fn handle_deoldify_image(
     };
 
     // Elapsed time ticker on status message
-    let ticker_handle = crate::common::ProgressTicker::new(api, chat_id, status_msg.message_id)
+    let mut ticker_handle = crate::common::ProgressTicker::new(api, chat_id, status_msg.message_id)
         .with_cancel_flag(cancel_flag.clone())
         .with_keyboard(deoldify_cancel_keyboard())
         .spawn(|elapsed| {
@@ -233,7 +233,7 @@ pub async fn handle_deoldify_image(
         match crate::bot::files::download_telegram_file(api, &file_id, &input_path).await {
             Ok(res) => res,
             Err(e) => {
-                ticker_handle.stop();
+                ticker_handle.stop_and_wait().await;
                 log_ev!("deoldify", trace_id, "download_failed", "err" => format!("{e:?}"));
                 let _ = api
                     .delete_message(
@@ -272,7 +272,7 @@ pub async fn handle_deoldify_image(
 
     // Run DeOldify Colorizer
     let process_res = run_deoldify_colorize(&input_path, &output_path, 24, user_id, trace_id).await;
-    ticker_handle.stop();
+    ticker_handle.stop_and_wait().await;
 
     // User clicked cancel mid-job: discard result and refund quota.
     if cancel_flag.load(Ordering::Relaxed) {
@@ -303,16 +303,16 @@ pub async fn handle_deoldify_image(
                 .unwrap_or(0);
             let up_start = std::time::Instant::now();
 
-            use crate::bot::send_file_with_upload_ticker;
-            let send_res = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                        let send_res = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
                 api,
                 "sendPhoto",
                 &photo_params,
                 &output_path,
-                chat_id,
-                status_msg.message_id,
-                "transfer.stage.sending_photo",
-                None,
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id, message_id: status_msg.message_id, file_key: "transfer.stage.sending_photo",
+                    description: None, part: None, keyboard: Some(deoldify_cancel_keyboard()),
+                },
+                Some(cancel_flag.clone()),
             )
             .await;
 

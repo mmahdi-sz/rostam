@@ -227,7 +227,6 @@ pub(crate) async fn send_single_file(
     message_id: i32,
     path: &Path,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use crate::bot::send_file_with_upload_ticker;
 
     // If file is a streamable video (.mp4 with supported codec), send as video with streaming and thumbnail
     if let Ok(meta) = crate::common::ffmpeg::probe_metadata(path).await {
@@ -268,15 +267,15 @@ pub(crate) async fn send_single_file(
                 }));
             }
 
-            let video_res = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            let video_res = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
                 api,
                 "sendVideo",
                 &params,
                 path,
-                chat_id,
-                message_id,
-                "transfer.stage.sending_video",
-                None,
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id, message_id, file_key: "transfer.stage.sending_video",
+                    description: None, part: None, keyboard: None,
+                }, None,
             )
             .await;
 
@@ -292,15 +291,15 @@ pub(crate) async fn send_single_file(
         .chat_id(chat_id)
         .document(path.to_path_buf())
         .build();
-    send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+    crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
         api,
         "sendDocument",
         &params,
         path,
-        chat_id,
-        message_id,
-        "transfer.stage.sending_document",
-        None,
+        crate::bot::transfer::UploadStatusContext {
+            chat_id, message_id, file_key: "transfer.stage.sending_document",
+            description: None, part: None, keyboard: None,
+        }, None,
     )
     .await?;
     Ok(())
@@ -342,7 +341,6 @@ pub(crate) async fn send_split_file(
     log_ev!("surge_dl", trace_id, "rar_done", "parts" => parts.len());
 
     let total = parts.len();
-    use crate::bot::send_file_with_upload_ticker;
     for (i, part) in parts.iter().enumerate() {
         let caption = tf(
             "surge.sending_part",
@@ -358,17 +356,23 @@ pub(crate) async fn send_split_file(
             params.caption_entities = Some(caption_entities);
         }
         let status_mid = message_id;
-        let _ = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-            api,
-            "sendDocument",
-            &params,
-            part,
-            chat_id,
-            status_mid,
-            "transfer.stage.sending_document",
-            None,
-        )
-        .await?;
+        let _ =
+            crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+                api,
+                "sendDocument",
+                &params,
+                part,
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id,
+                    message_id: status_mid,
+                    file_key: "transfer.stage.sending_document",
+                    description: None,
+                    part: Some((i + 1, total)),
+                    keyboard: None,
+                },
+                None,
+            )
+            .await?;
         log_ev!("surge_dl", trace_id, "part_sent", "n" => i + 1, "total" => total);
     }
 
@@ -407,8 +411,8 @@ mod tests {
 
         // Supported codecs on MP4 containers
         for codec in &[
-            "h264", "avc1", "hevc", "h265", "hvc1", "hev1", "av1", "av01", "vp9", "vp09",
-            "H264", "HEVC", "AV1",
+            "h264", "avc1", "hevc", "h265", "hvc1", "hev1", "av1", "av01", "vp9", "vp09", "H264",
+            "HEVC", "AV1",
         ] {
             assert!(
                 is_streamable_video(codec, mp4_path, 1920, 1080),

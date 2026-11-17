@@ -178,6 +178,7 @@ pub(crate) async fn run_playlist_download(
                 total_videos,
                 trace_id,
                 &mut current_cookie_spec,
+                status_chat_id, status_message_id, request_id,
             ) => dl_res,
         };
 
@@ -281,6 +282,9 @@ async fn download_single_playlist_item_with_retry(
     total_videos: usize,
     trace_id: u64,
     current_cookie_spec: &mut String,
+    status_chat_id: i64,
+    status_message_id: i32,
+    request_id: u64,
 ) -> Result<u64, String> {
     let mut tried: std::collections::HashSet<String> = std::collections::HashSet::new();
     let max_attempts = if let Some(cookie_pool) = req.cookie_pool.as_ref() {
@@ -302,6 +306,9 @@ async fn download_single_playlist_item_with_retry(
             total_videos,
             trace_id,
             &cookie_spec,
+            status_chat_id,
+            status_message_id,
+            request_id,
         )
         .await
         {
@@ -395,6 +402,9 @@ async fn download_single_playlist_item_attempt(
     total_videos: usize,
     trace_id: u64,
     cookie_spec: &str,
+    status_chat_id: i64,
+    status_message_id: i32,
+    request_id: u64,
 ) -> Result<u64, (crate::youtube::YtdlpErrorClassification, String)> {
     let height = selection.height;
     let codec = selection.codec;
@@ -650,21 +660,47 @@ async fn download_single_playlist_item_attempt(
             height,
             duration_secs,
         );
-        let progress = crate::bot::transfer::TransferProgress::new(0);
-        crate::bot::transfer::send_params_metered::<
+        crate::bot::transfer::send_file_with_upload_context::<
             _,
             frankenstein::response::MethodResponse<frankenstein::types::Message>,
-        >(&api.api_url, "sendVideo", &params, &progress, None)
+        >(
+            api,
+            "sendVideo",
+            &params,
+            std::path::Path::new(&path),
+            crate::bot::transfer::UploadStatusContext {
+                chat_id: status_chat_id,
+                message_id: status_message_id,
+                file_key: "transfer.stage.sending_video",
+                description: Some(&quality_label),
+                part: Some((video_num, total_videos)),
+                keyboard: Some(super::status::cancel_keyboard(request_id)),
+            },
+            None,
+        )
         .await
         .map(|_| ())
     } else {
         let params =
             build_single_doc_params(&path, req.chat_id, &thumb_path, caption, caption_entities);
-        let progress = crate::bot::transfer::TransferProgress::new(0);
-        crate::bot::transfer::send_params_metered::<
+        crate::bot::transfer::send_file_with_upload_context::<
             _,
             frankenstein::response::MethodResponse<frankenstein::types::Message>,
-        >(&api.api_url, "sendDocument", &params, &progress, None)
+        >(
+            api,
+            "sendDocument",
+            &params,
+            std::path::Path::new(&path),
+            crate::bot::transfer::UploadStatusContext {
+                chat_id: status_chat_id,
+                message_id: status_message_id,
+                file_key: "transfer.stage.sending_document",
+                description: Some(&quality_label),
+                part: Some((video_num, total_videos)),
+                keyboard: Some(super::status::cancel_keyboard(request_id)),
+            },
+            None,
+        )
         .await
         .map(|_| ())
     };

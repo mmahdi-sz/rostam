@@ -292,7 +292,7 @@ async fn run_pdf_compress(
     let cancel_flag = ACTIVE_PDF_JOBS.register(user_id);
     let _job_guard = ACTIVE_PDF_JOBS.guard(user_id);
 
-    let ticker_handle = ProgressTicker::new(&api, chat_id, message_id)
+    let mut ticker_handle = ProgressTicker::new(&api, chat_id, message_id)
         .interval(Duration::from_secs(2))
         .with_cancel_flag(cancel_flag.clone())
         .with_keyboard(job_cancel_keyboard())
@@ -310,7 +310,7 @@ async fn run_pdf_compress(
         Ok(g) => g,
         Err(e) => {
             log_ev!("pdfcompress", trace_id, "temp_dir_failed", "err" => format!("{e}"));
-            ticker_handle.stop();
+            ticker_handle.stop_and_wait().await;
             let _ = edit_status(&api, chat_id, message_id, &t("pdfcompress.error.gs_failed")).await;
             return;
         }
@@ -326,7 +326,7 @@ async fn run_pdf_compress(
     let dl_result = match download_file(&api, &file_id, &input_path).await {
         Ok(res) => res,
         Err(e) => {
-            ticker_handle.stop();
+            ticker_handle.stop_and_wait().await;
             let e_str = e.to_string();
             log_ev!("pdfcompress", trace_id, "download_failed", "=>" => format!("fail err={e_str}"));
             crate::stats::record_error_global("pdfcompress", &format!("download failed: {e_str}"))
@@ -343,7 +343,7 @@ async fn run_pdf_compress(
     };
 
     if cancel_flag.load(Ordering::Relaxed) {
-        ticker_handle.stop();
+        ticker_handle.stop_and_wait().await;
         return;
     }
 
@@ -362,7 +362,7 @@ async fn run_pdf_compress(
     log_ev!("pdfcompress", trace_id, "download_done", "bytes" => orig_size, "speed" => dl_result.speed_human());
 
     if !starts_with_pdf_magic(&input_path) {
-        ticker_handle.stop();
+        ticker_handle.stop_and_wait().await;
         log_ev!("pdfcompress", trace_id, "bad_magic_bytes", "=>" => "reject");
         let _ = edit_status(
             &api,
@@ -376,7 +376,7 @@ async fn run_pdf_compress(
 
     let mut cpu_guard = CpuBrokerGuard::acquire(user_id, trace_id, "pdfcompress").await;
     if cancel_flag.load(Ordering::Relaxed) {
-        ticker_handle.stop();
+        ticker_handle.stop_and_wait().await;
         cpu_guard.release().await;
         return;
     }
@@ -396,14 +396,14 @@ async fn run_pdf_compress(
     cpu_guard.release().await;
 
     if cancel_flag.load(Ordering::Relaxed) {
-        ticker_handle.stop();
+        ticker_handle.stop_and_wait().await;
         return;
     }
 
     match gs_res {
         Ok(()) => {}
         Err(GsError::Timeout) => {
-            ticker_handle.stop();
+            ticker_handle.stop_and_wait().await;
             log_ev!("pdfcompress", trace_id, "gs_timeout", "=>" => "fail");
             crate::stats::record_error_global("pdfcompress", "gs timeout").await;
             let _ = edit_status(&api, chat_id, message_id, &t("pdfcompress.error.timeout")).await;
@@ -411,7 +411,7 @@ async fn run_pdf_compress(
             return;
         }
         Err(GsError::Failed(err)) => {
-            ticker_handle.stop();
+            ticker_handle.stop_and_wait().await;
             log_ev!("pdfcompress", trace_id, "gs_failed", "err" => &err, "=>" => "fail");
             crate::stats::record_error_global("pdfcompress", &format!("gs failed: {err}")).await;
             let _ = edit_status(&api, chat_id, message_id, &t("pdfcompress.error.gs_failed")).await;
@@ -424,7 +424,7 @@ async fn run_pdf_compress(
         .map(|m| m.len())
         .unwrap_or(0);
     if compressed_size == 0 || compressed_size >= orig_size {
-        ticker_handle.stop();
+        ticker_handle.stop_and_wait().await;
         log_ev!("pdfcompress", trace_id, "no_improvement", "orig" => orig_size, "compressed" => compressed_size);
         let _ = edit_status(
             &api,
@@ -466,7 +466,7 @@ async fn run_pdf_compress(
         .unwrap_or(0);
     let up_start = std::time::Instant::now();
 
-    ticker_handle.stop();
+    ticker_handle.stop_and_wait().await;
 
     let doc_params = SendDocumentParams::builder()
         .chat_id(chat_id)
@@ -475,16 +475,16 @@ async fn run_pdf_compress(
         .parse_mode(ParseMode::MarkdownV2)
         .build();
 
-    use crate::bot::send_file_with_upload_ticker;
-    match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        match crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
         &api,
         "sendDocument",
         &doc_params,
         std::path::Path::new(&output_path),
-        chat_id,
-        message_id,
-        "transfer.stage.uploading",
-        None,
+        crate::bot::transfer::UploadStatusContext {
+            chat_id, message_id, file_key: "transfer.stage.sending_document",
+            description: Some(&filename), part: None, keyboard: Some(job_cancel_keyboard()),
+        },
+        Some(cancel_flag.clone()),
     )
     .await
     {

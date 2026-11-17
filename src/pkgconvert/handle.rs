@@ -16,7 +16,6 @@ use super::detect::{PkgFormat, detect_by_magic, detect_pkg_format};
 use super::engine::{ConvertError, TargetFmt, run_convert_sync};
 use super::validate::{MAX_INPUT_FILE_BYTES, validate_package};
 use crate::bot::constants::{CB_PKG_CANCEL, CB_PKG_JOBCANCEL, CB_TOOLS_PKG};
-use crate::bot::transfer::AsyncTelegramApiMetered;
 use crate::bot::{download_telegram_file, send_text_md};
 use crate::common::cpu_broker::CpuBrokerGuard;
 use crate::common::dir::TempDirGuard;
@@ -439,7 +438,7 @@ pub async fn handle_pkg_callback(
 async fn run_pkg_worker(
     api: Bot,
     chat_id: i64,
-    _progress_msg_id: i32,
+    progress_msg_id: i32,
     user_id: i64,
     file_id: String,
     filename: String,
@@ -449,14 +448,14 @@ async fn run_pkg_worker(
     database: Option<PostgresDatabase>,
     flow_manager: FlowManager,
     cancel: Arc<AtomicBool>,
-    ticker: crate::common::ProgressTickerHandle,
+    mut ticker: crate::common::ProgressTickerHandle,
     stage: Arc<PkgJobStage>,
 ) {
     let _job_guard = ACTIVE_PKG_JOBS.guard(user_id);
 
     macro_rules! stop_timer {
         () => {{
-            ticker.stop();
+            ticker.stop_and_wait().await;
         }};
     }
 
@@ -721,7 +720,23 @@ async fn run_pkg_worker(
         .parse_mode(ParseMode::MarkdownV2)
         .build();
 
-    let upload_res = api.send_document_metered(&doc_params).await;
+    let upload_res =
+        crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+            &api,
+            "sendDocument",
+            &doc_params,
+            &result.output_path,
+            crate::bot::transfer::UploadStatusContext {
+                chat_id,
+                message_id: progress_msg_id,
+                file_key: "transfer.stage.sending_document",
+                description: Some(&out_filename),
+                part: None,
+                keyboard: Some(job_cancel_keyboard()),
+            },
+            Some(cancel.clone()),
+        )
+        .await;
     std::fs::remove_dir_all(&work_dir).ok();
 
     if upload_res.is_ok() {

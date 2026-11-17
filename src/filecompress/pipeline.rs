@@ -240,7 +240,7 @@ async fn run_filecompress_worker(
     database: Option<PostgresDatabase>,
     flow_manager: FlowManager,
     cancel_flag: Arc<AtomicBool>,
-    ticker: crate::common::ProgressTickerHandle,
+    mut ticker: crate::common::ProgressTickerHandle,
     progress: Arc<JobProgress>,
 ) {
     let _job_guard = ACTIVE_FC_JOBS.guard(user_id);
@@ -248,7 +248,7 @@ async fn run_filecompress_worker(
     // Stop ticker on exit
     macro_rules! stop_timer {
         () => {{
-            ticker.stop();
+            ticker.stop_and_wait().await;
         }};
     }
 
@@ -456,6 +456,7 @@ async fn run_filecompress_worker(
     );
 
     let part_count = result.output_paths.len();
+    ticker.stop_and_wait().await;
 
     for (idx, path) in result.output_paths.iter().enumerate() {
         let out_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
@@ -493,18 +494,23 @@ async fn run_filecompress_worker(
             .parse_mode(ParseMode::MarkdownV2)
             .build();
 
-        use crate::bot::send_file_with_upload_ticker;
-        if let Err(e) = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-            &api,
-            "sendDocument",
-            &params,
-            std::path::Path::new(path),
-            chat_id,
-            progress_msg_id,
-            "transfer.stage.sending_document",
-            None,
-        )
-        .await
+        if let Err(e) =
+            crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+                &api,
+                "sendDocument",
+                &params,
+                std::path::Path::new(path),
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id,
+                    message_id: progress_msg_id,
+                    file_key: "transfer.stage.sending_document",
+                    description: None,
+                    part: Some((idx + 1, part_count)),
+                    keyboard: Some(job_cancel_keyboard()),
+                },
+                Some(cancel_flag.clone()),
+            )
+            .await
         {
             crate::log_ev!("filecompress", trace_id, "send_failed", "err" => format!("{e}"));
             let _ = send_text_with_back(&api, chat_id, &t("fc.error.send_failed")).await;

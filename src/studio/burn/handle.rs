@@ -14,7 +14,6 @@ use frankenstein::{
 
 use crate::bot::files::download_telegram_file;
 use crate::bot::send_text_md;
-use crate::bot::transfer::send_file_with_upload_ticker;
 use crate::common::cpu_broker::CpuBrokerGuard;
 use crate::database::postgresql::PostgresDatabase;
 use crate::emoji::{FlowManager, FlowState};
@@ -805,14 +804,19 @@ pub async fn execute_burn_job(
             }));
         }
 
-        let send_res = send_file_with_upload_ticker::<_, Message>(
+        let send_res = crate::bot::transfer::send_file_with_upload_context::<_, Message>(
             api,
             "sendVideo",
             &params,
             part_path,
-            chat_id,
-            status_msg_id,
-            "transfer.stage.sending_video",
+            crate::bot::transfer::UploadStatusContext {
+                chat_id,
+                message_id: status_msg_id,
+                file_key: "transfer.stage.sending_video",
+                description: Some(&output_filename),
+                part: Some((idx + 1, total_parts)),
+                keyboard: Some(job_cancel_keyboard()),
+            },
             Some(cancel_flag.clone()),
         )
         .await;

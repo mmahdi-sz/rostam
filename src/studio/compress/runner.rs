@@ -198,7 +198,7 @@ pub async fn start_compression_job(
         let job_start = Instant::now();
         let stop_ticker = Arc::new(AtomicBool::new(false));
         let progress_pct = Arc::new(AtomicU8::new(0));
-        {
+        let ticker_task = {
             let stop_ticker_inner = stop_ticker.clone();
             let progress_pct_inner = progress_pct.clone();
             let api_inner = api.clone();
@@ -240,8 +240,8 @@ pub async fn start_compression_job(
                     }
                     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                 }
-            });
-        }
+            })
+        };
 
         let preset_flag = if session.codec == "av1" {
             "9"
@@ -351,6 +351,7 @@ pub async fn start_compression_job(
         .await;
 
         stop_ticker.store(true, Ordering::Relaxed);
+        let _ = ticker_task.await;
         cpu_guard.release().await;
 
         let compress_secs = job_start.elapsed().as_secs();
@@ -442,7 +443,6 @@ pub async fn start_compression_job(
         let total_parts = parts.len();
         clear_session(user_id).await;
 
-        use crate::bot::send_file_with_upload_ticker;
         let mut total_uploaded_bytes: u64 = 0;
         let up_start = std::time::Instant::now();
 
@@ -491,15 +491,31 @@ pub async fn start_compression_job(
             let part_bytes = std::fs::metadata(part_path).map(|m| m.len()).unwrap_or(0);
             total_uploaded_bytes += part_bytes;
 
-            let send_res = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            let send_res = crate::bot::transfer::send_file_with_upload_context::<
+                _,
+                frankenstein::types::Message,
+            >(
                 &api,
                 "sendDocument",
                 &send_params,
                 part_path,
-                chat_id,
-                message_id,
-                "transfer.stage.sending_document",
-                None,
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id,
+                    message_id,
+                    file_key: "transfer.stage.sending_document",
+                    description: Some(&session.filename),
+                    part: Some((idx + 1, total_parts)),
+                    keyboard: Some(
+                        InlineKeyboardMarkup::builder()
+                            .inline_keyboard(vec![vec![btn_icon_danger(
+                                &t("studio.compress.cancel_btn"),
+                                CB_STUDIO_COMPRESS_JOBCANCEL,
+                                "cancel",
+                            )]])
+                            .build(),
+                    ),
+                },
+                Some(cancel_flag.clone()),
             )
             .await;
 

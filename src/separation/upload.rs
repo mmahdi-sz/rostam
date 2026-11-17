@@ -2,12 +2,11 @@ use std::path::PathBuf;
 
 use frankenstein::{AsyncTelegramApi, client_reqwest::Bot, methods::SendAudioParams};
 
-use crate::bot::send_file_with_upload_ticker;
 use crate::emoji::{FlowManager, FlowState};
 use crate::i18n::{entities_for_text, t, tf};
 
 use super::format::format_clock;
-use super::keyboards::prompt_keyboard;
+use super::keyboards::{prompt_keyboard, queue_cancel_keyboard};
 use super::log_trace;
 use super::types::SeparationResult;
 
@@ -24,6 +23,7 @@ pub async fn deliver_separation_results(
     op_started: std::time::Instant,
     flow_manager: &FlowManager,
     trace_id: u64,
+    cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) {
     log_trace(
         trace_id,
@@ -76,15 +76,17 @@ pub async fn deliver_separation_results(
         .audio(PathBuf::from(&vocals_compressed_path))
         .caption(t("separation.result.vocals_compressed_caption"))
         .build();
-    match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+    match crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
         api,
         "sendAudio",
         &p,
         &vocals_compressed_path,
-        chat_id,
-        smid,
-        "transfer.stage.sending_audio",
-        None,
+        crate::bot::transfer::UploadStatusContext {
+            chat_id, message_id: smid, file_key: "transfer.stage.sending_audio", description: None,
+            part: Some((1, 4)),
+            keyboard: Some(queue_cancel_keyboard()),
+        },
+        Some(cancel_flag.clone()),
     )
     .await
     {
@@ -98,15 +100,17 @@ pub async fn deliver_separation_results(
         .document(PathBuf::from(&vocals_wav_path))
         .caption(t("separation.result.vocals_wav_caption"))
         .build();
-    match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+    match crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
         api,
         "sendDocument",
         &p,
         &vocals_wav_path,
-        chat_id,
-        smid,
-        "transfer.stage.sending_document",
-        None,
+        crate::bot::transfer::UploadStatusContext {
+            chat_id, message_id: smid, file_key: "transfer.stage.sending_document", description: None,
+            part: Some((2, 4)),
+            keyboard: Some(queue_cancel_keyboard()),
+        },
+        Some(cancel_flag.clone()),
     )
     .await
     {
@@ -120,15 +124,17 @@ pub async fn deliver_separation_results(
         .audio(PathBuf::from(&instrumental_compressed_path))
         .caption(t("separation.result.instrumental_compressed_caption"))
         .build();
-    match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+    match crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
         api,
         "sendAudio",
         &p,
         &instrumental_compressed_path,
-        chat_id,
-        smid,
-        "transfer.stage.sending_audio",
-        None,
+        crate::bot::transfer::UploadStatusContext {
+            chat_id, message_id: smid, file_key: "transfer.stage.sending_audio", description: None,
+            part: Some((3, 4)),
+            keyboard: Some(queue_cancel_keyboard()),
+        },
+        Some(cancel_flag.clone()),
     )
     .await
     {
@@ -146,15 +152,17 @@ pub async fn deliver_separation_results(
         .document(PathBuf::from(&instrumental_wav_path))
         .caption(t("separation.result.instrumental_wav_caption"))
         .build();
-    match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+    match crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
         api,
         "sendDocument",
         &p,
         &instrumental_wav_path,
-        chat_id,
-        smid,
-        "transfer.stage.sending_document",
-        None,
+        crate::bot::transfer::UploadStatusContext {
+            chat_id, message_id: smid, file_key: "transfer.stage.sending_document", description: None,
+            part: Some((4, 4)),
+            keyboard: Some(queue_cancel_keyboard()),
+        },
+        Some(cancel_flag.clone()),
     )
     .await
     {

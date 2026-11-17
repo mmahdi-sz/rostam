@@ -28,12 +28,20 @@ pub struct ProgressTicker {
 #[derive(Debug)]
 pub struct ProgressTickerHandle {
     stop_flag: Arc<AtomicBool>,
+    task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl ProgressTickerHandle {
     /// Manually signals the ticker loop to terminate.
     pub fn stop(&self) {
         self.stop_flag.store(true, Ordering::SeqCst);
+    }
+
+    pub async fn stop_and_wait(&mut self) {
+        self.stop();
+        if let Some(task) = self.task.take() {
+            let _ = task.await;
+        }
     }
 }
 
@@ -93,7 +101,7 @@ impl ProgressTicker {
         let cancel_flag = self.cancel_flag;
         let keyboard = self.keyboard;
 
-        crate::app::spawn_user_task(async move {
+        let task = crate::app::spawn_user_task(async move {
             let start_time = Instant::now();
             let mut ticker_interval = tokio::time::interval(interval);
             let mut last_rendered = String::new();
@@ -126,7 +134,10 @@ impl ProgressTicker {
             }
         });
 
-        ProgressTickerHandle { stop_flag }
+        ProgressTickerHandle {
+            stop_flag,
+            task: Some(task),
+        }
     }
 }
 
@@ -140,6 +151,7 @@ mod tests {
         {
             let handle = ProgressTickerHandle {
                 stop_flag: stop_flag.clone(),
+                task: None,
             };
             assert!(!stop_flag.load(Ordering::SeqCst));
             drop(handle);
@@ -152,6 +164,7 @@ mod tests {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let handle = ProgressTickerHandle {
             stop_flag: stop_flag.clone(),
+            task: None,
         };
         assert!(!stop_flag.load(Ordering::SeqCst));
         handle.stop();

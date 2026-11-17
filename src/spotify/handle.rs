@@ -314,16 +314,16 @@ pub async fn handle_spotify_url(
     let up_start = std::time::Instant::now();
     let stats_job_id = crate::stats::record_download_start(user_id, "spotify").await;
 
-    use crate::bot::send_file_with_upload_ticker;
-    let upload_res = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        let upload_res = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
         api,
         "sendAudio",
         &send_audio_params,
         &mp3_path,
-        chat_id,
-        status_msg_id,
-        "transfer.stage.sending_audio",
-        None,
+        crate::bot::transfer::UploadStatusContext {
+            chat_id, message_id: status_msg_id, file_key: "transfer.stage.sending_audio",
+            description: Some(&meta.title), part: None, keyboard: Some(sp_cancel_keyboard()),
+        },
+        Some(stop_flag.clone()),
     )
     .await;
 

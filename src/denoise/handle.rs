@@ -490,7 +490,7 @@ pub async fn handle_denoise_audio(
 
     // 3. Denoise via DeepFilterNet — blocking (std::process::Command), run on thread pool.
     let est_total_secs = (audio_duration / 5.1).max(2.0);
-    let progress_ticker = status_msg_id.map(|msg_id| {
+    let mut progress_ticker = status_msg_id.map(|msg_id| {
         ProgressTicker::new(api, chat_id, msg_id)
             .interval(std::time::Duration::from_millis(1500))
             .with_cancel_flag(cancel_flag.clone())
@@ -536,8 +536,8 @@ pub async fn handle_denoise_audio(
 
     cpu_guard.release().await;
 
-    if let Some(ticker) = progress_ticker {
-        ticker.stop();
+    if let Some(ticker) = progress_ticker.as_mut() {
+        ticker.stop_and_wait().await;
     }
 
     if cancel_flag.load(Ordering::SeqCst) {
@@ -611,8 +611,7 @@ pub async fn handle_denoise_audio(
     let out_bytes = std::fs::metadata(output_str).map(|m| m.len()).unwrap_or(0);
     let up_start = std::time::Instant::now();
 
-    use crate::bot::send_file_with_upload_ticker;
-    let smid = status_msg_id.unwrap_or(0);
+        let smid = status_msg_id.unwrap_or(0);
     let upload_success = if is_voice {
         let params = SendVoiceParams::builder()
             .chat_id(chat_id)
@@ -620,15 +619,15 @@ pub async fn handle_denoise_audio(
             .caption(&caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        let r = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
             api,
             "sendVoice",
             &params,
             std::path::Path::new(output_str),
-            chat_id,
-            smid,
-            "transfer.stage.sending_audio",
-            None,
+            crate::bot::transfer::UploadStatusContext {
+                chat_id, message_id: smid, file_key: "transfer.stage.sending_audio",
+                description: None, part: None, keyboard: Some(denoise_keyboard()),
+            }, Some(cancel_flag.clone()),
         )
         .await;
         log_trace(trace_id, "denoise_voice_sent", &format!("ok={}", r.is_ok()));
@@ -640,15 +639,15 @@ pub async fn handle_denoise_audio(
             .caption(&caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        let r = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
             api,
             "sendVideo",
             &params,
             std::path::Path::new(output_str),
-            chat_id,
-            smid,
-            "transfer.stage.sending_video",
-            None,
+            crate::bot::transfer::UploadStatusContext {
+                chat_id, message_id: smid, file_key: "transfer.stage.sending_video",
+                description: None, part: None, keyboard: Some(denoise_keyboard()),
+            }, Some(cancel_flag.clone()),
         )
         .await;
         log_trace(trace_id, "denoise_video_sent", &format!("ok={}", r.is_ok()));
@@ -660,15 +659,15 @@ pub async fn handle_denoise_audio(
             .caption(&caption)
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        let r = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
             api,
             "sendAudio",
             &params,
             std::path::Path::new(output_str),
-            chat_id,
-            smid,
-            "transfer.stage.sending_audio",
-            None,
+            crate::bot::transfer::UploadStatusContext {
+                chat_id, message_id: smid, file_key: "transfer.stage.sending_audio",
+                description: None, part: None, keyboard: Some(denoise_keyboard()),
+            }, Some(cancel_flag.clone()),
         )
         .await;
         log_trace(trace_id, "denoise_audio_sent", &format!("ok={}", r.is_ok()));

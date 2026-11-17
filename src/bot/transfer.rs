@@ -11,6 +11,7 @@ use reqwest::multipart;
 use tokio::sync::OnceCell;
 use tokio_util::io::ReaderStream;
 
+use crate::common::ticker::ProgressTicker;
 use crate::i18n;
 
 // Re-use components
@@ -71,6 +72,7 @@ pub struct TransferProgress {
     started: Instant,
     leg_started: Mutex<Instant>,
     window: Mutex<VecDeque<(Instant, u64)>>,
+    remote_window: Mutex<VecDeque<(Instant, u64)>>,
     finalize_bps_hint: AtomicU64,
 }
 
@@ -86,6 +88,7 @@ impl TransferProgress {
             started: Instant::now(),
             leg_started: Mutex::new(Instant::now()),
             window: Mutex::new(VecDeque::new()),
+            remote_window: Mutex::new(VecDeque::new()),
             finalize_bps_hint: AtomicU64::new(0),
         })
     }
@@ -111,9 +114,6 @@ impl TransferProgress {
     }
 
     pub fn bump(&self, n: u64) {
-        if self.remote_active.load(Ordering::Relaxed) {
-            return;
-        }
         let current_done = self.done.fetch_add(n, Ordering::Relaxed) + n;
         let now = Instant::now();
         let mut w = self.window.lock().unwrap();
@@ -132,7 +132,7 @@ impl TransferProgress {
         self.remote_total.store(total, Ordering::Relaxed);
         let was_remote = self.remote_active.swap(true, Ordering::Relaxed);
         let now = Instant::now();
-        let mut window = self.window.lock().unwrap();
+        let mut window = self.remote_window.lock().unwrap();
         if !was_remote || done < previous {
             window.clear();
         }
@@ -150,6 +150,7 @@ impl TransferProgress {
         self.stage.store(stage.as_u8(), Ordering::Relaxed);
         *self.leg_started.lock().unwrap() = Instant::now();
         self.window.lock().unwrap().clear();
+        self.remote_window.lock().unwrap().clear();
     }
 
     pub fn stage(&self) -> Stage {
@@ -170,7 +171,22 @@ impl TransferProgress {
         if st != Stage::Streaming && st != Stage::Copying {
             return None;
         }
-        let w = self.window.lock().unwrap();
+        let remote_active = self.remote_active.load(Ordering::Relaxed);
+        self.window_speed(if remote_active {
+            &self.remote_window
+        } else {
+            &self.window
+        })
+        .filter(|speed| *speed > 0.0)
+        .or_else(|| {
+            remote_active
+                .then(|| self.window_speed(&self.window))
+                .flatten()
+        })
+    }
+
+    fn window_speed(&self, window: &Mutex<VecDeque<(Instant, u64)>>) -> Option<f64> {
+        let w = window.lock().unwrap();
         if w.len() < 2 {
             return None;
         }
@@ -242,7 +258,7 @@ impl TransferProgress {
     #[allow(dead_code)]
     pub fn is_complete(&self) -> bool {
         let total = self.total();
-        total > 0 && self.done() >= total
+        self.stage() == Stage::Done && total > 0 && self.done() >= total
     }
 
     pub fn snapshot(&self) -> TransferSnapshot {
@@ -525,17 +541,22 @@ where
     let resp = loop {
         tokio::select! {
             response = &mut send => break response?,
+            _ = async {
+                while !cancel.as_ref().is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }, if cancel.is_some() => return Err(anyhow::anyhow!("upload cancelled")),
             _ = poll_interval.tick(), if upload_id.is_some() => {
                 let upload_id = upload_id.as_deref().unwrap_or_default();
                 let poll_url = format!("{}/getUploadProgress", api_url.trim_end_matches('/'));
-                if let Ok(response) = client
+                if let Ok(Ok(response)) = tokio::time::timeout(Duration::from_secs(1), client
                     .post(poll_url)
                     .json(&serde_json::json!({ "upload_id": upload_id }))
                     .send()
-                    .await
+                ).await
                 {
                     if response.status().is_success() {
-                        if let Ok(json) = response.json::<serde_json::Value>().await {
+                        if let Ok(Ok(json)) = tokio::time::timeout(Duration::from_secs(1), response.json::<serde_json::Value>()).await {
                             let result = json.get("result").unwrap_or(&json);
                             if let Some(done) = result.get("uploaded_bytes").and_then(|v| v.as_u64()) {
                                 let size_known = result.get("size_known").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -567,7 +588,14 @@ where
     progress.set_stage(Stage::Finalizing);
 
     let status = resp.status();
-    let body = resp.text().await?;
+    let body = tokio::select! {
+        body = resp.text() => body?,
+        _ = async {
+            while !cancel.as_ref().is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }, if cancel.is_some() => return Err(anyhow::anyhow!("upload cancelled")),
+    };
 
     let finalize_elapsed = finalize_start.elapsed();
 
@@ -594,6 +622,178 @@ where
     Ok(result)
 }
 
+pub struct UploadStatusContext<'a> {
+    pub chat_id: i64,
+    pub message_id: i32,
+    pub file_key: &'a str,
+    pub description: Option<&'a str>,
+    pub part: Option<(usize, usize)>,
+    pub keyboard: Option<frankenstein::types::InlineKeyboardMarkup>,
+}
+
+pub fn render_upload_status(
+    progress: &TransferProgress,
+    context: &UploadStatusContext<'_>,
+) -> String {
+    use crate::i18n::{apply_premium_to_md, md_escape, tf};
+    let snap = progress.snapshot();
+    let part = context
+        .part
+        .filter(|(_, total)| *total > 1)
+        .map(|(index, total)| {
+            tf(
+                "transfer.upload_part",
+                &[("index", &index.to_string()), ("total", &total.to_string())],
+            )
+        })
+        .unwrap_or_default();
+    let file = md_escape(&i18n::t(context.file_key));
+    let description = context.description.map(md_escape).unwrap_or_default();
+    let detail = if description.is_empty() {
+        file
+    } else {
+        format!("{file}\n{description}")
+    };
+    let body = tf(
+        "transfer.upload_body",
+        &[
+            ("part", &part),
+            ("detail", &detail),
+            ("stage", &md_escape(&snap.stage)),
+            (
+                "bar",
+                if progress.stage() == Stage::Finalizing {
+                    "—"
+                } else {
+                    &snap.bar
+                },
+            ),
+            (
+                "percent",
+                &md_escape(
+                    if progress.stage() == Stage::Finalizing || snap.percent.is_empty() {
+                        "—"
+                    } else {
+                        &snap.percent
+                    },
+                ),
+            ),
+            ("done", &md_escape(&snap.done)),
+            ("total", &md_escape(&snap.total)),
+            ("speed", &md_escape(&snap.speed)),
+            ("eta", &md_escape(&snap.eta)),
+            ("elapsed", &md_escape(&snap.elapsed)),
+        ],
+    );
+    apply_premium_to_md(&body)
+}
+
+pub async fn send_file_with_upload_context<P: serde::Serialize, R: serde::de::DeserializeOwned>(
+    api: &frankenstein::client_reqwest::Bot,
+    method: &str,
+    params: &P,
+    file_path: &std::path::Path,
+    context: UploadStatusContext<'_>,
+    cancel_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
+) -> anyhow::Result<R> {
+    let progress = TransferProgress::new(0);
+    send_file_with_upload_context_progress(
+        api,
+        method,
+        params,
+        file_path,
+        context,
+        cancel_flag,
+        progress,
+    )
+    .await
+}
+
+#[cfg(feature = "testapi")]
+pub async fn send_file_with_upload_context_test<
+    P: serde::Serialize,
+    R: serde::de::DeserializeOwned,
+>(
+    api: &frankenstein::client_reqwest::Bot,
+    method: &str,
+    params: &P,
+    file_path: &std::path::Path,
+    context: UploadStatusContext<'_>,
+    cancel_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
+    progress: Arc<TransferProgress>,
+) -> anyhow::Result<R> {
+    send_file_with_upload_context_progress(
+        api,
+        method,
+        params,
+        file_path,
+        context,
+        cancel_flag,
+        progress,
+    )
+    .await
+}
+
+async fn send_file_with_upload_context_progress<
+    P: serde::Serialize,
+    R: serde::de::DeserializeOwned,
+>(
+    api: &frankenstein::client_reqwest::Bot,
+    method: &str,
+    params: &P,
+    file_path: &std::path::Path,
+    context: UploadStatusContext<'_>,
+    cancel_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
+    progress: Arc<TransferProgress>,
+) -> anyhow::Result<R> {
+    let file_bytes = std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
+    progress.set_total(file_bytes);
+    let send =
+        send_params_metered::<P, R>(&api.api_url, method, params, &progress, cancel_flag.clone());
+    tokio::pin!(send);
+
+    let mut ticker = if context.message_id == 0 {
+        None
+    } else {
+        let progress_for_ticker = progress.clone();
+        let chat_id = context.chat_id;
+        let message_id = context.message_id;
+        let file_key = context.file_key.to_owned();
+        let description = context.description.map(str::to_owned);
+        let part = context.part;
+        let mut ticker =
+            ProgressTicker::new(api, chat_id, message_id).interval(Duration::from_secs(2));
+        if let Some(keyboard) = context.keyboard.clone() {
+            ticker = ticker.with_keyboard(keyboard);
+        }
+        if let Some(cancel) = cancel_flag {
+            ticker = ticker.with_cancel_flag(cancel);
+        }
+        Some(ticker.spawn(move |elapsed| {
+            if elapsed < Duration::from_secs(2) {
+                return None;
+            }
+            Some(render_upload_status(
+                &progress_for_ticker,
+                &UploadStatusContext {
+                    chat_id,
+                    message_id,
+                    file_key: &file_key,
+                    description: description.as_deref(),
+                    part,
+                    keyboard: None,
+                },
+            ))
+        }))
+    };
+
+    let result = send.await;
+    if let Some(ticker) = ticker.as_mut() {
+        ticker.stop_and_wait().await;
+    }
+    result
+}
+
 pub async fn send_file_with_upload_ticker<
     P: serde::Serialize + Clone + Send + Sync + 'static,
     R: serde::de::DeserializeOwned + Send + 'static,
@@ -605,69 +805,24 @@ pub async fn send_file_with_upload_ticker<
     status_chat_id: i64,
     status_message_id: i32,
     stage_key: &str,
-    cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    cancel_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
 ) -> anyhow::Result<R> {
-    if status_message_id == 0 {
-        return send_params_metered::<P, R>(
-            &api.api_url,
-            method,
-            params,
-            &TransferProgress::new(0),
-            cancel_flag,
-        )
-        .await;
-    }
-    let file_bytes = std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
-    let progress = TransferProgress::new(file_bytes);
-    let progress_clone = progress.clone();
-    let api_url = api.api_url.clone();
-    let cancel_clone = cancel_flag.clone();
-    let method_str = method.to_string();
-
-    let params_owned = (*params).clone();
-    let mut send_task = tokio::spawn(async move {
-        send_params_metered::<P, R>(
-            &api_url,
-            &method_str,
-            &params_owned,
-            &progress_clone,
-            cancel_clone,
-        )
-        .await
-    });
-
-    let mut interval = tokio::time::interval(Duration::from_secs(2));
-    interval.tick().await;
-    let mut last_body = String::new();
-
-    loop {
-        tokio::select! {
-            res = &mut send_task => {
-                return match res {
-                    Ok(inner) => inner,
-                    Err(e) => Err(anyhow::anyhow!("Upload task join error: {e}")),
-                };
-            }
-            _ = interval.tick() => {
-                let snap = progress.snapshot();
-                let stage_label = i18n::t(stage_key);
-                let eta_label = i18n::t("transfer.eta_label");
-                let body = format!(
-                    "⬆️ {stage_label}\n[{}] {}\n📦 {} / {} | 🚀 {}\n⏱ {eta_label}: {}",
-                    snap.bar,
-                    snap.percent,
-                    snap.done,
-                    snap.total,
-                    snap.speed,
-                    snap.eta
-                );
-                if body != last_body {
-                    last_body = body.clone();
-                    let _ = crate::bot::edit_text(api, status_chat_id, status_message_id, &body, None).await;
-                }
-            }
-        }
-    }
+    send_file_with_upload_context(
+        api,
+        method,
+        params,
+        file_path,
+        UploadStatusContext {
+            chat_id: status_chat_id,
+            message_id: status_message_id,
+            file_key: stage_key,
+            description: None,
+            part: None,
+            keyboard: None,
+        },
+        cancel_flag,
+    )
+    .await
 }
 
 #[allow(dead_code)]
@@ -788,6 +943,19 @@ mod tests {
         assert_eq!(p.percent(), None);
     }
 
+    #[tokio::test]
+    async fn remote_progress_without_rate_falls_back_to_client_rate() {
+        let p = TransferProgress::new(1_000_000);
+        p.set_stage(Stage::Streaming);
+        p.bump(100);
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        p.bump(100);
+        p.set_remote_progress(16_000, 1_000_000);
+
+        assert!(p.speed_bps().unwrap_or(0.0) > 0.0);
+        assert!(p.eta().is_some());
+    }
+
     #[test]
     fn test_fmt_speed() {
         assert_eq!(fmt_speed(999.0), "999 B/s");
@@ -834,5 +1002,32 @@ mod tests {
         }
 
         assert_eq!(count, 2);
+    }
+}
+
+#[cfg(test)]
+mod upload_status_tests {
+    use super::*;
+
+    #[test]
+    fn unknown_size_and_final_delivery_do_not_claim_completion() {
+        let progress = TransferProgress::new(0);
+        progress.set_stage(Stage::Streaming);
+        let context = UploadStatusContext {
+            chat_id: 1,
+            message_id: 2,
+            file_key: "transfer.stage.sending_document",
+            description: Some("a.b"),
+            part: Some((1, 3)),
+            keyboard: None,
+        };
+        let body = render_upload_status(&progress, &context);
+        assert!(body.contains("a\\.b"));
+        assert!(body.contains("—"));
+        progress.set_total(100);
+        progress.bump(100);
+        progress.set_stage(Stage::Finalizing);
+        let finalizing = render_upload_status(&progress, &context);
+        assert!(!finalizing.contains("100\\%"));
     }
 }

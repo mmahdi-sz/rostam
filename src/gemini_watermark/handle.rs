@@ -242,15 +242,15 @@ pub async fn handle_gwm_image(api: &Bot, message: &Message, user_id: i64) {
     let up_start = std::time::Instant::now();
     let out_bytes = result_bytes.len() as u64;
 
-    use crate::bot::send_file_with_upload_ticker;
-    match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+        match crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
         api,
         "sendDocument",
         &p,
         std::path::Path::new(&out_path),
-        chat_id,
-        status_msg_id,
-        "transfer.stage.sending_document",
+        crate::bot::transfer::UploadStatusContext {
+            chat_id, message_id: status_msg_id, file_key: "transfer.stage.sending_document",
+            description: None, part: None, keyboard: Some(cancel_keyboard()),
+        },
         None,
     )
     .await

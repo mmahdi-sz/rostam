@@ -354,8 +354,7 @@ pub async fn handle_tts_text(
             let up_start = std::time::Instant::now();
             let stats_job_id = crate::stats::record_download_start(user_id, "moss_tts").await;
 
-            use crate::bot::send_file_with_upload_ticker;
-            if is_ogg {
+                        if is_ogg {
                 let voice_params = SendVoiceParams::builder()
                     .chat_id(ChatId::Integer(chat_id))
                     .voice(FileUpload::InputFile(InputFile {
@@ -365,15 +364,15 @@ pub async fn handle_tts_text(
                     .parse_mode(ParseMode::MarkdownV2)
                     .build();
 
-                let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                let r = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
                     api,
                     "sendVoice",
                     &voice_params,
                     &voice_path,
-                    chat_id,
-                    status_msg.message_id,
-                    "transfer.stage.sending_audio",
-                    None,
+                    crate::bot::transfer::UploadStatusContext {
+                        chat_id, message_id: status_msg.message_id, file_key: "transfer.stage.sending_audio",
+                        description: None, part: None, keyboard: Some(tts_job_cancel_keyboard()),
+                    }, Some(cancel_flag.clone()),
                 )
                 .await;
                 if let Err(e) = &r {
@@ -397,15 +396,15 @@ pub async fn handle_tts_text(
                     .caption(&result_caption)
                     .parse_mode(ParseMode::MarkdownV2)
                     .build();
-                let r = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                let r = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
                     api,
                     "sendAudio",
                     &audio_params,
                     &voice_path,
-                    chat_id,
-                    status_msg.message_id,
-                    "transfer.stage.sending_audio",
-                    None,
+                    crate::bot::transfer::UploadStatusContext {
+                        chat_id, message_id: status_msg.message_id, file_key: "transfer.stage.sending_audio",
+                        description: None, part: None, keyboard: Some(tts_job_cancel_keyboard()),
+                    }, Some(cancel_flag.clone()),
                 )
                 .await;
                 if let Err(e) = &r {

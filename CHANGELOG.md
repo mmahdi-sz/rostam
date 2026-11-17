@@ -5,13 +5,18 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
-## [2.7.9] - 2026-11-16
+## [2.7.9] - 2026-11-17
 
 ### Fixed
 - Show live byte count, percentage, speed, ETA, and elapsed time during YouTube video uploads instead of a hard-coded 100%.
+- Add shared upload progress with the active stage, byte count, speed, ETA, elapsed time, and multi-part position for file sends.
+- Preserve client-side speed when the Bot API progress endpoint has no usable rate, and show zero bytes for a rounded 0% download.
+- Stop YouTube uploads on cancellation and remove the message if Telegram accepts it as cancellation arrives.
+- Fix MarkdownV2 rendering of upload progress and part numbers; extend transfer TestAPI coverage.
 
 ### Added
 - Optional upload progress polling for Bot API servers that support `getUploadProgress`; other servers continue using client-side byte metering.
+- Deploy the Bot API 10.3 progress-enabled build for Rostam on its isolated production service and enable `BOT_API_UPLOAD_PROGRESS`.
 
 ## [2.7.8] - 2026-11-15
 

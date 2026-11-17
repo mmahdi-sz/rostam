@@ -103,16 +103,21 @@ pub fn parse_bytes_str(s: &str) -> Option<u64> {
 }
 
 pub fn format_progress_body(snap: &ProgressSnapshot, quality_label: &str) -> String {
-    let percent_f = snap
+    let parsed_percent = snap
         .percent
         .trim_end_matches('%')
         .trim()
         .parse::<f32>()
-        .unwrap_or(0.0);
+        .ok();
+    let percent_f = parsed_percent.unwrap_or(0.0);
     let bar = build_bar(percent_f);
     let default_percent = crate::i18n::t("youtube.progress_default_percent");
     let percent = clean_val(&snap.percent, &default_percent);
-    let downloaded = clean_val(&snap.downloaded, "-");
+    let downloaded = if parsed_percent.is_some_and(|percent| percent <= 0.0) {
+        "0B"
+    } else {
+        clean_val(&snap.downloaded, "-")
+    };
     let total = clean_val(&snap.total, "-");
     let speed = clean_val(&snap.speed, "...");
     let mut eta = clean_val(&snap.eta, "...");
@@ -159,23 +164,6 @@ pub fn format_elapsed(d: std::time::Duration) -> String {
     }
 }
 
-pub fn format_upload_body(quality_label: &str, snap: &crate::bot::TransferSnapshot) -> String {
-    tf(
-        "youtube.download.progress.upload_body",
-        &[
-            ("stage", &snap.stage),
-            ("quality", quality_label),
-            ("bar", &snap.bar),
-            ("percent", &snap.percent),
-            ("uploaded", &snap.done),
-            ("total", &snap.total),
-            ("speed", &snap.speed),
-            ("eta", &snap.eta),
-            ("elapsed", &snap.elapsed),
-        ],
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,7 +180,8 @@ mod tests {
             percent_int: 0,
         };
         assert_eq!(snap.percent_int, 0);
-        assert_eq!(clean_val(&snap.downloaded, "-"), "1.00KiB");
-        // In format_progress_body, percent_f == 0.0 forces downloaded to "0B"
+        let body = format_progress_body(&snap, "4320p");
+        assert!(body.contains("0B"));
+        assert!(!body.contains("1.00KiB"));
     }
 }

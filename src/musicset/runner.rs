@@ -138,7 +138,7 @@ pub async fn run_set_job(
     let ticker_cur_name = cur_name.clone();
     let title = md_escape(&pending.title);
 
-    let ticker_handle = ProgressTicker::new(&api, chat_id, status_msg_id)
+    let mut ticker_handle = ProgressTicker::new(&api, chat_id, status_msg_id)
         .interval(Duration::from_secs(3))
         .with_cancel_flag(cancel.clone())
         .with_keyboard(job_cancel_keyboard())
@@ -312,7 +312,20 @@ pub async fn run_set_job(
         if zip_mode {
             ready.push(track);
         } else {
-            upload_track(&api, chat_id, user_id, trace_id, &track, &database).await;
+            ticker_handle.stop_and_wait().await;
+            upload_track(
+                &api,
+                chat_id,
+                status_msg_id,
+                user_id,
+                trace_id,
+                &track,
+                idx + 1,
+                total,
+                &cancel,
+                &database,
+            )
+            .await;
             // Remove file after upload to free disk space.
             let _ = tokio::fs::remove_file(&track.mp3).await;
             if let Some(c) = &track.cover {
@@ -332,7 +345,7 @@ pub async fn run_set_job(
         if let Some(mut g) = cpu_guard.take() {
             g.release().await;
         }
-        ticker_handle.stop();
+        ticker_handle.stop_and_wait().await;
         log_ev!("ms", trace_id, "job_cancelled", "=>" => "cancel", "done" => done_idx.load(Ordering::Relaxed));
         delete_status(&api, chat_id, status_msg_id).await;
         // Uses MarkdownV2 with pre-escaped i18n text.
@@ -357,9 +370,11 @@ pub async fn run_set_job(
             Some(job_cancel_keyboard()),
         )
         .await;
+        ticker_handle.stop_and_wait().await;
         let ok = archive_and_upload(
             &api,
             chat_id,
+            status_msg_id,
             user_id,
             trace_id,
             &job_dir,
@@ -374,7 +389,7 @@ pub async fn run_set_job(
             g.release().await;
         }
         if !ok {
-            ticker_handle.stop();
+            ticker_handle.stop_and_wait().await;
             delete_status(&api, chat_id, status_msg_id).await;
             send_status(&api, chat_id, &t("musicset.zip_failed")).await;
             let _ = crate::bot::send_start_menu(&api, chat_id).await;
@@ -382,7 +397,7 @@ pub async fn run_set_job(
         }
     }
 
-    ticker_handle.stop();
+    ticker_handle.stop_and_wait().await;
 
     let uploaded = total - failed;
     log_ev!("ms", trace_id, "job_done", "=>" => "ok", "uploaded" => uploaded, "failed" => failed);
@@ -540,9 +555,13 @@ async fn add_traffic(database: &Option<PostgresDatabase>, user_id: i64, path: &s
 async fn upload_track(
     api: &Bot,
     chat_id: i64,
+    status_msg_id: i32,
     user_id: i64,
     trace_id: u64,
     track: &Track,
+    index: usize,
+    total: usize,
+    cancel: &Arc<AtomicBool>,
     database: &Option<PostgresDatabase>,
 ) {
     let caption = tf(
@@ -569,16 +588,20 @@ async fn upload_track(
         }));
     }
 
-    use crate::bot::send_file_with_upload_ticker;
-    match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+    match crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
         api,
         "sendAudio",
         &params,
         &track.mp3,
-        chat_id,
-        0,
-        "transfer.stage.sending_audio",
-        None,
+        crate::bot::transfer::UploadStatusContext {
+            chat_id,
+            message_id: status_msg_id,
+            file_key: "transfer.stage.sending_audio",
+            description: Some(&track.title),
+            part: Some((index, total)),
+            keyboard: Some(job_cancel_keyboard()),
+        },
+        Some(cancel.clone()),
     )
     .await
     {
@@ -597,6 +620,7 @@ async fn upload_track(
 async fn archive_and_upload(
     api: &Bot,
     chat_id: i64,
+    status_msg_id: i32,
     user_id: i64,
     trace_id: u64,
     job_dir: &std::path::Path,
@@ -683,18 +707,23 @@ async fn archive_and_upload(
             .caption(apply_premium_to_md(&caption))
             .parse_mode(ParseMode::MarkdownV2)
             .build();
-        use crate::bot::send_file_with_upload_ticker;
-        if let Err(e) = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-            api,
-            "sendDocument",
-            &params,
-            path,
-            chat_id,
-            0,
-            "transfer.stage.sending_document",
-            None,
-        )
-        .await
+        if let Err(e) =
+            crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+                api,
+                "sendDocument",
+                &params,
+                path,
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id,
+                    message_id: status_msg_id,
+                    file_key: "transfer.stage.sending_document",
+                    description: Some(set_title),
+                    part: Some((i + 1, parts)),
+                    keyboard: Some(job_cancel_keyboard()),
+                },
+                Some(cancel.clone()),
+            )
+            .await
         {
             log_ev!("ms", trace_id, "part_upload_fail", "err" => e.to_string());
             crate::stats::record_error_global("musicset", format!("upload_part: {e}")).await;

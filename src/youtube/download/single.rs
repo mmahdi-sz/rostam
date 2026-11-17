@@ -714,6 +714,7 @@ pub(crate) async fn run_download(
                 status_message_id,
                 request_id,
                 &quality_label,
+                Some((part_num, total)),
                 &mut cancel_fut,
                 trace_id,
             )
@@ -818,6 +819,7 @@ pub(crate) async fn run_download(
             status_message_id,
             request_id,
             &quality_label,
+            None,
             &mut cancel_fut,
             trace_id,
         )

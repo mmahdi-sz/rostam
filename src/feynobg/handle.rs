@@ -83,7 +83,7 @@ pub async fn handle_nobg_image(
         return;
     }
 
-    let Some((_flag, _job_guard)) = ACTIVE_NOBG_JOBS.try_register(user_id) else {
+    let Some((cancel_flag, _job_guard)) = ACTIVE_NOBG_JOBS.try_register(user_id) else {
         let _ = crate::bot::send_text(api, message.chat.id, &t("active_job_running")).await;
         return;
     };
@@ -366,17 +366,16 @@ pub async fn handle_nobg_image(
                 .caption(&caption)
                 .parse_mode(ParseMode::MarkdownV2)
                 .build();
-            use crate::bot::send_file_with_upload_ticker;
-            let status_mid = status_msg.as_ref().map(|m| m.message_id).unwrap_or(0);
-            let send_res = send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+                        let status_mid = status_msg.as_ref().map(|m| m.message_id).unwrap_or(0);
+            let send_res = crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
                 api,
                 "sendDocument",
                 &doc_params,
                 std::path::Path::new(&output_path),
-                chat_id,
-                status_mid,
-                "transfer.stage.sending_document",
-                None,
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id, message_id: status_mid, file_key: "transfer.stage.sending_document",
+                    description: None, part: None, keyboard: Some(nobg_cancel_keyboard()),
+                }, Some(cancel_flag.clone()),
             )
             .await;
 

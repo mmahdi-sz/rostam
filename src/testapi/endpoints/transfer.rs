@@ -15,6 +15,12 @@ pub struct MeterRequest {
     pub stage: String,
     #[allow(dead_code)]
     pub lang: String,
+    #[serde(default = "default_file_key")]
+    pub file_key: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub part: Option<(usize, usize)>,
 }
 
 #[derive(Serialize)]
@@ -35,61 +41,103 @@ pub struct MeterResponse {
     pub text_len_utf16: usize,
 }
 
-pub async fn test_transfer_meter(Json(req): Json<MeterRequest>) -> Json<MeterResponse> {
-    let trace = crate::log::next_trace_id();
+fn default_file_key() -> String {
+    "transfer.stage.sending_video".to_string()
+}
 
-    let progress = TransferProgress::new(req.total_bytes);
-
-    let stage = match req.stage.as_str() {
-        "fetching" => Stage::Fetching,
-        "copying" => Stage::Copying,
-        "uploading" | "streaming" => Stage::Streaming,
-        "finalizing" => Stage::Finalizing,
-        "done" => Stage::Done,
-        _ => Stage::Streaming,
-    };
-    progress.set_stage(stage);
-
-    for chunk in req.chunks {
-        if chunk.after_ms > 0 {
-            tokio::time::sleep(std::time::Duration::from_millis(chunk.after_ms)).await;
-        }
-        progress.bump(chunk.bytes);
+fn custom_emoji_spans(body: &str) -> Vec<String> {
+    let mut spans = Vec::new();
+    let mut rest = body;
+    while let Some(start) = rest.find("![") {
+        rest = &rest[start + 2..];
+        let Some((label, tail)) = rest.split_once("](tg://emoji?id=") else {
+            break;
+        };
+        let Some((id, after)) = tail.split_once(')') else {
+            break;
+        };
+        spans.push(format!("{label} -> {id}"));
+        rest = after;
     }
+    spans
+}
 
-    let snap = progress.snapshot();
-    let body = crate::youtube::download::progress::format_upload_body("Test Video 720p", &snap);
+pub async fn test_transfer_meter(Json(req): Json<MeterRequest>) -> Json<MeterResponse> {
+    let lang = req.lang.clone();
+    let resolved_keys = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let keys_for_scope = resolved_keys.clone();
+    crate::i18n::LANG
+        .scope(lang, async move {
+            crate::i18n::RESOLVED_I18N_KEYS
+                .scope(keys_for_scope, async move {
+                    let trace = crate::log::next_trace_id();
 
-    let text_len = body.encode_utf16().count();
+                    let progress = TransferProgress::new(req.total_bytes);
 
-    let keyboard = serde_json::json!({
-        "inline_keyboard": [[
-            {
-                "text": "Cancel",
-                "callback_data": "yt:cancel:123"
-            }
-        ]]
-    });
+                    let stage = match req.stage.as_str() {
+                        "fetching" => Stage::Fetching,
+                        "copying" => Stage::Copying,
+                        "uploading" | "streaming" => Stage::Streaming,
+                        "finalizing" => Stage::Finalizing,
+                        "done" => Stage::Done,
+                        _ => Stage::Streaming,
+                    };
+                    progress.set_stage(stage);
 
-    Json(MeterResponse {
-        rendered_text: body.clone(),
-        resolved_i18n_keys: vec![
-            "youtube.download.progress.upload_body".to_string(),
-            "transfer.stage.fetching".to_string(),
-        ],
-        custom_emoji_spans: vec![],
-        keyboard,
-        stats_events: vec![],
-        trace,
-        percent: progress.percent(),
-        speed: snap.speed,
-        eta: snap.eta,
-        bar: snap.bar,
-        stage: snap.stage,
-        bytes_done: progress.done(),
-        is_complete: progress.is_complete(),
-        text_len_utf16: text_len,
-    })
+                    for chunk in req.chunks {
+                        if chunk.after_ms > 0 {
+                            tokio::time::sleep(std::time::Duration::from_millis(chunk.after_ms))
+                                .await;
+                        }
+                        progress.bump(chunk.bytes);
+                    }
+
+                    let snap = progress.snapshot();
+                    let body = crate::bot::transfer::render_upload_status(
+                        &progress,
+                        &crate::bot::transfer::UploadStatusContext {
+                            chat_id: 12345,
+                            message_id: 1,
+                            file_key: &req.file_key,
+                            description: req.description.as_deref(),
+                            part: req.part,
+                            keyboard: Some(crate::youtube::download::test_upload_cancel_keyboard(
+                                123,
+                            )),
+                        },
+                    );
+
+                    let text_len = body.encode_utf16().count();
+                    let custom_emoji_spans = custom_emoji_spans(&body);
+
+                    let keyboard = serde_json::to_value(
+                        crate::youtube::download::test_upload_cancel_keyboard(123),
+                    )
+                    .unwrap_or_else(|_| serde_json::json!({ "inline_keyboard": [] }));
+
+                    Json(MeterResponse {
+                        rendered_text: body.clone(),
+                        resolved_i18n_keys: resolved_keys
+                            .lock()
+                            .map(|keys| keys.clone())
+                            .unwrap_or_default(),
+                        custom_emoji_spans,
+                        keyboard,
+                        stats_events: vec![],
+                        trace,
+                        percent: progress.percent(),
+                        speed: snap.speed,
+                        eta: snap.eta,
+                        bar: snap.bar,
+                        stage: snap.stage,
+                        bytes_done: progress.done(),
+                        is_complete: progress.is_complete(),
+                        text_len_utf16: text_len,
+                    })
+                })
+                .await
+        })
+        .await
 }
 
 #[derive(Deserialize)]
@@ -128,21 +176,44 @@ pub async fn test_transfer_upload(Json(req): Json<UploadRequest>) -> Json<Upload
         .build();
 
     let p_clone = progress.clone();
-    let c_clone = cancel.clone();
-    let cancel_after = req.cancel_after_chunk;
+    let cancel_task = req.cancel_after_chunk.then(|| {
+        let cancel = cancel.clone();
+        let progress = progress.clone();
+        tokio::spawn(async move {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while progress.done() < 64 * 1024 {
+                    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                }
+            })
+            .await;
+            cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+        })
+    });
 
-    if cancel_after {
-        c_clone.store(true, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    let _ = crate::bot::transfer::send_params_metered::<_, frankenstein::types::Message>(
-        &api_url,
+    let api = frankenstein::client_reqwest::Bot::new_url(api_url);
+    let _ = crate::bot::transfer::send_file_with_upload_context_test::<
+        _,
+        frankenstein::types::Message,
+    >(
+        &api,
         "sendDocument",
         &params,
-        &p_clone,
+        &file_path,
+        crate::bot::transfer::UploadStatusContext {
+            chat_id: 12345,
+            message_id: 0,
+            file_key: "transfer.stage.sending_document",
+            description: Some("test upload"),
+            part: None,
+            keyboard: None,
+        },
         Some(cancel),
+        p_clone,
     )
     .await;
+    if let Some(task) = cancel_task {
+        let _ = task.await;
+    }
 
     let _ = tokio::fs::remove_file(&file_path).await;
 

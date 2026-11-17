@@ -67,7 +67,7 @@ pub async fn run_separation_task(params: SeparationTaskParams) {
         SeparationMode::Quality => 5,
     });
 
-    let ticker_handle = ProgressTicker::new(&api, chat_id, message_id)
+    let mut ticker_handle = ProgressTicker::new(&api, chat_id, message_id)
         .interval(Duration::from_secs(5))
         .with_cancel_flag(cancel_flag.clone())
         .with_keyboard(queue_cancel_keyboard())
@@ -109,7 +109,7 @@ pub async fn run_separation_task(params: SeparationTaskParams) {
     };
 
     // Stop ticker now that we have a result.
-    ticker_handle.stop();
+    ticker_handle.stop_and_wait().await;
     // The whole track sat in RAM twice (read buffer + multipart copy); hand
     // the pages back — separation talks to a remote service, so no broker
     // release happens here to do it.
@@ -176,6 +176,7 @@ pub async fn run_separation_task(params: SeparationTaskParams) {
                 op_started,
                 &flow_manager,
                 trace_id,
+                cancel_flag.clone(),
             )
             .await;
         }

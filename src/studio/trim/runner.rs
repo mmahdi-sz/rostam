@@ -169,7 +169,9 @@ pub async fn execute_trim_job(
         (meta, cov, thumb_p, "h264".to_string())
     } else {
         let video_meta = run_ffprobe(&source_video).await.ok();
-        let codec = video_meta.map(|m| m.codec).unwrap_or_else(|| "h264".to_string());
+        let codec = video_meta
+            .map(|m| m.codec)
+            .unwrap_or_else(|| "h264".to_string());
         (
             None,
             false,
@@ -230,7 +232,7 @@ pub async fn execute_trim_job(
     // Single outer live ticker — runs across all cuts
     let stop_ticker = Arc::new(AtomicBool::new(false));
     let current_cut = Arc::new(std::sync::atomic::AtomicUsize::new(1));
-    {
+    let ticker_task = {
         let stop_ticker_inner = stop_ticker.clone();
         let current_cut_inner = current_cut.clone();
         let api_inner = api.clone();
@@ -284,8 +286,8 @@ pub async fn execute_trim_job(
                 }
                 tokio::time::sleep(Duration::from_secs(3)).await;
             }
-        });
-    }
+        })
+    };
 
     let loop_start = Instant::now();
 
@@ -362,7 +364,6 @@ pub async fn execute_trim_job(
             let is_audio_guaranteed = is_telegram_audio_guaranteed(&audio_ext);
 
             let upload_start = Instant::now();
-            use crate::bot::send_file_with_upload_ticker;
 
             let send_res = if is_audio_guaranteed {
                 let track_title = original_title.clone().unwrap_or_else(|| base_stem.clone());
@@ -386,16 +387,14 @@ pub async fn execute_trim_job(
                     }));
                 }
 
-                send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-                    api,
-                    "sendAudio",
-                    &send_audio_params,
-                    &output_path,
-                    chat_id,
-                    status_msg_id,
-                    "transfer.stage.sending_audio",
-                    None,
-                )
+                crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+                    api, "sendAudio", &send_audio_params, &output_path,
+                    crate::bot::transfer::UploadStatusContext {
+                        chat_id, message_id: status_msg_id, file_key: "transfer.stage.sending_audio",
+                        description: Some(&caption_range), part: Some((idx + 1, total_ranges)),
+                        keyboard: Some(job_cancel_keyboard()),
+                    }, Some(cancel_flag.clone()),
+                    )
                 .await
             } else {
                 // Non-guaranteed audio formats (e.g. FLAC, WAV, OGG, OPUS, AIFF) are delivered
@@ -415,16 +414,14 @@ pub async fn execute_trim_job(
                     }));
                 }
 
-                send_file_with_upload_ticker::<_, frankenstein::types::Message>(
-                    api,
-                    "sendDocument",
-                    &send_doc_params,
-                    &output_path,
-                    chat_id,
-                    status_msg_id,
-                    "transfer.stage.sending_document",
-                    None,
-                )
+                crate::bot::transfer::send_file_with_upload_context::<_, frankenstein::types::Message>(
+                    api, "sendDocument", &send_doc_params, &output_path,
+                    crate::bot::transfer::UploadStatusContext {
+                        chat_id, message_id: status_msg_id, file_key: "transfer.stage.sending_document",
+                        description: Some(&caption_range), part: Some((idx + 1, total_ranges)),
+                        keyboard: Some(job_cancel_keyboard()),
+                    }, Some(cancel_flag.clone()),
+                    )
                 .await
             };
 
@@ -697,16 +694,23 @@ pub async fn execute_trim_job(
                     Some(FileUpload::InputFile(InputFile { path: thumb_path }));
             }
 
-            use crate::bot::send_file_with_upload_ticker;
-            match send_file_with_upload_ticker::<_, frankenstein::types::Message>(
+            match crate::bot::transfer::send_file_with_upload_context::<
+                _,
+                frankenstein::types::Message,
+            >(
                 api,
                 "sendVideo",
                 &send_video_params,
                 &output_path,
-                chat_id,
-                status_msg_id,
-                "transfer.stage.sending_video",
-                None,
+                crate::bot::transfer::UploadStatusContext {
+                    chat_id,
+                    message_id: status_msg_id,
+                    file_key: "transfer.stage.sending_video",
+                    description: Some(&caption_range),
+                    part: Some((idx + 1, total_ranges)),
+                    keyboard: Some(job_cancel_keyboard()),
+                },
+                Some(cancel_flag.clone()),
             )
             .await
             {
@@ -749,6 +753,7 @@ pub async fn execute_trim_job(
     }
 
     stop_ticker.store(true, Ordering::Relaxed);
+    let _ = ticker_task.await;
     let loop_secs = loop_start.elapsed().as_secs();
     let trim_secs = loop_secs.saturating_sub(total_upload_secs);
     let upload_secs = total_upload_secs;
