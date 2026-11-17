@@ -4,10 +4,33 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use ct2rs::{Config, Translator};
+use ct2rs::{Config, Tokenizer, Translator};
 
 /// Translator type using ct2rs default tokenizer.
-type NllbTranslator = Translator<ct2rs::tokenizers::auto::Tokenizer>;
+type NllbTranslator = Translator<NllbTokenizer>;
+
+struct NllbTokenizer(ct2rs::tokenizers::auto::Tokenizer);
+
+impl Tokenizer for NllbTokenizer {
+    fn encode(&self, input: &str) -> anyhow::Result<Vec<String>> {
+        let (lang, text) = input
+            .split_once(' ')
+            .ok_or_else(|| anyhow::anyhow!("missing source language"))?;
+        let mut tokens = self.0.encode(text)?;
+        // The legacy NLLB tokenizer template ends with EOS and a language placeholder.
+        anyhow::ensure!(
+            tokens.last().is_some_and(|token| token == "<unk>"),
+            "unexpected NLLB source template"
+        );
+        tokens.pop();
+        tokens.push(lang.to_owned());
+        Ok(tokens)
+    }
+
+    fn decode(&self, tokens: Vec<String>) -> anyhow::Result<String> {
+        self.0.decode(tokens)
+    }
+}
 
 /// Path to NLLB model directory.
 const MODEL_DIR: &str = "files/models/nllb";
@@ -36,7 +59,9 @@ impl NllbHolder {
                 ));
             }
             eprintln!("[translator] Loading NLLB model (first use / after idle unload)");
-            let t = Translator::new(dir, &Config::default())
+            let tokenizer =
+                ct2rs::tokenizers::auto::Tokenizer::new(dir).map_err(|e| e.to_string())?;
+            let t = Translator::with_tokenizer(dir, NllbTokenizer(tokenizer), &Config::default())
                 .map_err(|e| format!("Failed to load NLLB translator from {MODEL_DIR}: {e}"))?;
             self.translator = Some(t);
         }
@@ -133,23 +158,213 @@ pub fn format_srt(items: &[SrtItem]) -> String {
 
 /// Maps ISO language code to NLLB target code (e.g., `fa` -> `pes_Arab`).
 pub fn map_language_code(tgt: &str) -> Option<&'static str> {
-    match tgt {
-        "fa" => Some("pes_Arab"),
-        "en" => Some("eng_Latn"),
-        "it" => Some("ita_Latn"),
-        "fr" => Some("fra_Latn"),
+    match tgt.to_ascii_lowercase().trim_end_matches("-orig") {
+        "ace" => Some("ace_Arab"),
+        "acm" => Some("acm_Arab"),
+        "acq" => Some("acq_Arab"),
+        "aeb" => Some("aeb_Arab"),
+        "af" => Some("afr_Latn"),
+        "ajp" => Some("ajp_Arab"),
+        "ak" | "tw" => Some("twi_Latn"),
+        "als" | "sq" => Some("als_Latn"),
+        "am" => Some("amh_Ethi"),
+        "apc" => Some("apc_Arab"),
+        "ar" | "arb" => Some("arb_Arab"),
+        "ars" => Some("ars_Arab"),
+        "ary" => Some("ary_Arab"),
+        "arz" => Some("arz_Arab"),
+        "as" => Some("asm_Beng"),
+        "ast" => Some("ast_Latn"),
+        "awa" => Some("awa_Deva"),
+        "ay" | "ayr" => Some("ayr_Latn"),
+        "az" | "azj" => Some("azj_Latn"),
+        "azb" => Some("azb_Arab"),
+        "ba" => Some("bak_Cyrl"),
+        "ban" => Some("ban_Latn"),
+        "be" => Some("bel_Cyrl"),
+        "bem" => Some("bem_Latn"),
+        "bg" => Some("bul_Cyrl"),
+        "bh" | "bho" => Some("bho_Deva"),
+        "bjn" => Some("bjn_Arab"),
+        "bm" => Some("bam_Latn"),
+        "bn" => Some("ben_Beng"),
+        "bo" => Some("bod_Tibt"),
+        "bs" => Some("bos_Latn"),
+        "bug" => Some("bug_Latn"),
+        "ca" => Some("cat_Latn"),
+        "ceb" => Some("ceb_Latn"),
+        "cjk" => Some("cjk_Latn"),
+        "ckb" => Some("ckb_Arab"),
+        "crh" => Some("crh_Latn"),
+        "cs" => Some("ces_Latn"),
+        "cy" => Some("cym_Latn"),
+        "da" => Some("dan_Latn"),
         "de" => Some("deu_Latn"),
-        "ru" => Some("rus_Cyrl"),
+        "dik" => Some("dik_Latn"),
+        "dyu" => Some("dyu_Latn"),
+        "dz" => Some("dzo_Tibt"),
+        "ee" => Some("ewe_Latn"),
+        "el" => Some("ell_Grek"),
+        "en" => Some("eng_Latn"),
+        "eo" => Some("epo_Latn"),
         "es" => Some("spa_Latn"),
-        "ar" => Some("arb_Arab"),
+        "et" => Some("est_Latn"),
+        "eu" => Some("eus_Latn"),
+        "fa" | "pes" => Some("pes_Arab"),
+        "ff" | "fuv" => Some("fuv_Latn"),
+        "fi" => Some("fin_Latn"),
+        "fil" | "tl" => Some("tgl_Latn"),
+        "fj" => Some("fij_Latn"),
+        "fo" => Some("fao_Latn"),
+        "fon" => Some("fon_Latn"),
+        "fr" => Some("fra_Latn"),
+        "fur" => Some("fur_Latn"),
+        "ga" => Some("gle_Latn"),
+        "gaz" | "om" => Some("gaz_Latn"),
+        "gd" => Some("gla_Latn"),
+        "gl" => Some("glg_Latn"),
+        "gn" => Some("grn_Latn"),
+        "gu" => Some("guj_Gujr"),
+        "ha" => Some("hau_Latn"),
+        "he" | "iw" => Some("heb_Hebr"),
         "hi" => Some("hin_Deva"),
+        "hne" => Some("hne_Deva"),
+        "hr" => Some("hrv_Latn"),
+        "ht" => Some("hat_Latn"),
+        "hu" => Some("hun_Latn"),
+        "hy" => Some("hye_Armn"),
+        "id" => Some("ind_Latn"),
+        "ig" => Some("ibo_Latn"),
+        "ilo" => Some("ilo_Latn"),
+        "is" => Some("isl_Latn"),
+        "it" => Some("ita_Latn"),
+        "ja" => Some("jpn_Jpan"),
+        "jv" => Some("jav_Latn"),
+        "ka" => Some("kat_Geor"),
+        "kab" => Some("kab_Latn"),
+        "kac" => Some("kac_Latn"),
+        "kam" => Some("kam_Latn"),
+        "kbp" => Some("kbp_Latn"),
+        "kea" => Some("kea_Latn"),
+        "kg" => Some("kon_Latn"),
+        "khk" | "mn" => Some("khk_Cyrl"),
+        "ki" => Some("kik_Latn"),
+        "kk" => Some("kaz_Cyrl"),
+        "km" => Some("khm_Khmr"),
+        "kmb" => Some("kmb_Latn"),
+        "kmr" | "ku" => Some("kmr_Latn"),
+        "kn" => Some("kan_Knda"),
+        "knc" => Some("knc_Arab"),
+        "ko" => Some("kor_Hang"),
+        "ks" => Some("kas_Arab"),
+        "ky" => Some("kir_Cyrl"),
+        "lb" => Some("ltz_Latn"),
+        "lg" => Some("lug_Latn"),
+        "li" => Some("lim_Latn"),
+        "lij" => Some("lij_Latn"),
+        "lmo" => Some("lmo_Latn"),
+        "ln" => Some("lin_Latn"),
+        "lo" => Some("lao_Laoo"),
+        "lt" => Some("lit_Latn"),
+        "ltg" => Some("ltg_Latn"),
+        "lua" => Some("lua_Latn"),
+        "luo" => Some("luo_Latn"),
+        "lus" => Some("lus_Latn"),
+        "lv" | "lvs" => Some("lvs_Latn"),
+        "mag" => Some("mag_Deva"),
+        "mai" => Some("mai_Deva"),
+        "mg" | "plt" => Some("plt_Latn"),
+        "mi" => Some("mri_Latn"),
+        "min" => Some("min_Latn"),
+        "mk" => Some("mkd_Cyrl"),
+        "ml" => Some("mal_Mlym"),
+        "mni" => Some("mni_Beng"),
+        "mos" => Some("mos_Latn"),
+        "mr" => Some("mar_Deva"),
+        "ms" | "zsm" => Some("zsm_Latn"),
+        "mt" => Some("mlt_Latn"),
+        "my" => Some("mya_Mymr"),
+        "nb" | "no" => Some("nob_Latn"),
+        "ne" | "npi" => Some("npi_Deva"),
+        "nl" => Some("nld_Latn"),
+        "nn" => Some("nno_Latn"),
+        "nso" => Some("nso_Latn"),
+        "nus" => Some("nus_Latn"),
+        "ny" => Some("nya_Latn"),
+        "oc" => Some("oci_Latn"),
+        "or" | "ory" => Some("ory_Orya"),
+        "pa" => Some("pan_Guru"),
+        "pag" => Some("pag_Latn"),
+        "pap" => Some("pap_Latn"),
+        "pbt" | "ps" => Some("pbt_Arab"),
+        "pl" => Some("pol_Latn"),
+        "prs" => Some("prs_Arab"),
+        "pt" | "pt-br" | "pt-pt" => Some("por_Latn"),
+        "qu" | "quy" => Some("quy_Latn"),
+        "rn" => Some("run_Latn"),
+        "ro" => Some("ron_Latn"),
+        "ru" => Some("rus_Cyrl"),
+        "rw" => Some("kin_Latn"),
+        "sa" => Some("san_Deva"),
+        "sat" => Some("sat_Beng"),
+        "sc" => Some("srd_Latn"),
+        "scn" => Some("scn_Latn"),
+        "sd" => Some("snd_Arab"),
+        "sg" => Some("sag_Latn"),
+        "shn" => Some("shn_Mymr"),
+        "si" => Some("sin_Sinh"),
+        "sk" => Some("slk_Latn"),
+        "sl" => Some("slv_Latn"),
+        "sm" => Some("smo_Latn"),
+        "sn" => Some("sna_Latn"),
+        "so" => Some("som_Latn"),
+        "sr" => Some("srp_Cyrl"),
+        "ss" => Some("ssw_Latn"),
+        "st" => Some("sot_Latn"),
+        "su" => Some("sun_Latn"),
+        "sv" => Some("swe_Latn"),
+        "sw" | "swh" => Some("swh_Latn"),
+        "szl" => Some("szl_Latn"),
+        "ta" => Some("tam_Taml"),
+        "taq" => Some("taq_Latn"),
+        "te" => Some("tel_Telu"),
+        "tg" => Some("tgk_Cyrl"),
+        "th" => Some("tha_Thai"),
+        "ti" => Some("tir_Ethi"),
+        "tk" => Some("tuk_Latn"),
+        "tn" => Some("tsn_Latn"),
+        "tpi" => Some("tpi_Latn"),
         "tr" => Some("tur_Latn"),
+        "ts" => Some("tso_Latn"),
+        "tt" => Some("tat_Cyrl"),
+        "tum" => Some("tum_Latn"),
+        "tzm" => Some("tzm_Tfng"),
+        "ug" => Some("uig_Arab"),
+        "uk" => Some("ukr_Cyrl"),
+        "umb" => Some("umb_Latn"),
+        "ur" => Some("urd_Arab"),
+        "uz" | "uzn" => Some("uzn_Latn"),
+        "vec" => Some("vec_Latn"),
+        "vi" => Some("vie_Latn"),
+        "war" => Some("war_Latn"),
+        "wo" => Some("wol_Latn"),
+        "xh" => Some("xho_Latn"),
+        "ydd" => Some("ydd_Hebr"),
+        "yo" => Some("yor_Latn"),
+        "yue" => Some("yue_Hant"),
+        "zh" | "zh-cn" | "zh-hans" => Some("zho_Hans"),
+        "zh-hant" | "zh-tw" => Some("zho_Hant"),
+        "zu" => Some("zul_Latn"),
         _ => None,
     }
 }
 
 /// Translates batch of texts to target NLLB language code. Blocking (CPU-bound).
-fn translate_batch_blocking(texts: &[String], target_lang: &str) -> Result<Vec<String>, String> {
+fn translate_batch_blocking(
+    texts: &[String],
+    source_lang: &str,
+    target_lang: &str,
+) -> Result<Vec<String>, String> {
     if texts.is_empty() {
         return Ok(Vec::new());
     }
@@ -157,7 +372,12 @@ fn translate_batch_blocking(texts: &[String], target_lang: &str) -> Result<Vec<S
     // Join multi-line texts with spaces.
     let sources: Vec<String> = texts
         .iter()
-        .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+        .map(|s| {
+            format!(
+                "{source_lang} {}",
+                s.split_whitespace().collect::<Vec<_>>().join(" ")
+            )
+        })
         .collect();
 
     let prefixes: Vec<Vec<String>> = sources
@@ -202,10 +422,11 @@ fn is_nllb_lang_tag(w: &str) -> bool {
         && bytes[5..].iter().all(|c| c.is_ascii_lowercase())
 }
 
-/// Reads English SRT file, translates texts to NLLB target_lang, preserving timestamps.
+/// Reads a source SRT file, translates texts to NLLB target_lang, preserving timestamps.
 pub async fn translate_srt<F>(
     input_path: &Path,
     output_path: &Path,
+    source_lang: &str,
     target_lang: &str,
     _threads: usize,
     mut progress_cb: F,
@@ -226,6 +447,7 @@ where
     }
 
     let total_items = items.len();
+    let source_lang = source_lang.to_string();
     let target_lang = target_lang.to_string();
     let start_time = std::time::Instant::now();
 
@@ -238,7 +460,7 @@ where
         let mut processed = 0;
         for chunk in items.chunks_mut(batch_size) {
             let texts: Vec<String> = chunk.iter().map(|item| item.text.clone()).collect();
-            let translated = translate_batch_blocking(&texts, &target_lang)?;
+            let translated = translate_batch_blocking(&texts, &source_lang, &target_lang)?;
             for (item, t) in chunk.iter_mut().zip(translated) {
                 item.text = t;
             }
@@ -318,6 +540,27 @@ mod tests {
         assert_eq!(clean_special_tokens("testing"), "testing");
     }
 
+    #[tokio::test]
+    #[ignore]
+    async fn test_real_translation_ja_to_en() {
+        let dir = crate::common::dir::TempDirGuard::create("nllb_ja_test", 0).unwrap();
+        let input = dir.path().join("ja.srt");
+        let output = dir.path().join("en.srt");
+        let timestamp = "00:00:01,000 --> 00:00:03,000";
+        std::fs::write(&input, format!("1\n{timestamp}\n今日はいい天気です。\n")).unwrap();
+        translate_srt(&input, &output, "jpn_Jpan", "eng_Latn", 4, |_, _, _, _| {})
+            .await
+            .unwrap();
+        let cues = parse_srt(&std::fs::read_to_string(output).unwrap());
+        assert_eq!(cues.len(), 1);
+        assert_eq!(cues[0].timestamp, timestamp);
+        assert!(
+            cues[0].text.to_lowercase().contains("weather"),
+            "{}",
+            cues[0].text
+        );
+    }
+
     /// Real translation test with NLLB model. Requires `files/models/nllb`.
     #[tokio::test]
     #[ignore]
@@ -332,7 +575,7 @@ mod tests {
         )
         .unwrap();
 
-        translate_srt(&input, &output, "pes_Arab", 4, |_, _, _, _| {})
+        translate_srt(&input, &output, "eng_Latn", "pes_Arab", 4, |_, _, _, _| {})
             .await
             .expect("translation failed");
 

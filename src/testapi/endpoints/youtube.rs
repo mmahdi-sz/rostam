@@ -113,9 +113,29 @@ pub async fn test_youtube_subtitle(Json(req): Json<SubtitleReq>) -> Json<serde_j
             anyhow::ensure!(result.is_err(), "missing subtitle incorrectly succeeded");
             return Ok(serde_json::json!({"ok": true, "rejected": true, "trace": trace}));
         }
+        if matches!(req.scenario.as_str(), "translation_ja_en" | "translation_no_source") {
+            let targets = vec!["en".to_string()];
+            let timestamp = "00:00:01,000 --> 00:00:03,000";
+            let has_source = req.scenario == "translation_ja_en";
+            if has_source {
+                tokio::fs::write(dir.path().join("sub.ja-orig.srt"), format!("1\n{timestamp}\n今日はいい天気です。\n")).await?;
+            }
+            let result = crate::youtube::download::subtitle::translate_subtitles(
+                &api, 0, 0, trace, dir.path(), &targets, None, 0,
+            ).await;
+            if !has_source {
+                anyhow::ensure!(result.as_ref().is_err_and(|e| e == "no supported source subtitle"), "missing source did not fail");
+                return Ok(serde_json::json!({"ok": true, "rejected": true, "trace": trace}));
+            }
+            result.map_err(anyhow::Error::msg)?;
+            let translated = tokio::fs::read_to_string(dir.path().join("translated_en.srt")).await?;
+            let cues = crate::youtube::translator::parse_srt(&translated);
+            anyhow::ensure!(cues.len() == 1 && cues[0].timestamp == timestamp && cues[0].text.to_lowercase().contains("weather"), "expected English translation with original timing");
+            return Ok(serde_json::json!({"ok": true, "subtitle": translated, "trace": trace}));
+        }
         if req.scenario == "translation" {
             tokio::fs::write(dir.path().join("sub.en-orig.srt"), include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/youtube_rolling.srt"))).await?;
-            crate::youtube::download::subtitle::translate_subtitles(&api, 0, 0, trace, dir.path(), &langs, 0).await.map_err(anyhow::Error::msg)?;
+            crate::youtube::download::subtitle::translate_subtitles(&api, 0, 0, trace, dir.path(), &langs, None, 0).await.map_err(anyhow::Error::msg)?;
             anyhow::ensure!(crate::youtube::download::subtitle::subtitle_file_exists_for_lang(dir.path(), "fa"), "local translation missing");
             crate::youtube::download::subtitle::clean_subtitles_in_dir(dir.path()).map_err(anyhow::Error::msg)?;
             let translated = tokio::fs::read_to_string(dir.path().join("translated_fa.srt")).await?;

@@ -15,6 +15,7 @@ pub async fn translate_subtitles(
     trace_id: u64,
     dir: &std::path::Path,
     target_langs: &[String],
+    source_hint: Option<&str>,
     user_id: i64,
 ) -> Result<(), String> {
     if target_langs.is_empty() {
@@ -22,28 +23,8 @@ pub async fn translate_subtitles(
     }
 
     super::files::clean_subtitles_in_dir(dir)?;
-    let mut english_srt = None;
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Ok(());
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("srt") {
-            let fname = path
-                .file_name()
-                .unwrap_or_default()
-                .to_str()
-                .unwrap_or_default()
-                .to_string();
-            if fname.contains(".en.") || fname.contains(".en-") || fname.contains("_en.srt") {
-                english_srt = Some(path.clone());
-            }
-        }
-    }
-
-    let Some(english_srt) = english_srt else {
-        return Ok(());
+    let Some((source_srt, source_lang)) = find_source_subtitle(dir, source_hint) else {
+        return Err("no supported source subtitle".to_string());
     };
 
     if msg_id > 0 {
@@ -57,7 +38,7 @@ pub async fn translate_subtitles(
     }
 
     for tgt in target_langs {
-        if subtitle_file_exists_for_lang(dir, tgt) || tgt == "en" || tgt.starts_with("en-") {
+        if subtitle_file_exists_for_lang(dir, tgt) {
             continue;
         }
 
@@ -81,8 +62,9 @@ pub async fn translate_subtitles(
         let mut last_percent_int: i32 = -1;
 
         let res = crate::youtube::translator::translate_srt(
-            &english_srt,
+            &source_srt,
             &out_path,
+            source_lang,
             nllb_lang,
             num_threads,
             move |done, total, elapsed_secs, eta_secs| {
@@ -134,6 +116,36 @@ pub async fn translate_subtitles(
     Ok(())
 }
 
+pub(super) fn find_source_subtitle(
+    dir: &std::path::Path,
+    source_hint: Option<&str>,
+) -> Option<(std::path::PathBuf, &'static str)> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?;
+            let lang = super::files::subtitle_lang_of(name)?;
+            let original = lang.ends_with("-orig");
+            let hinted = source_hint == Some(lang.as_str());
+            if (!original && !hinted && lang != "en")
+                || name.starts_with("translated_")
+                || !name.ends_with(".srt")
+            {
+                return None;
+            }
+            let code = crate::youtube::translator::map_language_code(&lang)?;
+            let text = std::fs::read_to_string(&path).ok()?;
+            crate::youtube::translator::parse_srt(&text)
+                .iter()
+                .any(|cue| cue.timestamp.contains("-->") && !cue.text.is_empty())
+                .then_some((!original, !hinted, path, code))
+        })
+        .min()
+        .map(|(_, _, path, code)| (path, code))
+}
+
 /// Ensures target subtitles exist by falling back to local translation (NLLB).
 pub async fn ensure_translated_subtitles(
     api: &Bot,
@@ -143,6 +155,7 @@ pub async fn ensure_translated_subtitles(
     msg_id: i32,
     dir: &std::path::Path,
     target_langs: &[String],
+    source_hint: Option<&str>,
     trace_id: u64,
     user_id: i64,
 ) {
@@ -163,6 +176,42 @@ pub async fn ensure_translated_subtitles(
     if missing_translatable.is_empty() {
         return;
     }
+    if find_source_subtitle(dir, source_hint).is_none() {
+        super::download_subtitles_separately(
+            cookie_spec,
+            webpage_url,
+            dir,
+            &[".*-orig".to_string()],
+            trace_id,
+        )
+        .await;
+    }
+    if find_source_subtitle(dir, source_hint).is_none()
+        && let Some(lang) =
+            source_hint.filter(|lang| crate::youtube::translator::map_language_code(lang).is_some())
+        && !missing_translatable.iter().any(|missing| missing == lang)
+    {
+        super::download_subtitles_separately(
+            cookie_spec,
+            webpage_url,
+            dir,
+            &[lang.to_owned()],
+            trace_id,
+        )
+        .await;
+    }
+    if find_source_subtitle(dir, source_hint).is_none()
+        && !missing_translatable.iter().any(|lang| lang == "en")
+    {
+        super::download_subtitles_separately(
+            cookie_spec,
+            webpage_url,
+            dir,
+            &["en".to_string()],
+            trace_id,
+        )
+        .await;
+    }
     if let Err(e) = translate_subtitles(
         api,
         chat_id,
@@ -170,6 +219,7 @@ pub async fn ensure_translated_subtitles(
         trace_id,
         dir,
         &missing_translatable,
+        source_hint,
         user_id,
     )
     .await

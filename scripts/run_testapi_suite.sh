@@ -1107,7 +1107,13 @@ echo "✅ Extended TestAPI Endpoint Suite passed!"
 
 echo ""
 
-for YT_SCENARIO in missing hardsub remux codec rolling; do
+YT_SCENARIOS=(missing hardsub remux codec rolling translation_no_source)
+if [ -r files/models/nllb/model.bin ]; then
+    YT_SCENARIOS+=(translation_ja_en)
+else
+    echo "Skipping real NLLB translation test: files/models/nllb/model.bin is unavailable."
+fi
+for YT_SCENARIO in "${YT_SCENARIOS[@]}"; do
     echo "Testing /test/youtube/subtitle ($YT_SCENARIO)"
     YT_SUB=$(curl --fail --max-time 180 -s -X POST "$BASE_URL/test/youtube/subtitle" -H 'Content-Type: application/json' -d "{\"scenario\":\"$YT_SCENARIO\"}")
     echo "$YT_SUB" | jq -e '.ok == true' >/dev/null || { echo "$YT_SUB"; exit 1; }

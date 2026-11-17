@@ -554,6 +554,7 @@ async fn download_single_playlist_item_attempt(
         selection,
         cookie_spec,
         video_url,
+        None,
         req.duration,
         trace_id,
         req.user_id.unwrap_or(0),

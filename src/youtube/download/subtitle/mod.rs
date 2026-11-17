@@ -30,6 +30,7 @@ pub async fn process_subtitle_pipeline(
     selection: &Selection,
     cookie_spec: &str,
     webpage_url: &str,
+    source_hint: Option<&str>,
     duration_secs: Option<u64>,
     trace_id: u64,
     user_id: i64,
@@ -47,6 +48,7 @@ pub async fn process_subtitle_pipeline(
         msg_id,
         dir,
         &selection.subtitle_langs,
+        source_hint,
         trace_id,
         user_id,
     )
@@ -147,9 +149,7 @@ pub async fn process_subtitle_pipeline(
     }
 }
 
-/// Downloads subtitles for `target_langs` (plus English, always, as a
-/// translation source/fallback) as standalone .srt files named `sub.<ext>`.
-/// Passing an empty slice fetches English only.
+/// Downloads requested subtitle tracks as standalone SRT files.
 pub async fn download_subtitles_separately(
     cookie_spec: &str,
     webpage_url: &str,
@@ -157,15 +157,11 @@ pub async fn download_subtitles_separately(
     target_langs: &[String],
     trace_id: u64,
 ) {
-    let mut langs = target_langs.to_vec();
-    if !langs.iter().any(|lang| lang == "en") {
-        langs.push("en".to_string());
-    }
-    for lang in langs {
-        if subtitle_file_exists_for_lang(dir, &lang) {
+    for lang in target_langs {
+        if subtitle_file_exists_for_lang(dir, lang) {
             continue;
         }
-        let sub_langs = if lang == "en" { "en-orig,en" } else { &lang };
+        let sub_langs = if lang == "en" { "en-orig,en" } else { lang };
 
         let mut cmd = tokio::process::Command::new("yt-dlp");
         cmd.kill_on_drop(true)
@@ -176,7 +172,6 @@ pub async fn download_subtitles_separately(
             .arg(cookie_spec)
             .arg("--extractor-args")
             .arg("youtubetab:skip=authcheck")
-            .arg("--no-warnings")
             .arg("--no-playlist")
             .arg("--ignore-errors")
             .arg("--sub-format")
@@ -199,7 +194,11 @@ pub async fn download_subtitles_separately(
         );
         match tokio::time::timeout(std::time::Duration::from_secs(60), cmd.output()).await {
             Ok(Ok(out)) => {
-                let available = subtitle_file_exists_for_lang(dir, &lang);
+                let available = if lang == ".*-orig" {
+                    translation::find_source_subtitle(dir, None).is_some()
+                } else {
+                    subtitle_file_exists_for_lang(dir, lang)
+                };
                 log_trace(
                     trace_id,
                     "download_subtitles_separately_done",

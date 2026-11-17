@@ -451,6 +451,10 @@ pub(crate) async fn run_download(
             &selection,
             &current_cookie_spec,
             &req.webpage_url,
+            req.audio_languages
+                .iter()
+                .find(|lang| lang.is_original)
+                .map(|lang| lang.code.as_str()),
             req.duration,
             trace_id,
             user_id,

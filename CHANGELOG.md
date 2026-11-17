@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.11] - 2026-11-17
+
+### Fixed
+- When YouTube cannot deliver a requested subtitle, translate the original subtitle locally with NLLB, including Japanese to English.
+- Preserve subtitle timestamps and the selected delivery mode during translation.
+- Cover successful Japanese to English translation and missing source subtitles in TestAPI.
+
 ## [2.7.10] - 2026-11-17
 
 ### Fixed
