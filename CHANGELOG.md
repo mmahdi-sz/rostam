@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.13] - 2026-11-18
+
+### Fixed
+- Prefer native M4A for YouTube audio downloads and fall back to MP3 when M4A is unavailable.
+- Remove the People & Blogs genre and set matching Artist and Album Artist tags.
+- Send YouTube playlist audio as audio files and preserve each video's original playlist position in the track tag.
+- Reject audio files above the Telegram upload limit with a localized message.
+
 ## [2.7.12] - 2026-11-18
 
 ### Fixed

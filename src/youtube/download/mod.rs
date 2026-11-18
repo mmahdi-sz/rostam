@@ -1,3 +1,4 @@
+pub(crate) mod audio;
 mod cancel;
 pub mod helpers;
 pub mod notice;
@@ -8,12 +9,12 @@ pub mod sanitize;
 mod selection_helpers;
 pub mod single;
 mod split;
-mod status;
+pub(crate) mod status;
 mod store;
 pub mod stream;
 pub mod subtitle;
 pub mod types;
-mod upload;
+pub(crate) mod upload;
 
 pub use cancel::cancel_download;
 pub use runner::spawn_download;

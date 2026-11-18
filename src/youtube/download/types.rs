@@ -19,9 +19,13 @@ pub enum AudioQuality {
 impl AudioQuality {
     pub fn format_spec(self) -> &'static str {
         match self {
-            Self::Best => "bestaudio",
-            Self::Medium => "bestaudio[abr<=128]/bestaudio",
-            Self::Low => "bestaudio[abr<=64]/bestaudio",
+            Self::Best => "bestaudio[ext=m4a]/bestaudio/best",
+            Self::Medium => {
+                "bestaudio[ext=m4a][abr<=128]/bestaudio[ext=m4a]/bestaudio[abr<=128]/bestaudio/best"
+            }
+            Self::Low => {
+                "bestaudio[ext=m4a][abr<=64]/bestaudio[ext=m4a]/bestaudio[abr<=64]/bestaudio/best"
+            }
         }
     }
     pub fn label_key(self) -> &'static str {
@@ -75,7 +79,6 @@ pub struct YoutubeRequest {
     pub cookie_spec: String,
     pub cookie_pool: Option<Arc<tokio::sync::Mutex<crate::cookie_pool::CookiePool>>>,
     pub title: String,
-    pub channel: String,
     pub duration: Option<u64>,
     pub thumbnail_url: Option<String>,
     pub formats: Vec<VideoFormatOption>,

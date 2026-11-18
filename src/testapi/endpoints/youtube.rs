@@ -170,3 +170,155 @@ pub async fn test_youtube_subtitle(Json(req): Json<SubtitleReq>) -> Json<serde_j
         Err(e) => Json(serde_json::json!({"ok": false, "error": e.to_string(), "trace": trace})),
     }
 }
+
+pub async fn test_youtube_audio(Json(req): Json<serde_json::Value>) -> Json<serde_json::Value> {
+    let trace = crate::log::next_trace_id();
+    crate::log_actor_id!("youtube", trace, 12345, "clicked" => "test_audio");
+    let result = async {
+        use crate::youtube::download::{audio, status, types::AudioQuality, upload};
+        use tokio::process::Command;
+
+        let directory = crate::common::dir::TempDirGuard::create("test_youtube_audio", trace)?;
+        let dir = directory.path();
+        let scenario = req["scenario"].as_str().unwrap_or_default();
+        if scenario == "oversized" {
+            anyhow::ensure!(
+                audio::size_error(2000 * 1024 * 1024).is_none(),
+                "rejected allowed size"
+            );
+            let reason = audio::size_error(2000 * 1024 * 1024 + 1)
+                .ok_or_else(|| anyhow::anyhow!("accepted oversized audio"))?;
+            return Ok(
+                serde_json::json!({"ok": true, "rejected": true, "caption": reason,
+                "i18n_keys": ["youtube.audio.oversized"], "trace": trace}),
+            );
+        }
+        if scenario == "invalid" {
+            let error = audio::probe(dir.join("missing.m4a").to_str().unwrap_or_default()).await;
+            anyhow::ensure!(error.is_err(), "accepted missing audio");
+            return Ok(serde_json::json!({"ok": true, "rejected": true, "trace": trace}));
+        }
+        anyhow::ensure!(
+            matches!(scenario, "m4a" | "mp3" | "single" | "upload_failed"),
+            "unknown scenario"
+        );
+        let index = match scenario {
+            "m4a" => Some(1),
+            "single" => None,
+            _ => Some(3),
+        };
+        let expected_track = index.unwrap_or(8).to_string();
+        let extension = if scenario == "mp3" { "mp3" } else { "m4a" };
+        let mut formats = Vec::new();
+        for (ext, encoder, codec) in [("m4a", "aac", "aac"), ("webm", "libopus", "opus")] {
+            if scenario == "mp3" && ext == "m4a" {
+                continue;
+            }
+            let source = dir.join(format!("source.{ext}"));
+            let output = Command::new(crate::config::ffmpeg_path())
+                .args([
+                    "-v", "error", "-f", "lavfi", "-i", "anullsrc", "-t", "0.2", "-c:a", encoder,
+                ])
+                .arg(&source)
+                .output()
+                .await?;
+            anyhow::ensure!(
+                output.status.success(),
+                "fixture generation failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            formats.push(serde_json::json!({
+                "format_id": ext, "url": format!("file://{}", source.display()),
+                "ext": ext, "vcodec": "none", "acodec": codec,
+            }));
+        }
+        let info_path = dir.join("info.json");
+        tokio::fs::write(
+            &info_path,
+            serde_json::to_vec(&serde_json::json!({
+                "id": "fixture", "title": "Audio fixture", "uploader": "Fixture Artist",
+                "album_artist": "Other Artist", "genre": "People & Blogs",
+                "categories": ["People & Blogs"], "track_number": 8, "formats": formats,
+            }))?,
+        )
+        .await?;
+        let mut command = Command::new("yt-dlp");
+        command
+            .args(["--ignore-config", "--enable-file-urls", "--load-info-json"])
+            .arg(info_path)
+            .args(["-f", AudioQuality::Best.format_spec(), "-o"])
+            .arg(dir.join("result.%(ext)s"));
+        audio::configure(&mut command, index);
+        let output = command.output().await?;
+        anyhow::ensure!(
+            output.status.success(),
+            "yt-dlp failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let path = dir.join(format!("result.{extension}"));
+        let meta = audio::probe(path.to_str().unwrap_or_default()).await?;
+        let probe = Command::new(crate::config::ffprobe_path())
+            .args(["-v", "error", "-show_entries", "format_tags", "-of", "json"])
+            .arg(&path)
+            .output()
+            .await?;
+        anyhow::ensure!(probe.status.success(), "ffprobe failed");
+        let tags = &serde_json::from_slice::<serde_json::Value>(&probe.stdout)?["format"]["tags"];
+        anyhow::ensure!(
+            tags["artist"] == "Fixture Artist"
+                && tags["album_artist"] == "Fixture Artist"
+                && tags["genre"].is_null()
+                && tags["track"] == expected_track,
+            "unexpected tags: {tags}"
+        );
+        let caption = audio::caption(
+            "Audio fixture",
+            "Best",
+            &meta.codec,
+            "0",
+            "https://youtu.be/fixture",
+        );
+        let entities = crate::i18n::entities_for_text(&caption);
+        let port = std::env::var("TESTAPI_PORT").unwrap_or_else(|_| "14379".to_string());
+        let api_base = if scenario == "upload_failed" {
+            "missing"
+        } else {
+            "botdummy_token"
+        };
+        let api = frankenstein::client_reqwest::Bot::new_url(format!(
+            "http://127.0.0.1:{port}/{api_base}"
+        ));
+        let mut pending = std::pin::pin!(std::future::pending());
+        let sent = upload::send_audio_file(
+            &api,
+            12345,
+            path.to_str().unwrap_or_default(),
+            "Audio fixture".to_owned(),
+            meta.artist.unwrap_or_default(),
+            caption.clone(),
+            entities.clone(),
+            12345,
+            999,
+            trace,
+            &mut pending,
+            trace,
+        )
+        .await;
+        anyhow::ensure!(
+            sent == (scenario != "upload_failed"),
+            "unexpected upload result"
+        );
+        Ok(serde_json::json!({
+            "ok": true, "trace": trace, "codec": meta.codec, "extension": meta.ext,
+            "tags": tags, "caption": caption, "i18n_keys": ["youtube.audio.caption"],
+            "caption_entities": entities, "keyboard": status::cancel_keyboard(trace),
+            "send_method": "sendAudio", "uploaded": sent, "actor_logged": true,
+        }))
+    }
+    .await;
+    Json(result.unwrap_or_else(|err: anyhow::Error| {
+        serde_json::json!({
+            "ok": false, "error": err.to_string(), "trace": trace,
+        })
+    }))
+}

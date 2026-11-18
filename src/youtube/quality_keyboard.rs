@@ -80,7 +80,6 @@ pub async fn send_quality_prompt(
         cookie_spec: cookie_spec.to_string(),
         cookie_pool,
         title: info.title.clone(),
-        channel: info.channel.clone(),
         duration: info.duration,
         thumbnail_url: info.thumbnail.clone(),
         formats: info.video_formats.clone(),
@@ -414,10 +413,11 @@ async fn handle_audio_quality_callback(api: &Bot, cq: &CallbackQuery, data: &str
         answer_callback(api, cq, "").await;
         return true;
     };
-    if get_request(request_id).is_none() {
+    let Some(request) = get_request(request_id) else {
         answer_callback(api, cq, "youtube.download.request_expired").await;
         return true;
-    }
+    };
+    crate::log_actor!("youtube", request.trace_id, &cq.from, "clicked" => data);
     if !super::download::mark_in_progress(request_id) {
         answer_callback(api, cq, "active_job_running").await;
         return true;

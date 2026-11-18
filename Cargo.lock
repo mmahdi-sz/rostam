@@ -3080,7 +3080,7 @@ dependencies = [
 
 [[package]]
 name = "ros-telegram-bot"
-version = "2.7.12"
+version = "2.7.13"
 dependencies = [
  "anyhow",
  "ar",

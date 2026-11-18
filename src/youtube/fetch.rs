@@ -562,8 +562,15 @@ async fn fetch_playlist_items(
 
     // --dump-json on a playlist prints NDJSON (one JSON object per line).
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let items = parse_playlist_items(&stdout);
+    let count = items.len();
+    log_trace(trace_id, "playlist_items_parsed", &format!("count={count}"));
+    Ok((count, items))
+}
+
+fn parse_playlist_items(ndjson: &str) -> Vec<super::types::PlaylistItem> {
     let mut items = Vec::new();
-    for line in stdout.lines() {
+    for line in ndjson.lines() {
         let line = line.trim();
         if line.is_empty() {
             continue;
@@ -581,6 +588,10 @@ async fn fetch_playlist_items(
                     .and_then(|v| v.as_f64())
                     .map(|d| d as u64);
                 items.push(super::types::PlaylistItem {
+                    playlist_index: entry
+                        .get("playlist_index")
+                        .and_then(serde_json::Value::as_u64)
+                        .filter(|&index| index > 0),
                     id: id.to_string(),
                     title: title.to_string(),
                     duration,
@@ -589,9 +600,7 @@ async fn fetch_playlist_items(
         }
     }
 
-    let count = items.len();
-    log_trace(trace_id, "playlist_items_parsed", &format!("count={count}"));
-    Ok((count, items))
+    items
 }
 
 fn extract_audio_languages(json: &serde_json::Value) -> Vec<AudioLanguage> {
@@ -772,6 +781,23 @@ fn codec_summary(video_formats: &[VideoFormatOption]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn playlist_indices_survive_skipped_entries() {
+        let items = super::parse_playlist_items(concat!(
+            "{\"id\":\"repeat\",\"title\":\"First\",\"playlist_index\":1}\n",
+            "{\"id\":\"unavailable\",\"playlist_index\":2}\n",
+            "{\"id\":\"repeat\",\"title\":\"Third\",\"playlist_index\":3}\n",
+            "{\"id\":\"unknown\",\"title\":\"Unknown\",\"playlist_index\":0}\n",
+        ));
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.playlist_index)
+                .collect::<Vec<_>>(),
+            [Some(1), Some(3), None],
+        );
+    }
+
     use super::*;
 
     #[test]

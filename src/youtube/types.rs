@@ -20,6 +20,7 @@ pub struct VideoInfo {
 
 #[derive(Clone, Debug)]
 pub struct PlaylistItem {
+    pub playlist_index: Option<u64>,
     pub id: String,
     pub title: String,
     pub duration: Option<u64>,

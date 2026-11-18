@@ -1120,3 +1120,13 @@ for YT_SCENARIO in "${YT_SCENARIOS[@]}"; do
 done
 
 echo "All tests passed successfully."
+
+for scenario in m4a mp3 single invalid oversized upload_failed; do
+    echo "Testing /test/youtube/audio ($scenario)"
+    result=$(curl --fail --max-time 40 -s -X POST "$BASE_URL/test/youtube/audio" \
+        -H 'Content-Type: application/json' -d "{\"scenario\":\"$scenario\"}")
+    if ! jq -e '.ok == true' <<< "$result" > /dev/null; then
+        echo "$result"
+        exit 1
+    fi
+done

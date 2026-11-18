@@ -26,7 +26,7 @@ use super::upload::{
     build_single_params, send_audio_file, send_media_with_progress,
 };
 
-const MAX_SIZE_MB: u64 = 2000;
+pub(super) const MAX_SIZE_MB: u64 = 2000;
 const TARGET_PART_MB: u64 = 1700;
 
 pub(crate) async fn run_download(
@@ -152,11 +152,8 @@ pub(crate) async fn run_download(
         return;
     }
 
+    let _dir_guard = crate::common::dir::TempDirGuard::from_path(dir.clone());
     let output_template = format!("{}/%(id)s.%(ext)s", dir.display());
-
-    let progress_template = format!(
-        "YT_PROGRESS|%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s"
-    );
 
     let initial = ProgressSnapshot {
         percent: "0.0%".into(),
@@ -176,7 +173,7 @@ pub(crate) async fn run_download(
     )
     .await;
 
-    let postprocess_template = progress_template.clone();
+    let progress_template = super::stream::PROGRESS_TEMPLATE;
 
     let cookie_pool_opt = req
         .cookie_pool
@@ -203,7 +200,25 @@ pub(crate) async fn run_download(
     let mut format_fallback_tried = false;
 
     for attempt in 0..max_attempts {
-        let mut cmd = tokio::process::Command::new("yt-dlp");
+        let (mut cpu, mut cmd) = if is_audio {
+            let reservation = tokio::select! {
+                biased;
+                _ = &mut cancel_fut => {
+                    edit_status(&api, status_chat_id, status_message_id, t("youtube.download.cancelled")).await;
+                    return;
+                }
+                reservation = super::audio::broker_command(user_id, trace_id) => reservation,
+            };
+            match reservation {
+                Ok((guard, command)) => (Some(guard), command),
+                Err(reason) => {
+                    edit_status(&api, status_chat_id, status_message_id, reason).await;
+                    return;
+                }
+            }
+        } else {
+            (None, tokio::process::Command::new("yt-dlp"))
+        };
         cmd.arg("--js-runtimes")
             .arg(format!("deno:{}", crate::config::deno_path()))
             .arg("--cookies-from-browser")
@@ -218,18 +233,7 @@ pub(crate) async fn run_download(
             .arg(&format_spec);
 
         if is_audio {
-            cmd.arg("--extract-audio")
-                .arg("--audio-format")
-                .arg("mp3")
-                .arg("--audio-quality")
-                .arg("0")
-                .arg("--embed-metadata")
-                .arg("--no-embed-chapters")
-                .arg("--embed-thumbnail")
-                .arg("--parse-metadata")
-                .arg("%(uploader,channel)s:%(meta_artist)s")
-                .arg("--parse-metadata")
-                .arg("%(release_date,upload_date)s:%(meta_date)s");
+            super::audio::configure(&mut cmd, None);
         } else {
             cmd.arg("--merge-output-format").arg(merge_format);
         }
@@ -238,7 +242,7 @@ pub(crate) async fn run_download(
             .arg("--progress-template")
             .arg(format!("download:{progress_template}"))
             .arg("--progress-template")
-            .arg(format!("postprocess:{postprocess_template}"))
+            .arg(format!("postprocess:{progress_template}"))
             .arg("--print")
             .arg("after_move:filepath")
             .arg("-o")
@@ -278,7 +282,7 @@ pub(crate) async fn run_download(
         log_trace(
             trace_id,
             "download_args",
-            &format!("cookie_spec={current_cookie_spec} format_spec={format_spec}"),
+            &format!("format_spec={format_spec}"),
         );
 
         let stream_res = run_ytdlp_process(
@@ -293,6 +297,10 @@ pub(crate) async fn run_download(
             &dir,
         )
         .await;
+
+        if let Some(cpu) = cpu.as_mut() {
+            cpu.release().await;
+        }
 
         let (filepath, stderr_tail, status) = match stream_res {
             YtdlpStreamResult::Completed {
@@ -324,13 +332,10 @@ pub(crate) async fn run_download(
         let is_format_unavailable = err
             .to_ascii_lowercase()
             .contains("requested format is not available");
-        if is_format_unavailable && !format_fallback_tried {
+        if !is_audio && is_format_unavailable && !format_fallback_tried {
             format_fallback_tried = true;
-            let fallback_format = if is_audio {
-                "bestaudio/best".to_string()
-            } else {
-                format!("bestvideo[height<={height}]+bestaudio/bestvideo+bestaudio/best")
-            };
+            let fallback_format =
+                format!("bestvideo[height<={height}]+bestaudio/bestvideo+bestaudio/best");
             if format_spec != fallback_format {
                 log_trace(
                     trace_id,
@@ -430,7 +435,13 @@ pub(crate) async fn run_download(
         return;
     }
 
-    let mut path = match final_filepath.or_else(|| pick_largest_file(&dir)) {
+    let mut path = match final_filepath.or_else(|| {
+        if is_audio {
+            super::audio::find_output(&dir)
+        } else {
+            pick_largest_file(&dir)
+        }
+    }) {
         Some(p) => p,
         None => {
             log_trace(trace_id, "download_no_filepath", "no output file located");
@@ -479,6 +490,27 @@ pub(crate) async fn run_download(
             _ => {}
         }
     }
+
+    let audio_meta = if is_audio {
+        match super::audio::probe(&path).await {
+            Ok(meta) => Some(meta),
+            Err(err) => {
+                log_trace(trace_id, "audio_output_invalid", &err.to_string());
+                stats::record_error_global("youtube", "audio output verification failed").await;
+                edit_status(
+                    &api,
+                    status_chat_id,
+                    status_message_id,
+                    t("youtube.download.failed"),
+                )
+                .await;
+                cleanup_dir(&dir, trace_id).await;
+                return;
+            }
+        }
+    } else {
+        None
+    };
 
     let output_meta = if is_audio {
         None
@@ -539,11 +571,22 @@ pub(crate) async fn run_download(
     let codec_name = output_meta
         .as_ref()
         .map(|meta| super::helpers::output_codec_label(&meta.codec))
-        .unwrap_or_else(|| "MP3".to_string());
+        .or_else(|| {
+            audio_meta
+                .as_ref()
+                .map(|meta| meta.codec.to_ascii_uppercase())
+        })
+        .unwrap_or_default();
     let bitrate_str = output_meta
         .as_ref()
         .filter(|meta| meta.bitrate > 0)
         .map(|meta| (meta.bitrate / 1000).to_string())
+        .or_else(|| {
+            audio_meta
+                .as_ref()
+                .filter(|meta| meta.bitrate > 0)
+                .map(|meta| (meta.bitrate / 1000).to_string())
+        })
         .or_else(|| {
             if is_audio {
                 req.duration
@@ -562,7 +605,7 @@ pub(crate) async fn run_download(
     let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
 
     let clean_name = if is_audio {
-        sanitize_audio_filename(&req.title, &bitrate_str, "mp3")
+        sanitize_audio_filename(&req.title, &bitrate_str, &output_ext)
     } else {
         sanitize_video_filename(
             &req.title,
@@ -580,6 +623,16 @@ pub(crate) async fn run_download(
             &format!("old={path} new={}", new_path.display()),
         );
         path = new_path.to_string_lossy().into_owned();
+    }
+
+    if is_audio && let Some(reason) = super::audio::size_error(file_size_bytes) {
+        log_trace(
+            trace_id,
+            "audio_oversized",
+            &format!("bytes={file_size_bytes}"),
+        );
+        edit_status(&api, status_chat_id, status_message_id, reason).await;
+        return;
     }
 
     let file_size_mb = file_size_bytes / (1024 * 1024);
@@ -749,17 +802,12 @@ pub(crate) async fn run_download(
             t("youtube.audio.uploading"),
         )
         .await;
-        let bot_username = crate::config::bot_username().to_string();
-        let caption = tf(
-            "youtube.audio.caption",
-            &[
-                ("title", &req.title),
-                ("quality", &quality_label),
-                ("codec", &codec_name),
-                ("bitrate", &bitrate_str),
-                ("username", &bot_username),
-                ("url", &req.webpage_url),
-            ],
+        let caption = super::audio::caption(
+            &req.title,
+            &quality_label,
+            &codec_name,
+            &bitrate_str,
+            &req.webpage_url,
         );
         let caption_entities = entities_for_text(&caption);
         log_trace(trace_id, "audio_upload_start", &format!("path={path}"));
@@ -768,7 +816,7 @@ pub(crate) async fn run_download(
             req.chat_id,
             &path,
             req.title.clone(),
-            req.channel.clone(),
+            audio_meta.and_then(|meta| meta.artist).unwrap_or_default(),
             caption,
             caption_entities,
             status_chat_id,

@@ -110,7 +110,14 @@ pub(crate) async fn run_playlist_download(
         "youtube.download.playlist.start",
         &[("count", &total_videos.to_string())],
     );
-    edit_status(&api, status_chat_id, status_message_id, start_msg).await;
+    super::status::edit_progress_status(
+        &api,
+        status_chat_id,
+        status_message_id,
+        start_msg,
+        request_id,
+    )
+    .await;
 
     // Pin status message so it is not lost among sent files.
     let _ = api
@@ -124,9 +131,15 @@ pub(crate) async fn run_playlist_download(
         .await;
 
     let mut sent = 0usize;
+    let mut uploaded_bytes = 0u64;
     // (video_num, title, reason) for failed video deliveries
     let mut failures: Vec<(usize, String, String)> = Vec::new();
     let mut current_cookie_spec = req.cookie_spec.clone();
+    let parent_dir = std::path::PathBuf::from(format!(
+        "{}/{trace_id}",
+        crate::config::youtube_download_root()
+    ));
+    let _parent_guard = crate::common::dir::TempDirGuard::from_path(parent_dir.clone());
     let mut cancel_fut = std::pin::pin!(_cancel.notified());
 
     for (idx, item) in req.playlist_items.iter().enumerate() {
@@ -149,7 +162,14 @@ pub(crate) async fn run_playlist_download(
                 ("duration", &duration_str),
             ],
         );
-        edit_status(&api, status_chat_id, status_message_id, progress_msg).await;
+        super::status::edit_progress_status(
+            &api,
+            status_chat_id,
+            status_message_id,
+            progress_msg,
+            request_id,
+        )
+        .await;
 
         // Build video URL
         let video_url = format!("https://www.youtube.com/watch?v={}", item.id);
@@ -173,7 +193,7 @@ pub(crate) async fn run_playlist_download(
                 &video_url,
                 &req,
                 &selection,
-                &item.title,
+                item,
                 video_num,
                 total_videos,
                 trace_id,
@@ -186,6 +206,7 @@ pub(crate) async fn run_playlist_download(
         match res {
             Ok(bytes) => {
                 sent += 1;
+                uploaded_bytes += bytes;
                 if let Some(job_id) = stats_job_id {
                     stats::record_upload_done(
                         job_id,
@@ -261,13 +282,14 @@ pub(crate) async fn run_playlist_download(
         &format!("sent={sent} failed={} total={total_videos}", failures.len()),
     );
     if let Some(job_id) = stats_job_id {
-        stats::record_download_done(job_id, (sent as i64) * 100_000_000, None, None, None).await;
+        let bytes = if selection.audio_only.is_some() {
+            uploaded_bytes as i64
+        } else {
+            (sent as i64) * 100_000_000
+        };
+        stats::record_download_done(job_id, bytes, None, None, None).await;
     }
 
-    let parent_dir = std::path::PathBuf::from(format!(
-        "{}/{trace_id}",
-        crate::config::youtube_download_root()
-    ));
     cleanup_dir(&parent_dir, trace_id).await;
     crate::moebius::cpu::trim_memory();
 }
@@ -277,7 +299,7 @@ async fn download_single_playlist_item_with_retry(
     video_url: &str,
     req: &YoutubeRequest,
     selection: &Selection,
-    item_title: &str,
+    item: &crate::youtube::types::PlaylistItem,
     video_num: usize,
     total_videos: usize,
     trace_id: u64,
@@ -301,7 +323,7 @@ async fn download_single_playlist_item_with_retry(
             video_url,
             req,
             selection,
-            item_title,
+            item,
             video_num,
             total_videos,
             trace_id,
@@ -397,7 +419,7 @@ async fn download_single_playlist_item_attempt(
     video_url: &str,
     req: &YoutubeRequest,
     selection: &Selection,
-    item_title: &str,
+    item: &crate::youtube::types::PlaylistItem,
     video_num: usize,
     total_videos: usize,
     trace_id: u64,
@@ -409,6 +431,7 @@ async fn download_single_playlist_item_attempt(
     let height = selection.height;
     let codec = selection.codec;
     let is_audio = selection.audio_only.is_some();
+    let item_title = &item.title;
 
     // Isolated directory for each video to prevent collisions
     let dir = PathBuf::from(format!(
@@ -427,6 +450,8 @@ async fn download_single_playlist_item_attempt(
         ));
     }
 
+    let _dir_guard = crate::common::dir::TempDirGuard::from_path(dir.clone());
+
     // Use height/codec format selector instead of fixed format_id to select format per video.
     let vcodec_prefix = match codec {
         super::super::types::VideoCodec::H264 => "avc1",
@@ -441,7 +466,19 @@ async fn download_single_playlist_item_attempt(
     );
 
     let output_template = format!("{}/%(id)s.%(ext)s", dir.display());
-    let mut cmd = tokio::process::Command::new("yt-dlp");
+    let (mut cpu, mut cmd) = if is_audio {
+        let (guard, command) = super::audio::broker_command(req.user_id.unwrap_or(0), trace_id)
+            .await
+            .map_err(|reason| {
+                (
+                    crate::youtube::YtdlpErrorClassification::Other(reason.clone()),
+                    reason,
+                )
+            })?;
+        (Some(guard), command)
+    } else {
+        (None, tokio::process::Command::new("yt-dlp"))
+    };
     cmd.kill_on_drop(true);
     cmd.arg("--js-runtimes")
         .arg(format!("deno:{}", crate::config::deno_path()))
@@ -452,10 +489,24 @@ async fn download_single_playlist_item_attempt(
         .arg("--no-warnings")
         .arg("--no-playlist")
         .arg("-f")
-        .arg(&format_spec)
-        .arg("--merge-output-format")
-        .arg(merge_format)
-        .arg("--print")
+        .arg(
+            selection
+                .audio_only
+                .map_or(format_spec.as_str(), |quality| quality.format_spec()),
+        );
+    if is_audio {
+        if item.playlist_index.is_none() {
+            log_trace(
+                trace_id,
+                "playlist_audio_index_missing",
+                &format!("num={video_num}"),
+            );
+        }
+        super::audio::configure(&mut cmd, item.playlist_index);
+    } else {
+        cmd.arg("--merge-output-format").arg(merge_format);
+    }
+    cmd.arg("--print")
         .arg("after_move:filepath")
         .arg("-o")
         .arg(&output_template);
@@ -474,24 +525,73 @@ async fn download_single_playlist_item_attempt(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let output = match cmd.output().await {
-        Ok(o) => o,
-        Err(e) => {
-            log_trace(
-                trace_id,
-                "playlist_item_spawn_failed",
-                &format!("url={video_url} error={e}"),
-            );
-            cleanup_dir(&dir, trace_id).await;
-            return Err((
-                crate::youtube::YtdlpErrorClassification::Other(e.to_string()),
-                e.to_string(),
-            ));
+    let (status, stderr, path) = if let Some(quality) = selection.audio_only {
+        cmd.args([
+            "--progress",
+            "--newline",
+            "--no-color",
+            "--progress-template",
+        ])
+        .arg(format!("download:{}", super::stream::PROGRESS_TEMPLATE))
+        .arg("--progress-template")
+        .arg(format!("postprocess:{}", super::stream::PROGRESS_TEMPLATE));
+        let mut pending = std::pin::pin!(std::future::pending());
+        match super::stream::run_ytdlp_process(
+            cmd,
+            api,
+            status_chat_id,
+            status_message_id,
+            request_id,
+            &t(quality.label_key()),
+            &mut pending,
+            trace_id,
+            &dir,
+        )
+        .await
+        {
+            super::stream::YtdlpStreamResult::Completed {
+                status,
+                stderr_tail,
+                filepath,
+            } => (status, stderr_tail, filepath),
+            _ => {
+                let reason = t("youtube.download.failed");
+                return Err((
+                    crate::youtube::YtdlpErrorClassification::Other(reason.clone()),
+                    reason,
+                ));
+            }
         }
+    } else {
+        let output = cmd.output().await.map_err(|err| {
+            log_trace(trace_id, "playlist_item_spawn_failed", &err.to_string());
+            (
+                crate::youtube::YtdlpErrorClassification::Other(err.to_string()),
+                err.to_string(),
+            )
+        })?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let path = stdout
+            .lines()
+            .map(str::trim)
+            .filter(|line| {
+                line.starts_with('/') && !line.ends_with(".srt") && !line.ends_with(".vtt")
+            })
+            .last()
+            .filter(|path| std::path::Path::new(path).exists())
+            .map(str::to_owned);
+        (
+            output.status,
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+            path,
+        )
     };
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    if let Some(cpu) = cpu.as_mut() {
+        cpu.release().await;
+    }
+
+    if !status.success() {
         let classification = crate::youtube::classify_ytdlp_stderr(&stderr);
         let reason = match &classification {
             crate::youtube::YtdlpErrorClassification::MembersOnly => {
@@ -521,16 +621,11 @@ async fn download_single_playlist_item_attempt(
         return Err((classification, reason));
     };
 
-    // Output file: from after_move:filepath line or largest file in directory
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let path = stdout
-        .lines()
-        .map(|l| l.trim())
-        .filter(|l| l.starts_with('/') && !l.ends_with(".srt") && !l.ends_with(".vtt"))
-        .last()
-        .map(|s| s.to_string())
-        .filter(|p| std::path::Path::new(p).exists())
-        .or_else(|| pick_largest_file(&dir));
+    let path = if is_audio {
+        path.or_else(|| super::audio::find_output(&dir))
+    } else {
+        path.or_else(|| pick_largest_file(&dir))
+    };
     let Some(mut path) = path else {
         log_trace(
             trace_id,
@@ -544,6 +639,73 @@ async fn download_single_playlist_item_attempt(
             err,
         ));
     };
+
+    if let Some(quality) = selection.audio_only {
+        let download_failed = || {
+            let reason = t("youtube.download.failed");
+            (
+                crate::youtube::YtdlpErrorClassification::Other(reason.clone()),
+                reason,
+            )
+        };
+        let meta = match super::audio::probe(&path).await {
+            Ok(meta) => meta,
+            Err(err) => {
+                log_trace(trace_id, "audio_output_invalid", &err.to_string());
+                stats::record_error_global("youtube", "audio output verification failed").await;
+                return Err(download_failed());
+            }
+        };
+        let bytes = tokio::fs::metadata(&path)
+            .await
+            .map_err(|_| download_failed())?
+            .len();
+        if let Some(reason) = super::audio::size_error(bytes) {
+            log_trace(
+                trace_id,
+                "playlist_audio_oversized",
+                &format!("bytes={bytes}"),
+            );
+            return Err((
+                crate::youtube::YtdlpErrorClassification::Other(reason.clone()),
+                reason,
+            ));
+        }
+        let bitrate = (meta.bitrate / 1000).to_string();
+        let name = super::sanitize::sanitize_audio_filename(item_title, &bitrate, &meta.ext);
+        let new_path = dir.join(name);
+        if tokio::fs::rename(&path, &new_path).await.is_ok() {
+            path = new_path.to_string_lossy().into_owned();
+        }
+        let caption = super::audio::caption(
+            item_title,
+            &t(quality.label_key()),
+            &meta.codec,
+            &bitrate,
+            video_url,
+        );
+        let entities = entities_for_text(&caption);
+        let mut pending = std::pin::pin!(std::future::pending());
+        if super::upload::send_audio_file(
+            api,
+            req.chat_id,
+            &path,
+            item_title.clone(),
+            meta.artist.unwrap_or_default(),
+            caption,
+            entities,
+            status_chat_id,
+            status_message_id,
+            request_id,
+            &mut pending,
+            trace_id,
+        )
+        .await
+        {
+            return Ok(bytes);
+        }
+        return Err(download_failed());
+    }
 
     match super::helpers::process_subtitle_pipeline(
         api,

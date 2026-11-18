@@ -671,6 +671,7 @@
       "traffic_monthly_limit": "ترافیک ماهانه ({limit})",
       "traffic_file_too_big": "حجم این فایل ({size})، باقی‌مانده ترافیک شما ({remaining})",
       "audio": {
+        "oversized": "⚠️ حجم فایل صوتی از سقف {max} مگابایت بیشتر است.",
         "menu_button": "🎵 دانلود صوت",
         "menu_prompt": "🎵 *دانلود صوت*\n\nانتخاب کیفیت:",
         "quality": {
@@ -2079,6 +2080,7 @@
       "traffic_monthly_limit": "Monthly traffic ({limit})",
       "traffic_file_too_big": "This file ({size}) exceeds your remaining traffic ({remaining})",
       "audio": {
+        "oversized": "⚠️ The audio file exceeds the {max} MB upload limit.",
         "menu_button": "🎵 Audio Download",
         "menu_prompt": "🎵 *Audio Download*\n\nSelect quality:",
         "quality": {
@@ -3487,6 +3489,7 @@
       "traffic_monthly_limit": "Traffico mensile ({limit})",
       "traffic_file_too_big": "Questo file ({size}) supera il traffico rimanente ({remaining})",
       "audio": {
+        "oversized": "⚠️ Il file audio supera il limite di caricamento di {max} MB.",
         "menu_button": "🎵 Download Audio",
         "menu_prompt": "🎵 *Download Audio*\n\nSeleziona qualità:",
         "quality": {
@@ -4895,6 +4898,7 @@
       "traffic_monthly_limit": "Monthly traffic ({limit})",
       "traffic_file_too_big": "This file ({size}) exceeds your remaining traffic ({remaining})",
       "audio": {
+        "oversized": "⚠️ Размер аудиофайла превышает лимит загрузки в {max} МБ.",
         "menu_button": "🎵 Audio Download",
         "menu_prompt": "🎵 *Audio Download*\n\nSelect quality:",
         "quality": {

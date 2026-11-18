@@ -12,6 +12,8 @@ use super::helpers::cleanup_dir;
 use super::progress::{format_progress_body, parse_progress_line};
 use super::status::{edit_progress_status, edit_status};
 
+pub(super) const PROGRESS_TEMPLATE: &str = "YT_PROGRESS|%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._total_bytes_estimate_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._elapsed_str)s";
+
 pub const EDIT_THROTTLE: Duration = Duration::from_secs(1);
 
 pub enum YtdlpStreamResult {
@@ -22,6 +24,17 @@ pub enum YtdlpStreamResult {
     },
     Cancelled,
     Failed,
+}
+
+struct ProcessGroup(Option<i32>);
+
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        if let Some(pid) = self.0 {
+            // yt-dlp launches FFmpeg in the same process group.
+            unsafe { libc::kill(-pid, libc::SIGKILL) };
+        }
+    }
 }
 
 pub async fn run_ytdlp_process(
@@ -35,6 +48,7 @@ pub async fn run_ytdlp_process(
     trace_id: u64,
     dir: &Path,
 ) -> YtdlpStreamResult {
+    cmd.process_group(0).kill_on_drop(true);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -50,6 +64,7 @@ pub async fn run_ytdlp_process(
         }
     };
 
+    let mut process_group = ProcessGroup(child.id().and_then(|pid| i32::try_from(pid).ok()));
     let Some(stdout) = child.stdout.take() else {
         log_trace(trace_id, "download_spawn_failed", "piped stdout missing");
         edit_status(
@@ -126,7 +141,8 @@ pub async fn run_ytdlp_process(
             }
             _ = &mut *cancel_fut => {
                 log_trace(trace_id, "download_cancelled", "cancel signal during download");
-                let _ = child.kill().await;
+                drop(process_group);
+                let _ = child.wait().await;
                 edit_status(api, status_chat_id, status_message_id, t("youtube.download.cancelled")).await;
                 cleanup_dir(dir, trace_id).await;
                 return YtdlpStreamResult::Cancelled;
@@ -151,6 +167,7 @@ pub async fn run_ytdlp_process(
         }
     };
 
+    process_group.0 = None;
     YtdlpStreamResult::Completed {
         filepath,
         stderr_tail,
