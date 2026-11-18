@@ -16,14 +16,10 @@ pub fn extract_youtube_urls(text: &str) -> Vec<String> {
         let lower = token.to_ascii_lowercase();
         let normalized = if lower.starts_with("http://") || lower.starts_with("https://") {
             token.to_string()
-        } else if lower.starts_with("www.youtube.com")
-            || lower.starts_with("youtube.com")
-            || lower.starts_with("m.youtube.com")
-            || lower.starts_with("youtu.be")
-        {
-            format!("https://{token}")
-        } else {
+        } else if token.contains("://") {
             continue;
+        } else {
+            format!("https://{token}")
         };
 
         // Handle concatenated URLs by stripping trailing glued schemes.
@@ -40,24 +36,39 @@ pub fn extract_youtube_urls(text: &str) -> Vec<String> {
             None => normalized,
         };
 
-        let host_part = normalized
-            .split("://")
-            .nth(1)
-            .and_then(|rest| rest.split('/').next())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-
-        let is_yt = host_part == "youtu.be"
-            || host_part == "youtube.com"
-            || host_part == "www.youtube.com"
-            || host_part == "m.youtube.com"
-            || host_part == "music.youtube.com";
-
-        if is_yt {
-            let cleaned = clean_youtube_url(&normalized);
-            if !urls.contains(&cleaned) {
-                urls.push(cleaned);
+        let Ok(mut parsed) = reqwest::Url::parse(&normalized) else {
+            continue;
+        };
+        if !parsed.username().is_empty() || parsed.password().is_some() {
+            continue;
+        }
+        let Some(host) = parsed.host_str().map(|host| host.trim_end_matches('.')) else {
+            continue;
+        };
+        let canonical_host = match host {
+            "youtube.co"
+            | "www.youtube.co"
+            | "youtube-nocookie.com"
+            | "youtubekids.com"
+            | "youtube.googleapis.com" => "www.youtube.com",
+            _ if host.ends_with(".youtube-nocookie.com") || host.ends_with(".youtubekids.com") => {
+                "www.youtube.com"
             }
+            "youtube.com" | "youtu.be" => host,
+            _ if host.ends_with(".youtube.com") || host.ends_with(".youtu.be") => host,
+            _ => continue,
+        };
+        let cleaned = if parsed.host_str() == Some(canonical_host) {
+            clean_youtube_url(&normalized)
+        } else {
+            let canonical_host = canonical_host.to_owned();
+            if parsed.set_host(Some(&canonical_host)).is_err() {
+                continue;
+            }
+            clean_youtube_url(parsed.as_str())
+        };
+        if !urls.contains(&cleaned) {
+            urls.push(cleaned);
         }
     }
 
@@ -206,6 +217,42 @@ mod tests {
         let msg = "https://youtu.be/dQw4w9WgXcQ";
         let urls = extract_youtube_urls(msg);
         assert_eq!(urls.len(), 1);
+    }
+
+    #[test]
+    fn test_extract_youtube_domain_variants() {
+        for (host, expected) in [
+            ("youtube.com", "youtube.com"),
+            ("www.youtube.com", "www.youtube.com"),
+            ("m.youtube.com", "m.youtube.com"),
+            ("music.youtube.com", "music.youtube.com"),
+            ("gaming.youtube.com", "gaming.youtube.com"),
+            ("youtu.be", "youtu.be"),
+            ("youtube-nocookie.com", "www.youtube.com"),
+            ("www.youtube-nocookie.com", "www.youtube.com"),
+            ("youtubekids.com", "www.youtube.com"),
+            ("www.youtubekids.com", "www.youtube.com"),
+            ("youtube.googleapis.com", "www.youtube.com"),
+            ("youtube.co", "www.youtube.com"),
+            ("www.youtube.co", "www.youtube.com"),
+        ] {
+            let path = if host == "youtu.be" {
+                "/i7ydo7H_1TA"
+            } else {
+                "/embed/i7ydo7H_1TA"
+            };
+            assert_eq!(
+                extract_youtube_urls(&format!("https://{host}{path}")),
+                [format!("https://{expected}{path}")],
+            );
+        }
+        for host in [
+            "fake-youtubekids.com",
+            "youtube.googleapis.com.example.org",
+            "ytimg.com",
+        ] {
+            assert!(extract_youtube_urls(&format!("https://{host}/embed/i7ydo7H_1TA")).is_empty());
+        }
     }
 
     #[test]

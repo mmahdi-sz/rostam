@@ -1,13 +1,8 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::sync::mpsc::UnboundedSender;
-
 use frankenstein::AsyncTelegramApi;
 use frankenstein::client_reqwest::Bot;
 use frankenstein::types::Message;
 
 use crate::config;
-use crate::cookie_pool::{CookiePool, CookieSource};
 use crate::database::postgresql::PostgresDatabase;
 use crate::denoise;
 use crate::emoji::{FlowManager, FlowState, handler as emoji_handler};
@@ -21,14 +16,11 @@ use crate::stt::handle::handle_stt_audio;
 use crate::surge_dl::{handle_surge_rename_text, handle_surge_text};
 use crate::upscale::handle_upscale_image;
 use crate::youtube::trace::log_trace;
-use crate::youtube::{extract_youtube_urls, handle_youtube_url};
 
 pub(super) async fn handle_flow_message(
     api: &Bot,
-    cookie_pool: &Arc<Mutex<CookiePool>>,
     database: &Option<PostgresDatabase>,
     flow_manager: &mut FlowManager,
-    rate_limit_tx: &UnboundedSender<CookieSource>,
     message: &Message,
     uid: i64,
 ) -> crate::error::Result<bool> {
@@ -482,37 +474,9 @@ pub(super) async fn handle_flow_message(
                     return Ok(true);
                 }
 
-                let yt_urls = extract_youtube_urls(candidate);
-                if let Some(target_url) = yt_urls.into_iter().next() {
-                    let api2 = api.clone();
-                    let chat_id2 = message.chat.id;
-                    let msg_id2 = message.message_id;
-                    let pool2 = cookie_pool.clone();
-                    let db2 = database.clone();
-                    let rl_tx2 = rate_limit_tx.clone();
-                    crate::app::spawn_user_task(async move {
-                        if let Err(e) = handle_youtube_url(
-                            &api2,
-                            chat_id2,
-                            msg_id2,
-                            Some(uid),
-                            trace_id,
-                            &target_url,
-                            pool2,
-                            &db2,
-                            &rl_tx2,
-                        )
-                        .await
-                        {
-                            log_ev!("yt", trace_id, "handle_url_failed", "err" => format!("{e}"));
-                        }
-                    });
-                    return Ok(true);
-                }
-
                 let platform = crate::surge_dl::detect_social_platform(candidate);
                 if platform == Some("youtube") {
-                    // Handled above
+                    return Ok(true);
                 } else if platform == Some("spotify") {
                     let api2 = api.clone();
                     let chat_id2 = message.chat.id;

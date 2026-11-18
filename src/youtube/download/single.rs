@@ -222,7 +222,14 @@ pub(crate) async fn run_download(
                 .arg("--audio-format")
                 .arg("mp3")
                 .arg("--audio-quality")
-                .arg("0");
+                .arg("0")
+                .arg("--embed-metadata")
+                .arg("--no-embed-chapters")
+                .arg("--embed-thumbnail")
+                .arg("--parse-metadata")
+                .arg("%(uploader,channel)s:%(meta_artist)s")
+                .arg("--parse-metadata")
+                .arg("%(release_date,upload_date)s:%(meta_date)s");
         } else {
             cmd.arg("--merge-output-format").arg(merge_format);
         }
@@ -555,7 +562,7 @@ pub(crate) async fn run_download(
     let thumb_path = fetch_thumbnail(&req.thumbnail_url, &dir, trace_id).await;
 
     let clean_name = if is_audio {
-        sanitize_audio_filename(&req.title, &quality_label, "mp3")
+        sanitize_audio_filename(&req.title, &bitrate_str, "mp3")
     } else {
         sanitize_video_filename(
             &req.title,

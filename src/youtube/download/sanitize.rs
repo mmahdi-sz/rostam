@@ -70,10 +70,8 @@ pub fn sanitize_video_filename(
 }
 
 /// Create a clean, safe OS filename for downloaded audio files.
-pub fn sanitize_audio_filename(title: &str, quality_label: &str, ext: &str) -> String {
-    let tech_info = format!("[{quality_label}]");
-    let ext_with_dot = format!(".{ext}");
-    let suffix = format!(" {tech_info}{ext_with_dot}");
+pub fn sanitize_audio_filename(title: &str, bitrate_kbps: &str, ext: &str) -> String {
+    let suffix = format!("_{bitrate_kbps}kb_.{ext}");
 
     const MAX_TOTAL_BYTES: usize = 245;
     let suffix_bytes = suffix.len();

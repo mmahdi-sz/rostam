@@ -111,19 +111,48 @@ pub(super) async fn handle_message(
         }
     }
 
+    if let Some(uid) = user_id {
+        let current_flow = flow_manager.get(uid);
+        if let Some(target_url) = youtube_url_for_flow(&message, &current_flow) {
+            if matches!(current_flow, FlowState::AwaitingSurgeUrlInput) {
+                flow_manager.clear(uid);
+            }
+            let trace_id = next_trace_id();
+            log_trace(
+                trace_id,
+                "route_youtube_url",
+                &format!("user_id={uid} chat_id={} url={target_url}", message.chat.id),
+            );
+            let api2 = api.clone();
+            let chat_id2 = message.chat.id;
+            let msg_id2 = message.message_id;
+            let pool2 = cookie_pool.clone();
+            let db2 = database.clone();
+            let rl_tx2 = rate_limit_tx.clone();
+            crate::app::spawn_user_task(async move {
+                if let Err(e) = handle_youtube_url(
+                    &api2,
+                    chat_id2,
+                    msg_id2,
+                    Some(uid),
+                    trace_id,
+                    &target_url,
+                    pool2,
+                    &db2,
+                    &rl_tx2,
+                )
+                .await
+                {
+                    log_ev!("yt", trace_id, "handle_url_failed", "err" => format!("{e}"));
+                }
+            });
+            return Ok(());
+        }
+    }
+
     // Step 4: active flow dispatch
     if let Some(uid) = user_id {
-        if flow::handle_flow_message(
-            api,
-            cookie_pool,
-            database,
-            flow_manager,
-            rate_limit_tx,
-            &message,
-            uid,
-        )
-        .await?
-        {
+        if flow::handle_flow_message(api, database, flow_manager, &message, uid).await? {
             return Ok(());
         }
     }
@@ -300,46 +329,9 @@ pub(super) async fn handle_message(
                             return Ok(());
                         }
 
-                        let yt_urls = extract_youtube_urls(cand);
-                        if let Some(target_url) = yt_urls.into_iter().next() {
-                            let trace_id = next_trace_id();
-                            log_trace(
-                                trace_id,
-                                "route_youtube_url",
-                                &format!(
-                                    "user_id={uid} chat_id={} url={target_url}",
-                                    message.chat.id
-                                ),
-                            );
-                            let api2 = api.clone();
-                            let chat_id2 = message.chat.id;
-                            let msg_id2 = message.message_id;
-                            let pool2 = cookie_pool.clone();
-                            let db2 = database.clone();
-                            let rl_tx2 = rate_limit_tx.clone();
-                            crate::app::spawn_user_task(async move {
-                                if let Err(e) = handle_youtube_url(
-                                    &api2,
-                                    chat_id2,
-                                    msg_id2,
-                                    Some(uid),
-                                    trace_id,
-                                    &target_url,
-                                    pool2,
-                                    &db2,
-                                    &rl_tx2,
-                                )
-                                .await
-                                {
-                                    log_ev!("yt", trace_id, "handle_url_failed", "err" => format!("{e}"));
-                                }
-                            });
-                            return Ok(());
-                        }
-
                         if let Some(platform) = crate::surge_dl::detect_social_platform(cand) {
                             if platform == "youtube" {
-                                // Handled above
+                                return Ok(());
                             } else if platform == "spotify" {
                                 let api2 = api.clone();
                                 let chat_id2 = message.chat.id;
@@ -411,4 +403,74 @@ pub(super) async fn handle_message(
         }
     }
     Ok(())
+}
+
+fn youtube_url_for_flow(
+    message: &frankenstein::types::Message,
+    flow: &FlowState,
+) -> Option<String> {
+    if !matches!(
+        flow,
+        FlowState::Idle | FlowState::AwaitingSurgeConfirm { .. } | FlowState::AwaitingSurgeUrlInput
+    ) {
+        return None;
+    }
+    crate::common::link::extract_message_links(message)
+        .iter()
+        .map(String::as_str)
+        .chain(message.text.as_deref().or(message.caption.as_deref()))
+        .find_map(|candidate| extract_youtube_urls(candidate).into_iter().next())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn youtube_links_are_routed_while_surge_confirmation_is_pending() {
+        let pending = FlowState::AwaitingSurgeConfirm {
+            url: "https://example.com/file.zip".into(),
+            filename: "file.zip".into(),
+        };
+        for (input, expected) in [
+            (
+                "http://youtube.co/@DavidHoffmanFilmmaker",
+                Some("http://www.youtube.com/@DavidHoffmanFilmmaker"),
+            ),
+            (
+                "https://www.youtube.com/channel/UCddem5RlB3bQe99wyY49g0g",
+                Some("https://www.youtube.com/channel/UCddem5RlB3bQe99wyY49g0g"),
+            ),
+            (
+                "https://youtu.be/i7ydo7H_1TA",
+                Some("https://youtu.be/i7ydo7H_1TA"),
+            ),
+            (
+                "music.youtube.com/watch?v=i7ydo7H_1TA",
+                Some("https://music.youtube.com/watch?v=i7ydo7H_1TA"),
+            ),
+            (
+                "https://www.youtube-nocookie.com/embed/i7ydo7H_1TA",
+                Some("https://www.youtube.com/embed/i7ydo7H_1TA"),
+            ),
+            ("https://youtube.co.example.com/file.zip", None),
+            ("https://youtube.com@example.com/file.zip", None),
+        ] {
+            let message = serde_json::from_value(serde_json::json!({
+                "message_id": 1,
+                "date": 0,
+                "chat": {"id": 1, "type": "private"},
+                "text": input,
+            }))
+            .unwrap();
+            assert_eq!(
+                youtube_url_for_flow(&message, &pending).as_deref(),
+                expected
+            );
+            assert_eq!(
+                youtube_url_for_flow(&message, &FlowState::Idle).as_deref(),
+                expected
+            );
+        }
+    }
 }

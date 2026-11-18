@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.12] - 2026-11-18
+
+### Fixed
+- Route YouTube links while a Surge DL confirmation is pending, including channel links that need a video-link warning.
+- Normalize supported YouTube embed and Kids domains, the legacy Google APIs video host, and the common youtube.co typo.
+- Use a bitrate suffix in YouTube MP3 filenames and embed metadata and cover art.
+
 ## [2.7.11] - 2026-11-17
 
 ### Fixed
