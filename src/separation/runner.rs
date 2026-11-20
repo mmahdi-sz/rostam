@@ -115,8 +115,10 @@ pub async fn run_separation_task(params: SeparationTaskParams) {
     // release happens here to do it.
     crate::moebius::cpu::trim_memory();
 
-    // Clear flow directly here rather than via channel to avoid wiping re-armed state.
-    flow_manager.clear(user_id);
+    flow_manager.clear_if(user_id, |state| {
+        matches!(state, crate::emoji::FlowState::AwaitingSeparationQueued { cancel }
+            if Arc::ptr_eq(cancel, &cancel_flag))
+    });
 
     if cancelled.load(Ordering::Relaxed) {
         log_trace(trace_id, "cancelled_in_queue", "");

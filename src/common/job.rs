@@ -31,6 +31,13 @@ impl<K: Eq + Hash + Clone + 'static, V: Clone + 'static> JobRegistry<K, V> {
         lock_or_recover(&self.jobs).remove(key)
     }
 
+    pub(crate) fn unregister_if(&self, key: &K, matches: impl FnOnce(&V) -> bool) {
+        let mut jobs = lock_or_recover(&self.jobs);
+        if jobs.get(key).is_some_and(matches) {
+            jobs.remove(key);
+        }
+    }
+
     /// Checks if a job is currently active for the given key.
     pub fn is_active(&self, key: &K) -> bool {
         lock_or_recover(&self.jobs).contains_key(key)

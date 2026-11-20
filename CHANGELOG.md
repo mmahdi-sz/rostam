@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.14] - 2026-11-20
+
+### Fixed
+- Route standalone links out of waiting tools without requiring `/start`, while letting tools that expect a link handle it directly.
+- Explain unsupported links in all four languages.
+- Keep active jobs running after leaving a tool and prevent their completion from reopening or replacing the current session.
+
 ## [2.7.13] - 2026-11-18
 
 ### Fixed

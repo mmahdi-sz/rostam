@@ -16,6 +16,7 @@ pub async fn run() -> anyhow::Result<()> {
     let port: u16 = port_str.parse().expect("TESTAPI_PORT must be a valid u16");
 
     let app = Router::new()
+        .route("/test/dispatch/link", post(endpoints::router::test_link))
         .route("/test/rank/paywall", post(endpoints::rank::test_paywall))
         .route("/test/rank/panel", post(endpoints::rank::test_rank_panel))
         .route(

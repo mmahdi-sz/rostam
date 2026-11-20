@@ -151,6 +151,18 @@ echo "✅ Router callback test passed!"
 
 echo ""
 echo "=== Running Youtube Format Tests ==="
+echo "Testing /test/dispatch/link"
+curl --fail --silent -X POST "$BASE_URL/test/dispatch/link" -H 'Content-Type: application/json' \
+    -d '{"text":"https://127.0.0.1/example","flow":"pdf"}' |
+    jq -e '.ok and .idle and (.resolved_i18n_keys | index("unsupported_link") != null)' >/dev/null
+curl --fail --silent -X POST "$BASE_URL/test/dispatch/link" -H 'Content-Type: application/json' \
+    -d '{"text":"https://t.me/example","flow":"force_join"}' |
+    jq -e '.ok and (.idle | not)' >/dev/null
+
+curl --fail --silent -X POST "$BASE_URL/test/dispatch/link" -H 'Content-Type: application/json' \
+    -d '{"text":"https://t.me/addemoji/example","flow":"pdf"}' |
+    jq -e '.ok and .idle and (.resolved_i18n_keys | index("emoji.db_required") != null)' >/dev/null
+
 echo "Testing /test/youtube/format"
 RES_YT=$(curl -s -X POST "$BASE_URL/test/youtube/format" \
     -H "Content-Type: application/json" \

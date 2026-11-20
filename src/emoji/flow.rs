@@ -142,6 +142,53 @@ pub enum FlowState {
     },
 }
 
+impl FlowState {
+    pub fn expects_link(&self) -> bool {
+        match self {
+            Self::AwaitingSurgeUrlInput | Self::AwaitingForceJoinLink => true,
+            Self::AwaitingForceJoinField { field, .. } => field == "reserve",
+            Self::Idle
+            | Self::AwaitingBroadcastBanner { .. }
+            | Self::AwaitingBroadcastTarget { .. }
+            | Self::AwaitingEmojis { .. }
+            | Self::AwaitingPackChoice { .. }
+            | Self::AwaitingPackAlias { .. }
+            | Self::AwaitingTestText
+            | Self::AwaitingImportFile
+            | Self::AwaitingImportMode { .. }
+            | Self::AwaitingSttConfig { .. }
+            | Self::AwaitingSttAudio { .. }
+            | Self::AwaitingDenoiseAudio
+            | Self::AwaitingUpscaleImage { .. }
+            | Self::AwaitingSeparation
+            | Self::AwaitingSeparationMode { .. }
+            | Self::AwaitingSeparationQueued { .. }
+            | Self::AwaitingGeminiWmImage
+            | Self::AwaitingDeoldifyImage
+            | Self::AwaitingNobgImage
+            | Self::AwaitingTtsText
+            | Self::AwaitingPdfCompressFile
+            | Self::AwaitingPdfCompressLevel { .. }
+            | Self::AwaitingIpLookupInput
+            | Self::AwaitingSurgeConfirm { .. }
+            | Self::AwaitingSurgeRenameInput { .. }
+            | Self::AwaitingRedeemGenArgs
+            | Self::AwaitingForceJoinPrivateInfo { .. }
+            | Self::AwaitingCompressFormatSelect
+            | Self::AwaitingCompressOptions { .. }
+            | Self::AwaitingCompressPassword { .. }
+            | Self::AwaitingCompressFiles { .. }
+            | Self::AwaitingStudioTrimVideo
+            | Self::AwaitingStudioTrimRanges { .. }
+            | Self::AwaitingStudioCompressVideo
+            | Self::AwaitingStudioExtractVideo
+            | Self::AwaitingStudioBurnInput { .. }
+            | Self::AwaitingPkgFile
+            | Self::AwaitingPkgConvertChoice { .. } => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CompressFileEntry {
     pub file_id: String,
@@ -152,7 +199,20 @@ pub struct CompressFileEntry {
 
 #[derive(Debug, Clone, Default)]
 pub struct FlowManager {
-    states: Arc<RwLock<HashMap<i64, FlowState>>>,
+    store: Arc<RwLock<FlowStore>>,
+    owner: Option<(i64, u64)>,
+}
+
+#[derive(Debug, Default)]
+struct FlowStore {
+    states: HashMap<i64, FlowState>,
+    revisions: HashMap<i64, u64>,
+}
+
+impl FlowStore {
+    fn revision(&self, user_id: i64) -> u64 {
+        self.revisions.get(&user_id).copied().unwrap_or_default()
+    }
 }
 
 use crate::sync_util::{read_or_recover, write_or_recover};
@@ -162,38 +222,99 @@ impl FlowManager {
         Self::default()
     }
 
+    pub(crate) fn for_user(&self, user_id: i64) -> Self {
+        Self {
+            store: self.store.clone(),
+            owner: Some((user_id, read_or_recover(&self.store).revision(user_id))),
+        }
+    }
+
+    fn owns(&self, store: &FlowStore, user_id: i64) -> bool {
+        self.owner
+            .is_none_or(|(owner, revision)| owner == user_id && revision == store.revision(user_id))
+    }
+
+    pub(crate) fn is_current(&self, user_id: i64) -> bool {
+        self.owns(&read_or_recover(&self.store), user_id)
+    }
+
+    pub(crate) fn exit(&mut self, user_id: i64) -> FlowState {
+        let mut store = write_or_recover(&self.store);
+        if !self.owns(&store, user_id) {
+            return FlowState::Idle;
+        }
+        let revision = store.revision(user_id) + 1;
+        store.revisions.insert(user_id, revision);
+        self.owner = Some((user_id, revision));
+        store.states.remove(&user_id).unwrap_or_default()
+    }
+
     pub fn get(&self, user_id: i64) -> FlowState {
-        read_or_recover(&self.states)
-            .get(&user_id)
-            .cloned()
-            .unwrap_or_default()
+        let store = read_or_recover(&self.store);
+        if !self.owns(&store, user_id) {
+            return FlowState::Idle;
+        }
+        store.states.get(&user_id).cloned().unwrap_or_default()
     }
 
     pub fn set(&self, user_id: i64, state: FlowState) {
-        let mut map = write_or_recover(&self.states);
+        let mut store = write_or_recover(&self.store);
+        if !self.owns(&store, user_id) {
+            return;
+        }
         if matches!(state, FlowState::Idle) {
-            map.remove(&user_id);
+            store.states.remove(&user_id);
         } else {
-            map.insert(user_id, state);
+            store.states.insert(user_id, state);
         }
     }
 
     pub fn clear(&self, user_id: i64) {
-        write_or_recover(&self.states).remove(&user_id);
+        self.take(user_id);
     }
 
-    /// Atomically retrieves and removes the flow state for `user_id`.
-    /// Returns `FlowState::Idle` if no state was registered.
+    pub(crate) fn clear_if(&self, user_id: i64, matches: impl FnOnce(&FlowState) -> bool) -> bool {
+        let mut store = write_or_recover(&self.store);
+        if self.owns(&store, user_id) && store.states.get(&user_id).is_some_and(matches) {
+            store.states.remove(&user_id);
+            return true;
+        }
+        false
+    }
+
+    /// Atomically retrieves and removes the flow state for this user.
     pub fn take(&self, user_id: i64) -> FlowState {
-        write_or_recover(&self.states)
-            .remove(&user_id)
-            .unwrap_or_default()
+        let mut store = write_or_recover(&self.store);
+        if !self.owns(&store, user_id) {
+            return FlowState::Idle;
+        }
+        store.states.remove(&user_id).unwrap_or_default()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exiting_revokes_all_old_handles_for_the_user() {
+        let root = FlowManager::new();
+        let mut update = root.for_user(42);
+        let worker = update.clone();
+        update.set(42, FlowState::AwaitingDenoiseAudio);
+        assert!(matches!(update.exit(42), FlowState::AwaitingDenoiseAudio));
+
+        worker.set(42, FlowState::AwaitingDenoiseAudio);
+        assert!(matches!(root.get(42), FlowState::Idle));
+        update.set(42, FlowState::AwaitingTtsText);
+
+        worker.clear(42);
+        worker.clear_if(42, |_| true);
+        assert!(matches!(worker.take(42), FlowState::Idle));
+        assert!(matches!(root.get(42), FlowState::AwaitingTtsText));
+        assert!(root.for_user(42).is_current(42));
+        assert!(root.for_user(43).is_current(43));
+    }
 
     #[test]
     fn test_flow_manager_take() {

@@ -1,7 +1,7 @@
 use crate::app::state::AppState;
 use crate::bot::{send_lang_picker, send_start_menu};
 use crate::config;
-use crate::emoji::{FlowState, handler as emoji_handler};
+use crate::emoji::{FlowManager, FlowState, handler as emoji_handler};
 use crate::i18n::{reload_i18n, t, tf};
 use crate::ip_lookup::{detect_ip, handle_ip_command, handle_ip_lookup_auto};
 use crate::log::next_trace_id;
@@ -12,7 +12,7 @@ use crate::youtube::{extract_youtube_urls, handle_youtube_url};
 
 use super::flow;
 
-pub(super) async fn handle_message(
+pub(crate) async fn handle_message(
     state: &mut AppState,
     message: frankenstein::types::Message,
 ) -> crate::error::Result<()> {
@@ -33,9 +33,15 @@ pub(super) async fn handle_message(
         .as_deref()
         .or(message.caption.as_deref())
         .unwrap_or("");
+    let standalone_link = standalone_web_link(&message);
+    let dispatch_trace = next_trace_id();
     if let Some(u) = message.from.as_ref() {
-        let trace_id = crate::log::next_trace_id();
-        log_actor!("dispatch", trace_id, u, "msg" => msg_text.chars().take(40).collect::<String>());
+        let summary = if standalone_link.is_some() {
+            "[link]".to_owned()
+        } else {
+            msg_text.chars().take(40).collect()
+        };
+        log_actor!("dispatch", dispatch_trace, u, "msg" => summary);
     }
 
     // Register user in stats. (Referral attribution already ran before the
@@ -45,11 +51,23 @@ pub(super) async fn handle_message(
         stats::record_user_global(uid, username).await;
     }
 
+    let owns_link = user_id.is_some_and(|uid| flow_manager.get(uid).expects_link());
+    let route_link = standalone_link
+        .as_ref()
+        .filter(|_| user_id.is_some() && !owns_link);
+    if let (Some(uid), Some(_)) = (user_id, route_link) {
+        log_ev!("dispatch", dispatch_trace, "link_exit", "=>" => "route");
+        exit_waiting_flow(flow_manager, uid);
+    }
+
     // Step 1: addemoji link detection
-    if let Some(uid) = user_id {
+    if let Some(uid) = user_id.filter(|_| !(owns_link && standalone_link.is_some())) {
         if let Some(text) = message.text.as_deref().or(message.caption.as_deref()) {
             if !text.trim_start().starts_with('/') {
                 if let Some(pack_name) = emoji_handler::extract_addemoji_pack_name(text) {
+                    if route_link.is_some() {
+                        log_ev!("dispatch", dispatch_trace, "link_route", "handler" => "addemoji");
+                    }
                     emoji_handler::handle_addemoji_link(
                         api,
                         &message,
@@ -71,7 +89,7 @@ pub(super) async fn handle_message(
         message.text.as_deref().or(message.caption.as_deref()),
     ) {
         if let Some(rest) = text.strip_prefix("/start") {
-            flow_manager.clear(uid);
+            exit_waiting_flow(flow_manager, uid);
             let payload = rest.trim();
             if let Some(code) = payload.strip_prefix("redeem") {
                 let first_name = message
@@ -113,7 +131,17 @@ pub(super) async fn handle_message(
 
     if let Some(uid) = user_id {
         let current_flow = flow_manager.get(uid);
-        if let Some(target_url) = youtube_url_for_flow(&message, &current_flow) {
+        let youtube_url = if owns_link
+            && standalone_link.is_some()
+            && !matches!(current_flow, FlowState::AwaitingSurgeUrlInput)
+        {
+            None
+        } else if let Some(link) = route_link {
+            extract_youtube_urls(link).into_iter().next()
+        } else {
+            youtube_url_for_flow(&message, &current_flow)
+        };
+        if let Some(target_url) = youtube_url {
             if matches!(current_flow, FlowState::AwaitingSurgeUrlInput) {
                 flow_manager.clear(uid);
             }
@@ -151,7 +179,7 @@ pub(super) async fn handle_message(
     }
 
     // Step 4: active flow dispatch
-    if let Some(uid) = user_id {
+    if let Some(uid) = user_id.filter(|_| route_link.is_none()) {
         if flow::handle_flow_message(api, database, flow_manager, &message, uid).await? {
             return Ok(());
         }
@@ -248,9 +276,15 @@ pub(super) async fn handle_message(
 
                 if let Some(uid) = user_id {
                     let candidate_links = crate::common::link::extract_message_links(&message);
-                    let mut candidates = candidate_links;
+                    let mut candidates = match route_link {
+                        Some(link) => vec![link.clone()],
+                        None => candidate_links,
+                    };
                     let raw_trimmed = text.trim();
-                    if !raw_trimmed.is_empty() && !candidates.iter().any(|c| c == raw_trimmed) {
+                    if route_link.is_none()
+                        && !raw_trimmed.is_empty()
+                        && !candidates.iter().any(|c| c == raw_trimmed)
+                    {
                         candidates.push(raw_trimmed.to_string());
                     }
 
@@ -331,7 +365,7 @@ pub(super) async fn handle_message(
 
                         if let Some(platform) = crate::surge_dl::detect_social_platform(cand) {
                             if platform == "youtube" {
-                                return Ok(());
+                                continue;
                             } else if platform == "spotify" {
                                 let api2 = api.clone();
                                 let chat_id2 = message.chat.id;
@@ -389,7 +423,11 @@ pub(super) async fn handle_message(
                                 &format!("user_id={uid} chat_id={} url={cand}", message.chat.id),
                             );
                             let api2 = api.clone();
-                            let msg2 = message.clone();
+                            let mut msg2 = message.clone();
+                            if let Some(link) = route_link {
+                                msg2.text = Some(link.clone());
+                                msg2.entities = None;
+                            }
                             let fm2 = flow_manager.clone();
                             let db2 = database.clone();
                             crate::app::spawn_user_task(async move {
@@ -402,7 +440,46 @@ pub(super) async fn handle_message(
             }
         }
     }
+    if route_link.is_some() {
+        log_ev!("dispatch", dispatch_trace, "link_unsupported", "=>" => "reply");
+        if let Err(error) =
+            crate::bot::send_text_md(api, message.chat.id, &t("unsupported_link")).await
+        {
+            stats::record_error_global("dispatch", &error).await;
+            return Err(error);
+        }
+    }
     Ok(())
+}
+
+fn exit_waiting_flow(flow_manager: &mut FlowManager, uid: i64) {
+    flow_manager.exit(uid);
+}
+
+fn standalone_web_link(message: &frankenstein::types::Message) -> Option<String> {
+    use frankenstein::types::MessageEntityType;
+
+    let text = message.text.as_deref()?;
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.chars().any(char::is_whitespace) {
+        return None;
+    }
+    let url = if trimmed.contains("://") {
+        trimmed.to_owned()
+    } else {
+        let start = text[..text.len() - text.trim_start().len()]
+            .encode_utf16()
+            .count();
+        let len = trimmed.encode_utf16().count();
+        message.entities.as_ref()?.iter().find(|entity| {
+            entity.type_field == MessageEntityType::Url
+                && entity.offset as usize == start
+                && entity.length as usize == len
+        })?;
+        format!("https://{trimmed}")
+    };
+    let parsed = reqwest::Url::parse(&url).ok()?;
+    (matches!(parsed.scheme(), "http" | "https") && parsed.has_host()).then_some(url)
 }
 
 fn youtube_url_for_flow(
@@ -425,6 +502,25 @@ fn youtube_url_for_flow(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_standalone_text_url_exits_the_flow() {
+        for (input, accepted) in [
+            ("  https://example.com/file  ", true),
+            ("watch https://example.com/file", false),
+            ("https://a.example https://b.example", false),
+            ("ftp://example.com/file", false),
+        ] {
+            let message = serde_json::from_value(serde_json::json!({
+                "message_id": 1,
+                "date": 0,
+                "chat": {"id": 1, "type": "private"},
+                "text": input,
+            }))
+            .unwrap();
+            assert_eq!(standalone_web_link(&message).is_some(), accepted);
+        }
+    }
 
     #[test]
     fn youtube_links_are_routed_while_surge_confirmation_is_pending() {

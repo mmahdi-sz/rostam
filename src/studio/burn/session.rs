@@ -11,7 +11,7 @@ use frankenstein::types::InlineKeyboardMarkup;
 use super::subtitle::SubtitleFormat;
 use crate::emoji::panel::btn_icon_danger;
 use crate::i18n::t;
-use crate::studio::pipeline::{register_active_job, remove_active_job};
+use crate::studio::pipeline::{ACTIVE_STUDIO_JOBS, try_register_active_job};
 
 pub fn cancel_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::builder()
@@ -86,14 +86,31 @@ pub fn stop_download_ticker(session: &Arc<Mutex<BurnSession>>) {
 /// Tears a session down: stops the ticker, signals cancel, drops the registry entry and work dir.
 pub fn abort_session(session: &Arc<Mutex<BurnSession>>) {
     stop_download_ticker(session);
-    let (user_id, work_dir) = {
+    let work_dir = {
         let Ok(s) = session.lock() else { return };
         s.cancel_flag.store(true, Ordering::Relaxed);
-        (s.user_id, s.work_dir.clone())
+        s.unregister();
+        s.work_dir.clone()
     };
-    remove_active_job(user_id);
     if work_dir.exists() {
         let _ = std::fs::remove_dir_all(&work_dir);
+    }
+}
+
+impl BurnSession {
+    pub(crate) fn unregister(&self) {
+        ACTIVE_STUDIO_JOBS
+            .unregister_if(&self.user_id, |flag| Arc::ptr_eq(flag, &self.cancel_flag));
+    }
+}
+
+impl Drop for BurnSession {
+    fn drop(&mut self) {
+        if let Some(flag) = self.dl_stop_flag.take() {
+            flag.store(true, Ordering::SeqCst);
+        }
+        self.unregister();
+        let _ = std::fs::remove_dir_all(&self.work_dir);
     }
 }
 
@@ -111,7 +128,11 @@ pub fn new_session(
     }
 
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    register_active_job(user_id, cancel_flag.clone());
+    let Some(guard) = try_register_active_job(user_id, cancel_flag.clone()) else {
+        let _ = std::fs::remove_dir_all(&work_dir);
+        return None;
+    };
+    guard.disarm();
 
     Some(Arc::new(Mutex::new(BurnSession {
         user_id,
@@ -125,4 +146,35 @@ pub fn new_session(
         video_ready: false,
         job_started: false,
     })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::emoji::{FlowManager, FlowState};
+
+    #[test]
+    fn exiting_keeps_the_active_download_alive_until_its_last_owner_drops() {
+        let user_id = -872345;
+        let root = FlowManager::new();
+        let mut update = root.for_user(user_id);
+        let session = new_session(user_id, user_id, 1, crate::log::next_trace_id()).unwrap();
+        let work_dir = session.lock().unwrap().work_dir.clone();
+        update.set(
+            user_id,
+            FlowState::AwaitingStudioBurnInput {
+                session: session.clone(),
+            },
+        );
+
+        drop(update.exit(user_id));
+        assert!(matches!(root.get(user_id), FlowState::Idle));
+        assert!(work_dir.exists());
+        let flag = ACTIVE_STUDIO_JOBS.get(&user_id).unwrap();
+        assert!(!flag.load(Ordering::SeqCst));
+
+        drop(session);
+        assert!(!work_dir.exists());
+        assert!(!ACTIVE_STUDIO_JOBS.is_active(&user_id));
+    }
 }

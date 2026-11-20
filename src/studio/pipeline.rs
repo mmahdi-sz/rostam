@@ -34,11 +34,6 @@ pub fn job_guard(user_id: i64) -> JobGuard<i64> {
     ACTIVE_STUDIO_JOBS.guard(user_id)
 }
 
-/// Removes and returns the cancel flag for a user's Studio job.
-pub fn remove_active_job(user_id: i64) -> Option<Arc<AtomicBool>> {
-    ACTIVE_STUDIO_JOBS.unregister(&user_id)
-}
-
 /// Signals cancellation for a user's active Studio job.
 pub fn cancel_active_job(user_id: i64) -> bool {
     ACTIVE_STUDIO_JOBS.cancel(&user_id)
@@ -201,7 +196,7 @@ mod tests {
         assert!(cancelled);
         assert!(flag.load(Ordering::SeqCst));
         assert!(!ACTIVE_STUDIO_JOBS.is_active(&uid));
-        assert!(remove_active_job(uid).is_none());
+        assert!(ACTIVE_STUDIO_JOBS.unregister(&uid).is_none());
 
         // Test JobGuard auto-unregisters on drop
         let uid_guard = 987654322;

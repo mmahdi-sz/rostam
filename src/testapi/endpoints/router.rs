@@ -189,3 +189,84 @@ pub async fn test_callback(Json(payload): Json<Value>) -> axum::response::Respon
     }))
     .into_response()
 }
+
+pub async fn test_link(Json(payload): Json<Value>) -> axum::response::Response {
+    use crate::emoji::FlowState;
+
+    let Some(input) = payload.get("text").and_then(Value::as_str) else {
+        return (axum::http::StatusCode::BAD_REQUEST, "missing text").into_response();
+    };
+    let (before, flow) = match payload.get("flow").and_then(Value::as_str) {
+        Some("force_join") => ("force_join", FlowState::AwaitingForceJoinLink),
+        Some("pdf") | None => ("pdf", FlowState::AwaitingPdfCompressFile),
+        _ => return (axum::http::StatusCode::BAD_REQUEST, "unknown flow").into_response(),
+    };
+
+    let user_id = 12345;
+    let port = std::env::var("TESTAPI_PORT").unwrap_or_else(|_| "14379".into());
+    let (rate_limit_tx, _) = mpsc::unbounded_channel();
+    let mut state = AppState {
+        api: Bot::new_url(format!("http://127.0.0.1:{port}/bot")),
+        cookie_pool: Arc::new(tokio::sync::Mutex::new(CookiePool::empty())),
+        database: None,
+        flow_manager: FlowManager::new(),
+        rate_limit_tx,
+        user_last_update: Arc::new(dashmap::DashMap::new()),
+    };
+    state.flow_manager.set(user_id, flow);
+    let message = Message::builder()
+        .message_id(100)
+        .date(1600000000)
+        .chat(
+            Chat::builder()
+                .id(user_id)
+                .type_field(ChatType::Private)
+                .build(),
+        )
+        .from(
+            User::builder()
+                .id(user_id as u64)
+                .is_bot(false)
+                .first_name("Test")
+                .build(),
+        )
+        .text(input)
+        .build();
+
+    clear_payloads();
+    let traces = Arc::new(Mutex::new(Vec::new()));
+    let stats = Arc::new(Mutex::new(Vec::new()));
+    let keys = Arc::new(Mutex::new(Vec::new()));
+    let emojis = Arc::new(Mutex::new(Vec::new()));
+    let result = CAPTURED_TRACES
+        .scope(
+            traces.clone(),
+            CAPTURED_STATS.scope(
+                stats.clone(),
+                RESOLVED_I18N_KEYS.scope(
+                    keys.clone(),
+                    CAPTURED_EMOJIS.scope(
+                        emojis.clone(),
+                        crate::app::dispatch::text::handle_message(&mut state, message),
+                    ),
+                ),
+            ),
+        )
+        .await;
+    let payloads = crate::testapi::state::CAPTURED_PAYLOADS
+        .lock()
+        .unwrap()
+        .clone();
+    Json(json!({
+        "ok": result.is_ok(),
+        "error": result.err().map(|e| e.to_string()),
+        "before": before,
+        "idle": matches!(state.flow_manager.get(user_id), FlowState::Idle),
+        "trace": traces.lock().unwrap().clone(),
+        "stats_events": stats.lock().unwrap().clone(),
+        "resolved_i18n_keys": keys.lock().unwrap().clone(),
+        "custom_emoji_spans": emojis.lock().unwrap().clone(),
+        "payloads": payloads,
+    }))
+    .into_response()
+}

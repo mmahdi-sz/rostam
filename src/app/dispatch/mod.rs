@@ -13,9 +13,25 @@ use super::state::AppState;
 
 mod callback;
 mod flow;
-mod text;
+pub(crate) mod text;
 
 pub async fn handle_update(
+    state: &mut AppState,
+    content: UpdateContent,
+) -> crate::error::Result<()> {
+    let sender = match &content {
+        UpdateContent::Message(message) => message.from.as_deref(),
+        UpdateContent::CallbackQuery(query) => Some(&query.from),
+        _ => None,
+    };
+    let mut scoped = state.clone();
+    if let Some(user) = sender {
+        scoped.flow_manager = state.flow_manager.for_user(user.id as i64);
+    }
+    handle_scoped_update(&mut scoped, content).await
+}
+
+async fn handle_scoped_update(
     state: &mut AppState,
     content: UpdateContent,
 ) -> crate::error::Result<()> {

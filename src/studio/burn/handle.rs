@@ -8,7 +8,10 @@ use frankenstein::{
     AsyncTelegramApi, ParseMode,
     client_reqwest::Bot,
     input_file::{FileUpload, InputFile},
-    methods::{DeleteMessageParams, EditMessageTextParams, SendMessageParams, SendVideoParams},
+    methods::{
+        DeleteMessageParams, EditMessageReplyMarkupParams, EditMessageTextParams,
+        SendMessageParams, SendVideoParams,
+    },
     types::{Message, ReplyMarkup},
 };
 
@@ -23,7 +26,7 @@ use crate::rank::{effective_rank, paywall::block_feature, types::Rank};
 use crate::stats::{record_error_global, record_event_global, record_event_user};
 use crate::studio::compress::format_eta_hms;
 use crate::studio::is_video_message_metadata;
-use crate::studio::pipeline::{TempDirGuard, remove_active_job, spawn_download_ticker};
+use crate::studio::pipeline::{TempDirGuard, spawn_download_ticker};
 use crate::studio::trim;
 use crate::validation::sanitize_filename;
 
@@ -115,6 +118,9 @@ pub async fn enter_burn_prompt(
 
 /// Re-arms the burn flow after a job ends: same prompt, same settings, as a new message.
 pub async fn rearm_burn_prompt(api: &Bot, chat_id: i64, user_id: i64, flow_manager: &FlowManager) {
+    if !flow_manager.is_current(user_id) {
+        return;
+    }
     let trace_id = next_trace_id();
     log_ev!("studio_burn", trace_id, "rearm", "user_id" => user_id);
 
@@ -135,6 +141,10 @@ pub async fn rearm_burn_prompt(api: &Bot, chat_id: i64, user_id: i64, flow_manag
         }
     };
 
+    if !flow_manager.is_current(user_id) {
+        return;
+    }
+
     match new_session(user_id, chat_id, sent.message_id, trace_id) {
         Some(session) => flow_manager.set(user_id, FlowState::AwaitingStudioBurnInput { session }),
         None => {
@@ -142,6 +152,21 @@ pub async fn rearm_burn_prompt(api: &Bot, chat_id: i64, user_id: i64, flow_manag
             let _ = send_text_md(api, chat_id, &t("studio.burn.error.burn_failed")).await;
             flow_manager.clear(user_id);
         }
+    }
+}
+
+async fn rearm_after_ingest_cancel(
+    api: &Bot,
+    chat_id: i64,
+    user_id: i64,
+    flow_manager: &FlowManager,
+    session: &Arc<Mutex<BurnSession>>,
+) {
+    if flow_manager.clear_if(user_id, |state| {
+        matches!(state, FlowState::AwaitingStudioBurnInput { session: current }
+            if Arc::ptr_eq(current, session))
+    }) {
+        rearm_burn_prompt(api, chat_id, user_id, flow_manager).await;
     }
 }
 
@@ -153,6 +178,7 @@ pub async fn finish_with_error(
     user_id: i64,
     status_msg_id: i32,
     text: &str,
+    session: &Arc<Mutex<BurnSession>>,
 ) {
     let _ = api
         .delete_message(
@@ -163,7 +189,9 @@ pub async fn finish_with_error(
         )
         .await;
     let _ = send_text_md(api, chat_id, text).await;
-    remove_active_job(user_id);
+    if let Ok(session) = session.lock() {
+        session.unregister();
+    }
     rearm_burn_prompt(api, chat_id, user_id, flow_manager).await;
 }
 
@@ -320,6 +348,7 @@ pub async fn handle_video_input(
             .unwrap_or(true);
         if cancelled {
             log_ev!("studio_burn", trace_id, "download_cancelled", "user_id" => user_id);
+            rearm_after_ingest_cancel(&api_cl, chat_id, user_id, &fm_cl, &session_cl).await;
             return;
         }
 
@@ -329,7 +358,16 @@ pub async fn handle_video_input(
             record_event_user(user_id, "studio_burn", "burn", "fail", 1).await;
             let text = apply_premium_to_md(&t("studio.burn.error.download_failed"));
             abort_session(&session_cl);
-            finish_with_error(&api_cl, &fm_cl, chat_id, user_id, status_msg_id, &text).await;
+            finish_with_error(
+                &api_cl,
+                &fm_cl,
+                chat_id,
+                user_id,
+                status_msg_id,
+                &text,
+                &session_cl,
+            )
+            .await;
             return;
         }
 
@@ -341,7 +379,7 @@ pub async fn handle_video_input(
         if try_claim_job(&session_cl) {
             fm_cl.clear(user_id);
             execute_burn_job(&api_cl, session_cl, db_cl, fm_cl).await;
-        } else {
+        } else if fm_cl.is_current(user_id) {
             let text = apply_premium_to_md(&t("studio.burn.video_received_need_sub"));
             let params = EditMessageTextParams::builder()
                 .chat_id(chat_id)
@@ -372,13 +410,27 @@ pub async fn handle_subtitle_input(
         return;
     };
 
-    let (work_dir, status_msg_id) = {
+    let (work_dir, status_msg_id, cancel_flag) = {
         let Ok(s) = session.lock() else { return };
-        (s.work_dir.clone(), s.status_msg_id)
+        (s.work_dir.clone(), s.status_msg_id, s.cancel_flag.clone())
     };
     let sub_path = work_dir.join(format!("sub.{}", fmt.ext()));
 
-    if let Err(e) = download_telegram_file(api, &doc.file_id, &sub_path).await {
+    let _ = api
+        .edit_message_reply_markup(
+            &EditMessageReplyMarkupParams::builder()
+                .chat_id(chat_id)
+                .message_id(status_msg_id)
+                .reply_markup(job_cancel_keyboard())
+                .build(),
+        )
+        .await;
+    let download = download_telegram_file(api, &doc.file_id, &sub_path).await;
+    if cancel_flag.load(Ordering::SeqCst) {
+        rearm_after_ingest_cancel(api, chat_id, user_id, flow_manager, &session).await;
+        return;
+    }
+    if let Err(e) = download {
         log_ev!("studio_burn", trace_id, "sub_download_failed", "=>" => format!("fail err={e}"));
         record_error_global("studio_burn", format!("subtitle download failed: {e}")).await;
         let _ = send_text_md(api, chat_id, &t("studio.burn.error.download_failed")).await;
@@ -403,6 +455,10 @@ pub async fn handle_subtitle_input(
         crate::app::spawn_user_task(async move {
             execute_burn_job(&api_cl, session, db_cl, fm_cl).await;
         });
+        return;
+    }
+
+    if !flow_manager.is_current(user_id) {
         return;
     }
 
@@ -460,7 +516,16 @@ pub async fn execute_burn_job(
     macro_rules! fail {
         ($key:expr) => {{
             let text = apply_premium_to_md(&t($key));
-            finish_with_error(api, &flow_manager, chat_id, user_id, status_msg_id, &text).await;
+            finish_with_error(
+                api,
+                &flow_manager,
+                chat_id,
+                user_id,
+                status_msg_id,
+                &text,
+                &session,
+            )
+            .await;
         }};
     }
 
@@ -510,7 +575,16 @@ pub async fn execute_burn_job(
                 ("max", &md_escape(&format_eta_hms(MAX_BURN_DURATION_SECS))),
             ],
         ));
-        finish_with_error(api, &flow_manager, chat_id, user_id, status_msg_id, &text).await;
+        finish_with_error(
+            api,
+            &flow_manager,
+            chat_id,
+            user_id,
+            status_msg_id,
+            &text,
+            &session,
+        )
+        .await;
         return;
     }
 
@@ -850,6 +924,8 @@ pub async fn execute_burn_job(
         }
     }
 
-    remove_active_job(user_id);
+    if let Ok(session) = session.lock() {
+        session.unregister();
+    }
     rearm_burn_prompt(api, chat_id, user_id, &flow_manager).await;
 }

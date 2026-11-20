@@ -184,9 +184,12 @@ pub async fn handle_callback(
     } else if cb_data == CB_STUDIO_BURN_CANCEL {
         log_ev!("studio_burn", trace_id, "cancel_flow", "user_id" => user_id);
         if let FlowState::AwaitingStudioBurnInput { session } = flow_manager.get(user_id) {
-            burn::abort_session(&session);
+            let matches_prompt = session.lock().is_ok_and(|s| s.status_msg_id == message_id);
+            if matches_prompt {
+                burn::abort_session(&session);
+                enter_studio(api, chat_id, message_id, user_id, flow_manager).await;
+            }
         }
-        enter_studio(api, chat_id, message_id, user_id, flow_manager).await;
         true
     } else if cb_data == CB_STUDIO_BURN_JOBCANCEL {
         log_ev!("studio_burn", trace_id, "job_cancel_clicked", "user_id" => user_id);

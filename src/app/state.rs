@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::UnboundedSender;
 
+#[derive(Clone)]
 pub struct AppState {
     pub api: Bot,
     pub cookie_pool: Arc<Mutex<CookiePool>>,
