@@ -118,7 +118,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg redis-tools fonts-dejavu-core espeak-ng-data
-          python -m pip install edge-tts
+          python -m pip install edge-tts yt-dlp mutagen
           mkdir -p models/piper/fa_IR
           # Use a public Persian Piper fixture with the engine's configured filenames.
           PIPER_BASE=https://huggingface.co/rhasspy/piper-voices/resolve/cf910fb59f1d79ab3b625a63993a108751c6c25d/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx
