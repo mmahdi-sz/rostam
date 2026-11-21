@@ -7,6 +7,10 @@ pub struct VideoMetadata {
     pub height: u32,
     pub bitrate: u64,
     pub fps: u32,
+    #[serde(default)]
+    pub stream_bitrate: Option<u64>,
+    #[serde(default)]
+    pub average_fps: Option<f64>,
     pub codec: String,
     pub duration_secs: u64,
 }
@@ -21,6 +25,8 @@ pub struct AudioMetadata {
     pub duration_secs: u64,
     pub duration_exact: f64,
     pub bitrate: u64,
+    #[serde(default)]
+    pub stream_bitrate: Option<u64>,
     pub has_cover_art: bool,
     pub ext: String,
 }
@@ -56,7 +62,7 @@ pub async fn run_ffprobe(video_path: &Path) -> anyhow::Result<VideoMetadata> {
             "-select_streams",
             "v:0",
             "-show_entries",
-            "format=duration,bit_rate:stream=codec_type,width,height,r_frame_rate,avg_frame_rate,codec_name",
+            "format=duration,bit_rate:stream=codec_type,width,height,r_frame_rate,avg_frame_rate,codec_name,bit_rate:stream_tags=BPS,BPS-eng",
             "-of",
             "json",
         ])
@@ -162,12 +168,33 @@ pub fn parse_video_metadata_json(
         })
         .unwrap_or(0);
 
+    let stream_bitrate = video_stream
+        .get("bit_rate")
+        .and_then(|rate| rate.as_str())
+        .and_then(|rate| rate.parse::<u64>().ok())
+        .filter(|&rate| rate > 0)
+        .or_else(|| {
+            get_tag_ci(video_stream.get("tags"), &["BPS", "BPS-eng"])
+                .and_then(|rate| rate.parse::<u64>().ok())
+                .filter(|&rate| rate > 0)
+        });
+    let average_fps = video_stream
+        .get("avg_frame_rate")
+        .and_then(|rate| rate.as_str())
+        .and_then(|rate| {
+            let (frames, seconds) = rate.split_once('/').unwrap_or((rate, "1"));
+            let fps = frames.parse::<f64>().ok()? / seconds.parse::<f64>().ok()?;
+            (fps.is_finite() && fps > 0.0).then_some(fps)
+        });
+
     Ok(VideoMetadata {
         filename: filename.to_string(),
         width,
         height,
         bitrate,
         fps,
+        stream_bitrate,
+        average_fps,
         codec,
         duration_secs,
     })
@@ -251,10 +278,12 @@ pub fn parse_audio_metadata_json(
         .unwrap_or(0.0);
     let duration_secs = duration_exact.round() as u64;
 
-    let bitrate = audio_stream
+    let stream_bitrate = audio_stream
         .get("bit_rate")
         .and_then(|b| b.as_str())
         .and_then(|s| s.parse::<u64>().ok())
+        .filter(|&bps| bps > 0);
+    let bitrate = stream_bitrate
         .or_else(|| {
             format
                 .and_then(|f| f.get("bit_rate"))
@@ -339,6 +368,7 @@ pub fn parse_audio_metadata_json(
         duration_secs,
         duration_exact,
         bitrate,
+        stream_bitrate,
         has_cover_art,
         ext,
     })
@@ -459,7 +489,9 @@ mod tests {
                     "codec_type": "video",
                     "width": 1280,
                     "height": 720,
-                    "r_frame_rate": "60/1"
+                    "r_frame_rate": "60/1",
+                    "avg_frame_rate": "60000/1001",
+                    "tags": {"BPS": "3200000"}
                 }
             ],
             "format": {
@@ -476,6 +508,8 @@ mod tests {
         assert_eq!(meta.codec, "h264");
         assert_eq!(meta.duration_secs, 26);
         assert_eq!(meta.bitrate, 3387754);
+        assert_eq!(meta.stream_bitrate, Some(3_200_000));
+        assert_eq!(meta.average_fps, Some(60_000.0 / 1001.0));
     }
 
     #[test]
@@ -539,6 +573,7 @@ mod tests {
         assert_eq!(meta.duration_secs, 185);
         assert!((meta.duration_exact - 184.502).abs() < 1e-3);
         assert_eq!(meta.bitrate, 320000);
+        assert_eq!(meta.stream_bitrate, Some(320000));
         assert!(meta.has_cover_art);
         assert_eq!(meta.title.as_deref(), Some("Bohemian Rhapsody"));
         assert_eq!(meta.artist.as_deref(), Some("Queen"));

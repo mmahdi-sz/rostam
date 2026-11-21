@@ -671,7 +671,7 @@ async fn download_single_playlist_item_attempt(
                 reason,
             ));
         }
-        let bitrate = (meta.bitrate / 1000).to_string();
+        let bitrate = super::audio::bitrate_label(&meta);
         let name = super::sanitize::sanitize_audio_filename(item_title, &bitrate, &meta.ext);
         let new_path = dir.join(name);
         if tokio::fs::rename(&path, &new_path).await.is_ok() {

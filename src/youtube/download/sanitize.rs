@@ -71,7 +71,11 @@ pub fn sanitize_video_filename(
 
 /// Create a clean, safe OS filename for downloaded audio files.
 pub fn sanitize_audio_filename(title: &str, bitrate_kbps: &str, ext: &str) -> String {
-    let suffix = format!("_{bitrate_kbps}kb_.{ext}");
+    let suffix = if bitrate_kbps == "?" || bitrate_kbps.is_empty() {
+        format!(".{ext}")
+    } else {
+        format!("_{bitrate_kbps}kb_.{ext}")
+    };
 
     const MAX_TOTAL_BYTES: usize = 245;
     let suffix_bytes = suffix.len();
@@ -114,4 +118,18 @@ pub fn sanitize_audio_filename(title: &str, bitrate_kbps: &str, ext: &str) -> St
     }
 
     format!("{normalized_title}{suffix}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_audio_filename;
+
+    #[test]
+    fn audio_filename_uses_only_available_bitrate() {
+        assert_eq!(
+            sanitize_audio_filename("Track", "128", "m4a"),
+            "Track_128kb_.m4a"
+        );
+        assert_eq!(sanitize_audio_filename("Track", "?", "m4a"), "Track.m4a");
+    }
 }

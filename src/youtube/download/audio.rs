@@ -45,6 +45,13 @@ pub(crate) async fn probe(path: &str) -> anyhow::Result<AudioMetadata> {
     Ok(meta)
 }
 
+pub(super) fn bitrate_label(meta: &AudioMetadata) -> String {
+    meta.stream_bitrate
+        .filter(|&bps| bps >= 1000)
+        .map(|bps| (bps / 1000).to_string())
+        .unwrap_or_else(|| "?".to_string())
+}
+
 pub(crate) fn caption(title: &str, quality: &str, codec: &str, bitrate: &str, url: &str) -> String {
     crate::i18n::tf(
         "youtube.audio.caption",
@@ -113,4 +120,22 @@ pub(crate) fn size_error(bytes: u64) -> Option<String> {
     let max = super::single::MAX_SIZE_MB;
     (bytes > max * 1024 * 1024)
         .then(|| crate::i18n::tf("youtube.audio.oversized", &[("max", &max.to_string())]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_bitrate_label_ignores_container_rate() {
+        let path = Path::new("track.m4a");
+        let json = br#"{
+            "streams": [{"codec_type": "audio", "codec_name": "aac"}],
+            "format": {"bit_rate": "128000", "duration": "10"}
+        }"#;
+        let meta = crate::studio::trim::probe::parse_audio_metadata_json(json, "track.m4a", path)
+            .expect("valid audio");
+        assert_eq!(meta.bitrate, 128_000);
+        assert_eq!(bitrate_label(&meta), "?");
+    }
 }

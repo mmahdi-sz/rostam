@@ -449,6 +449,7 @@ pub struct StudioCompressResp {
     pub status_job_ticker: String,
     pub status_job_ticker_eta: String,
     pub job_done_sample: String,
+    pub output_filename: String,
     pub not_a_video_err_sample: String,
 }
 
@@ -528,18 +529,33 @@ pub async fn test_studio_compress(
         &[("elapsed", &md_escape(&elapsed_sample)), ("eta", &eta_part)],
     ));
 
-    let job_done_sample = apply_premium_to_md(&tf(
+    let metadata = crate::studio::trim::probe::VideoMetadata {
+        filename: session.filename.clone(),
+        width: 854,
+        height: 480,
+        bitrate: 1_300_000,
+        stream_bitrate: Some(1_234_000),
+        fps: 30,
+        average_fps: Some(29.97),
+        codec: codec.clone(),
+        duration_secs,
+    };
+    use crate::studio::compress::runner::{output_details, output_filename};
+    let output_filename = output_filename("test_video", &container[1..], &metadata, None);
+    let done = tf(
         "studio.compress.job_done",
         &[
+            ("filename", &md_escape(&output_filename)),
             ("orig_size", &md_escape("903.4")),
             ("final_size", &md_escape("597.2")),
             ("saved_percent", "34"),
             ("compress_time", &md_escape(&format_eta_hms(1293))),
             ("download_time", &md_escape(&format_eta_hms(0))),
-            ("upload_time", &md_escape(&format_eta_hms(0))),
             ("vmaf_score", &md_escape("94.23")),
         ],
-    ));
+    );
+
+    let job_done_sample = apply_premium_to_md(&format!("{done}{}", output_details(&metadata)));
 
     let not_a_video_err_sample = apply_premium_to_md(&t("studio.compress.error.not_a_video"));
 
@@ -562,6 +578,7 @@ pub async fn test_studio_compress(
             status_job_ticker,
             status_job_ticker_eta,
             job_done_sample,
+            output_filename,
             not_a_video_err_sample,
         }),
     )

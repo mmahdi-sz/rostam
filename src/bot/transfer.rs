@@ -3,7 +3,7 @@
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use futures::TryStreamExt;
@@ -226,7 +226,7 @@ impl TransferProgress {
             if remaining > 0.0 {
                 Some(Duration::from_secs_f64(remaining))
             } else {
-                Some(Duration::ZERO)
+                None
             }
         } else {
             None
@@ -502,10 +502,12 @@ where
         form = form.text("upload_id", upload_id.clone());
     }
 
+    let local_body_done_at = Arc::new(OnceLock::new());
     for (param_name, path_str, len) in files_to_send {
         let f = tokio::fs::File::open(&path_str).await?;
         let p = progress.clone();
         let cancel_clone = cancel.clone();
+        let local_body_done_at = local_body_done_at.clone();
 
         let stream = ReaderStream::with_capacity(f, CHUNK)
             .map_err(|e| e)
@@ -517,7 +519,12 @@ where
                 }
                 futures::future::ready(Ok(c))
             })
-            .inspect_ok(move |c| p.bump(c.len() as u64));
+            .inspect_ok(move |c| {
+                p.bump(c.len() as u64);
+                if p.done.load(Ordering::Relaxed) >= total_bytes {
+                    let _ = local_body_done_at.set(Instant::now());
+                }
+            });
 
         let file_name = std::path::Path::new(&path_str)
             .file_name()
@@ -537,7 +544,7 @@ where
 
     let send = client.post(&url).multipart(form).send();
     tokio::pin!(send);
-    let mut poll_interval = tokio::time::interval(Duration::from_secs(2));
+    let mut poll_interval = tokio::time::interval(Duration::from_secs(1));
     let resp = loop {
         tokio::select! {
             response = &mut send => break response?,
@@ -546,8 +553,16 @@ where
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }, if cancel.is_some() => return Err(anyhow::anyhow!("upload cancelled")),
-            _ = poll_interval.tick(), if upload_id.is_some() => {
-                let upload_id = upload_id.as_deref().unwrap_or_default();
+            _ = poll_interval.tick() => {
+                if local_body_done_at.get().is_some()
+                    && !progress.remote_active.load(Ordering::Relaxed)
+                    && progress.stage() != Stage::Finalizing
+                {
+                    progress.set_stage(Stage::Finalizing);
+                }
+                let Some(upload_id) = upload_id.as_deref() else {
+                    continue;
+                };
                 let poll_url = format!("{}/getUploadProgress", api_url.trim_end_matches('/'));
                 if let Ok(Ok(response)) = tokio::time::timeout(Duration::from_secs(1), client
                     .post(poll_url)
@@ -584,8 +599,9 @@ where
         }
     };
 
-    let finalize_start = Instant::now();
-    progress.set_stage(Stage::Finalizing);
+    if progress.stage() != Stage::Finalizing {
+        progress.set_stage(Stage::Finalizing);
+    }
 
     let status = resp.status();
     let body = tokio::select! {
@@ -597,7 +613,7 @@ where
         }, if cancel.is_some() => return Err(anyhow::anyhow!("upload cancelled")),
     };
 
-    let finalize_elapsed = finalize_start.elapsed();
+    let finalize_elapsed = local_body_done_at.get().map(Instant::elapsed);
 
     if !status.is_success() {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
@@ -609,7 +625,9 @@ where
     }
 
     progress.set_stage(Stage::Done);
-    record_finalize_sample(total_bytes, finalize_elapsed).await;
+    if let Some(elapsed) = finalize_elapsed.filter(|elapsed| *elapsed >= MIN_SPAN) {
+        record_finalize_sample(total_bytes, elapsed).await;
+    }
 
     if let Ok(result) = serde_json::from_str::<R>(&body) {
         return Ok(result);
@@ -1038,5 +1056,8 @@ mod upload_status_tests {
         progress.set_stage(Stage::Finalizing);
         let finalizing = render_upload_status(&progress, &context);
         assert!(!finalizing.contains("100\\%"));
+        assert_eq!(progress.eta(), None);
+        progress.set_finalize_bps_hint(10);
+        assert!(progress.eta().is_some_and(|eta| eta.as_secs() >= 9));
     }
 }

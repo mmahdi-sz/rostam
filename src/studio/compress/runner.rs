@@ -27,6 +27,63 @@ use crate::studio::pipeline::{TempDirGuard, try_register_active_job};
 
 const MAX_UPLOAD_BYTES: u64 = 2000 * 1024 * 1024;
 
+fn output_fps(meta: &crate::studio::trim::probe::VideoMetadata) -> Option<String> {
+    match meta.average_fps {
+        Some(fps) if (fps - fps.round()).abs() >= 0.005 => Some(format!("{fps:.2}")),
+        Some(fps) => Some(format!("{fps:.0}")),
+        None if meta.fps > 0 => Some(meta.fps.to_string()),
+        None => None,
+    }
+}
+
+pub(crate) fn output_filename(
+    stem: &str,
+    ext: &str,
+    meta: &crate::studio::trim::probe::VideoMetadata,
+    part: Option<usize>,
+) -> String {
+    let part_tag = part.map(|part| format!("_part{part}")).unwrap_or_default();
+    let bitrate = meta.stream_bitrate.unwrap_or(meta.bitrate);
+    let bitrate_tag = if bitrate >= 1000 {
+        format!("_{}kb", bitrate / 1000)
+    } else {
+        String::new()
+    };
+    let fps_tag = output_fps(meta)
+        .map(|fps| format!("_{fps}fps"))
+        .unwrap_or_default();
+    let suffix = format!(
+        "_{}_{}p{bitrate_tag}{fps_tag}{part_tag}.{ext}",
+        meta.codec, meta.height
+    );
+    let mut stem_end = stem.len().min(255usize.saturating_sub(suffix.len()));
+    while !stem.is_char_boundary(stem_end) {
+        stem_end -= 1;
+    }
+    format!("{}{suffix}", &stem[..stem_end])
+}
+
+pub(crate) fn output_details(meta: &crate::studio::trim::probe::VideoMetadata) -> String {
+    let (bitrate_key, bitrate) = match meta.stream_bitrate {
+        Some(bitrate) => ("studio.compress.video_bitrate", bitrate),
+        None => ("studio.compress.file_bitrate", meta.bitrate),
+    };
+    let fps = output_fps(meta).unwrap_or_else(|| "—".to_string());
+    tf(
+        "studio.compress.output_details",
+        &[
+            ("bitrate_label", &t(bitrate_key)),
+            ("codec", &md_escape(&meta.codec.to_ascii_uppercase())),
+            ("resolution", &format!("{}×{}", meta.width, meta.height)),
+            (
+                "bitrate",
+                &md_escape(&crate::studio::trim::probe::format_bitrate(bitrate)),
+            ),
+            ("fps", &fps),
+        ],
+    )
+}
+
 pub async fn start_compression_job(
     api: &Bot,
     chat_id: i64,
@@ -396,10 +453,6 @@ pub async fn start_compression_job(
             0
         };
 
-        let upload_secs = job_start
-            .elapsed()
-            .as_secs()
-            .saturating_sub(download_secs + compress_secs);
         let vmaf_score = compute_vmaf_score(
             &output_file,
             &input_file,
@@ -447,11 +500,46 @@ pub async fn start_compression_job(
         let up_start = std::time::Instant::now();
 
         for (idx, part_path) in parts.iter().enumerate() {
+            let metadata = match crate::studio::trim::probe::run_ffprobe(part_path).await {
+                Ok(metadata) => Some(metadata),
+                Err(error) => {
+                    log_ev!("studio_compress", trace_id, "output_probe_failed", "err" => format!("{error}"));
+                    None
+                }
+            };
+            let mut send_path = part_path.clone();
+            let mut details = String::new();
+            if let Some(meta) = metadata {
+                let part_ext = part_path
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .unwrap_or(ext);
+                let part_number = (total_parts > 1).then_some(idx + 1);
+                let renamed = part_path.with_file_name(output_filename(
+                    file_stem,
+                    part_ext,
+                    &meta,
+                    part_number,
+                ));
+                match tokio::fs::rename(part_path, &renamed).await {
+                    Ok(()) => send_path = renamed,
+                    Err(error) => {
+                        log_ev!("studio_compress", trace_id, "output_rename_failed", "err" => format!("{error}"));
+                    }
+                }
+                details = output_details(&meta);
+            }
+            let part_path = &send_path;
             let done_raw = if total_parts > 1 {
                 tf(
                     "studio.compress.job_done_part",
                     &[
-                        ("filename", &md_escape(&session.filename)),
+                        (
+                            "filename",
+                            &md_escape(
+                                &part_path.file_name().unwrap_or_default().to_string_lossy(),
+                            ),
+                        ),
                         ("part", &md_escape(&(idx + 1).to_string())),
                         ("total", &md_escape(&total_parts.to_string())),
                         ("orig_size", &md_escape(&orig_size_str)),
@@ -459,7 +547,6 @@ pub async fn start_compression_job(
                         ("saved_percent", &saved_percent.to_string()),
                         ("compress_time", &md_escape(&format_eta_hms(compress_secs))),
                         ("download_time", &md_escape(&format_eta_hms(download_secs))),
-                        ("upload_time", &md_escape(&format_eta_hms(upload_secs))),
                         ("vmaf_score", &md_escape(&vmaf_score)),
                     ],
                 )
@@ -467,17 +554,22 @@ pub async fn start_compression_job(
                 tf(
                     "studio.compress.job_done",
                     &[
+                        (
+                            "filename",
+                            &md_escape(
+                                &part_path.file_name().unwrap_or_default().to_string_lossy(),
+                            ),
+                        ),
                         ("orig_size", &md_escape(&orig_size_str)),
                         ("final_size", &md_escape(&final_size_str)),
                         ("saved_percent", &saved_percent.to_string()),
                         ("compress_time", &md_escape(&format_eta_hms(compress_secs))),
                         ("download_time", &md_escape(&format_eta_hms(download_secs))),
-                        ("upload_time", &md_escape(&format_eta_hms(upload_secs))),
                         ("vmaf_score", &md_escape(&vmaf_score)),
                     ],
                 )
             };
-            let done_text = apply_premium_to_md(&done_raw);
+            let done_text = apply_premium_to_md(&format!("{done_raw}{details}"));
 
             let send_params = SendDocumentParams::builder()
                 .chat_id(chat_id)

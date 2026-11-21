@@ -735,6 +735,11 @@ if [ "$(echo "$RES_SC3" | jq -r '.ok')" != "true" ] || [ "$(echo "$RES_SC3" | jq
     echo "Fail: Studio compress av1 preset test failed. Got: $RES_SC3"
     exit 1
 fi
+if ! jq -e '.output_filename == "test_video_av1_480p_1234kb_29.97fps.mkv" and
+    (.job_done_sample | contains("854×480") and contains("1234 kbps") and contains("29.97 fps") and contains("tg://emoji?id=5289658765153411062"))'     >/dev/null <<<"$RES_SC3"; then
+    echo "Fail: Studio compress output metadata test failed. Got: $RES_SC3"
+    exit 1
+fi
 echo "✅ Studio Compress tests passed!"
 
 echo "Testing /test/studio/extract (Full extraction)"

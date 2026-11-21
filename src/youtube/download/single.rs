@@ -581,21 +581,7 @@ pub(crate) async fn run_download(
         .as_ref()
         .filter(|meta| meta.bitrate > 0)
         .map(|meta| (meta.bitrate / 1000).to_string())
-        .or_else(|| {
-            audio_meta
-                .as_ref()
-                .filter(|meta| meta.bitrate > 0)
-                .map(|meta| (meta.bitrate / 1000).to_string())
-        })
-        .or_else(|| {
-            if is_audio {
-                req.duration
-                    .filter(|d| *d > 0)
-                    .map(|d| ((file_size_bytes * 8) / d / 1000).to_string())
-            } else {
-                None
-            }
-        })
+        .or_else(|| audio_meta.as_ref().map(super::audio::bitrate_label))
         .unwrap_or_else(|| "?".to_string());
     let sub_tag = match (selection.subtitle_mode, selection.subtitle_langs.is_empty()) {
         (SubtitleMode::Hardsub, false) => " | Hardsub",

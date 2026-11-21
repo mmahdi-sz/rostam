@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.15] - 2026-11-21
+
+### Fixed
+- Show an estimated time remaining during compressed video uploads, with a premium emoji and an elapsed timer.
+- Include the output filename, codec, resolution, measured bitrate, and frame rate in the compression result caption.
+- Include the output codec, resolution, bitrate, and frame rate in uploaded video filenames and number split parts.
+- Name YouTube audio files using the final audio stream bitrate when available, including playlist tracks.
+
 ## [2.7.14] - 2026-11-20
 
 ### Fixed
