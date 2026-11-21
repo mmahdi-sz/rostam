@@ -42,7 +42,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 # لینک می‌سازد و NLLB به آن نیازی ندارد.
 ct2rs = { version = "0.9.21", default-features = false, features = ["tokenizers", "ruy"] }
 axum = { version = "0.8.9", features = ["json"], optional = true }
-tikv-jemallocator = "0.6"
+tikv-jemallocator = "0.7"
 espeak-ng = "0.1.3"
 piper-rs = "0.2.0"
 id3 = "1.16"
