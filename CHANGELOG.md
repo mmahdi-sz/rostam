@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.17] - 2026-11-22
+
+### Fixed
+- Recover abandoned Spotify batch downloads at startup while preserving active jobs, single-track downloads, and symbolic links.
+- Log temporary directory cleanup failures with the directory path and I/O error.
+
 ## [2.7.16] - 2026-11-21
 
 ### Fixed

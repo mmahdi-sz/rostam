@@ -5,8 +5,15 @@
 
 use std::path::{Path, PathBuf};
 
+pub(crate) fn remove_dir_if_present(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_dir_all(path) {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
+}
+
 /// RAII guard that creates a unique working directory on initialization
-/// and guarantees recursive deletion upon drop (or explicit `.cleanup()`).
+/// and attempts recursive deletion upon drop (or explicit `.cleanup()`).
 #[derive(Debug)]
 pub struct TempDirGuard {
     path: PathBuf,
@@ -49,10 +56,10 @@ impl TempDirGuard {
 
     /// Explicitly removes the directory immediately.
     pub fn cleanup(&mut self) -> std::io::Result<()> {
-        if !self.persist && self.path.exists() {
-            std::fs::remove_dir_all(&self.path)?;
+        if self.persist {
+            return Ok(());
         }
-        Ok(())
+        remove_dir_if_present(&self.path)
     }
 }
 
@@ -64,8 +71,8 @@ impl AsRef<Path> for TempDirGuard {
 
 impl Drop for TempDirGuard {
     fn drop(&mut self) {
-        if !self.persist && self.path.exists() {
-            let _ = std::fs::remove_dir_all(&self.path);
+        if let Err(err) = self.cleanup() {
+            tracing::warn!(path = %self.path.display(), %err, "temporary directory cleanup failed");
         }
     }
 }
@@ -84,6 +91,17 @@ mod tests {
             assert!(path.is_dir());
         }
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn test_temp_dir_guard_cleanup_is_idempotent() -> std::io::Result<()> {
+        let mut guard = TempDirGuard::create(
+            &format!("test_temp_guard_cleanup_{}", std::process::id()),
+            crate::log::next_trace_id(),
+        )?;
+        guard.cleanup()?;
+        assert!(!guard.path().exists());
+        guard.cleanup()
     }
 
     #[test]

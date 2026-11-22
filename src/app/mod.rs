@@ -85,6 +85,16 @@ pub async fn run() -> anyhow::Result<()> {
     fetch_bot_username(&api).await;
     spawn_cookie_refresher(&api, &mut cookie_pool);
     spawn_i18n_watcher();
+    if let Err(err) = tokio::task::spawn_blocking(|| {
+        let root = std::path::PathBuf::from(config::spotify_download_root());
+        if let Err(err) = crate::musicset::runner::recover_spotify_batches(&root) {
+            tracing::warn!(path = %root.display(), %err, "Spotify batch recovery failed");
+        }
+    })
+    .await
+    {
+        tracing::warn!(%err, "Spotify batch recovery task failed");
+    }
     crate::ip_lookup::spawn_refresher();
     crate::feynobg::engine::spawn_session_reaper();
     crate::deoldify::engine::spawn_session_reaper();

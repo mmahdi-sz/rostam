@@ -2,7 +2,11 @@
 //!
 //! Each track uses its platform single-track pipeline, avoiding duplicated logic.
 
-use std::path::PathBuf;
+use std::fs::{self, File, OpenOptions};
+use std::io;
+use std::os::fd::AsRawFd;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -15,7 +19,7 @@ use frankenstein::{
 };
 
 use crate::common::cpu_broker::CpuBrokerGuard;
-use crate::common::dir::TempDirGuard;
+use crate::common::dir::{TempDirGuard, remove_dir_if_present};
 use crate::common::format::format_clock;
 use crate::common::ticker::ProgressTicker;
 use crate::database::postgresql::PostgresDatabase;
@@ -26,6 +30,104 @@ use crate::musicset::{
     MS_SPLIT_MB, PendingSet, SetItems, edit_status, job_cancel_keyboard, register_cancel,
     send_status,
 };
+
+fn lock_directory(path: &Path, operation: libc::c_int) -> io::Result<File> {
+    let dir = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(path)?;
+    // The descriptor owns the lock until it closes, including on process exit.
+    if unsafe { libc::flock(dir.as_raw_fd(), operation) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(dir)
+}
+
+fn create_set_dir(
+    root: &Path,
+    job_dir: &Path,
+    spotify: bool,
+) -> io::Result<(TempDirGuard, Option<File>)> {
+    if !spotify {
+        fs::create_dir_all(job_dir)?;
+        return Ok((TempDirGuard::from_path(job_dir.to_owned()), None));
+    }
+
+    fs::create_dir_all(root)?;
+    // Exclude recovery between creating the directory and locking it.
+    let _root_lock = lock_directory(root, libc::LOCK_SH)?;
+    fs::create_dir(job_dir)?;
+    let guard = TempDirGuard::from_path(job_dir.to_owned());
+    let lock = lock_directory(job_dir, libc::LOCK_EX)?;
+    Ok((guard, Some(lock)))
+}
+
+pub(crate) fn recover_spotify_batches(root: &Path) -> io::Result<()> {
+    let Some(name) = root.file_name() else {
+        return Ok(());
+    };
+    let parent = root
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    // Resolve configured parent aliases, then open the Spotify root without following links.
+    let root = match parent.canonicalize() {
+        Ok(parent) => parent.join(name),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err),
+    };
+    let root_lock = match lock_directory(&root, libc::LOCK_EX) {
+        Ok(lock) => lock,
+        Err(err)
+            if matches!(
+                err.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return Ok(());
+        }
+        Err(err) => return Err(err),
+    };
+    // Keep the scan and deletion under the same directory even if its path is renamed.
+    let locked_root = PathBuf::from(format!("/proc/self/fd/{}", root_lock.as_raw_fd()));
+    for entry in fs::read_dir(locked_root)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some((user, trace)) = name
+            .to_str()
+            .and_then(|name| name.strip_prefix("set_"))
+            .and_then(|name| name.split_once('_'))
+        else {
+            continue;
+        };
+        let (Ok(user_id), Ok(trace_id)) = (user.parse::<u64>(), trace.parse::<u64>()) else {
+            continue;
+        };
+        if user_id > i64::MIN.unsigned_abs()
+            || name != format!("set_{user_id}_{trace_id}").as_str()
+            || !entry.file_type()?.is_dir()
+        {
+            continue;
+        }
+        let path = entry.path();
+        match lock_directory(&path, libc::LOCK_EX | libc::LOCK_NB) {
+            Ok(_job_lock) => {
+                if let Err(err) = remove_dir_if_present(&path) {
+                    tracing::warn!(path = %root.join(&name).display(), %err, "Spotify batch cleanup failed");
+                }
+            }
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::NotFound
+                ) => {}
+            Err(err) => {
+                tracing::warn!(path = %root.join(&name).display(), %err, "Spotify batch recovery lock failed")
+            }
+        }
+    }
+    Ok(())
+}
 
 /// Readable title from SoundCloud URL fallback.
 fn sc_slug(url: &str) -> String {
@@ -42,7 +144,9 @@ fn sc_slug(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::sc_slug;
+    use super::{File, TempDirGuard, create_set_dir, fs, io, recover_spotify_batches, sc_slug};
+    use std::os::unix::fs::symlink;
+    use std::time::SystemTime;
 
     #[test]
     fn slug_from_sc_url() {
@@ -51,6 +155,70 @@ mod tests {
             "az ghadim"
         );
         assert_eq!(sc_slug("https://soundcloud.com/a/b/"), "b");
+    }
+
+    #[test]
+    fn spotify_batch_recovery_preserves_active_and_unrelated_entries() -> io::Result<()> {
+        let temp = TempDirGuard::create(
+            &format!("spotify_batch_recovery_{}", std::process::id()),
+            crate::log::next_trace_id(),
+        )?;
+        let root = temp.path().join("spotify");
+        let active = root.join("set_1_1");
+        let active_guard = create_set_dir(&root, &active, true)?;
+        let stale = root.join("set_2_2");
+        let abandoned = root.join("set_2_3");
+        let (mut abandoned_guard, abandoned_lock) = create_set_dir(&root, &abandoned, true)?;
+        abandoned_guard.persist();
+        drop((abandoned_guard, abandoned_lock));
+        let single = root.join("job_3_3");
+        let unrelated = root.join("set_3_3_backup");
+        let file = root.join("set_4_4");
+        let link = root.join("set_5_5");
+        let outside = temp.path().join("outside");
+        for dir in [&stale, &single, &unrelated, &outside] {
+            fs::create_dir(dir)?;
+        }
+        fs::write(active.join("working.part"), b"active")?;
+        File::open(&active)?.set_modified(SystemTime::UNIX_EPOCH)?;
+        fs::write(stale.join("track.mp3"), b"stale")?;
+        fs::write(&file, b"not a directory")?;
+        fs::write(outside.join("keep"), b"external")?;
+        symlink(&outside, &link)?;
+        symlink(&outside, stale.join("nested_link"))?;
+
+        recover_spotify_batches(&root)?;
+        assert!(!stale.exists());
+        assert!(!abandoned.exists());
+        assert!(active.join("working.part").is_file());
+        assert!(single.is_dir());
+        assert!(unrelated.is_dir());
+        assert!(file.is_file());
+        assert!(fs::symlink_metadata(link)?.is_symlink());
+        assert!(outside.join("keep").is_file());
+        drop(active_guard);
+        assert!(!active.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn spotify_batch_recovery_resolves_parent_alias_but_skips_symlinked_root() -> io::Result<()> {
+        let temp = TempDirGuard::create(
+            &format!("spotify_batch_recovery_{}", std::process::id()),
+            crate::log::next_trace_id(),
+        )?;
+        let real = temp.path().join("real");
+        let link = temp.path().join("link");
+        let batch = real.join("spotify/set_1_1");
+        fs::create_dir_all(&batch)?;
+        symlink(&real, &link)?;
+        let root_link = temp.path().join("spotify_link");
+        symlink(real.join("spotify"), &root_link)?;
+        recover_spotify_batches(&root_link.join(""))?;
+        assert!(batch.is_dir());
+        recover_spotify_batches(&link.join("spotify"))?;
+        assert!(!batch.exists());
+        Ok(())
     }
 }
 
@@ -76,23 +244,34 @@ pub async fn run_set_job(
 ) {
     let (cancel, _cancel_guard) = register_cancel(user_id);
 
-    let root = if pending.domain == "sp" {
+    let spotify = pending.domain == "sp";
+    let root = if spotify {
         crate::config::spotify_download_root()
     } else {
         crate::config::soundcloud_download_root()
     };
-    let job_dir = PathBuf::from(root).join(format!("set_{}_{trace_id}", user_id.abs()));
-    if let Err(e) = tokio::fs::create_dir_all(&job_dir).await {
-        log_ev!("ms", trace_id, "workdir_fail", "err" => e.to_string());
-        crate::stats::record_error_global("musicset", format!("workdir: {e}")).await;
-        if status_msg_id > 0 {
-            edit_status(&api, chat_id, status_msg_id, &t("musicset.io_error"), None).await;
-        } else {
-            let _ = send_status(&api, chat_id, &t("musicset.io_error")).await;
+    let root = PathBuf::from(root);
+    let job_dir = root.join(format!("set_{}_{trace_id}", user_id.unsigned_abs()));
+    let workdir = tokio::task::spawn_blocking({
+        let job_dir = job_dir.clone();
+        move || create_set_dir(&root, &job_dir, spotify)
+    })
+    .await
+    .map_err(io::Error::other)
+    .and_then(|result| result);
+    let dir_guard = match workdir {
+        Ok(guard) => Arc::new(guard),
+        Err(e) => {
+            log_ev!("ms", trace_id, "workdir_fail", "err" => e.to_string());
+            crate::stats::record_error_global("musicset", format!("workdir: {e}")).await;
+            if status_msg_id > 0 {
+                edit_status(&api, chat_id, status_msg_id, &t("musicset.io_error"), None).await;
+            } else {
+                let _ = send_status(&api, chat_id, &t("musicset.io_error")).await;
+            }
+            return;
         }
-        return;
-    }
-    let _dir_guard = TempDirGuard::from_path(job_dir.clone());
+    };
 
     let total = pending.len();
     log_ev!("ms", trace_id, "job_start", "tracks" => total, "mode" => if zip_mode { "zip" } else { "one" });
@@ -190,6 +369,8 @@ pub async fn run_set_job(
     let producer_job_dir = job_dir.clone();
     let producer_cores = cores.clone();
     let producer_pending = pending.clone();
+    // Cancelled runners can leave download tasks winding down.
+    let producer_dir_guard = spotify.then(|| Arc::clone(&dir_guard));
 
     tokio::spawn(async move {
         for idx in 0..total {
@@ -205,7 +386,9 @@ pub async fn run_set_job(
             let handle = match &producer_pending.items {
                 SetItems::Spotify(items) => {
                     let item = items[idx].clone();
+                    let dir_guard = producer_dir_guard.clone();
                     tokio::spawn(async move {
+                        let _dir_guard = dir_guard;
                         let _permit = match task_dl_sem.acquire().await {
                             Ok(p) => p,
                             Err(_) => return None,
