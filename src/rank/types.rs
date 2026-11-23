@@ -105,7 +105,8 @@ impl Rank {
     pub fn daily_traffic_bytes(&self) -> u64 {
         match self {
             Self::Dalavar | Self::Sepahbod => 5 * 1024 * 1024 * 1024,
-            Self::Esfandyar | Self::Rostam => 40 * 1024 * 1024 * 1024,
+            Self::Esfandyar => 40 * 1024 * 1024 * 1024,
+            Self::Rostam => 250 * 1024 * 1024 * 1024,
             // AI-only plan — inherits traffic limit from Dalavar
             Self::Sohrab => Self::Dalavar.daily_traffic_bytes(),
         }
@@ -126,7 +127,8 @@ impl Rank {
     pub fn traffic_daily_next_rank(&self) -> Option<Self> {
         match self {
             Self::Dalavar | Self::Sepahbod | Self::Sohrab => Some(Self::Esfandyar),
-            Self::Esfandyar | Self::Rostam => None,
+            Self::Esfandyar => Some(Self::Rostam),
+            Self::Rostam => None,
         }
     }
 
@@ -381,6 +383,24 @@ pub fn ceil_div(a: i64, b: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_rostam_daily_traffic_limit() {
+        assert_eq!(Rank::Rostam.daily_traffic_bytes(), 250 * 1024 * 1024 * 1024);
+        assert_eq!(
+            Rank::Rostam.monthly_traffic_bytes(),
+            400 * 1024 * 1024 * 1024
+        );
+        assert_eq!(
+            Rank::Esfandyar.daily_traffic_bytes(),
+            40 * 1024 * 1024 * 1024
+        );
+        assert_eq!(
+            Rank::Esfandyar.traffic_daily_next_rank(),
+            Some(Rank::Rostam)
+        );
+        assert_eq!(Rank::Rostam.traffic_daily_next_rank(), None);
+    }
 
     #[test]
     fn test_playlist_limit() {

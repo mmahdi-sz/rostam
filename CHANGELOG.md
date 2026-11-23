@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.18] - 2026-11-23
+
+### Changed
+- Increase the Rostam rank's daily traffic quota from 40 GB to 250 GB. The monthly quota remains 400 GB.
+
 ## [2.7.17] - 2026-11-22
 
 ### Fixed
