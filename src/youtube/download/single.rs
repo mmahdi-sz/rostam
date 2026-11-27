@@ -199,7 +199,8 @@ pub(crate) async fn run_download(
     let mut final_filepath = None;
     let mut format_fallback_tried = false;
 
-    for attempt in 0..max_attempts {
+    let mut empty_download_retried = false;
+    for attempt in 0..max_attempts.max(2) {
         let (mut cpu, mut cmd) = if is_audio {
             let reservation = tokio::select! {
                 biased;
@@ -329,10 +330,28 @@ pub(crate) async fn run_download(
             &format!("attempt={attempt} max={max_attempts} status={status} err={err}"),
         );
 
+        if !empty_download_retried
+            && attempt + 1 < max_attempts.max(2)
+            && crate::youtube::fetch::is_empty_media_download(&err, &classification)
+        {
+            empty_download_retried = true;
+            log_trace(
+                trace_id,
+                "download_retry",
+                &format!("attempt={attempt} reason=no_data_blocks"),
+            );
+            cleanup_partial_files(&dir).await;
+            continue;
+        }
+
         let is_format_unavailable = err
             .to_ascii_lowercase()
             .contains("requested format is not available");
-        if !is_audio && is_format_unavailable && !format_fallback_tried {
+        if !is_audio
+            && is_format_unavailable
+            && !format_fallback_tried
+            && attempt + 1 < max_attempts
+        {
             format_fallback_tried = true;
             let fallback_format =
                 format!("bestvideo[height<={height}]+bestaudio/bestvideo+bestaudio/best");
@@ -411,7 +430,7 @@ pub(crate) async fn run_download(
                     log_trace(
                         trace_id,
                         "download_retry_with_cookie",
-                        &format!("attempt={attempt} next_cookie_spec={current_cookie_spec}"),
+                        &format!("attempt={attempt} reason=cookie_failure"),
                     );
                     cleanup_partial_files(&dir).await;
                     continue;
@@ -419,6 +438,23 @@ pub(crate) async fn run_download(
             }
         }
 
+        if is_403_or_bad
+            && !matches!(
+                &classification,
+                crate::youtube::YtdlpErrorClassification::RateLimited
+            )
+        {
+            let reason = if attempt + 1 >= max_attempts {
+                "attempt_limit"
+            } else {
+                "no_alternate_cookie"
+            };
+            log_trace(
+                trace_id,
+                "download_retry_stopped",
+                &format!("attempt={attempt} reason={reason}"),
+            );
+        }
         log_trace(
             trace_id,
             "download_failed",

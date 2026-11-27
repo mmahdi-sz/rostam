@@ -457,7 +457,12 @@ pub async fn handle_youtube_url(
                     "fetch_video_unavailable",
                     &format!("url={url} err={msg}"),
                 );
-                let _ = send_text_md(api, chat_id, &t("youtube.video_unavailable")).await;
+                let key = if super::fetch::is_missing_playlist(&msg) {
+                    "youtube.playlist_unavailable"
+                } else {
+                    "youtube.video_unavailable"
+                };
+                let _ = send_text_md(api, chat_id, &t(key)).await;
                 return Ok(());
             }
             Err(FetchError::AgeRestricted(msg)) => {

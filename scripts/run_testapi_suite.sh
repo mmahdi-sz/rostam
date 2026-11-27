@@ -1124,9 +1124,9 @@ echo "✅ Extended TestAPI Endpoint Suite passed!"
 
 echo ""
 
-YT_SCENARIOS=(missing hardsub remux codec rolling translation_no_source)
+YT_SCENARIOS=(missing invalid_target separate_file embedded hardsub remux codec rolling translation_no_source translation_busy)
 if [ -r files/models/nllb/model.bin ]; then
-    YT_SCENARIOS+=(translation_ja_en)
+    YT_SCENARIOS+=(translation_ja_en translation)
 else
     echo "Skipping real NLLB translation test: files/models/nllb/model.bin is unavailable."
 fi

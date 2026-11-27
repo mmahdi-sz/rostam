@@ -24,6 +24,7 @@ pub async fn translate_subtitles(
 
     super::files::clean_subtitles_in_dir(dir)?;
     let Some((source_srt, source_lang)) = find_source_subtitle(dir, source_hint) else {
+        log_trace(trace_id, "subtitle_source_missing", "=> fail");
         return Err("no supported source subtitle".to_string());
     };
 
@@ -37,6 +38,7 @@ pub async fn translate_subtitles(
         .await;
     }
 
+    let mut translation_error = None;
     for tgt in target_langs {
         if subtitle_file_exists_for_lang(dir, tgt) {
             continue;
@@ -53,6 +55,7 @@ pub async fn translate_subtitles(
         }
         let mut broker = CpuBrokerGuard::acquire(user_id, trace_id, "yt").await;
         if !broker.is_acquired() {
+            log_trace(trace_id, "subtitle_cpu_broker_unavailable", "=> fail");
             return Err("CPU broker unavailable".to_string());
         }
         let num_threads = broker.cores().len().max(1);
@@ -100,20 +103,18 @@ pub async fn translate_subtitles(
 
         broker.release().await;
 
-        match res {
-            Ok(()) => {
+        let error = match res {
+            Ok(()) if subtitle_file_exists_for_lang(dir, tgt) => {
                 log_trace(trace_id, "translate_subtitle_ok", &format!("lang={tgt}"));
+                continue;
             }
-            Err(e) => {
-                log_trace(
-                    trace_id,
-                    "translate_subtitle_error",
-                    &format!("lang={tgt} err={e}"),
-                );
-            }
-        }
+            Ok(()) => "translated subtitle missing or invalid".to_string(),
+            Err(error) => error,
+        };
+        log_trace(trace_id, "translate_subtitle_error", &format!("lang={tgt}"));
+        translation_error.get_or_insert(error);
     }
-    Ok(())
+    translation_error.map_or(Ok(()), Err)
 }
 
 pub(super) fn find_source_subtitle(
@@ -212,7 +213,7 @@ pub async fn ensure_translated_subtitles(
         )
         .await;
     }
-    if let Err(e) = translate_subtitles(
+    if translate_subtitles(
         api,
         chat_id,
         msg_id,
@@ -223,7 +224,8 @@ pub async fn ensure_translated_subtitles(
         user_id,
     )
     .await
+    .is_err()
     {
-        log_trace(trace_id, "ensure_translate_failed", &format!("err={e}"));
+        log_trace(trace_id, "ensure_translate_failed", "=> fail");
     }
 }

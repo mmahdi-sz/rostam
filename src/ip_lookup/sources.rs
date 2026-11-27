@@ -9,11 +9,11 @@ const USER_AGENT: &str = "ros-telegram-bot-ip-lookup/1.0";
 
 pub async fn fetch_all(ip: &str, trace_id: u64) -> IpReport {
     let (rdap, ip_api, ipinfo, bgpview, abuseipdb) = tokio::join!(
-        fetch_rdap(ip),
-        fetch_ip_api(ip),
-        fetch_ipinfo(ip),
-        fetch_bgpview(ip),
-        fetch_abuseipdb(ip),
+        fetch_rdap(ip, trace_id),
+        fetch_ip_api(ip, trace_id),
+        fetch_ipinfo(ip, trace_id),
+        fetch_bgpview(ip, trace_id),
+        fetch_abuseipdb(ip, trace_id),
     );
 
     let mut report = IpReport {
@@ -21,41 +21,33 @@ pub async fn fetch_all(ip: &str, trace_id: u64) -> IpReport {
         ..Default::default()
     };
 
-    match rdap {
-        Some(v) => apply_rdap(&mut report, &v),
-        None => log_ev!("ip_lookup", trace_id, "source_rdap", "=>" => "fail"),
+    if let Some(v) = rdap {
+        apply_rdap(&mut report, &v);
     }
-    match ip_api {
-        Some(v) => apply_ip_api(&mut report, &v),
-        None => log_ev!("ip_lookup", trace_id, "source_ip_api", "=>" => "fail"),
+    if let Some(v) = ip_api {
+        apply_ip_api(&mut report, &v);
     }
-    match ipinfo {
-        Some(v) => apply_ipinfo(&mut report, &v),
-        None => log_ev!("ip_lookup", trace_id, "source_ipinfo", "=>" => "skip_or_fail"),
+    if let Some(v) = ipinfo {
+        apply_ipinfo(&mut report, &v);
     }
-    match bgpview {
-        Some(v) => {
-            log_ev!("ip_lookup", trace_id, "source_bgpview", "=>" => "ok",
-                "other_prefixes" => v.get("other_prefixes").and_then(|p| p.as_array()).map(|a| a.len()).unwrap_or(0));
-            apply_bgpview(&mut report, &v);
-        }
-        None => log_ev!("ip_lookup", trace_id, "source_bgpview", "=>" => "fail"),
+    if let Some(v) = bgpview {
+        apply_bgpview(&mut report, &v);
     }
-    match abuseipdb {
-        Some(v) => {
-            log_ev!("ip_lookup", trace_id, "source_abuseipdb", "=>" => "ok",
-                "score" => v.get("abuseConfidenceScore").and_then(|x| x.as_i64()).unwrap_or(-1));
-            apply_abuseipdb(&mut report, &v);
-        }
-        None => log_ev!("ip_lookup", trace_id, "source_abuseipdb", "=>" => "skip_or_fail"),
+    if let Some(v) = abuseipdb {
+        apply_abuseipdb(&mut report, &v);
     }
 
     report
 }
 
-async fn get_json(url: &str, headers: &[(&str, &str)]) -> Option<Value> {
+async fn get_json(
+    trace_id: u64,
+    source: &str,
+    url: &str,
+    headers: &[(&str, &str)],
+) -> Option<Value> {
     if !crate::validation::is_safe_url(url) {
-        eprintln!("[ip_lookup] SSRF block: rejected url={url}");
+        source_result(trace_id, source, "blocked_url", None);
         return None;
     }
     let client = crate::http::client();
@@ -66,8 +58,50 @@ async fn get_json(url: &str, headers: &[(&str, &str)]) -> Option<Value> {
     for (k, v) in headers {
         req = req.header(*k, *v);
     }
-    let resp = tokio::time::timeout(TIMEOUT, req.send()).await.ok()?.ok()?;
-    resp.json::<Value>().await.ok()
+    fetch_json(req, trace_id, source).await
+}
+
+async fn fetch_json(req: reqwest::RequestBuilder, trace_id: u64, source: &str) -> Option<Value> {
+    source_result(trace_id, source, "request", None);
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(err) => {
+            source_result(trace_id, source, request_error(&err), None);
+            return None;
+        }
+    };
+    let status = resp.status();
+    if !status.is_success() {
+        source_result(trace_id, source, "http_error", Some(status.as_u16()));
+        return None;
+    }
+    match resp.json::<Value>().await {
+        Ok(Value::Null) => source_result(trace_id, source, "empty_response", Some(status.as_u16())),
+        Ok(value) if value.is_object() => {
+            source_result(trace_id, source, "ok", Some(status.as_u16()));
+            return Some(value);
+        }
+        Ok(_) => source_result(trace_id, source, "invalid_response", Some(status.as_u16())),
+        Err(err) => source_result(trace_id, source, request_error(&err), Some(status.as_u16())),
+    }
+    None
+}
+
+fn request_error(err: &reqwest::Error) -> &'static str {
+    if err.is_timeout() {
+        "timeout"
+    } else if err.is_connect() {
+        "connection_failed"
+    } else if err.is_decode() {
+        "invalid_response"
+    } else {
+        "request_failed"
+    }
+}
+
+fn source_result(trace_id: u64, source: &str, outcome: &str, status: Option<u16>) {
+    log_ev!("ip_lookup", trace_id, "source_result", "source" => source,
+        "outcome" => outcome, "status" => status.map_or_else(|| "-".to_string(), |code| code.to_string()));
 }
 
 fn s(v: &Value, key: &str) -> Option<String> {
@@ -81,8 +115,8 @@ fn f(v: &Value, key: &str) -> Option<f64> {
     v.get(key).and_then(|x| x.as_f64())
 }
 
-async fn fetch_rdap(ip: &str) -> Option<Value> {
-    get_json(&format!("https://rdap.org/ip/{ip}"), &[]).await
+async fn fetch_rdap(ip: &str, trace_id: u64) -> Option<Value> {
+    get_json(trace_id, "rdap", &format!("https://rdap.org/ip/{ip}"), &[]).await
 }
 
 /// Extracts a specified field (email/tel/fn) from an entity's vcardArray.
@@ -151,10 +185,17 @@ fn apply_rdap(report: &mut IpReport, v: &Value) {
     }
 }
 
-async fn fetch_ip_api(ip: &str) -> Option<Value> {
+async fn fetch_ip_api(ip: &str, trace_id: u64) -> Option<Value> {
     let fields = "status,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as,asname,mobile,proxy,hosting,query";
-    let v = get_json(&format!("http://ip-api.com/json/{ip}?fields={fields}"), &[]).await?;
+    let v = get_json(
+        trace_id,
+        "ip_api",
+        &format!("http://ip-api.com/json/{ip}?fields={fields}"),
+        &[],
+    )
+    .await?;
     if v.get("status").and_then(|s| s.as_str()) != Some("success") {
+        source_result(trace_id, "ip_api", "rejected_response", None);
         return None;
     }
     Some(v)
@@ -178,9 +219,18 @@ fn apply_ip_api(report: &mut IpReport, v: &Value) {
     report.geo_hosting = v.get("hosting").and_then(|x| x.as_bool());
 }
 
-async fn fetch_ipinfo(ip: &str) -> Option<Value> {
-    let token = crate::config::ipinfo_token()?;
-    get_json(&format!("https://ipinfo.io/{ip}/json?token={token}"), &[]).await
+async fn fetch_ipinfo(ip: &str, trace_id: u64) -> Option<Value> {
+    let Some(token) = crate::config::ipinfo_token() else {
+        source_result(trace_id, "ipinfo", "missing_config", None);
+        return None;
+    };
+    get_json(
+        trace_id,
+        "ipinfo",
+        &format!("https://ipinfo.io/{ip}/json?token={token}"),
+        &[],
+    )
+    .await
 }
 
 fn apply_ipinfo(report: &mut IpReport, v: &Value) {
@@ -206,8 +256,14 @@ fn apply_ipinfo(report: &mut IpReport, v: &Value) {
 
 /// bgpview.io archived (shutdown Nov 2025) — ipctl.io is compatible replacement:
 /// `/v1/ip/{ip}` for current IP's ASN/prefix, `/v1/asn/{asn}` for other prefixes of same ASN.
-async fn fetch_bgpview(ip: &str) -> Option<Value> {
-    let ip_resp = get_json(&format!("https://api.ipctl.io/v1/ip/{ip}"), &[]).await?;
+async fn fetch_bgpview(ip: &str, trace_id: u64) -> Option<Value> {
+    let ip_resp = get_json(
+        trace_id,
+        "bgpview",
+        &format!("https://api.ipctl.io/v1/ip/{ip}"),
+        &[],
+    )
+    .await?;
     let data = ip_resp.get("data")?.clone();
     let asn_num = data
         .get("asn")
@@ -215,10 +271,15 @@ async fn fetch_bgpview(ip: &str) -> Option<Value> {
         .and_then(|x| x.as_i64());
 
     let other_prefixes = if let Some(asn) = asn_num {
-        get_json(&format!("https://api.ipctl.io/v1/asn/{asn}"), &[])
-            .await
-            .and_then(|v| v.get("data").and_then(|d| d.get("prefixes")).cloned())
-            .unwrap_or(Value::Array(vec![]))
+        get_json(
+            trace_id,
+            "bgpview_asn",
+            &format!("https://api.ipctl.io/v1/asn/{asn}"),
+            &[],
+        )
+        .await
+        .and_then(|v| v.get("data").and_then(|d| d.get("prefixes")).cloned())
+        .unwrap_or(Value::Array(vec![]))
     } else {
         Value::Array(vec![])
     };
@@ -252,14 +313,23 @@ fn apply_bgpview(report: &mut IpReport, v: &Value) {
     }
 }
 
-async fn fetch_abuseipdb(ip: &str) -> Option<Value> {
-    let key = crate::config::abuseipdb_key()?;
+async fn fetch_abuseipdb(ip: &str, trace_id: u64) -> Option<Value> {
+    let Some(key) = crate::config::abuseipdb_key() else {
+        source_result(trace_id, "abuseipdb", "missing_config", None);
+        return None;
+    };
     let v = get_json(
+        trace_id,
+        "abuseipdb",
         &format!("https://api.abuseipdb.com/api/v2/check?ipAddress={ip}&maxAgeInDays=90"),
         &[("Key", &key), ("Accept", "application/json")],
     )
     .await?;
-    v.get("data").cloned()
+    let data = v.get("data").filter(|data| data.is_object()).cloned();
+    if data.is_none() {
+        source_result(trace_id, "abuseipdb", "missing_data", None);
+    }
+    data
 }
 
 fn apply_abuseipdb(report: &mut IpReport, v: &Value) {
@@ -268,4 +338,46 @@ fn apply_abuseipdb(report: &mut IpReport, v: &Value) {
     report.abuse_usage_type = s(v, "usageType");
     report.abuse_is_public = v.get("isPublic").and_then(|x| x.as_bool());
     report.abuse_is_whitelisted = v.get("isWhitelisted").and_then(|x| x.as_bool());
+}
+
+#[cfg(all(test, feature = "testapi"))]
+mod source_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn one_failed_source_does_not_discard_available_data() {
+        let app = axum::Router::new()
+            .route(
+                "/ok",
+                axum::routing::get(|| async { axum::Json(serde_json::json!({"country": "IR"})) }),
+            )
+            .route(
+                "/rejected",
+                axum::routing::get(|| async {
+                    (axum::http::StatusCode::UNAUTHORIZED, "private response")
+                }),
+            )
+            .route("/invalid", axum::routing::get(|| async { "invalid JSON" }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+        let client = crate::http::client();
+        let (available, rejected, invalid) = tokio::join!(
+            fetch_json(client.get(format!("http://{address}/ok")), 0, "rdap"),
+            fetch_json(
+                client.get(format!("http://{address}/rejected")),
+                0,
+                "ipinfo"
+            ),
+            fetch_json(
+                client.get(format!("http://{address}/invalid")),
+                0,
+                "abuseipdb"
+            ),
+        );
+        server.abort();
+        assert_eq!(available.unwrap()["country"], "IR");
+        assert!(rejected.is_none());
+        assert!(invalid.is_none());
+    }
 }

@@ -1,5 +1,6 @@
 [Unit]
 Description=Surge download manager daemon
+RequiresMountsFor=/data/mahdidev/ros
 After=network.target
 
 [Service]

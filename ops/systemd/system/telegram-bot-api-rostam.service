@@ -1,4 +1,5 @@
 [Unit]
+RequiresMountsFor=/data/telegram-bot-api-rostam
 Description=Telegram Bot API Server (rostam, isolated)
 After=network.target
 

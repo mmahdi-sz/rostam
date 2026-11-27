@@ -21,6 +21,22 @@ pub enum YtdlpErrorClassification {
     Other(String),
 }
 
+pub(crate) fn is_empty_media_download(
+    error: &str,
+    classification: &YtdlpErrorClassification,
+) -> bool {
+    matches!(classification, YtdlpErrorClassification::Other(_))
+        && error
+            .to_ascii_lowercase()
+            .contains("did not get any data blocks")
+}
+
+pub(crate) fn is_missing_playlist(error: &str) -> bool {
+    error
+        .to_ascii_lowercase()
+        .contains("the playlist does not exist")
+}
+
 pub fn classify_ytdlp_stderr(stderr: &str) -> YtdlpErrorClassification {
     let lower = stderr.to_ascii_lowercase();
 
@@ -49,7 +65,8 @@ pub fn classify_ytdlp_stderr(stderr: &str) -> YtdlpErrorClassification {
             .trim();
         return YtdlpErrorClassification::LiveStream(msg.to_string());
     }
-    if lower.contains("video unavailable")
+    if is_missing_playlist(&lower)
+        || lower.contains("video unavailable")
         || lower.contains("this video is private")
         || lower.contains("private video")
         || lower.contains("this video has been removed")
@@ -850,6 +867,23 @@ mod tests {
             classify_ytdlp_stderr(stderr2),
             YtdlpErrorClassification::MembersOnly
         );
+    }
+
+    #[test]
+    fn test_empty_media_retry_excludes_rate_limit() {
+        for (error, retry) in [
+            ("ERROR: Did not get any data blocks", true),
+            ("HTTP Error 429: Did not get any data blocks", false),
+            (
+                "ERROR: unable to download video data: HTTP Error 403",
+                false,
+            ),
+        ] {
+            assert_eq!(
+                is_empty_media_download(error, &classify_ytdlp_stderr(error)),
+                retry
+            );
+        }
     }
 
     #[test]

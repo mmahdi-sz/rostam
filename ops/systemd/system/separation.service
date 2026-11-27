@@ -1,5 +1,6 @@
 [Unit]
 Description=Vocal/Instrumental Separation Service
+RequiresMountsFor=/data/mahdidev/ros
 After=network.target redis-server.service
 Wants=redis-server.service
 

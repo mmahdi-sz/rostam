@@ -316,7 +316,8 @@ async fn download_single_playlist_item_with_retry(
         1
     };
 
-    for attempt in 0..max_attempts {
+    let mut empty_download_retried = false;
+    for attempt in 0..max_attempts.max(2) {
         let cookie_spec = current_cookie_spec.clone();
         match download_single_playlist_item_attempt(
             api,
@@ -342,6 +343,19 @@ async fn download_single_playlist_item_with_retry(
                     &format!("num={video_num} attempt={attempt} url={video_url} err={raw_err}"),
                 );
 
+                if !empty_download_retried
+                    && attempt + 1 < max_attempts.max(2)
+                    && crate::youtube::fetch::is_empty_media_download(&raw_err, &classification)
+                {
+                    empty_download_retried = true;
+                    log_trace(
+                        trace_id,
+                        "playlist_item_retry",
+                        &format!("num={video_num} attempt={attempt} reason=no_data_blocks"),
+                    );
+                    continue;
+                }
+
                 let Some(cookie_pool) = req.cookie_pool.as_ref() else {
                     return Err(raw_err);
                 };
@@ -355,12 +369,16 @@ async fn download_single_playlist_item_with_retry(
                             if let Some(next) = pool.next_cookie_excluding(&tried) {
                                 tried.insert(next.id.clone());
                                 *current_cookie_spec = next.yt_dlp_browser_spec;
+                                if attempt + 1 >= max_attempts {
+                                    break;
+                                }
                                 continue;
                             }
                         }
                         return Err(raw_err);
                     }
                     crate::youtube::YtdlpErrorClassification::BadCookie(_) => {
+                        let can_retry = attempt + 1 < max_attempts && tried.len() < 3;
                         let mut pool = cookie_pool.lock().await;
                         let cookie_id_opt = pool.mark_bad_cookie(current_cookie_spec);
                         if let Some(ref cid) = cookie_id_opt {
@@ -381,13 +399,29 @@ async fn download_single_playlist_item_with_retry(
                                 }
                             }
                         }
-                        if tried.len() < 3 {
-                            if let Some(next) = pool.next_cookie_excluding(&tried) {
-                                tried.insert(next.id.clone());
-                                *current_cookie_spec = next.yt_dlp_browser_spec;
-                                continue;
-                            }
+                        if let Some(next) = can_retry
+                            .then(|| pool.next_cookie_excluding(&tried))
+                            .flatten()
+                        {
+                            tried.insert(next.id.clone());
+                            *current_cookie_spec = next.yt_dlp_browser_spec;
+                            log_trace(
+                                trace_id,
+                                "playlist_item_retry",
+                                &format!("num={video_num} attempt={attempt} reason=cookie_failure"),
+                            );
+                            continue;
                         }
+                        let reason = if can_retry {
+                            "no_alternate_cookie"
+                        } else {
+                            "attempt_limit"
+                        };
+                        log_trace(
+                            trace_id,
+                            "playlist_item_retry_stopped",
+                            &format!("num={video_num} attempt={attempt} reason={reason}"),
+                        );
                         return Err(raw_err);
                     }
                     crate::youtube::YtdlpErrorClassification::AgeRestricted(_) => {
@@ -397,6 +431,9 @@ async fn download_single_playlist_item_with_retry(
                             if let Some(next) = pool.next_cookie_excluding(&tried) {
                                 tried.insert(next.id.clone());
                                 *current_cookie_spec = next.yt_dlp_browser_spec;
+                                if attempt + 1 >= max_attempts {
+                                    break;
+                                }
                                 continue;
                             }
                         }

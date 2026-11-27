@@ -205,7 +205,12 @@ pub async fn download_subtitles_separately(
                     &format!(
                         "lang={lang} status={} available={available} => {}",
                         out.status,
-                        if available { "ok" } else { "fail" }
+                        match (available, out.status.success(), lang == ".*-orig") {
+                            (true, _, _) => "file_ready",
+                            (false, false, _) => "tool_failed",
+                            (false, true, true) => "source_missing",
+                            (false, true, false) => "target_missing",
+                        }
                     ),
                 );
                 if !out.status.success() || !available {

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.7.19] - 2026-11-27
+
+### Fixed
+- Load service definitions before the data mount is available and start data-dependent services after it is mounted.
+- Retry empty YouTube media downloads once and show a localized message when a playlist is unavailable.
+- Report missing, invalid, and failed YouTube subtitle outputs separately.
+
+### Changed
+- Record actionable YouTube retry, Surge CLI, and IP lookup failure details without including provider credentials.
+
 ## [2.7.18] - 2026-11-23
 
 ### Changed

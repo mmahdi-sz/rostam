@@ -95,6 +95,37 @@ pub async fn test_youtube_subtitle(Json(req): Json<SubtitleReq>) -> Json<serde_j
         let dir = crate::common::dir::TempDirGuard::create("yt_subtitle_test", trace)?;
         let api = frankenstein::client_reqwest::Bot::new_url("http://127.0.0.1:14379/bot".to_string());
         let langs = vec!["fa".to_string()];
+        if req.scenario == "separate_file" {
+            tokio::fs::write(dir.path().join("sub.fa.srt"), "1\n00:00:00,000 --> 00:00:01,000\nسلام\n").await?;
+            anyhow::ensure!(
+                crate::youtube::download::subtitle::subtitle_file_exists_for_lang(dir.path(), "fa"),
+                "separate Persian subtitle was not recognized"
+            );
+            return Ok(serde_json::json!({"ok": true, "trace": trace}));
+        }
+        if req.scenario == "invalid_target" {
+            tokio::fs::write(dir.path().join("sub.fa.srt"), "invalid subtitle").await?;
+            anyhow::ensure!(
+                !crate::youtube::download::subtitle::subtitle_file_exists_for_lang(dir.path(), "fa"),
+                "invalid target was considered ready"
+            );
+            return Ok(serde_json::json!({"ok": true, "rejected": true, "trace": trace}));
+        }
+        if req.scenario == "translation_busy" {
+            let user_id = 94_321;
+            tokio::fs::write(
+                dir.path().join("sub.en-orig.srt"),
+                "1\n00:00:00,000 --> 00:00:01,000\nHello\n",
+            ).await?;
+            let mut lease = crate::common::cpu_broker::CpuBrokerGuard::acquire(user_id, trace, "yt").await;
+            anyhow::ensure!(lease.is_acquired(), "could not set up busy broker fixture");
+            let result = crate::youtube::download::subtitle::translate_subtitles(
+                &api, 0, 0, trace, dir.path(), &langs, None, user_id,
+            ).await;
+            lease.release().await;
+            anyhow::ensure!(result.is_err_and(|err| err == "active translation job running"), "busy translation was not rejected");
+            return Ok(serde_json::json!({"ok": true, "rejected": true, "trace": trace}));
+        }
         if req.scenario == "rolling" {
             let stacked = crate::youtube::download::subtitle::stack_subtitles_chronologically("1\n00:00:00,000 --> 00:00:04,000\nOld\n\n2\n00:00:02,000 --> 00:00:05,000\nNew\n\n");
             let blocks = crate::youtube::translator::parse_srt(&stacked);
@@ -142,13 +173,26 @@ pub async fn test_youtube_subtitle(Json(req): Json<SubtitleReq>) -> Json<serde_j
             let cues = crate::youtube::translator::parse_srt(&translated);
             anyhow::ensure!(cues.len() == 7 && cues.iter().all(|c| c.text.starts_with('\u{202b}')), "translation did not receive cleaned cues or Persian direction");
         } else {
-            anyhow::ensure!(req.scenario == "hardsub" || req.scenario == "remux" || req.scenario == "codec", "unknown scenario");
+            anyhow::ensure!(matches!(req.scenario.as_str(), "hardsub" | "remux" | "codec" | "embedded"), "unknown scenario");
             tokio::fs::write(dir.path().join("sub.fa.srt"), "1\n00:00:00,000 --> 00:00:01,000\nسلام دنیا\n").await?;
         }
         let video = dir.path().join("input.mkv");
         let fixture_codec = if req.scenario == "remux" { "libx264" } else { "ffv1" };
         let fixture = tokio::process::Command::new("ffmpeg").args(["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=320x180:d=1", "-c:v", fixture_codec, "-threads", "1"]).arg(&video).output().await?;
         anyhow::ensure!(fixture.status.success(), "fixture failed");
+        if req.scenario == "embedded" {
+            let embedded = crate::youtube::download::subtitle::embed_subtitles(
+                dir.path(), &video.to_string_lossy(), &langs, trace,
+            ).await.map_err(anyhow::Error::msg)?;
+            let probe = tokio::process::Command::new("ffprobe")
+                .args(["-v", "error", "-select_streams", "s", "-show_entries", "stream=codec_type", "-of", "csv=p=0"])
+                .arg(&embedded).output().await?;
+            anyhow::ensure!(
+                probe.status.success() && String::from_utf8_lossy(&probe.stdout).trim() == "subtitle",
+                "output did not contain an embedded subtitle stream"
+            );
+            return Ok(serde_json::json!({"ok": true, "trace": trace}));
+        }
         let path = if req.scenario == "remux" || req.scenario == "codec" { video.to_string_lossy().into_owned() } else {
             crate::youtube::download::subtitle::hardsub_subtitles(&api, 0, 0, dir.path(), &video.to_string_lossy(), &langs, "h264", Some(1), trace, 0).await.map_err(anyhow::Error::msg)?
         };

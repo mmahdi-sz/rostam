@@ -46,11 +46,10 @@ pub(crate) async fn run_surge_download(
     }
 
     let before_ids = list_surge_job_ids().await;
-    log_ev!("surge_dl", trace_id, "add_spawn", "url" => &url, "dir" => &dir);
-    let add_ok = run_surge_add(&url, &dir).await;
-    if !add_ok {
-        log_ev!("surge_dl", trace_id, "add_failed", "=>" => "fail");
-        crate::stats::record_error_global("surge_dl", "surge add failed").await;
+    log_ev!("surge_dl", trace_id, "add_spawn", "=>" => "start");
+    if let Err(err) = run_surge_add(&url, &dir).await {
+        log_ev!("surge_dl", trace_id, "add_failed", "=>" => "fail", "reason" => err.to_string());
+        crate::stats::record_error_global("surge_dl", &format!("surge add failed: {err}")).await;
         edit_status(&api, chat_id, message_id, &t("surge.error.download_failed")).await;
         return;
     }
