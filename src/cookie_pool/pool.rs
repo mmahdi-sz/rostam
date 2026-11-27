@@ -31,6 +31,14 @@ impl CookiePool {
         }
     }
 
+    #[cfg(feature = "testapi")]
+    pub(crate) fn with_test_profiles(profiles: Vec<CookieSource>) -> Self {
+        Self {
+            available_cookies: profiles,
+            ..Self::empty()
+        }
+    }
+
     pub fn from_default_firefox() -> Self {
         match crate::config::firefox_profiles_root() {
             Some(root) => Self::from_firefox_root(root),
@@ -43,7 +51,7 @@ impl CookiePool {
         available_cookies.sort_by(|l, r| l.id.cmp(&r.id));
         // No cap on the number of cookies — all discovered profiles are used.
         available_cookies =
-            materialize_profiles_cache(Path::new(DEFAULT_CACHE_ROOT), available_cookies);
+            materialize_profiles_cache(Path::new(DEFAULT_CACHE_ROOT), available_cookies, true);
         Self {
             available_cookies,
             last_used_cookie: None,
@@ -51,6 +59,33 @@ impl CookiePool {
             cooldown: DEFAULT_COOLDOWN,
             random_counter: 0,
         }
+    }
+
+    pub(crate) async fn discover_new_profiles(
+        pool: &tokio::sync::Mutex<Self>,
+    ) -> anyhow::Result<()> {
+        let Some(root) = crate::config::firefox_profiles_root() else {
+            return Ok(());
+        };
+        let existing: HashSet<_> = pool
+            .lock()
+            .await
+            .available_cookies
+            .iter()
+            .map(|profile| profile.id.clone())
+            .collect();
+        let new = tokio::task::spawn_blocking(move || {
+            let mut profiles = discover_firefox_cookies(Path::new(&root));
+            profiles.retain(|profile| !existing.contains(&profile.id));
+            profiles.sort_by(|left, right| left.id.cmp(&right.id));
+            if profiles.is_empty() {
+                return profiles;
+            }
+            materialize_profiles_cache(Path::new(DEFAULT_CACHE_ROOT), profiles, false)
+        })
+        .await?;
+        pool.lock().await.available_cookies.extend(new);
+        Ok(())
     }
 
     pub fn status(&mut self) -> CookiePoolStatus {
@@ -100,6 +135,22 @@ impl CookiePool {
         &mut self,
         excluded_ids: &HashSet<String>,
     ) -> Option<SelectedCookie> {
+        self.select_cookie(excluded_ids, None)
+    }
+
+    pub fn next_age_cookie(
+        &mut self,
+        excluded_ids: &HashSet<String>,
+        eligible: &HashSet<String>,
+    ) -> Option<SelectedCookie> {
+        self.select_cookie(excluded_ids, Some(eligible))
+    }
+
+    fn select_cookie(
+        &mut self,
+        excluded_ids: &HashSet<String>,
+        eligible: Option<&HashSet<String>>,
+    ) -> Option<SelectedCookie> {
         self.cleanup_expired_cooldowns();
         let cooldown_ids = self
             .cooldown_list
@@ -111,7 +162,10 @@ impl CookiePool {
             .iter()
             .enumerate()
             .filter_map(|(index, cookie)| {
-                if excluded_ids.contains(&cookie.id) || cooldown_ids.contains(cookie.id.as_str()) {
+                if excluded_ids.contains(&cookie.id)
+                    || cooldown_ids.contains(cookie.id.as_str())
+                    || eligible.is_some_and(|ids| !ids.contains(&cookie.id))
+                {
                     None
                 } else {
                     Some(index)
@@ -121,6 +175,8 @@ impl CookiePool {
 
         let candidate_pool_indices: Vec<usize> = if !selectable_not_excluded.is_empty() {
             selectable_not_excluded
+        } else if eligible.is_some() {
+            return None;
         } else {
             // Fallback: When all cookies are on cooldown, avoid complete service outage.
             // Pick candidate from available cookies not in excluded_ids whose cooldown expires soonest.

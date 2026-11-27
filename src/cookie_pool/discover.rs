@@ -16,6 +16,7 @@ pub(super) fn discover_firefox_cookies(root: &Path) -> Vec<CookieSource> {
 pub(super) fn materialize_profiles_cache(
     cache_root: &Path,
     sources: Vec<CookieSource>,
+    reset: bool,
 ) -> Vec<CookieSource> {
     let cache_root_buf = if cache_root.is_absolute() {
         cache_root.to_path_buf()
@@ -26,7 +27,7 @@ pub(super) fn materialize_profiles_cache(
     };
     let cache_root = cache_root_buf.as_path();
 
-    if cache_root.exists() {
+    if reset && cache_root.exists() {
         if let Err(error) = fs::remove_dir_all(cache_root) {
             eprintln!(
                 "failed to clear cookie cache at {}: {error}",

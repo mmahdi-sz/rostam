@@ -366,3 +366,62 @@ pub async fn test_youtube_audio(Json(req): Json<serde_json::Value>) -> Json<serd
         })
     }))
 }
+
+pub async fn test_youtube_age_retry(Json(req): Json<serde_json::Value>) -> Json<serde_json::Value> {
+    use std::sync::{Arc, Mutex};
+
+    let trace = crate::log::next_trace_id();
+    let success = req["scenario"] == "success";
+    let traces = Arc::new(Mutex::new(Vec::new()));
+    let stats = Arc::new(Mutex::new(Vec::new()));
+    let keys = Arc::new(Mutex::new(Vec::new()));
+    let emojis = Arc::new(Mutex::new(Vec::new()));
+    let age_text = crate::i18n::apply_premium_to_md(&crate::i18n::t("youtube.age_restricted"));
+    crate::testapi::state::clear_payloads();
+    let result = crate::log::CAPTURED_TRACES
+        .scope(
+            traces.clone(),
+            crate::stats::CAPTURED_STATS.scope(
+                stats.clone(),
+                crate::i18n::RESOLVED_I18N_KEYS.scope(
+                    keys.clone(),
+                    crate::bot::messaging::CAPTURED_EMOJIS.scope(
+                        emojis.clone(),
+                        crate::youtube::age_check::test_retry(trace, success),
+                    ),
+                ),
+            ),
+        )
+        .await;
+    let payloads = crate::testapi::state::CAPTURED_PAYLOADS.lock().unwrap();
+    let keyboard_message = payloads
+        .iter()
+        .find(|item| item["reply_markup"]["inline_keyboard"].is_array());
+    let age_message = payloads.iter().find(|item| item["text"] == age_text);
+    let message = if success {
+        keyboard_message
+    } else {
+        age_message
+    };
+    let traces = traces.lock().unwrap();
+    let actor_logged = traces.iter().any(|entry| entry["event"] == "actor");
+    let expected = if success {
+        "age_retry_fetch"
+    } else {
+        "fetch_age_restricted"
+    };
+    let event_logged = traces.iter().any(|entry| entry["event"] == expected);
+    Json(serde_json::json!({
+        "ok": result.is_ok() && message.is_some() && (keyboard_message.is_some() == success)
+            && actor_logged && event_logged,
+        "error": result.err().map(|error| error.to_string()),
+        "rendered_text": message.and_then(|item| item.get("text").or_else(|| item.get("caption"))),
+        "keyboard": keyboard_message.and_then(|item| item.get("reply_markup")),
+        "custom_emoji_spans": &*emojis.lock().unwrap(),
+        "i18n_keys": &*keys.lock().unwrap(),
+        "stats_events": &*stats.lock().unwrap(),
+        "record_error_global": [],
+        "trace": trace, "actor_logged": actor_logged, "event_logged": event_logged,
+        "telegram_payloads": &*payloads,
+    }))
+}

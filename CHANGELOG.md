@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)  
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
+## [2.8.0] - 2026-11-27
+
+### Added
+- Check YouTube cookie profiles at startup and every 48 hours using configurable age-restricted reference links.
+- Cache verification in Redis by cookie version and retry age-restricted videos with up to two verified profiles. Keep the successful profile for the download.
+
 ## [2.7.19] - 2026-11-27
 
 ### Fixed

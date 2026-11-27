@@ -212,7 +212,32 @@ pub async fn handle_youtube_url(
 
         save_snapshot(database, &snapshot).await;
 
-        match fetch_video_info(trace_id, url, &cookie.yt_dlp_browser_spec).await {
+        let fetched = fetch_video_info(trace_id, url, &cookie.yt_dlp_browser_spec).await;
+        let (cookie, fetched) = if matches!(&fetched, Err(FetchError::AgeRestricted(_))) {
+            let retry = super::age_check::retry(trace_id, url, &cookie_pool, &mut tried).await;
+            if let Some(uid) = user_id {
+                crate::stats::record_event_user(
+                    uid,
+                    "cookie",
+                    "youtube_age_retry",
+                    if retry.is_some() { "ok" } else { "unavailable" },
+                    0,
+                )
+                .await;
+            }
+            match retry {
+                Some((verified_cookie, info)) => {
+                    let snapshot = cookie_pool.lock().await.snapshot();
+                    save_snapshot(database, &snapshot).await;
+                    (verified_cookie, Ok(info))
+                }
+                None => (cookie, fetched),
+            }
+        } else {
+            (cookie, fetched)
+        };
+
+        match fetched {
             Ok(info) => {
                 log_trace(
                     trace_id,

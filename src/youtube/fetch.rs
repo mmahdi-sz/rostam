@@ -187,18 +187,40 @@ pub async fn fetch_video_info(
     url: &str,
     yt_dlp_browser_spec: &str,
 ) -> Result<VideoInfo, FetchError> {
+    fetch_video_info_with_cookie(trace_id, url, Some(yt_dlp_browser_spec)).await
+}
+
+#[cfg(feature = "testapi")]
+tokio::task_local! {
+    pub(in crate::youtube) static TEST_YTDLP: std::path::PathBuf;
+}
+
+pub(super) async fn fetch_video_info_with_cookie(
+    trace_id: u64,
+    url: &str,
+    cookie: Option<&str>,
+) -> Result<VideoInfo, FetchError> {
+    let yt_dlp_browser_spec = cookie.unwrap_or_default();
     log_trace(
         trace_id,
         "fetch_start",
         &format!("url={url} cookie_spec={yt_dlp_browser_spec}"),
     );
     let is_playlist_url = url.contains("list=") || url.contains("/playlist");
+    #[cfg(feature = "testapi")]
+    let mut cmd = TEST_YTDLP
+        .try_with(|path| Command::new(path))
+        .unwrap_or_else(|_| Command::new("yt-dlp"));
+    #[cfg(not(feature = "testapi"))]
     let mut cmd = Command::new("yt-dlp");
     cmd.arg("--js-runtimes")
         .arg(format!("deno:{}", crate::config::deno_path()))
-        .arg("--cookies-from-browser")
-        .arg(yt_dlp_browser_spec)
         .arg("--dump-single-json");
+    if let Some(spec) = cookie {
+        cmd.arg("--cookies-from-browser").arg(spec);
+    } else {
+        cmd.arg("--ignore-config");
+    }
     if is_playlist_url {
         cmd.arg("--flat-playlist");
     }

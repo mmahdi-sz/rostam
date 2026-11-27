@@ -1,5 +1,6 @@
 //! YouTube downloading subsystem, quality/format selection, cookie pool integration, and subtitle processing.
 
+pub(crate) mod age_check;
 pub mod download;
 mod extract;
 mod fetch;

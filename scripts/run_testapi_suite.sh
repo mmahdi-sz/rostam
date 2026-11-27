@@ -239,6 +239,16 @@ echo "Testing /test/youtube/quality_select"
 RES_QS=$(curl -s -X POST "$BASE_URL/test/youtube/quality_select" -H "Content-Type: application/json" -d '{"request_id": 999, "height": 720}')
 if [ "$(echo "$RES_QS" | jq -r '.ok')" != "true" ]; then echo "Fail: quality_select"; exit 1; fi
 
+echo "Testing /test/youtube/age_retry"
+for scenario in success stale_cookie; do
+    RES_AGE=$(curl -fsS -X POST "$BASE_URL/test/youtube/age_retry" \
+        -H "Content-Type: application/json" -d "{\"scenario\":\"$scenario\"}")
+    if ! jq -e '.ok and (.rendered_text | type == "string")' <<< "$RES_AGE" >/dev/null; then
+        echo "Fail: youtube age retry ($scenario): $RES_AGE"
+        exit 1
+    fi
+done
+
 echo "Testing /test/youtube/cancel"
 RES_CAN=$(curl -s -X POST "$BASE_URL/test/youtube/cancel" -H "Content-Type: application/json" -d '{"request_id": 999}')
 if [ "$(echo "$RES_CAN" | jq -r '.ok')" != "true" ]; then echo "Fail: youtube cancel"; exit 1; fi

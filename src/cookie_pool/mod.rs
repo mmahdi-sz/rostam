@@ -15,7 +15,7 @@ mod types;
 
 pub use pool::CookiePool;
 pub use snapshot::save_snapshot;
-pub use types::{CookiePoolSnapshot, CookieSource, CooldownEntry};
+pub use types::{CookiePoolSnapshot, CookieSource, CooldownEntry, SelectedCookie};
 
 /// Cooldown applied to a rate-limited cookie (programmatic / manual commands).
 const DEFAULT_COOLDOWN: Duration = Duration::from_secs(30 * 60);

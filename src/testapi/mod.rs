@@ -48,6 +48,10 @@ pub async fn run() -> anyhow::Result<()> {
             post(endpoints::youtube::test_youtube_quality_select),
         )
         .route(
+            "/test/youtube/age_retry",
+            post(endpoints::youtube::test_youtube_age_retry),
+        )
+        .route(
             "/test/youtube/cancel",
             post(endpoints::youtube::test_youtube_cancel),
         )

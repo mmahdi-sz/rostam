@@ -122,6 +122,8 @@ pub async fn run() -> anyhow::Result<()> {
     let cookie_pool_arc = std::sync::Arc::new(tokio::sync::Mutex::new(cookie_pool));
     crate::cookie_pool::set_global_cookie_pool(cookie_pool_arc.clone());
 
+    crate::youtube::age_check::spawn(cookie_pool_arc.clone());
+
     let mut state = AppState {
         api: api.clone(),
         cookie_pool: cookie_pool_arc,
