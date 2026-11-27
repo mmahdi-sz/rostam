@@ -52,7 +52,7 @@ tar = "0.4"
 zstd = "0.13"
 flate2 = "1.0"
 lzma-rs = "0.3"
-rpm = { version = "0.27", default-features = false, features = ["payload", "gzip-compression", "zstd-compression", "xz-compression"] }
+rpm = { version = "0.30", default-features = false, features = ["payload", "gzip-compression", "zstd-compression", "xz-compression"] }
 dashmap = "6"
 
 
